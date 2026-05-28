@@ -12,6 +12,7 @@
 (include "value.watx")
 (include "heap.watx")
 (include "lex.watx")
+(include "scope.watx")
 (include "tostring.watx")
 (include "eval.watx")
 

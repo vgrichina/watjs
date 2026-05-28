@@ -147,9 +147,21 @@
         (then (call $advance)
               (if (i32.eq (call $cur) (i32.const 15)) (then (return (call $parse_print)))
                 (else (call $throw (cstring "print is not a value")) (return (call $v_undef))))))
-      (call $throw (cstring "not defined")) (return (call $v_undef))))
+      ;; variable reference
+      (let $nm i32 (call $ident_name))
+      (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))
+      (call $advance)
+      (if (local.get $slot)
+        (then (return (i64.load (local.get $slot))))
+        (else
+          (if (i32.eqz (call $suppress))
+            (then (call $throw (call $str_concat (local.get $nm) (cstring " is not defined")))))
+          (return (call $v_undef))))))
   (call $throw (cstring "unexpected token"))
   (call $v_undef))
+
+(func $ident_name (result i32) (effects)
+  (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len)))
 
 ;; ── unary: - + ! ──
 (func $parse_unary (result i64) (effects)
@@ -280,15 +292,143 @@
           (call $parse_assign))))
     (else (local.get $cond))))
 
-;; assignment level (no targets yet in Phase 0) = ternary
-(func $parse_assign (result i64) (effects) (call $parse_ternary))
+;; ── assignment (right-assoc): IDENT '=' expr ──
+(func $parse_assign (result i64) (effects)
+  (if (i32.eq (call $cur) (i32.const 3))  ;; IDENT — lookahead for '='
+    (then
+      (call $look_save)
+      (let $nm i32 (call $ident_name))
+      (call $advance)
+      (if (i32.eq (call $cur) (i32.const 24))  ;; '='
+        (then
+          (call $advance)
+          (let $rhs i64 (call $parse_assign))
+          (if (i32.eqz (call $suppress))
+            (then
+              (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))
+              (if (local.get $slot)
+                (then (i64.store (local.get $slot) (local.get $rhs)))
+                (else (call $scope_define (call $cur_scope) (local.get $nm) (local.get $rhs))))))
+          (return (local.get $rhs)))
+        (else (call $look_restore)))))
+  (call $parse_ternary))
 
-;; ── statement / program ──
+;; ── statements ──
+
+(func $sup_inc (effects) (call $set_suppress (i32.add (call $suppress) (i32.const 1))))
+(func $sup_dec (effects) (call $set_suppress (i32.sub (call $suppress) (i32.const 1))))
+
+(func $parse_var (effects)
+  (call $advance)  ;; consume var/let/const
+  (block $brk (loop $cont
+    (if (i32.ne (call $cur) (i32.const 3)) (then (call $throw (cstring "expected name")) (br $brk)))
+    (let $nm i32 (call $ident_name))
+    (call $advance)
+    (let $val i64 (call $v_undef))
+    (if (i32.eq (call $cur) (i32.const 24))
+      (then (call $advance) (set! $val (call $parse_assign))))
+    (if (i32.eqz (call $suppress))
+      (then (call $scope_define (call $cur_scope) (local.get $nm) (local.get $val))))
+    (br_if $brk (i32.eqz (call $eat (i32.const 22))))  ;; ',' continues
+    (br $cont))))
+
+(func $parse_block (effects)
+  (call $advance)  ;; '{'
+  (let $saved i32 (call $cur_scope))
+  (call $set_cur_scope (call $scope_new (local.get $saved) (i32.const 16)))
+  (block $brk (loop $cont
+    (br_if $brk (i32.eq (call $cur) (i32.const 18)))  ;; '}'
+    (br_if $brk (i32.eq (call $cur) (i32.const 0)))
+    (br_if $brk (call $err))
+    (call $parse_statement)
+    (br $cont)))
+  (call $expect (i32.const 18) (cstring "expected }"))
+  (call $set_cur_scope (local.get $saved)))
+
+(func $parse_if (effects)
+  (call $advance)  ;; 'if'
+  (call $expect (i32.const 15) (cstring "expected ("))
+  (let $cond i64 (call $parse_assign))
+  (call $expect (i32.const 16) (cstring "expected )"))
+  (let $take i32 (i32.and (i32.eqz (call $suppress)) (call $truthy (local.get $cond))))
+  (if (local.get $take)
+    (then (call $parse_statement))
+    (else (call $sup_inc) (call $parse_statement) (call $sup_dec)))
+  (if (call $tok_is_kw (cstring "else"))
+    (then
+      (call $advance)
+      (if (i32.and (i32.eqz (call $suppress)) (i32.eqz (local.get $take)))
+        (then (call $parse_statement))
+        (else (call $sup_inc) (call $parse_statement) (call $sup_dec))))))
+
+(func $parse_while (effects)
+  (call $advance)  ;; 'while'
+  (call $expect (i32.const 15) (cstring "expected ("))
+  (let $condcur i32 (call $cursor_save))
+  (block $brk (loop $cont
+    (call $cursor_restore (local.get $condcur))
+    (let $cond i64 (call $parse_assign))
+    (call $expect (i32.const 16) (cstring "expected )"))
+    (if (i32.or (call $suppress) (i32.or (call $err) (i32.eqz (call $truthy (local.get $cond)))))
+      (then  ;; skip body once, then exit
+        (call $sup_inc) (call $parse_statement) (call $sup_dec) (br $brk))
+      (else (call $parse_statement)))
+    (br $cont))))
+
+(func $parse_for (effects)
+  (call $advance)  ;; 'for'
+  (call $expect (i32.const 15) (cstring "expected ("))
+  ;; init (var decl or expression or empty), consumes its ';'
+  (if (i32.ne (call $cur) (i32.const 21))
+    (then
+      (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))
+        (then (call $parse_var))
+        (else (drop (call $parse_assign))))))
+  (call $expect (i32.const 21) (cstring "expected ;"))
+  (let $condcur i32 (call $cursor_save))
+  (block $brk (loop $cont
+    (call $cursor_restore (local.get $condcur))
+    ;; cond (empty => true)
+    (let $cond i32 (i32.const 1))
+    (if (i32.ne (call $cur) (i32.const 21))
+      (then (set! $cond (call $truthy (call $parse_assign)))))
+    (call $expect (i32.const 21) (cstring "expected ;"))
+    (let $updcur i32 (call $cursor_save))
+    ;; skip update to reach body
+    (call $sup_inc)
+    (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))
+    (call $sup_dec)
+    (call $expect (i32.const 16) (cstring "expected )"))
+    (if (i32.or (call $suppress) (i32.or (call $err) (i32.eqz (local.get $cond))))
+      (then (call $sup_inc) (call $parse_statement) (call $sup_dec) (br $brk))
+      (else
+        (call $parse_statement)        ;; body
+        (call $cursor_restore (local.get $updcur))  ;; run update
+        (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))))
+    (br $cont))))
+
+(func $parse_statement (effects)
+  (if (call $err) (then (return)))
+  (let $k i32 (call $cur))
+  (if (i32.eq (local.get $k) (i32.const 17)) (then (call $parse_block) (return)))   ;; '{'
+  (if (i32.eq (local.get $k) (i32.const 21)) (then (call $advance) (return)))       ;; empty ';'
+  (if (i32.eq (local.get $k) (i32.const 3))
+    (then
+      (if (call $tok_is_kw (cstring "var"))   (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
+      (if (call $tok_is_kw (cstring "let"))   (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
+      (if (call $tok_is_kw (cstring "const")) (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
+      (if (call $tok_is_kw (cstring "if"))    (then (call $parse_if) (return)))
+      (if (call $tok_is_kw (cstring "while")) (then (call $parse_while) (return)))
+      (if (call $tok_is_kw (cstring "for"))   (then (call $parse_for) (return)))))
+  ;; expression statement
+  (drop (call $parse_assign))
+  (drop (call $eat (i32.const 21))))
+
 (func $eval_program (effects)
+  (call $set_cur_scope (call $scope_new (i32.const 0) (i32.const 128)))  ;; global scope
   (call $advance)  ;; load first token
   (block $brk (loop $cont
     (br_if $brk (i32.eq (call $cur) (i32.const 0)))  ;; EOF
     (br_if $brk (call $err))
-    (drop (call $parse_assign))
-    (drop (call $eat (i32.const 21)))  ;; optional ';'
+    (call $parse_statement)
     (br $cont))))

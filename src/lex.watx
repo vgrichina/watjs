@@ -23,6 +23,32 @@
 
 (func $lex_init (effects) (call $set_pos (i32.const 0)))
 
+;; --- cursor save/restore (for loops / function re-scan) ---
+;; A cursor buffer is 24 bytes: POS, TOK_KIND, TOK_START, TOK_LEN (i32), TOK_NUM (f64@16).
+(func $cursor_store (param $b i32) (effects)
+  (i32.store (local.get $b) (call $pos))
+  (i32.store (i32.add (local.get $b) (i32.const 4)) (call $tok_kind))
+  (i32.store (i32.add (local.get $b) (i32.const 8)) (call $tok_start))
+  (i32.store (i32.add (local.get $b) (i32.const 12)) (call $tok_len))
+  (f64.store (i32.add (local.get $b) (i32.const 16)) (call $tok_num)))
+
+;; heap-allocated save (persists across iterations; for loop cursors)
+(func $cursor_save (result i32) (effects)
+  (let $b i32 (call $heap_alloc (i32.const 24)))
+  (call $cursor_store (local.get $b))
+  (local.get $b))
+
+;; transient single-token lookahead via a fixed buffer at address 64
+(func $look_save (effects) (call $cursor_store (i32.const 64)))
+(func $look_restore (effects) (call $cursor_restore (i32.const 64)))
+
+(func $cursor_restore (param $b i32) (effects)
+  (call $set_pos (i32.load (local.get $b)))
+  (call $set_tok (i32.load (i32.add (local.get $b) (i32.const 4)))
+                 (i32.load (i32.add (local.get $b) (i32.const 8)))
+                 (i32.load (i32.add (local.get $b) (i32.const 12))))
+  (f64.store (i32.const 32) (f64.load (i32.add (local.get $b) (i32.const 16)))))
+
 ;; byte at src+pos+offset, or -1 past end
 (func $ch_at (param $off i32) (result i32) (effects)
   (let $i i32 (i32.add (call $pos) (local.get $off)))
