@@ -1,0 +1,108 @@
+;; ═══════════════════════════════════════════════════════════════
+;; value.watx — NaN-boxed JSValue representation
+;;
+;; A JSValue is an i64 `bits`. Reinterpreted as f64 it IS a number,
+;; UNLESS the top 13 bits equal the negative-quiet-NaN prefix
+;; 0xFFF8_0000_0000_0000, in which case it is a "boxed" non-number:
+;;
+;;   63                    50 48 47                              0
+;;  ┌────────────────────────┬─────┬──────────────────────────────┐
+;;  │ 1 11111111111 1 (=0xFFF8)│ tag │          payload (48 bits)    │
+;;  └────────────────────────┴─────┴──────────────────────────────┘
+;;
+;; A computed f64 NaN is the POSITIVE quiet NaN (0x7FF8...), sign bit 0,
+;; so it never collides with the boxed (sign bit 1) space → it reads as
+;; a number, which is correct (JS NaN is a number).
+;;
+;; tag: 0=undefined 1=null 2=boolean 3=int(reserved) 4=string 5=object
+;; Numbers are always stored as f64 (no int tag used yet).
+;; ═══════════════════════════════════════════════════════════════
+
+;; --- box / unbox primitives ---
+
+;; reinterpret an f64 as a JSValue (number)
+(func $num (param $d f64) (result i64)
+  (effects)
+  (i64.reinterpret_f64 (local.get $d)))
+
+;; reinterpret a JSValue as f64 (caller must know it's a number)
+(func $tonum_raw (param $v i64) (result f64)
+  (effects)
+  (f64.reinterpret_i64 (local.get $v)))
+
+;; is this value a number? (not in the boxed prefix space)
+(func $is_number (param $v i64) (result i32)
+  (effects)
+  (i64.ne (i64.and (local.get $v) (i64.const 0xFFF8000000000000))
+          (i64.const 0xFFF8000000000000)))
+
+;; build a boxed value from a 3-bit tag and a 32-bit payload
+(func $box (param $tag i32) (param $payload i32) (result i64)
+  (effects)
+  (i64.or
+    (i64.or (i64.const 0xFFF8000000000000)
+            (i64.shl (i64.extend_i32_u (local.get $tag)) (i64.const 48)))
+    (i64.extend_i32_u (local.get $payload))))
+
+;; tag of a boxed value (meaningless for numbers)
+(func $val_tag (param $v i64) (result i32)
+  (effects)
+  (i32.and (i32.wrap_i64 (i64.shr_u (local.get $v) (i64.const 48))) (i32.const 7)))
+
+;; low-32-bit payload (pointer or int) of a boxed value
+(func $val_payload (param $v i64) (result i32)
+  (effects)
+  (i32.wrap_i64 (local.get $v)))
+
+;; --- singletons & constructors ---
+
+(func $v_undef (result i64) (effects) (call $box (i32.const 0) (i32.const 0)))
+(func $v_null  (result i64) (effects) (call $box (i32.const 1) (i32.const 0)))
+(func $v_false (result i64) (effects) (call $box (i32.const 2) (i32.const 0)))
+(func $v_true  (result i64) (effects) (call $box (i32.const 2) (i32.const 1)))
+
+(func $mk_bool (param $b i32) (result i64)
+  (effects)
+  (if i64 (local.get $b) (then (call $v_true)) (else (call $v_false))))
+
+(func $mk_str (param $ptr i32) (result i64)
+  (effects)
+  (call $box (i32.const 4) (local.get $ptr)))
+
+(func $mk_obj (param $ptr i32) (result i64)
+  (effects)
+  (call $box (i32.const 5) (local.get $ptr)))
+
+;; --- type predicates ---
+
+(func $is_undefined (param $v i64) (result i32) (effects)
+  (i64.eq (local.get $v) (call $v_undef)))
+(func $is_null (param $v i64) (result i32) (effects)
+  (i64.eq (local.get $v) (call $v_null)))
+(func $is_boolean (param $v i64) (result i32) (effects)
+  (i32.and (i32.eqz (call $is_number (local.get $v)))
+           (i32.eq (call $val_tag (local.get $v)) (i32.const 2))))
+(func $is_string (param $v i64) (result i32) (effects)
+  (i32.and (i32.eqz (call $is_number (local.get $v)))
+           (i32.eq (call $val_tag (local.get $v)) (i32.const 4))))
+(func $is_object (param $v i64) (result i32) (effects)
+  (i32.and (i32.eqz (call $is_number (local.get $v)))
+           (i32.eq (call $val_tag (local.get $v)) (i32.const 5))))
+
+;; ToBoolean (spec §7.1.2)
+(func $truthy (param $v i64) (result i32)
+  (effects)
+  (if i32 (call $is_number (local.get $v))
+    (then
+      ;; true unless 0, -0, or NaN
+      (let $d f64 (call $tonum_raw (local.get $v)))
+      (i32.and (f64.ne (local.get $d) (f64.const 0))
+               (f64.eq (local.get $d) (local.get $d))))  ;; NaN != NaN
+    (else
+      (if i32 (call $is_undefined (local.get $v)) (then (i32.const 0))
+      (else (if i32 (call $is_null (local.get $v)) (then (i32.const 0))
+      (else (if i32 (call $is_boolean (local.get $v))
+               (then (call $val_payload (local.get $v)))
+      (else (if i32 (call $is_string (local.get $v))
+               (then (i32.gt_s (call $str_len (call $val_payload (local.get $v))) (i32.const 0)))
+      (else (i32.const 1)))))))))))) ;; objects are truthy

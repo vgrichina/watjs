@@ -1,0 +1,124 @@
+;; ═══════════════════════════════════════════════════════════════
+;; heap.watx — memory layout, bump allocator, string objects
+;;
+;; Linear memory map (we manage it ourselves; the WATX region
+;; allocator / $bump_ptr global is unused):
+;;   0    .. 1023    : VM state registers (see below)
+;;   1024 .. 131071  : cstring constant pool (compiler-managed)
+;;   131072 ..       : dynamic heap (bump allocator)
+;;
+;; Registers (fixed addresses; i64/f64 slots are 8-aligned):
+;;   0  HEAP_PTR (i32)   next free heap address
+;;   4  SRC (i32)        source base pointer
+;;   8  SRC_LEN (i32)    source length
+;;   12 POS (i32)        lexer cursor (offset into source)
+;;   16 ERR (i32)        uncaught-error flag
+;;   20 TOK_KIND (i32)   current token kind
+;;   24 TOK_START (i32)  current token start ptr
+;;   28 TOK_LEN (i32)    current token byte length
+;;   32 TOK_NUM (f64)    numeric value of a number token  [32..39]
+;;   40 GLOBAL (i32)     global scope pointer
+;;   48 ERR_VAL (i64)    thrown value                      [48..55]
+;; ═══════════════════════════════════════════════════════════════
+
+(func $heap_ptr (result i32) (effects) (i32.load (i32.const 0)))
+(func $set_heap_ptr (param $v i32) (effects) (i32.store (i32.const 0) (local.get $v)))
+
+;; Initialize the heap pointer to HEAP_BASE (131072).
+(func $heap_init (effects)
+  (call $set_heap_ptr (i32.const 131072))
+  (i32.store (i32.const 16) (i32.const 0)))  ;; clear ERR
+
+;; Bump-allocate `size` bytes, 8-byte aligned. Returns the block pointer.
+(func $heap_alloc (param $size i32) (result i32)
+  (effects)
+  (let $p i32 (call $heap_ptr))
+  ;; advance by size rounded up to 8
+  (call $set_heap_ptr
+    (i32.add (local.get $p)
+             (i32.and (i32.add (local.get $size) (i32.const 7)) (i32.const -8))))
+  (local.get $p))
+
+;; --- registers: source & lexer ---
+(func $src (result i32) (effects) (i32.load (i32.const 4)))
+(func $src_len (result i32) (effects) (i32.load (i32.const 8)))
+(func $set_src (param $p i32) (param $n i32) (effects)
+  (i32.store (i32.const 4) (local.get $p))
+  (i32.store (i32.const 8) (local.get $n)))
+
+(func $err (result i32) (effects) (i32.load (i32.const 16)))
+(func $set_err (param $v i32) (effects) (i32.store (i32.const 16) (local.get $v)))
+(func $err_val (result i64) (effects) (i64.load (i32.const 48)))
+(func $set_err_val (param $v i64) (effects) (i64.store (i32.const 48) (local.get $v)))
+
+;; ═══════════════════════════════════════════════════════════════
+;; String objects.  Layout:  [len: i32 @0][utf8 bytes @4 ...]
+;; A cstring pointer has this exact shape, so cstring values and
+;; heap strings are interchangeable.
+;; ═══════════════════════════════════════════════════════════════
+
+(func $str_len (param $ptr i32) (result i32) (effects)
+  (i32.load (local.get $ptr)))
+
+(func $str_byte (param $ptr i32) (param $i i32) (result i32) (effects)
+  (i32.load8_u (i32.add (i32.add (local.get $ptr) (i32.const 4)) (local.get $i))))
+
+(func $str_set_byte (param $ptr i32) (param $i i32) (param $b i32) (effects)
+  (i32.store8 (i32.add (i32.add (local.get $ptr) (i32.const 4)) (local.get $i)) (local.get $b)))
+
+;; Allocate an uninitialized string of `len` bytes; stores length header.
+(func $str_alloc (param $len i32) (result i32) (effects)
+  (let $p i32 (call $heap_alloc (i32.add (local.get $len) (i32.const 4))))
+  (i32.store (local.get $p) (local.get $len))
+  (local.get $p))
+
+;; Copy `len` bytes from raw source offset `from` into a new string.
+(func $str_from_src (param $from i32) (param $len i32) (result i32) (effects)
+  (let $p i32 (call $str_alloc (local.get $len)))
+  (let $i i32 (i32.const 0))
+  (block $brk
+    (loop $cont
+      (br_if $brk (i32.ge_s (local.get $i) (local.get $len)))
+      (call $str_set_byte (local.get $p) (local.get $i)
+            (i32.load8_u (i32.add (local.get $from) (local.get $i))))
+      (set! $i (i32.add (local.get $i) (i32.const 1)))
+      (br $cont)))
+  (local.get $p))
+
+;; Compare two string objects for byte-equality. Returns 1 if equal.
+(func $str_eq (param $a i32) (param $b i32) (result i32) (effects)
+  (let $n i32 (call $str_len (local.get $a)))
+  (if i32 (i32.ne (local.get $n) (call $str_len (local.get $b)))
+    (then (i32.const 0))
+    (else
+      (let $i i32 (i32.const 0))
+      (let $ok i32 (i32.const 1))
+      (block $brk
+        (loop $cont
+          (br_if $brk (i32.ge_s (local.get $i) (local.get $n)))
+          (if (i32.ne (call $str_byte (local.get $a) (local.get $i))
+                      (call $str_byte (local.get $b) (local.get $i)))
+            (then (set! $ok (i32.const 0)) (br $brk)))
+          (set! $i (i32.add (local.get $i) (i32.const 1)))
+          (br $cont)))
+      (local.get $ok))))
+
+;; Concatenate two string objects into a new one.
+(func $str_concat (param $a i32) (param $b i32) (result i32) (effects)
+  (let $la i32 (call $str_len (local.get $a)))
+  (let $lb i32 (call $str_len (local.get $b)))
+  (let $p i32 (call $str_alloc (i32.add (local.get $la) (local.get $lb))))
+  (let $i i32 (i32.const 0))
+  (block $b1 (loop $c1
+    (br_if $b1 (i32.ge_s (local.get $i) (local.get $la)))
+    (call $str_set_byte (local.get $p) (local.get $i) (call $str_byte (local.get $a) (local.get $i)))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $c1)))
+  (set! $i (i32.const 0))
+  (block $b2 (loop $c2
+    (br_if $b2 (i32.ge_s (local.get $i) (local.get $lb)))
+    (call $str_set_byte (local.get $p) (i32.add (local.get $la) (local.get $i))
+          (call $str_byte (local.get $b) (local.get $i)))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $c2)))
+  (local.get $p))

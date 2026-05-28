@@ -1,0 +1,66 @@
+;; Unit tests for value.watx + heap.watx, probed from Node.
+;; Each exported t_* returns 1 on pass, 0 on fail.
+(include "value.watx")
+(include "heap.watx")
+
+(func $t_number (result i32) (effects)
+  (let $v i64 (call $num (f64.const 3.5)))
+  (i32.and (call $is_number (local.get $v))
+           (f64.eq (call $tonum_raw (local.get $v)) (f64.const 3.5))))
+
+(func $t_nan_is_number (result i32) (effects)
+  ;; 0/0 NaN must read as a number (positive quiet NaN, sign bit 0)
+  (call $is_number (call $num (f64.div (f64.const 0) (f64.const 0)))))
+
+(func $t_undef (result i32) (effects)
+  (i32.and (call $is_undefined (call $v_undef))
+    (i32.and (i32.eqz (call $is_number (call $v_undef)))
+             (i32.eqz (call $truthy (call $v_undef))))))
+
+(func $t_bool (result i32) (effects)
+  (i32.and (call $truthy (call $v_true))
+    (i32.and (i32.eqz (call $truthy (call $v_false)))
+      (i32.and (call $is_boolean (call $v_true))
+               (i32.eq (call $val_payload (call $mk_bool (i32.const 7))) (i32.const 1))))))
+
+(func $t_null (result i32) (effects)
+  (i32.and (call $is_null (call $v_null))
+           (i32.eqz (call $truthy (call $v_null)))))
+
+(func $t_heap_alloc (result i32) (effects)
+  (call $heap_init)
+  (let $a i32 (call $heap_alloc (i32.const 5)))   ;; rounds to 8
+  (let $b i32 (call $heap_alloc (i32.const 1)))
+  (i32.and (i32.eq (local.get $a) (i32.const 131072))
+           (i32.eq (local.get $b) (i32.const 131080))))
+
+(func $t_str (result i32) (effects)
+  (call $heap_init)
+  ;; build "Hi" via str_alloc + set_byte, compare to cstring "Hi"
+  (let $s i32 (call $str_alloc (i32.const 2)))
+  (call $str_set_byte (local.get $s) (i32.const 0) (i32.const 72))  ;; 'H'
+  (call $str_set_byte (local.get $s) (i32.const 1) (i32.const 105)) ;; 'i'
+  (i32.and (i32.eq (call $str_len (local.get $s)) (i32.const 2))
+           (call $str_eq (local.get $s) (cstring "Hi"))))
+
+(func $t_str_concat (result i32) (effects)
+  (call $heap_init)
+  (call $str_eq (call $str_concat (cstring "foo") (cstring "bar")) (cstring "foobar")))
+
+(func $t_str_value (result i32) (effects)
+  (call $heap_init)
+  (let $v i64 (call $mk_str (cstring "abc")))
+  (i32.and (call $is_string (local.get $v))
+    (i32.and (i32.eqz (call $is_number (local.get $v)))
+      (i32.and (call $truthy (local.get $v))               ;; non-empty string truthy
+               (i32.eqz (call $truthy (call $mk_str (cstring ""))))))))  ;; empty falsy
+
+(wasm-export "t_number" $t_number)
+(wasm-export "t_nan_is_number" $t_nan_is_number)
+(wasm-export "t_undef" $t_undef)
+(wasm-export "t_bool" $t_bool)
+(wasm-export "t_null" $t_null)
+(wasm-export "t_heap_alloc" $t_heap_alloc)
+(wasm-export "t_str" $t_str)
+(wasm-export "t_str_concat" $t_str_concat)
+(wasm-export "t_str_value" $t_str_value)

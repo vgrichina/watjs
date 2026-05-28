@@ -390,6 +390,7 @@ function generateWasm(forms, loweredForms, checkResult) {
       'f64.convert_i64_s','f64.convert_i64_u',
       'i64.reinterpret_f64','f64.reinterpret_i64',
       'i32.load16_u','i32.load16_s','i32.load8_s','cstring',
+      'i64.store','f64.store','i32.store16',
     ];
     if (valueOps.includes(head)) return true;
     
@@ -1217,7 +1218,34 @@ function generateWasm(forms, loweredForms, checkResult) {
       bytes.push(OP.i32_const, ...encodeSLEB128(0));
       return bytes;
     }
-    
+    // ── watjs: i64 / f64 / 16-bit loads & stores ──
+    {
+      const loads = {
+        'i64.load':     [OP.i64_load, 0x03],
+        'f64.load':     [OP.f64_load, 0x03],
+        'i32.load16_u': [OP.i32_load16_u, 0x01],
+        'i32.load16_s': [OP.i32_load16_s, 0x01],
+        'i32.load8_s':  [OP.i32_load8_s, 0x00],
+      };
+      if (loads[head]) {
+        bytes.push(...compileExpr(expr[1], func, depth));
+        bytes.push(loads[head][0], loads[head][1], 0x00);
+        return bytes;
+      }
+      const stores = {
+        'i64.store':   [OP.i64_store, 0x03],
+        'f64.store':   [OP.f64_store, 0x03],
+        'i32.store16': [OP.i32_store16, 0x01],
+      };
+      if (stores[head]) {
+        bytes.push(...compileExpr(expr[1], func, depth));
+        bytes.push(...compileExpr(expr[2], func, depth));
+        bytes.push(stores[head][0], stores[head][1], 0x00);
+        bytes.push(OP.i32_const, ...encodeSLEB128(0)); // stores yield i32 0
+        return bytes;
+      }
+    }
+
     // ── global.get / global.set ──
     if (head === 'global.get') {
       const name = expr[1]?.value;
