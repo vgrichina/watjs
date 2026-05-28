@@ -1,0 +1,6 @@
+watjs.wasm
+test-out/
+node_modules/
+*.wasm
+!tools/**/*.wasm
+.DS_Store
