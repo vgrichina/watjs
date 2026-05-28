@@ -1,0 +1,294 @@
+;; ═══════════════════════════════════════════════════════════════
+;; eval.watx — Pratt / precedence-climbing parser+evaluator
+;;
+;; Phase 0: expressions only (no variables yet). Parse-and-evaluate:
+;; each parse_* consumes tokens via $next_token and returns a JSValue.
+;; Short-circuit (&& || ?:) uses a SUPPRESS flag (register 56): when set,
+;; side-effecting builtins (print) are skipped while tokens are still
+;; consumed, so the untaken branch parses but produces no output.
+;;
+;; On error: $throw sets ERR + ERR_VAL and parse_* funcs unwind by
+;; returning undefined (callers check $err()).
+;; ═══════════════════════════════════════════════════════════════
+
+(func $suppress (result i32) (effects) (i32.load (i32.const 56)))
+(func $set_suppress (param $v i32) (effects) (i32.store (i32.const 56) (local.get $v)))
+
+(func $throw (param $msg i32) (effects)
+  (if (i32.eqz (call $err))
+    (then (call $set_err (i32.const 1)) (call $set_err_val (call $mk_str (local.get $msg))))))
+
+(func $cur (result i32) (effects) (call $tok_kind))
+(func $advance (effects) (call $next_token))
+(func $eat (param $k i32) (result i32) (effects)  ;; if cur==k, advance & return 1
+  (if i32 (i32.eq (call $cur) (local.get $k))
+    (then (call $advance) (i32.const 1)) (else (i32.const 0))))
+(func $expect (param $k i32) (param $msg i32) (effects)
+  (if (i32.eqz (call $eat (local.get $k))) (then (call $throw (local.get $msg)))))
+
+;; ── operator helpers ──
+
+(func $str_cmp (param $a i32) (param $b i32) (result i32) (effects)  ;; -1/0/1
+  (let $la i32 (call $str_len (local.get $a)))
+  (let $lb i32 (call $str_len (local.get $b)))
+  (let $n i32 (if i32 (i32.lt_s (local.get $la) (local.get $lb)) (then (local.get $la)) (else (local.get $lb))))
+  (let $i i32 (i32.const 0))
+  (let $res i32 (i32.const 0))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ge_s (local.get $i) (local.get $n)))
+    (let $ca i32 (call $str_byte (local.get $a) (local.get $i)))
+    (let $cb i32 (call $str_byte (local.get $b) (local.get $i)))
+    (if (i32.lt_s (local.get $ca) (local.get $cb)) (then (set! $res (i32.const -1)) (br $brk)))
+    (if (i32.gt_s (local.get $ca) (local.get $cb)) (then (set! $res (i32.const 1)) (br $brk)))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cont)))
+  (if i32 (local.get $res) (then (local.get $res))
+    (else (if i32 (i32.lt_s (local.get $la) (local.get $lb)) (then (i32.const -1))
+          (else (if i32 (i32.gt_s (local.get $la) (local.get $lb)) (then (i32.const 1)) (else (i32.const 0))))))))
+
+(func $js_add (param $a i64) (param $b i64) (result i64) (effects)
+  (if i64 (i32.or (call $is_string (local.get $a)) (call $is_string (local.get $b)))
+    (then (call $mk_str (call $str_concat (call $to_str (local.get $a)) (call $to_str (local.get $b)))))
+    (else (call $num (f64.add (call $to_num (local.get $a)) (call $to_num (local.get $b)))))))
+
+(func $strict_eq (param $a i64) (param $b i64) (result i32) (effects)
+  (if i32 (call $is_number (local.get $a))
+    (then (if i32 (call $is_number (local.get $b))
+            (then (f64.eq (call $tonum_raw (local.get $a)) (call $tonum_raw (local.get $b))))
+            (else (i32.const 0))))
+    (else (if i32 (call $is_number (local.get $b))
+            (then (i32.const 0))
+            (else
+              (if i32 (i32.and (call $is_string (local.get $a)) (call $is_string (local.get $b)))
+                (then (call $str_eq (call $val_payload (local.get $a)) (call $val_payload (local.get $b))))
+                (else (if i32 (i32.ne (call $is_string (local.get $a)) (call $is_string (local.get $b)))
+                        (then (i32.const 0))
+                        (else (i64.eq (local.get $a) (local.get $b)))))))))))
+
+(func $loose_eq (param $a i64) (param $b i64) (result i32) (effects)
+  (if i32 (call $strict_eq (local.get $a) (local.get $b)) (then (i32.const 1))
+  (else
+    (let $an i32 (i32.or (call $is_null (local.get $a)) (call $is_undefined (local.get $a))))
+    (let $bn i32 (i32.or (call $is_null (local.get $b)) (call $is_undefined (local.get $b))))
+    (if i32 (i32.or (local.get $an) (local.get $bn))
+      (then (i32.and (local.get $an) (local.get $bn)))
+      (else
+        ;; number/string/bool primitives → compare as numbers
+        (let $ap i32 (i32.or (call $is_number (local.get $a)) (i32.or (call $is_string (local.get $a)) (call $is_boolean (local.get $a)))))
+        (let $bp i32 (i32.or (call $is_number (local.get $b)) (i32.or (call $is_string (local.get $b)) (call $is_boolean (local.get $b)))))
+        (if i32 (i32.and (local.get $ap) (local.get $bp))
+          (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
+          (else (i32.const 0))))))))
+
+;; relational compare: kind 29 < , 30 > , 31 <= , 32 >=
+(func $relate (param $a i64) (param $b i64) (param $kind i32) (result i64) (effects)
+  (if i64 (i32.and (call $is_string (local.get $a)) (call $is_string (local.get $b)))
+    (then
+      (let $c i32 (call $str_cmp (call $val_payload (local.get $a)) (call $val_payload (local.get $b))))
+      (call $mk_bool
+        (if i32 (i32.eq (local.get $kind) (i32.const 29)) (then (i32.lt_s (local.get $c) (i32.const 0)))
+        (else (if i32 (i32.eq (local.get $kind) (i32.const 30)) (then (i32.gt_s (local.get $c) (i32.const 0)))
+        (else (if i32 (i32.eq (local.get $kind) (i32.const 31)) (then (i32.le_s (local.get $c) (i32.const 0)))
+        (else (i32.ge_s (local.get $c) (i32.const 0))))))))))
+    (else
+      (let $x f64 (call $to_num (local.get $a)))
+      (let $y f64 (call $to_num (local.get $b)))
+      (call $mk_bool
+        (if i32 (i32.eq (local.get $kind) (i32.const 29)) (then (f64.lt (local.get $x) (local.get $y)))
+        (else (if i32 (i32.eq (local.get $kind) (i32.const 30)) (then (f64.gt (local.get $x) (local.get $y)))
+        (else (if i32 (i32.eq (local.get $kind) (i32.const 31)) (then (f64.le (local.get $x) (local.get $y)))
+        (else (f64.ge (local.get $x) (local.get $y))))))))))))
+
+;; ── builtin: print(args...) — console.log style (space-separated + newline) ──
+(func $parse_print (result i64) (effects)
+  (call $advance)  ;; consume '('  (caller ensured)
+  (let $first i32 (i32.const 1))
+  (block $brk (loop $cont
+    (br_if $brk (i32.eq (call $cur) (i32.const 16)))  ;; ')'
+    (br_if $brk (i32.eq (call $cur) (i32.const 0)))   ;; EOF
+    (if (i32.eqz (local.get $first)) (then (call $print_str (cstring " "))))
+    (set! $first (i32.const 0))
+    (let $v i64 (call $parse_assign))
+    (call $print_str (call $to_str (local.get $v)))
+    (br_if $brk (i32.eqz (call $eat (i32.const 22))))  ;; ',' else stop
+    (br $cont)))
+  (call $expect (i32.const 16) (cstring "expected )"))
+  (call $print_str (cstring "\n"))
+  (call $v_undef))
+
+;; ── primary ──
+(func $parse_primary (result i64) (effects)
+  (if (call $err) (then (return (call $v_undef))))
+  (let $k i32 (call $cur))
+  ;; number
+  (if (i32.eq (local.get $k) (i32.const 1))
+    (then (let $d f64 (call $tok_num)) (call $advance) (return (call $num (local.get $d)))))
+  ;; string
+  (if (i32.eq (local.get $k) (i32.const 2))
+    (then
+      (let $s i32 (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len)))
+      (call $advance) (return (call $mk_str (local.get $s)))))
+  ;; ( expr )
+  (if (i32.eq (local.get $k) (i32.const 15))
+    (then (call $advance)
+          (let $v i64 (call $parse_assign))
+          (call $expect (i32.const 16) (cstring "expected )"))
+          (return (local.get $v))))
+  ;; identifier / keyword
+  (if (i32.eq (local.get $k) (i32.const 3))
+    (then
+      (if (call $tok_is_kw (cstring "true")) (then (call $advance) (return (call $v_true))))
+      (if (call $tok_is_kw (cstring "false")) (then (call $advance) (return (call $v_false))))
+      (if (call $tok_is_kw (cstring "null")) (then (call $advance) (return (call $v_null))))
+      (if (call $tok_is_kw (cstring "undefined")) (then (call $advance) (return (call $v_undef))))
+      (if (call $tok_is_kw (cstring "NaN")) (then (call $advance) (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+      (if (call $tok_is_kw (cstring "Infinity")) (then (call $advance) (return (call $num (f64.div (f64.const 1) (f64.const 0))))))
+      (if (call $tok_is_kw (cstring "print"))
+        (then (call $advance)
+              (if (i32.eq (call $cur) (i32.const 15)) (then (return (call $parse_print)))
+                (else (call $throw (cstring "print is not a value")) (return (call $v_undef))))))
+      (call $throw (cstring "not defined")) (return (call $v_undef))))
+  (call $throw (cstring "unexpected token"))
+  (call $v_undef))
+
+;; ── unary: - + ! ──
+(func $parse_unary (result i64) (effects)
+  (let $k i32 (call $cur))
+  (if (i32.eq (local.get $k) (i32.const 11))  ;; -
+    (then (call $advance) (return (call $num (f64.neg (call $to_num (call $parse_unary)))))))
+  (if (i32.eq (local.get $k) (i32.const 10))  ;; +
+    (then (call $advance) (return (call $num (call $to_num (call $parse_unary))))))
+  (if (i32.eq (local.get $k) (i32.const 33))  ;; !
+    (then (call $advance) (return (call $mk_bool (i32.eqz (call $truthy (call $parse_unary)))))))
+  (call $parse_primary))
+
+;; ── multiplicative: * / % ──
+(func $parse_mul (result i64) (effects)
+  (let $left i64 (call $parse_unary))
+  (block $brk (loop $cont
+    (let $k i32 (call $cur))
+    (br_if $brk (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 12))
+                          (i32.or (i32.eq (local.get $k) (i32.const 13)) (i32.eq (local.get $k) (i32.const 14))))))
+    (call $advance)
+    (let $r i64 (call $parse_unary))
+    (let $x f64 (call $to_num (local.get $left)))
+    (let $y f64 (call $to_num (local.get $r)))
+    (set! $left (call $num
+      (if f64 (i32.eq (local.get $k) (i32.const 12)) (then (f64.mul (local.get $x) (local.get $y)))
+      (else (if f64 (i32.eq (local.get $k) (i32.const 13)) (then (f64.div (local.get $x) (local.get $y)))
+      (else (call $fmod (local.get $x) (local.get $y))))))))
+    (br $cont)))
+  (local.get $left))
+
+(func $fmod (param $x f64) (param $y f64) (result f64) (effects)
+  ;; x - trunc(x/y)*y
+  (f64.sub (local.get $x) (f64.mul (f64.trunc (f64.div (local.get $x) (local.get $y))) (local.get $y))))
+
+;; ── additive: + - ──
+(func $parse_add (result i64) (effects)
+  (let $left i64 (call $parse_mul))
+  (block $brk (loop $cont
+    (let $k i32 (call $cur))
+    (br_if $brk (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 10)) (i32.eq (local.get $k) (i32.const 11)))))
+    (call $advance)
+    (let $r i64 (call $parse_mul))
+    (if (i32.eq (local.get $k) (i32.const 10))
+      (then (set! $left (call $js_add (local.get $left) (local.get $r))))
+      (else (set! $left (call $num (f64.sub (call $to_num (local.get $left)) (call $to_num (local.get $r)))))))
+    (br $cont)))
+  (local.get $left))
+
+;; ── relational: < > <= >= ──
+(func $parse_rel (result i64) (effects)
+  (let $left i64 (call $parse_add))
+  (block $brk (loop $cont
+    (let $k i32 (call $cur))
+    (br_if $brk (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 29)) (i32.or (i32.eq (local.get $k) (i32.const 30))
+                          (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.eq (local.get $k) (i32.const 32)))))))
+    (call $advance)
+    (let $r i64 (call $parse_add))
+    (set! $left (call $relate (local.get $left) (local.get $r) (local.get $k)))
+    (br $cont)))
+  (local.get $left))
+
+;; ── equality: == != === !== ──
+(func $parse_eq (result i64) (effects)
+  (let $left i64 (call $parse_rel))
+  (block $brk (loop $cont
+    (let $k i32 (call $cur))
+    (br_if $brk (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 25)) (i32.or (i32.eq (local.get $k) (i32.const 27))
+                          (i32.or (i32.eq (local.get $k) (i32.const 26)) (i32.eq (local.get $k) (i32.const 28)))))))
+    (call $advance)
+    (let $r i64 (call $parse_rel))
+    (set! $left (call $mk_bool
+      (if i32 (i32.eq (local.get $k) (i32.const 25)) (then (call $loose_eq (local.get $left) (local.get $r)))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 27)) (then (i32.eqz (call $loose_eq (local.get $left) (local.get $r))))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 26)) (then (call $strict_eq (local.get $left) (local.get $r)))
+      (else (i32.eqz (call $strict_eq (local.get $left) (local.get $r)))))))))))
+    (br $cont)))
+  (local.get $left))
+
+;; ── logical AND (&&) with short-circuit ──
+(func $parse_and (result i64) (effects)
+  (let $left i64 (call $parse_eq))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ne (call $cur) (i32.const 34)))
+    (call $advance)
+    (if (call $truthy (local.get $left))
+      (then (set! $left (call $parse_eq)))
+      (else  ;; left falsy: keep it, suppress evaluation of right
+        (call $set_suppress (i32.add (call $suppress) (i32.const 1)))
+        (drop (call $parse_eq))
+        (call $set_suppress (i32.sub (call $suppress) (i32.const 1)))))
+    (br $cont)))
+  (local.get $left))
+
+;; ── logical OR (||) with short-circuit ──
+(func $parse_or (result i64) (effects)
+  (let $left i64 (call $parse_and))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ne (call $cur) (i32.const 35)))
+    (call $advance)
+    (if (call $truthy (local.get $left))
+      (then  ;; left truthy: keep it, suppress right
+        (call $set_suppress (i32.add (call $suppress) (i32.const 1)))
+        (drop (call $parse_and))
+        (call $set_suppress (i32.sub (call $suppress) (i32.const 1))))
+      (else (set! $left (call $parse_and))))
+    (br $cont)))
+  (local.get $left))
+
+;; ── ternary ?: ──
+(func $parse_ternary (result i64) (effects)
+  (let $cond i64 (call $parse_or))
+  (if i64 (i32.eq (call $cur) (i32.const 36))  ;; ?
+    (then
+      (call $advance)
+      (if i64 (call $truthy (local.get $cond))
+        (then
+          (let $a i64 (call $parse_assign))
+          (call $expect (i32.const 37) (cstring "expected :"))
+          (call $set_suppress (i32.add (call $suppress) (i32.const 1)))
+          (drop (call $parse_assign))
+          (call $set_suppress (i32.sub (call $suppress) (i32.const 1)))
+          (local.get $a))
+        (else
+          (call $set_suppress (i32.add (call $suppress) (i32.const 1)))
+          (drop (call $parse_assign))
+          (call $set_suppress (i32.sub (call $suppress) (i32.const 1)))
+          (call $expect (i32.const 37) (cstring "expected :"))
+          (call $parse_assign))))
+    (else (local.get $cond))))
+
+;; assignment level (no targets yet in Phase 0) = ternary
+(func $parse_assign (result i64) (effects) (call $parse_ternary))
+
+;; ── statement / program ──
+(func $eval_program (effects)
+  (call $advance)  ;; load first token
+  (block $brk (loop $cont
+    (br_if $brk (i32.eq (call $cur) (i32.const 0)))  ;; EOF
+    (br_if $brk (call $err))
+    (drop (call $parse_assign))
+    (drop (call $eat (i32.const 21)))  ;; optional ';'
+    (br $cont))))

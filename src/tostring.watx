@@ -1,0 +1,149 @@
+;; ═══════════════════════════════════════════════════════════════
+;; tostring.watx — ToString / ToNumber
+;;
+;; Number formatting uses a scratch buffer at address 256 (inside the
+;; register zone, after the registers) and copies the result into a
+;; heap Str via $str_from_src (which takes an absolute source address).
+;;
+;; NOTE: fractional formatting is approximate (up to 15 digits, trailing
+;; zeros trimmed) — not the spec's shortest-round-trip. Integers are exact.
+;; ═══════════════════════════════════════════════════════════════
+
+(func $scratch (result i32) (effects) (i32.const 256))
+
+;; Format a non-negative i64 into scratch[start..], return new index (end).
+(func $emit_u64 (param $start i32) (param $val i64) (result i32) (effects)
+  (if i32 (i64.eqz (local.get $val))
+    (then
+      (i32.store8 (i32.add (call $scratch) (local.get $start)) (i32.const 48)) ;; '0'
+      (i32.add (local.get $start) (i32.const 1)))
+    (else
+      ;; write digits backward into a 24-byte temp at scratch+200
+      (let $tmp i32 (i32.add (call $scratch) (i32.const 200)))
+      (let $i i32 (i32.const 24))
+      (block $de (loop $dl
+        (br_if $de (i64.eqz (local.get $val)))
+        (set! $i (i32.sub (local.get $i) (i32.const 1)))
+        (i32.store8 (i32.add (local.get $tmp) (local.get $i))
+          (i32.add (i32.const 48) (i32.wrap_i64 (i64.rem_u (local.get $val) (i64.const 10)))))
+        (set! $val (i64.div_u (local.get $val) (i64.const 10)))
+        (br $dl)))
+      ;; copy temp[i..24) forward into scratch[start..]
+      (let $j i32 (local.get $start))
+      (block $ce (loop $cl
+        (br_if $ce (i32.ge_s (local.get $i) (i32.const 24)))
+        (i32.store8 (i32.add (call $scratch) (local.get $j)) (i32.load8_u (i32.add (local.get $tmp) (local.get $i))))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (set! $j (i32.add (local.get $j) (i32.const 1)))
+        (br $cl)))
+      (local.get $j))))
+
+;; Convert a number (f64) to a heap Str.
+(func $num_to_str (param $d f64) (result i32) (effects)
+  ;; NaN
+  (if (f64.ne (local.get $d) (local.get $d)) (then (return (cstring "NaN"))))
+  ;; +/- Infinity
+  (if (f64.eq (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (then (return (cstring "Infinity"))))
+  (if (f64.eq (local.get $d) (f64.div (f64.const -1) (f64.const 0))) (then (return (cstring "-Infinity"))))
+  ;; zero
+  (if (f64.eq (local.get $d) (f64.const 0)) (then (return (cstring "0"))))
+
+  (let $n i32 (i32.const 0))  ;; scratch index
+  (let $neg i32 (f64.lt (local.get $d) (f64.const 0)))
+  (let $ax f64 (f64.abs (local.get $d)))
+  (if (local.get $neg)
+    (then (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.const 45)) ;; '-'
+          (set! $n (i32.add (local.get $n) (i32.const 1)))))
+
+  (let $ipart f64 (f64.floor (local.get $ax)))
+  (let $frac f64 (f64.sub (local.get $ax) (local.get $ipart)))
+
+  ;; integer part (assume < 9.2e18 so i64 fits; otherwise approximate)
+  (set! $n (call $emit_u64 (local.get $n) (i64.trunc_f64_u (local.get $ipart))))
+
+  ;; fractional part
+  (if (f64.gt (local.get $frac) (f64.const 0))
+    (then
+      (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.const 46)) ;; '.'
+      (set! $n (i32.add (local.get $n) (i32.const 1)))
+      (let $k i32 (i32.const 0))
+      (let $lastnz i32 (local.get $n))  ;; index after last non-zero digit
+      (block $fe (loop $fl
+        (br_if $fe (i32.ge_s (local.get $k) (i32.const 15)))
+        (set! $frac (f64.mul (local.get $frac) (f64.const 10)))
+        (let $dig i32 (i32.trunc_f64_s (f64.floor (local.get $frac))))
+        (set! $frac (f64.sub (local.get $frac) (f64.convert_i32_s (local.get $dig))))
+        (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.add (i32.const 48) (local.get $dig)))
+        (set! $n (i32.add (local.get $n) (i32.const 1)))
+        (if (i32.ne (local.get $dig) (i32.const 0)) (then (set! $lastnz (local.get $n))))
+        (br_if $fe (f64.eq (local.get $frac) (f64.const 0)))
+        (set! $k (i32.add (local.get $k) (i32.const 1)))
+        (br $fl)))
+      (set! $n (local.get $lastnz))))  ;; trim trailing zeros
+
+  (call $str_from_src (call $scratch) (local.get $n)))
+
+;; ToString of any JSValue → heap Str pointer.
+(func $to_str (param $v i64) (result i32) (effects)
+  (if i32 (call $is_number (local.get $v))
+    (then (call $num_to_str (call $tonum_raw (local.get $v))))
+    (else
+      (if i32 (call $is_string (local.get $v)) (then (call $val_payload (local.get $v)))
+      (else (if i32 (call $is_undefined (local.get $v)) (then (cstring "undefined"))
+      (else (if i32 (call $is_null (local.get $v)) (then (cstring "null"))
+      (else (if i32 (call $is_boolean (local.get $v))
+               (then (if i32 (call $val_payload (local.get $v)) (then (cstring "true")) (else (cstring "false"))))
+      (else (cstring "[object Object]"))))))))))))
+
+;; ToNumber of any JSValue → f64.
+(func $to_num (param $v i64) (result f64) (effects)
+  (if f64 (call $is_number (local.get $v))
+    (then (call $tonum_raw (local.get $v)))
+    (else
+      (if f64 (call $is_boolean (local.get $v))
+        (then (f64.convert_i32_s (call $val_payload (local.get $v))))
+      (else (if f64 (call $is_null (local.get $v)) (then (f64.const 0))
+      (else (if f64 (call $is_string (local.get $v))
+               (then (call $str_to_num (call $val_payload (local.get $v))))
+      (else (f64.div (f64.const 0) (f64.const 0)))))))))))  ;; undefined/object → NaN
+
+;; Parse a string object as a number (decimal). Empty/whitespace → 0; bad → NaN.
+;; Minimal: optional sign, digits, optional fraction. Leading/trailing spaces ok.
+(func $str_to_num (param $s i32) (result f64) (effects)
+  (let $len i32 (call $str_len (local.get $s)))
+  (let $i i32 (i32.const 0))
+  ;; skip leading spaces
+  (block $sl1 (loop $ll1
+    (br_if $sl1 (i32.ge_s (local.get $i) (local.get $len)))
+    (br_if $sl1 (i32.ne (call $str_byte (local.get $s) (local.get $i)) (i32.const 32)))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ll1)))
+  (if f64 (i32.ge_s (local.get $i) (local.get $len)) (then (f64.const 0)) ;; all spaces → 0
+  (else
+    (let $sign f64 (f64.const 1))
+    (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
+    (if (i32.eq (local.get $c) (i32.const 43)) (then (set! $i (i32.add (local.get $i) (i32.const 1)))))
+    (if (i32.eq (local.get $c) (i32.const 45)) (then (set! $sign (f64.const -1)) (set! $i (i32.add (local.get $i) (i32.const 1)))))
+    (let $val f64 (f64.const 0))
+    (let $any i32 (i32.const 0))
+    (block $ie (loop $il
+      (br_if $ie (i32.ge_s (local.get $i) (local.get $len)))
+      (let $d i32 (call $str_byte (local.get $s) (local.get $i)))
+      (br_if $ie (i32.eqz (i32.and (i32.ge_s (local.get $d) (i32.const 48)) (i32.le_s (local.get $d) (i32.const 57)))))
+      (set! $val (f64.add (f64.mul (local.get $val) (f64.const 10)) (f64.convert_i32_s (i32.sub (local.get $d) (i32.const 48)))))
+      (set! $any (i32.const 1))
+      (set! $i (i32.add (local.get $i) (i32.const 1))) (br $il)))
+    ;; fraction
+    (if (i32.and (i32.lt_s (local.get $i) (local.get $len)) (i32.eq (call $str_byte (local.get $s) (local.get $i)) (i32.const 46)))
+      (then
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (let $sc f64 (f64.const 0.1))
+        (block $fe (loop $fl
+          (br_if $fe (i32.ge_s (local.get $i) (local.get $len)))
+          (let $d i32 (call $str_byte (local.get $s) (local.get $i)))
+          (br_if $fe (i32.eqz (i32.and (i32.ge_s (local.get $d) (i32.const 48)) (i32.le_s (local.get $d) (i32.const 57)))))
+          (set! $val (f64.add (local.get $val) (f64.mul (f64.convert_i32_s (i32.sub (local.get $d) (i32.const 48))) (local.get $sc))))
+          (set! $sc (f64.mul (local.get $sc) (f64.const 0.1)))
+          (set! $any (i32.const 1))
+          (set! $i (i32.add (local.get $i) (i32.const 1))) (br $fl)))))
+    (if f64 (i32.eqz (local.get $any)) (then (f64.div (f64.const 0) (f64.const 0)))
+      (else (f64.mul (local.get $sign) (local.get $val)))))))

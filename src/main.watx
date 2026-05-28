@@ -1,0 +1,46 @@
+;; ═══════════════════════════════════════════════════════════════
+;; main.watx — watjs entry module
+;;   imports: print, host_throw, host_panic, now_ms
+;;   exports: memory, alloc_input(len)->ptr, eval(ptr,len)->i32
+;; ═══════════════════════════════════════════════════════════════
+
+(wasm-import "env" "print"      (func $print      (param i32 i32)))
+(wasm-import "env" "host_throw" (func $host_throw (param i32 i32)))
+(wasm-import "env" "host_panic" (func $host_panic (param i32 i32)))
+(wasm-import "env" "now_ms"     (func $now_ms     (result f64)))
+
+(include "value.watx")
+(include "heap.watx")
+(include "lex.watx")
+(include "tostring.watx")
+(include "eval.watx")
+
+;; Output a heap string via the host, unless suppressed (short-circuit branch).
+(func $print_str (param $s i32) (effects)
+  (if (i32.eqz (call $suppress))
+    (then (call $print (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s))))))
+
+;; Reserve `len` bytes for the source. Resets the heap; host writes source here.
+(func $alloc_input (param $len i32) (result i32)
+  (effects)
+  (call $heap_init)
+  (call $heap_alloc (local.get $len)))
+
+;; Evaluate source at [ptr,len). Returns 0 on normal completion, 1 if an
+;; uncaught exception propagated (its message is sent to host_throw).
+(func $eval (param $ptr i32) (param $len i32) (result i32)
+  (effects)
+  (call $set_src (local.get $ptr) (local.get $len))
+  (call $set_err (i32.const 0))
+  (call $set_suppress (i32.const 0))
+  (call $lex_init)
+  (call $eval_program)
+  (if i32 (call $err)
+    (then
+      (let $s i32 (call $to_str (call $err_val)))
+      (call $host_throw (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)))
+      (i32.const 1))
+    (else (i32.const 0))))
+
+(wasm-export "alloc_input" $alloc_input)
+(wasm-export "eval" $eval)
