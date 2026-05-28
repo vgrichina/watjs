@@ -1,0 +1,249 @@
+;; ═══════════════════════════════════════════════════════════════
+;; lex.watx — tokenizer
+;;
+;; Produces one token at a time, advancing POS. State in registers:
+;;   TOK_KIND (20), TOK_START (24), TOK_LEN (28), TOK_NUM (32:f64)
+;;
+;; Token kinds:
+;;   0 EOF  1 NUM  2 STR  3 IDENT
+;;   operators/punct: see constants below (each its own kind)
+;; ═══════════════════════════════════════════════════════════════
+
+;; --- token register accessors ---
+(func $tok_kind (result i32) (effects) (i32.load (i32.const 20)))
+(func $tok_start (result i32) (effects) (i32.load (i32.const 24)))
+(func $tok_len (result i32) (effects) (i32.load (i32.const 28)))
+(func $tok_num (result f64) (effects) (f64.load (i32.const 32)))
+(func $set_tok (param $k i32) (param $s i32) (param $l i32) (effects)
+  (i32.store (i32.const 20) (local.get $k))
+  (i32.store (i32.const 24) (local.get $s))
+  (i32.store (i32.const 28) (local.get $l)))
+(func $pos (result i32) (effects) (i32.load (i32.const 12)))
+(func $set_pos (param $p i32) (effects) (i32.store (i32.const 12) (local.get $p)))
+
+(func $lex_init (effects) (call $set_pos (i32.const 0)))
+
+;; byte at src+pos+offset, or -1 past end
+(func $ch_at (param $off i32) (result i32) (effects)
+  (let $i i32 (i32.add (call $pos) (local.get $off)))
+  (if i32 (i32.ge_s (local.get $i) (call $src_len))
+    (then (i32.const -1))
+    (else (i32.load8_u (i32.add (call $src) (local.get $i))))))
+
+(func $is_space (param $c i32) (result i32) (effects)
+  (i32.or (i32.eq (local.get $c) (i32.const 32))
+    (i32.or (i32.eq (local.get $c) (i32.const 9))
+      (i32.or (i32.eq (local.get $c) (i32.const 10))
+              (i32.eq (local.get $c) (i32.const 13))))))
+
+(func $is_digit (param $c i32) (result i32) (effects)
+  (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))))
+
+(func $is_alpha (param $c i32) (result i32) (effects)
+  (i32.or
+    (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 90)))   ;; A-Z
+    (i32.or
+      (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 122))) ;; a-z
+      (i32.or (i32.eq (local.get $c) (i32.const 95))      ;; _
+              (i32.eq (local.get $c) (i32.const 36))))))  ;; $
+
+(func $is_alnum (param $c i32) (result i32) (effects)
+  (i32.or (call $is_alpha (local.get $c)) (call $is_digit (local.get $c))))
+
+;; Skip whitespace and // line / /* block comments.
+(func $skip_trivia (effects)
+  (block $done
+    (loop $again
+      (let $c i32 (call $ch_at (i32.const 0)))
+      (if (call $is_space (local.get $c))
+        (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $again)))
+      ;; // line comment
+      (if (i32.and (i32.eq (local.get $c) (i32.const 47)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 47)))
+        (then
+          (block $eol (loop $sl
+            (let $d i32 (call $ch_at (i32.const 0)))
+            (br_if $eol (i32.eq (local.get $d) (i32.const -1)))
+            (br_if $eol (i32.eq (local.get $d) (i32.const 10)))
+            (call $set_pos (i32.add (call $pos) (i32.const 1)))
+            (br $sl)))
+          (br $again)))
+      ;; /* block comment */
+      (if (i32.and (i32.eq (local.get $c) (i32.const 47)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 42)))
+        (then
+          (call $set_pos (i32.add (call $pos) (i32.const 2)))
+          (block $endc (loop $bl
+            (let $d i32 (call $ch_at (i32.const 0)))
+            (br_if $endc (i32.eq (local.get $d) (i32.const -1)))
+            (if (i32.and (i32.eq (local.get $d) (i32.const 42)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 47)))
+              (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $endc)))
+            (call $set_pos (i32.add (call $pos) (i32.const 1)))
+            (br $bl)))
+          (br $again)))
+      (br $done))))
+
+;; Lex a number starting at POS. Sets TOK_KIND=1, TOK_NUM, advances POS.
+(func $lex_number (effects)
+  (let $start i32 (call $pos))
+  (let $val f64 (f64.const 0))
+  ;; integer part
+  (block $ie (loop $il
+    (let $c i32 (call $ch_at (i32.const 0)))
+    (br_if $ie (i32.eqz (call $is_digit (local.get $c))))
+    (set! $val (f64.add (f64.mul (local.get $val) (f64.const 10))
+                        (f64.convert_i32_s (i32.sub (local.get $c) (i32.const 48)))))
+    (call $set_pos (i32.add (call $pos) (i32.const 1)))
+    (br $il)))
+  ;; fraction
+  (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 46))  ;; '.'
+    (then
+      (call $set_pos (i32.add (call $pos) (i32.const 1)))
+      (let $scale f64 (f64.const 0.1))
+      (block $fe (loop $fl
+        (let $c i32 (call $ch_at (i32.const 0)))
+        (br_if $fe (i32.eqz (call $is_digit (local.get $c))))
+        (set! $val (f64.add (local.get $val)
+                    (f64.mul (f64.convert_i32_s (i32.sub (local.get $c) (i32.const 48))) (local.get $scale))))
+        (set! $scale (f64.mul (local.get $scale) (f64.const 0.1)))
+        (call $set_pos (i32.add (call $pos) (i32.const 1)))
+        (br $fl)))))
+  ;; exponent
+  (let $c0 i32 (call $ch_at (i32.const 0)))
+  (if (i32.or (i32.eq (local.get $c0) (i32.const 101)) (i32.eq (local.get $c0) (i32.const 69)))  ;; e/E
+    (then
+      (call $set_pos (i32.add (call $pos) (i32.const 1)))
+      (let $esign f64 (f64.const 1))
+      (let $ec i32 (call $ch_at (i32.const 0)))
+      (if (i32.eq (local.get $ec) (i32.const 43)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))
+      (if (i32.eq (local.get $ec) (i32.const 45)) (then (set! $esign (f64.const -1)) (call $set_pos (i32.add (call $pos) (i32.const 1)))))
+      (let $exp f64 (f64.const 0))
+      (block $ee (loop $el
+        (let $c i32 (call $ch_at (i32.const 0)))
+        (br_if $ee (i32.eqz (call $is_digit (local.get $c))))
+        (set! $exp (f64.add (f64.mul (local.get $exp) (f64.const 10))
+                            (f64.convert_i32_s (i32.sub (local.get $c) (i32.const 48)))))
+        (call $set_pos (i32.add (call $pos) (i32.const 1)))
+        (br $el)))
+      (set! $val (f64.mul (local.get $val) (call $pow10 (f64.mul (local.get $esign) (local.get $exp)))))))
+  (f64.store (i32.const 32) (local.get $val))
+  (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start))))
+
+;; 10^e for integer-ish e (handles +/-), by repeated mult.
+(func $pow10 (param $e f64) (result f64) (effects)
+  (let $n i32 (i32.trunc_f64_s (call $abs64 (local.get $e))))
+  (let $r f64 (f64.const 1))
+  (let $i i32 (i32.const 0))
+  (block $be (loop $bl
+    (br_if $be (i32.ge_s (local.get $i) (local.get $n)))
+    (set! $r (f64.mul (local.get $r) (f64.const 10)))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $bl)))
+  (if f64 (f64.lt (local.get $e) (f64.const 0))
+    (then (f64.div (f64.const 1) (local.get $r)))
+    (else (local.get $r))))
+
+(func $abs64 (param $x f64) (result f64) (effects) (f64.abs (local.get $x)))
+
+;; Lex an identifier/keyword. Sets TOK_KIND=3, TOK_START, TOK_LEN.
+(func $lex_ident (effects)
+  (let $start i32 (call $pos))
+  (block $ie (loop $il
+    (br_if $ie (i32.eqz (call $is_alnum (call $ch_at (i32.const 0)))))
+    (call $set_pos (i32.add (call $pos) (i32.const 1)))
+    (br $il)))
+  (call $set_tok (i32.const 3) (local.get $start) (i32.sub (call $pos) (local.get $start))))
+
+;; Lex a string literal. TOK_KIND=2, TOK_START/TOK_LEN = raw content (no escapes yet).
+(func $lex_string (param $quote i32) (effects)
+  (call $set_pos (i32.add (call $pos) (i32.const 1)))  ;; skip opening quote
+  (let $start i32 (call $pos))
+  (block $se (loop $sl
+    (let $c i32 (call $ch_at (i32.const 0)))
+    (br_if $se (i32.eq (local.get $c) (i32.const -1)))
+    (br_if $se (i32.eq (local.get $c) (local.get $quote)))
+    (call $set_pos (i32.add (call $pos) (i32.const 1)))
+    (br $sl)))
+  (call $set_tok (i32.const 2) (local.get $start) (i32.sub (call $pos) (local.get $start)))
+  (call $set_pos (i32.add (call $pos) (i32.const 1))))  ;; skip closing quote
+
+;; helper: emit a single/double-char operator token of kind $k spanning $n chars
+(func $op_tok (param $k i32) (param $n i32) (effects)
+  (call $set_tok (local.get $k) (call $pos) (local.get $n))
+  (call $set_pos (i32.add (call $pos) (local.get $n))))
+
+;; Read the next token into the TOK_* registers.
+(func $next_token (effects)
+  (call $skip_trivia)
+  (let $c i32 (call $ch_at (i32.const 0)))
+  (let $c1 i32 (call $ch_at (i32.const 1)))
+  (let $c2 i32 (call $ch_at (i32.const 2)))
+  (if (i32.eq (local.get $c) (i32.const -1)) (then (call $set_tok (i32.const 0) (call $pos) (i32.const 0)) (return)))
+  (if (call $is_digit (local.get $c)) (then (call $lex_number) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 46)) (call $is_digit (local.get $c1)))
+    (then (call $lex_number) (return)))  ;; .5
+  (if (call $is_alpha (local.get $c)) (then (call $lex_ident) (return)))
+  (if (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const 39)))
+    (then (call $lex_string (local.get $c)) (return)))  ;; " or '
+
+  ;; 3-char: === !==
+  (if (i32.and (i32.eq (local.get $c) (i32.const 61)) (i32.and (i32.eq (local.get $c1) (i32.const 61)) (i32.eq (local.get $c2) (i32.const 61))))
+    (then (call $op_tok (i32.const 26) (i32.const 3)) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 33)) (i32.and (i32.eq (local.get $c1) (i32.const 61)) (i32.eq (local.get $c2) (i32.const 61))))
+    (then (call $op_tok (i32.const 28) (i32.const 3)) (return)))
+
+  ;; 2-char: == != <= >= && || ++ --
+  (if (i32.and (i32.eq (local.get $c) (i32.const 61)) (i32.eq (local.get $c1) (i32.const 61)))
+    (then (call $op_tok (i32.const 25) (i32.const 2)) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 33)) (i32.eq (local.get $c1) (i32.const 61)))
+    (then (call $op_tok (i32.const 27) (i32.const 2)) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 60)) (i32.eq (local.get $c1) (i32.const 61)))
+    (then (call $op_tok (i32.const 31) (i32.const 2)) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 62)) (i32.eq (local.get $c1) (i32.const 61)))
+    (then (call $op_tok (i32.const 32) (i32.const 2)) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 38)) (i32.eq (local.get $c1) (i32.const 38)))
+    (then (call $op_tok (i32.const 34) (i32.const 2)) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 124)) (i32.eq (local.get $c1) (i32.const 124)))
+    (then (call $op_tok (i32.const 35) (i32.const 2)) (return)))
+
+  ;; 1-char punctuation/operators
+  (if (i32.eq (local.get $c) (i32.const 43)) (then (call $op_tok (i32.const 10) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 45)) (then (call $op_tok (i32.const 11) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 42)) (then (call $op_tok (i32.const 12) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 47)) (then (call $op_tok (i32.const 13) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 37)) (then (call $op_tok (i32.const 14) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 40)) (then (call $op_tok (i32.const 15) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 41)) (then (call $op_tok (i32.const 16) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 123)) (then (call $op_tok (i32.const 17) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 125)) (then (call $op_tok (i32.const 18) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 91)) (then (call $op_tok (i32.const 19) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 93)) (then (call $op_tok (i32.const 20) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 59)) (then (call $op_tok (i32.const 21) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 44)) (then (call $op_tok (i32.const 22) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 46)) (then (call $op_tok (i32.const 23) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 61)) (then (call $op_tok (i32.const 24) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 60)) (then (call $op_tok (i32.const 29) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 62)) (then (call $op_tok (i32.const 30) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 33)) (then (call $op_tok (i32.const 33) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 63)) (then (call $op_tok (i32.const 36) (i32.const 1)) (return)))
+  (if (i32.eq (local.get $c) (i32.const 58)) (then (call $op_tok (i32.const 37) (i32.const 1)) (return)))
+  ;; unknown char — emit EOF to stop (parser will error)
+  (call $set_tok (i32.const 0) (call $pos) (i32.const 0)))
+
+;; Does the current IDENT token equal the given cstring?
+(func $tok_is_kw (param $cstr i32) (result i32) (effects)
+  (if i32 (i32.ne (call $tok_kind) (i32.const 3))
+    (then (i32.const 0))
+    (else
+      (let $n i32 (call $str_len (local.get $cstr)))
+      (if i32 (i32.ne (local.get $n) (call $tok_len))
+        (then (i32.const 0))
+        (else
+          (let $i i32 (i32.const 0))
+          (let $ok i32 (i32.const 1))
+          (block $brk (loop $cont
+            (br_if $brk (i32.ge_s (local.get $i) (local.get $n)))
+            (if (i32.ne (i32.load8_u (i32.add (i32.add (call $src) (call $tok_start)) (local.get $i)))
+                        (call $str_byte (local.get $cstr) (local.get $i)))
+              (then (set! $ok (i32.const 0)) (br $brk)))
+            (set! $i (i32.add (local.get $i) (i32.const 1)))
+            (br $cont)))
+          (local.get $ok))))))

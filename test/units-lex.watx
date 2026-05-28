@@ -1,0 +1,73 @@
+;; Lexer unit probes.
+(include "value.watx")
+(include "heap.watx")
+(include "lex.watx")
+
+;; point SRC at a cstring's bytes and reset the cursor
+(func $use_src (param $cs i32) (effects)
+  (call $set_src (i32.add (local.get $cs) (i32.const 4)) (call $str_len (local.get $cs)))
+  (call $lex_init))
+
+(func $t_nums (result i32) (effects)
+  (call $heap_init)
+  (call $use_src (cstring "12 + 3.5"))
+  (call $next_token)  ;; 12
+  (let $ok i32 (i32.and (i32.eq (call $tok_kind) (i32.const 1))
+                        (f64.eq (call $tok_num) (f64.const 12))))
+  (call $next_token)  ;; +
+  (set! $ok (i32.and (local.get $ok) (i32.eq (call $tok_kind) (i32.const 10))))
+  (call $next_token)  ;; 3.5
+  (set! $ok (i32.and (local.get $ok) (i32.and (i32.eq (call $tok_kind) (i32.const 1))
+                                              (f64.eq (call $tok_num) (f64.const 3.5)))))
+  (call $next_token)  ;; EOF
+  (i32.and (local.get $ok) (i32.eq (call $tok_kind) (i32.const 0))))
+
+(func $t_exp (result i32) (effects)
+  (call $heap_init)
+  (call $use_src (cstring "1e3"))
+  (call $next_token)
+  (i32.and (i32.eq (call $tok_kind) (i32.const 1)) (f64.eq (call $tok_num) (f64.const 1000))))
+
+(func $t_ops (result i32) (effects)
+  (call $heap_init)
+  (call $use_src (cstring "=== == = <= >="))
+  (call $next_token) (let $a i32 (call $tok_kind))
+  (call $next_token) (let $b i32 (call $tok_kind))
+  (call $next_token) (let $c i32 (call $tok_kind))
+  (call $next_token) (let $d i32 (call $tok_kind))
+  (call $next_token) (let $e i32 (call $tok_kind))
+  (i32.and (i32.eq (local.get $a) (i32.const 26))
+    (i32.and (i32.eq (local.get $b) (i32.const 25))
+      (i32.and (i32.eq (local.get $c) (i32.const 24))
+        (i32.and (i32.eq (local.get $d) (i32.const 31))
+                 (i32.eq (local.get $e) (i32.const 32)))))))
+
+(func $t_ident_kw (result i32) (effects)
+  (call $heap_init)
+  (call $use_src (cstring "print foo"))
+  (call $next_token)
+  (let $ok i32 (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "print"))))
+  (set! $ok (i32.and (local.get $ok) (i32.eqz (call $tok_is_kw (cstring "foo")))))
+  (call $next_token)
+  (i32.and (local.get $ok) (call $tok_is_kw (cstring "foo"))))
+
+(func $t_string (result i32) (effects)
+  (call $heap_init)
+  (call $use_src (cstring "'hi'"))
+  (call $next_token)
+  ;; STR token, content "hi"
+  (i32.and (i32.eq (call $tok_kind) (i32.const 2))
+    (call $str_eq (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "hi"))))
+
+(func $t_comments (result i32) (effects)
+  (call $heap_init)
+  (call $use_src (cstring "/* x */ 7 // tail"))
+  (call $next_token)
+  (i32.and (i32.eq (call $tok_kind) (i32.const 1)) (f64.eq (call $tok_num) (f64.const 7))))
+
+(wasm-export "t_nums" $t_nums)
+(wasm-export "t_exp" $t_exp)
+(wasm-export "t_ops" $t_ops)
+(wasm-export "t_ident_kw" $t_ident_kw)
+(wasm-export "t_string" $t_string)
+(wasm-export "t_comments" $t_comments)
