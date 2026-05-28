@@ -75,12 +75,57 @@
   (if (call $is_object (local.get $cont))
     (then
       (let $o i32 (call $val_payload (local.get $cont)))
-      (let $slot i32 (call $scope_find_local (local.get $o) (call $to_str (local.get $key))))
+      ;; scope_find walks the parent chain = prototype chain
+      (let $slot i32 (call $scope_find (local.get $o) (call $to_str (local.get $key))))
       (if (local.get $slot) (then (return (i64.load (local.get $slot)))))
+      (return (call $v_undef))))
+  (if (call $is_function (local.get $cont))
+    (then
+      (let $fn i32 (call $val_payload (local.get $cont)))
+      (let $ks i32 (call $to_str (local.get $key)))
+      (if (call $str_eq (local.get $ks) (cstring "prototype")) (then (return (call $fn_get_prototype (local.get $fn)))))
+      (let $props i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
+      (if (local.get $props)
+        (then
+          (let $slot i32 (call $scope_find (local.get $props) (local.get $ks)))
+          (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
       (return (call $v_undef))))
   ;; undefined / null → TypeError
   (call $throw (cstring "cannot read property of null or undefined"))
   (call $v_undef))
+
+;; get-or-create a function's property map
+(func $fn_props (param $fn i32) (result i32) (effects)
+  (let $p i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
+  (if i32 (local.get $p) (then (local.get $p))
+    (else
+      (let $np i32 (call $scope_new (i32.const 0) (i32.const 16)))
+      (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $np))
+      (local.get $np))))
+
+;; get-or-create a function's .prototype object value
+(func $fn_get_prototype (param $fn i32) (result i64) (effects)
+  (let $props i32 (call $fn_props (local.get $fn)))
+  (let $slot i32 (call $scope_find_local (local.get $props) (cstring "prototype")))
+  (if i64 (local.get $slot) (then (i64.load (local.get $slot)))
+    (else
+      (let $pv i64 (call $mk_obj (call $obj_new (i32.const 8))))
+      (call $scope_define (local.get $props) (cstring "prototype") (local.get $pv))
+      (local.get $pv))))
+
+;; x instanceof F : walk x's prototype chain looking for F.prototype
+(func $js_instanceof (param $x i64) (param $f i64) (result i64) (effects)
+  (if (i32.eqz (call $is_function (local.get $f)))
+    (then (call $throw (cstring "right operand of instanceof is not callable")) (return (call $v_false))))
+  (if (i32.eqz (call $is_object (local.get $x))) (then (return (call $v_false))))
+  (let $protoScope i32 (call $val_payload (call $fn_get_prototype (call $val_payload (local.get $f)))))
+  (let $p i32 (call $scope_parent (call $val_payload (local.get $x))))
+  (block $brk (loop $cont
+    (br_if $brk (i32.eqz (local.get $p)))
+    (if (i32.eq (local.get $p) (local.get $protoScope)) (then (return (call $v_true))))
+    (set! $p (call $scope_parent (local.get $p)))
+    (br $cont)))
+  (call $v_false))
 
 ;; set_prop(container, key, val)
 (func $set_prop (param $cont i64) (param $key i64) (param $val i64) (effects)
@@ -93,5 +138,9 @@
   (if (call $is_object (local.get $cont))
     (then
       (call $scope_define (call $val_payload (local.get $cont)) (call $to_str (local.get $key)) (local.get $val))
+      (return)))
+  (if (call $is_function (local.get $cont))
+    (then
+      (call $scope_define (call $fn_props (call $val_payload (local.get $cont))) (call $to_str (local.get $key)) (local.get $val))
       (return)))
   (call $throw (cstring "cannot set property of non-object")))
