@@ -1,0 +1,97 @@
+;; ═══════════════════════════════════════════════════════════════
+;; obj.watx — objects and arrays
+;;
+;; Object = a parentless "scope" (property map): reuses scope_new /
+;;   scope_find_local / scope_define. Value tag 5.
+;; Array  = [length:i32 @0][cap:i32 @4][pad @8..15][elements: i64 @16].
+;;   Value tag 7.
+;;
+;; get_prop/set_prop dispatch on the container's type. Property keys are
+;; coerced to strings (objects) or integers (array indices).
+;; ═══════════════════════════════════════════════════════════════
+
+(func $is_array (param $v i64) (result i32) (effects)
+  (i32.and (i32.eqz (call $is_number (local.get $v)))
+           (i32.eq (call $val_tag (local.get $v)) (i32.const 7))))
+(func $mk_arr (param $ptr i32) (result i64) (effects) (call $box (i32.const 7) (local.get $ptr)))
+
+;; --- objects ---
+(func $obj_new (param $cap i32) (result i32) (effects) (call $scope_new (i32.const 0) (local.get $cap)))
+
+;; --- arrays ---
+(func $arr_new (param $cap i32) (result i32) (effects)
+  (let $a i32 (call $heap_alloc (i32.add (i32.const 16) (i32.mul (local.get $cap) (i32.const 8)))))
+  (i32.store (local.get $a) (i32.const 0))                       ;; length
+  (i32.store (i32.add (local.get $a) (i32.const 4)) (local.get $cap))
+  (local.get $a))
+(func $arr_len (param $a i32) (result i32) (effects) (i32.load (local.get $a)))
+(func $arr_cap (param $a i32) (result i32) (effects) (i32.load (i32.add (local.get $a) (i32.const 4))))
+(func $arr_slot (param $a i32) (param $i i32) (result i32) (effects)
+  (i32.add (i32.add (local.get $a) (i32.const 16)) (i32.mul (local.get $i) (i32.const 8))))
+(func $arr_get (param $a i32) (param $i i32) (result i64) (effects)
+  (if i64 (i32.and (i32.ge_s (local.get $i) (i32.const 0)) (i32.lt_s (local.get $i) (call $arr_len (local.get $a))))
+    (then (i64.load (call $arr_slot (local.get $a) (local.get $i))))
+    (else (call $v_undef))))
+(func $arr_set (param $a i32) (param $i i32) (param $v i64) (effects)
+  (if (i32.and (i32.ge_s (local.get $i) (i32.const 0)) (i32.lt_s (local.get $i) (call $arr_cap (local.get $a))))
+    (then
+      (i64.store (call $arr_slot (local.get $a) (local.get $i)) (local.get $v))
+      (if (i32.ge_s (local.get $i) (call $arr_len (local.get $a)))
+        (then (i32.store (local.get $a) (i32.add (local.get $i) (i32.const 1))))))))
+(func $arr_push (param $a i32) (param $v i64) (effects)
+  (call $arr_set (local.get $a) (call $arr_len (local.get $a)) (local.get $v)))
+
+;; one-character string from byte index of a string object
+(func $str_char_at (param $s i32) (param $i i32) (result i64) (effects)
+  (if i64 (i32.and (i32.ge_s (local.get $i) (i32.const 0)) (i32.lt_s (local.get $i) (call $str_len (local.get $s))))
+    (then
+      (let $c i32 (call $str_alloc (i32.const 1)))
+      (call $str_set_byte (local.get $c) (i32.const 0) (call $str_byte (local.get $s) (local.get $i)))
+      (call $mk_str (local.get $c)))
+    (else (call $v_undef))))
+
+;; key is "length"?
+(func $key_is_length (param $key i64) (result i32) (effects)
+  (i32.and (call $is_string (local.get $key))
+           (call $str_eq (call $val_payload (local.get $key)) (cstring "length"))))
+
+;; get_prop(container, key) -> value
+(func $get_prop (param $cont i64) (param $key i64) (result i64) (effects)
+  (if (call $is_array (local.get $cont))
+    (then
+      (let $a i32 (call $val_payload (local.get $cont)))
+      (if (call $key_is_length (local.get $key))
+        (then (return (call $num (f64.convert_i32_s (call $arr_len (local.get $a)))))))
+      (if (call $is_number (local.get $key))
+        (then (return (call $arr_get (local.get $a) (i32.trunc_f64_s (call $tonum_raw (local.get $key)))))))
+      (return (call $v_undef))))
+  (if (call $is_string (local.get $cont))
+    (then
+      (if (call $key_is_length (local.get $key))
+        (then (return (call $num (f64.convert_i32_s (call $str_len (call $val_payload (local.get $cont))))))))
+      (if (call $is_number (local.get $key))
+        (then (return (call $str_char_at (call $val_payload (local.get $cont)) (i32.trunc_f64_s (call $tonum_raw (local.get $key)))))))
+      (return (call $v_undef))))
+  (if (call $is_object (local.get $cont))
+    (then
+      (let $o i32 (call $val_payload (local.get $cont)))
+      (let $slot i32 (call $scope_find_local (local.get $o) (call $to_str (local.get $key))))
+      (if (local.get $slot) (then (return (i64.load (local.get $slot)))))
+      (return (call $v_undef))))
+  ;; undefined / null → TypeError
+  (call $throw (cstring "cannot read property of null or undefined"))
+  (call $v_undef))
+
+;; set_prop(container, key, val)
+(func $set_prop (param $cont i64) (param $key i64) (param $val i64) (effects)
+  (if (call $is_array (local.get $cont))
+    (then
+      (let $a i32 (call $val_payload (local.get $cont)))
+      (if (call $is_number (local.get $key))
+        (then (call $arr_set (local.get $a) (i32.trunc_f64_s (call $tonum_raw (local.get $key))) (local.get $val)) (return)))
+      (return)))
+  (if (call $is_object (local.get $cont))
+    (then
+      (call $scope_define (call $val_payload (local.get $cont)) (call $to_str (local.get $key)) (local.get $val))
+      (return)))
+  (call $throw (cstring "cannot set property of non-object")))

@@ -1,0 +1,34 @@
+var o = { a: 1, b: 2, c: "three" };
+print(o.a);
+print(o.b + 10);
+print(o.c);
+o.d = 42;
+print(o.d);
+o.a = o.a + 100;
+print(o.a);
+var key = "b";
+print(o[key]);
+o["e"] = "dyn";
+print(o.e);
+var arr = [10, 20, 30];
+print(arr.length);
+print(arr[0]);
+print(arr[2]);
+arr[1] = 99;
+print(arr[1]);
+arr[arr.length] = 40;
+print(arr.length);
+print(arr[3]);
+var sum = 0;
+for (var i = 0; i < arr.length; i = i + 1) {
+  sum = sum + arr[i];
+}
+print(sum);
+var s = "hello";
+print(s.length);
+print(s[1]);
+var nested = { list: [1, 2, 3], info: { name: "x" } };
+print(nested.list[2]);
+print(nested.info.name);
+nested.info.name = "y";
+print(nested.info.name);
