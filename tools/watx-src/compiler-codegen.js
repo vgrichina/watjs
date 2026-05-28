@@ -76,6 +76,38 @@ function encodeSLEB128(value) {
   return bytes;
 }
 
+// BigInt-based SLEB128 — required for i64 constants beyond 32 bits (e.g. NaN-box
+// tag patterns like 0xFFF8000000000000). The 32-bit encoder above silently
+// truncates those.
+function encodeSLEB128Big(value) {
+  value = BigInt(value);
+  const bytes = [];
+  let more = true;
+  while (more) {
+    let byte = Number(value & 0x7fn);
+    value >>= 7n;
+    if ((value === 0n && (byte & 0x40) === 0) || (value === -1n && (byte & 0x40) !== 0)) {
+      more = false;
+    } else {
+      byte |= 0x80;
+    }
+    bytes.push(byte);
+  }
+  return bytes;
+}
+// Parse an integer literal (decimal or 0x hex, optional sign) as a BigInt,
+// normalized to the signed two's-complement i64 value so SLEB128 stays <= 10
+// bytes (e.g. 0xFFF8000000000000 -> -2251799813685248).
+function parseI64Literal(s) {
+  s = String(s).trim();
+  let v;
+  try { v = BigInt(s); } catch (_) { return 0n; }
+  const MOD = 1n << 64n;
+  v = ((v % MOD) + MOD) % MOD;        // wrap into [0, 2^64)
+  if (v >= (1n << 63n)) v -= MOD;     // to signed
+  return v;
+}
+
 function encodeF32(value) {
   const buf = new ArrayBuffer(4);
   new Float32Array(buf)[0] = value;
@@ -501,10 +533,10 @@ function generateWasm(forms, loweredForms, checkResult) {
       return bytes;
     }
     
-    // ── i64.const ──
+    // ── i64.const ── (BigInt-encoded: full 64-bit range)
     if (head === 'i64.const') {
-      const val = parseInt(expr[1]?.value || '0');
-      bytes.push(OP.i64_const, ...encodeSLEB128(val));
+      const val = parseI64Literal(expr[1]?.value || '0');
+      bytes.push(OP.i64_const, ...encodeSLEB128Big(val));
       return bytes;
     }
     
