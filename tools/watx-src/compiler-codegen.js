@@ -122,6 +122,22 @@ const OP = {
   f64_add: 0xa0, f64_sub: 0xa1, f64_mul: 0xa2, f64_div: 0xa3,
   f64_convert_i32_s: 0xb7,
   i32_reinterpret_f32: 0xbc, f32_reinterpret_i32: 0xbe,
+  // --- watjs extensions: full i64 + f64 op set (additive) ---
+  i32_clz: 0x67, i32_ctz: 0x68, i32_popcnt: 0x69, i32_rotl: 0x77, i32_rotr: 0x78,
+  i64_eqz: 0x50, i64_eq: 0x51, i64_ne: 0x52, i64_lt_s: 0x53, i64_lt_u: 0x54,
+  i64_gt_s: 0x55, i64_gt_u: 0x56, i64_le_s: 0x57, i64_le_u: 0x58, i64_ge_s: 0x59, i64_ge_u: 0x5a,
+  i64_add: 0x7c, i64_sub: 0x7d, i64_mul: 0x7e, i64_div_s: 0x7f, i64_div_u: 0x80,
+  i64_rem_s: 0x81, i64_rem_u: 0x82, i64_and: 0x83, i64_or: 0x84, i64_xor: 0x85,
+  i64_shl: 0x86, i64_shr_s: 0x87, i64_shr_u: 0x88, i64_rotl: 0x89, i64_rotr: 0x8a,
+  f64_eq: 0x61, f64_ne: 0x62, f64_lt: 0x63, f64_gt: 0x64, f64_le: 0x65, f64_ge: 0x66,
+  f64_abs: 0x99, f64_neg: 0x9a, f64_ceil: 0x9b, f64_floor: 0x9c, f64_trunc: 0x9d,
+  f64_nearest: 0x9e, f64_sqrt: 0x9f, f64_min: 0x98, f64_max: 0x97, f64_copysign: 0xa6,
+  i32_trunc_f64_s: 0xaa, i32_trunc_f64_u: 0xab,
+  i64_extend_i32_u: 0xad, i64_trunc_f32_s: 0xae, i64_trunc_f32_u: 0xaf,
+  i64_trunc_f64_s: 0xb0, i64_trunc_f64_u: 0xb1,
+  f32_convert_i64_s: 0xb4, f32_convert_i64_u: 0xb5,
+  f64_convert_i32_u: 0xb8, f64_convert_i64_s: 0xb9, f64_convert_i64_u: 0xba,
+  i64_reinterpret_f64: 0xbd, f64_reinterpret_i64: 0xbf,
 };
 
 const VALTYPE = { i32: 0x7f, i64: 0x7e, f32: 0x7d, f64: 0x7c, void: 0x40 };
@@ -293,6 +309,21 @@ function generateWasm(forms, loweredForms, checkResult) {
       'size-of','offset-of',
       'select','memory.size','memory.grow',
       'region.alloc',
+      // watjs extensions
+      'i32.rotl','i32.rotr','i32.clz','i32.ctz','i32.popcnt',
+      'i64.add','i64.sub','i64.mul','i64.div_s','i64.div_u','i64.rem_s','i64.rem_u',
+      'i64.and','i64.or','i64.xor','i64.shl','i64.shr_s','i64.shr_u','i64.rotl','i64.rotr',
+      'i64.eqz','i64.eq','i64.ne','i64.lt_s','i64.lt_u','i64.gt_s','i64.gt_u',
+      'i64.le_s','i64.le_u','i64.ge_s','i64.ge_u',
+      'f64.eq','f64.ne','f64.lt','f64.gt','f64.le','f64.ge','f64.min','f64.max','f64.copysign',
+      'f64.abs','f64.neg','f64.ceil','f64.floor','f64.trunc','f64.nearest','f64.sqrt',
+      'i64.load','f64.load',
+      'i32.trunc_f64_s','i32.trunc_f64_u','i64.extend_i32_u',
+      'i64.trunc_f32_s','i64.trunc_f32_u','i64.trunc_f64_s','i64.trunc_f64_u',
+      'f32.convert_i64_s','f32.convert_i64_u','f64.convert_i32_u',
+      'f64.convert_i64_s','f64.convert_i64_u',
+      'i64.reinterpret_f64','f64.reinterpret_i64',
+      'i32.load16_u','i32.load16_s','i32.load8_s',
     ];
     if (valueOps.includes(head)) return true;
     
@@ -464,8 +495,23 @@ function generateWasm(forms, loweredForms, checkResult) {
       'f32.le': OP.f32_le, 'f32.ge': OP.f32_ge,
       'f64.add': OP.f64_add, 'f64.sub': OP.f64_sub,
       'f64.mul': OP.f64_mul, 'f64.div': OP.f64_div,
+      'f64.eq': OP.f64_eq, 'f64.ne': OP.f64_ne, 'f64.lt': OP.f64_lt,
+      'f64.gt': OP.f64_gt, 'f64.le': OP.f64_le, 'f64.ge': OP.f64_ge,
+      'f64.min': OP.f64_min, 'f64.max': OP.f64_max, 'f64.copysign': OP.f64_copysign,
+      'i32.rotl': OP.i32_rotl, 'i32.rotr': OP.i32_rotr,
+      'i64.add': OP.i64_add, 'i64.sub': OP.i64_sub, 'i64.mul': OP.i64_mul,
+      'i64.div_s': OP.i64_div_s, 'i64.div_u': OP.i64_div_u,
+      'i64.rem_s': OP.i64_rem_s, 'i64.rem_u': OP.i64_rem_u,
+      'i64.and': OP.i64_and, 'i64.or': OP.i64_or, 'i64.xor': OP.i64_xor,
+      'i64.shl': OP.i64_shl, 'i64.shr_s': OP.i64_shr_s, 'i64.shr_u': OP.i64_shr_u,
+      'i64.rotl': OP.i64_rotl, 'i64.rotr': OP.i64_rotr,
+      'i64.eq': OP.i64_eq, 'i64.ne': OP.i64_ne,
+      'i64.lt_s': OP.i64_lt_s, 'i64.lt_u': OP.i64_lt_u,
+      'i64.gt_s': OP.i64_gt_s, 'i64.gt_u': OP.i64_gt_u,
+      'i64.le_s': OP.i64_le_s, 'i64.le_u': OP.i64_le_u,
+      'i64.ge_s': OP.i64_ge_s, 'i64.ge_u': OP.i64_ge_u,
     };
-    
+
     if (binaryOps[head]) {
       bytes.push(...compileExpr(expr[1], func, depth));
       bytes.push(...compileExpr(expr[2], func, depth));
@@ -475,9 +521,13 @@ function generateWasm(forms, loweredForms, checkResult) {
     
     // ── Unary ops ──
     const unaryOps = {
-      'i32.eqz': OP.i32_eqz,
+      'i32.eqz': OP.i32_eqz, 'i64.eqz': OP.i64_eqz,
+      'i32.clz': OP.i32_clz, 'i32.ctz': OP.i32_ctz, 'i32.popcnt': OP.i32_popcnt,
       'f32.neg': OP.f32_neg, 'f32.abs': OP.f32_abs,
       'f32.ceil': OP.f32_ceil, 'f32.floor': OP.f32_floor, 'f32.sqrt': OP.f32_sqrt,
+      'f64.abs': OP.f64_abs, 'f64.neg': OP.f64_neg, 'f64.ceil': OP.f64_ceil,
+      'f64.floor': OP.f64_floor, 'f64.trunc': OP.f64_trunc, 'f64.nearest': OP.f64_nearest,
+      'f64.sqrt': OP.f64_sqrt,
     };
     
     if (unaryOps[head]) {
@@ -494,6 +544,14 @@ function generateWasm(forms, loweredForms, checkResult) {
       'i32.wrap_i64': OP.i32_wrap_i64, 'i64.extend_i32_s': OP.i64_extend_i32_s,
       'f64.convert_i32_s': OP.f64_convert_i32_s,
       'i32.reinterpret_f32': OP.i32_reinterpret_f32, 'f32.reinterpret_i32': OP.f32_reinterpret_i32,
+      'i32.trunc_f64_s': OP.i32_trunc_f64_s, 'i32.trunc_f64_u': OP.i32_trunc_f64_u,
+      'i64.extend_i32_u': OP.i64_extend_i32_u,
+      'i64.trunc_f32_s': OP.i64_trunc_f32_s, 'i64.trunc_f32_u': OP.i64_trunc_f32_u,
+      'i64.trunc_f64_s': OP.i64_trunc_f64_s, 'i64.trunc_f64_u': OP.i64_trunc_f64_u,
+      'f32.convert_i64_s': OP.f32_convert_i64_s, 'f32.convert_i64_u': OP.f32_convert_i64_u,
+      'f64.convert_i32_u': OP.f64_convert_i32_u,
+      'f64.convert_i64_s': OP.f64_convert_i64_s, 'f64.convert_i64_u': OP.f64_convert_i64_u,
+      'i64.reinterpret_f64': OP.i64_reinterpret_f64, 'f64.reinterpret_i64': OP.f64_reinterpret_i64,
     };
     
     if (convOps[head]) {
@@ -1145,17 +1203,30 @@ function generateWasm(forms, loweredForms, checkResult) {
       'f64.add','f64.sub','f64.mul','f64.div',
       'f64.promote_f32','f64.convert_i32_s',
       'f64.load',
+      'f64.min','f64.max','f64.copysign',
+      'f64.abs','f64.neg','f64.ceil','f64.floor','f64.trunc','f64.nearest','f64.sqrt',
+      'f64.convert_i32_u','f64.convert_i64_s','f64.convert_i64_u','f64.reinterpret_i64',
     ]);
     if (f64Ops.has(hd)) return 'f64';
 
-    // i64 ops
-    if (hd === 'i64.extend_i32_s' || hd === 'i64.load') return 'i64';
+    // i64 ops (value-producing, non-comparison)
+    const i64Ops = new Set([
+      'i64.extend_i32_s','i64.extend_i32_u','i64.load',
+      'i64.add','i64.sub','i64.mul','i64.div_s','i64.div_u','i64.rem_s','i64.rem_u',
+      'i64.and','i64.or','i64.xor','i64.shl','i64.shr_s','i64.shr_u','i64.rotl','i64.rotr',
+      'i64.trunc_f32_s','i64.trunc_f32_u','i64.trunc_f64_s','i64.trunc_f64_u',
+      'i64.reinterpret_f64',
+    ]);
+    if (i64Ops.has(hd)) return 'i64';
 
-    // Comparison ops always return i32 (even f32.lt, f32.gt, etc.)
+    // Comparison ops always return i32 (even f32.lt, f64.lt, i64.lt_s, etc.)
     const cmpOps = new Set([
       'i32.eq','i32.ne','i32.lt_s','i32.lt_u','i32.gt_s','i32.gt_u',
       'i32.le_s','i32.le_u','i32.ge_s','i32.ge_u','i32.eqz',
       'f32.eq','f32.ne','f32.lt','f32.gt','f32.le','f32.ge',
+      'f64.eq','f64.ne','f64.lt','f64.gt','f64.le','f64.ge',
+      'i64.eqz','i64.eq','i64.ne','i64.lt_s','i64.lt_u','i64.gt_s','i64.gt_u',
+      'i64.le_s','i64.le_u','i64.ge_s','i64.ge_u',
     ]);
     if (cmpOps.has(hd)) return 'i32';
 
@@ -1408,8 +1479,8 @@ function generateWasm(forms, loweredForms, checkResult) {
     const content = [];
     content.push(...encodeULEB128(1)); // 1 memory
     content.push(0x01); // has max
-    content.push(...encodeULEB128(4)); // initial: 4 pages (256KB)
-    content.push(...encodeULEB128(16)); // max: 16 pages (1MB)
+    content.push(...encodeULEB128(16)); // initial: 16 pages (1MB)
+    content.push(...encodeULEB128(512)); // max: 512 pages (32MB)
     allBytes.push(...encodeSection(5, content));
   }
   
