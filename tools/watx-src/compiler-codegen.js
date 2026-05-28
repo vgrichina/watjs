@@ -154,6 +154,40 @@ function generateWasm(forms, loweredForms, checkResult) {
       layoutInfo.set(f.name, f);
     }
   }
+
+  // --- watjs: cstring data pool ---
+  // (cstring "txt") interns a [i32 len][utf8 bytes] blob in linear memory at a
+  // compile-assigned offset (base DATA_BASE) and compiles to i32.const <ptr>.
+  // The engine treats that pointer as a JS string heap object (Str layout).
+  const DATA_BASE = 1024;
+  const dataPool = { bytes: [], map: new Map() };
+  function unescapeStr(raw) {
+    // raw includes surrounding quotes; strip and process escapes
+    let s = raw;
+    if (s[0] === '"') s = s.slice(1, s[s.length - 1] === '"' ? -1 : s.length);
+    let out = '';
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] === '\\' && i + 1 < s.length) {
+        const n = s[++i];
+        out += n === 'n' ? '\n' : n === 't' ? '\t' : n === 'r' ? '\r'
+             : n === '0' ? '\0' : n === '\\' ? '\\' : n === '"' ? '"' : n;
+      } else out += s[i];
+    }
+    return out;
+  }
+  function internCString(raw) {
+    const text = unescapeStr(raw);
+    if (dataPool.map.has(text)) return dataPool.map.get(text);
+    const utf8 = [...new TextEncoder().encode(text)];
+    const offset = DATA_BASE + dataPool.bytes.length;
+    // [i32 len LE][bytes]
+    dataPool.bytes.push(utf8.length & 0xff, (utf8.length >> 8) & 0xff,
+                        (utf8.length >> 16) & 0xff, (utf8.length >> 24) & 0xff);
+    dataPool.bytes.push(...utf8);
+    while (dataPool.bytes.length & 3) dataPool.bytes.push(0); // 4-byte align next
+    dataPool.map.set(text, offset);
+    return offset;
+  }
   
   // Collect imports
   const importDecls = [];
@@ -323,7 +357,7 @@ function generateWasm(forms, loweredForms, checkResult) {
       'f32.convert_i64_s','f32.convert_i64_u','f64.convert_i32_u',
       'f64.convert_i64_s','f64.convert_i64_u',
       'i64.reinterpret_f64','f64.reinterpret_i64',
-      'i32.load16_u','i32.load16_s','i32.load8_s',
+      'i32.load16_u','i32.load16_s','i32.load8_s','cstring',
     ];
     if (valueOps.includes(head)) return true;
     
@@ -444,7 +478,15 @@ function generateWasm(forms, loweredForms, checkResult) {
 
     const head = expr[0]?.value;
     if (!head) return bytes;
-    
+
+    // ── (cstring "text") → pointer to interned [len][bytes] blob ──
+    if (head === 'cstring') {
+      const raw = expr[1]?.value || '""';
+      const ptr = internCString(raw);
+      bytes.push(OP.i32_const, ...encodeSLEB128(ptr));
+      return bytes;
+    }
+
     // ── i32 const ──
     if (head === 'i32.const') {
       const val = parseInt(expr[1]?.value || '0');
@@ -1628,7 +1670,18 @@ function generateWasm(forms, loweredForms, checkResult) {
     const content = [...encodeULEB128(funcBodies.length), ...funcBodies.flat()];
     allBytes.push(...encodeSection(10, content));
   }
-  
+
+  // Section 11: Data section (watjs cstring pool) — must follow code section
+  if (dataPool.bytes.length > 0) {
+    const content = [];
+    content.push(...encodeULEB128(1));            // 1 data segment
+    content.push(0x00);                           // active, memory 0
+    content.push(OP.i32_const, ...encodeSLEB128(DATA_BASE), OP.end); // offset expr
+    content.push(...encodeULEB128(dataPool.bytes.length));
+    content.push(...dataPool.bytes);
+    allBytes.push(...encodeSection(11, content));
+  }
+
   const binary = new Uint8Array(allBytes);
   return {
     binary,
