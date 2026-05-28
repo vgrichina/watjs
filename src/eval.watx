@@ -156,6 +156,7 @@
   (call $parse_block)
   (let $rv i64 (if i64 (call $retflag) (then (i64.load (i32.const 96))) (else (call $v_undef))))
   (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
+  (call $clear_loopflags)                   ;; a break/continue must not escape a call
   (call $set_cur_scope (local.get $savedScope))
   (call $cursor_restore (local.get $savedCur))
   (local.get $rv))
@@ -221,6 +222,22 @@
   (local.get $fv))
 
 (func $retflag (result i32) (effects) (i32.load (i32.const 88)))
+;; loop control flags: 132 = break, 136 = continue
+(func $brkflag (result i32) (effects) (i32.load (i32.const 132)))
+(func $contflag (result i32) (effects) (i32.load (i32.const 136)))
+(func $clear_loopflags (effects) (i32.store (i32.const 132) (i32.const 0)) (i32.store (i32.const 136) (i32.const 0)))
+;; any non-local exit in progress (error / return / break / continue)
+(func $unwind (result i32) (effects)
+  (i32.or (call $err) (i32.or (call $retflag) (i32.or (call $brkflag) (call $contflag)))))
+
+;; typeof a value -> type string
+(func $typeof_val (param $v i64) (result i64) (effects)
+  (if (call $is_number (local.get $v)) (then (return (call $mk_str (cstring "number")))))
+  (if (call $is_string (local.get $v)) (then (return (call $mk_str (cstring "string")))))
+  (if (call $is_boolean (local.get $v)) (then (return (call $mk_str (cstring "boolean")))))
+  (if (call $is_undefined (local.get $v)) (then (return (call $mk_str (cstring "undefined")))))
+  (if (call $is_function (local.get $v)) (then (return (call $mk_str (cstring "function")))))
+  (call $mk_str (cstring "object")))  ;; null, object, array
 
 ;; ── primary ──
 (func $parse_primary (result i64) (effects)
@@ -302,6 +319,16 @@
 (func $ident_name (result i32) (effects)
   (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len)))
 
+;; is the current IDENT token a literal/value keyword (not a variable)?
+(func $is_value_kw (result i32) (effects)
+  (i32.or (call $tok_is_kw (cstring "true"))
+  (i32.or (call $tok_is_kw (cstring "false"))
+  (i32.or (call $tok_is_kw (cstring "null"))
+  (i32.or (call $tok_is_kw (cstring "undefined"))
+  (i32.or (call $tok_is_kw (cstring "NaN"))
+  (i32.or (call $tok_is_kw (cstring "Infinity"))
+          (call $tok_is_kw (cstring "function")))))))))
+
 ;; ── postfix: trailing call / .member / [index] ──
 ;; The last member/index access records an assignment reference in registers
 ;; 104 (valid), 112 (container i64), 120 (key i64); calls clear it.
@@ -331,9 +358,25 @@
     (br $e)))
   (local.get $v))
 
-;; ── unary: - + ! ──
+;; ── unary: - + ! typeof void ──
 (func $parse_unary (result i64) (effects)
   (let $k i32 (call $cur))
+  ;; typeof — bare (non-keyword) identifier must not throw when unbound
+  (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "typeof")))
+    (then
+      (call $advance)
+      (if (i32.and (i32.eq (call $cur) (i32.const 3)) (i32.eqz (call $is_value_kw)))  ;; typeof <ident>
+        (then
+          (call $look_save)
+          (let $nm i32 (call $ident_name))
+          (call $advance)
+          ;; simple variable (not followed by . [ () → safe lookup
+          (if (i32.eqz (i32.or (i32.eq (call $cur) (i32.const 23)) (i32.or (i32.eq (call $cur) (i32.const 19)) (i32.eq (call $cur) (i32.const 15)))))
+            (then (return (call $typeof_val (call $var_get (local.get $nm))))))
+          (call $look_restore)))
+      (return (call $typeof_val (call $parse_unary)))))
+  (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "void")))
+    (then (call $advance) (drop (call $parse_unary)) (return (call $v_undef))))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
     (then (call $advance) (return (call $num (f64.neg (call $to_num (call $parse_unary)))))))
   (if (i32.eq (local.get $k) (i32.const 10))  ;; +
@@ -560,11 +603,12 @@
   (block $brk (loop $cont
     (br_if $brk (i32.eq (call $cur) (i32.const 18)))  ;; '}'
     (br_if $brk (i32.eq (call $cur) (i32.const 0)))
-    (br_if $brk (i32.or (call $err) (call $retflag)))
+    (br_if $brk (call $unwind))
     (call $parse_statement)
     (br $cont)))
-  ;; if unwinding (return/error), the cursor isn't at '}'; caller restores it
-  (if (i32.eqz (i32.or (call $err) (call $retflag)))
+  ;; if unwinding (return/error/break/continue), the cursor isn't at '}';
+  ;; the enclosing loop / caller restores it
+  (if (i32.eqz (call $unwind))
     (then (call $expect (i32.const 18) (cstring "expected }"))))
   (call $set_cur_scope (local.get $saved)))
 
@@ -584,6 +628,11 @@
         (then (call $parse_statement))
         (else (call $sup_inc) (call $parse_statement) (call $sup_dec))))))
 
+;; skip the loop body (a statement) without executing, leaving the cursor after it
+(func $skip_body (param $bodycur i32) (effects)
+  (call $cursor_restore (local.get $bodycur))
+  (call $sup_inc) (call $parse_statement) (call $sup_dec))
+
 (func $parse_while (effects)
   (call $advance)  ;; 'while'
   (call $expect (i32.const 15) (cstring "expected ("))
@@ -592,10 +641,13 @@
     (call $cursor_restore (local.get $condcur))
     (let $cond i64 (call $parse_assign))
     (call $expect (i32.const 16) (cstring "expected )"))
+    (let $bodycur i32 (call $cursor_save))
     (if (i32.or (call $suppress) (i32.or (call $err) (i32.or (call $retflag) (i32.eqz (call $truthy (local.get $cond))))))
-      (then  ;; skip body once, then exit
-        (call $sup_inc) (call $parse_statement) (call $sup_dec) (br $brk))
-      (else (call $parse_statement)))
+      (then (call $skip_body (local.get $bodycur)) (br $brk)))  ;; skip body, exit
+    (call $parse_statement)  ;; execute body
+    (if (call $brkflag)
+      (then (call $clear_loopflags) (call $skip_body (local.get $bodycur)) (br $brk)))
+    (i32.store (i32.const 136) (i32.const 0))  ;; clear continue
     (br $cont))))
 
 (func $parse_for (effects)
@@ -622,14 +674,17 @@
     (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))
     (call $sup_dec)
     (call $expect (i32.const 16) (cstring "expected )"))
+    (let $bodycur i32 (call $cursor_save))
     (if (i32.or (call $suppress) (i32.or (call $err) (i32.or (call $retflag) (i32.eqz (local.get $cond)))))
-      (then (call $sup_inc) (call $parse_statement) (call $sup_dec) (br $brk))
-      (else
-        (call $parse_statement)        ;; body
-        (if (i32.eqz (i32.or (call $err) (call $retflag)))   ;; run update unless unwinding
-          (then
-            (call $cursor_restore (local.get $updcur))
-            (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))))))
+      (then (call $skip_body (local.get $bodycur)) (br $brk)))
+    (call $parse_statement)        ;; body
+    (if (call $brkflag)
+      (then (call $clear_loopflags) (call $skip_body (local.get $bodycur)) (br $brk)))
+    (i32.store (i32.const 136) (i32.const 0))   ;; clear continue
+    (if (i32.eqz (i32.or (call $err) (call $retflag)))   ;; run update unless unwinding
+      (then
+        (call $cursor_restore (local.get $updcur))
+        (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))))
     (br $cont))))
 
 (func $parse_return (effects)
@@ -685,8 +740,41 @@
     (else  ;; no error: skip catch block
       (call $sup_inc) (call $parse_block) (call $sup_dec))))
 
+(func $parse_break (effects)
+  (call $advance)
+  (if (i32.eqz (call $suppress)) (then (i32.store (i32.const 132) (i32.const 1))))
+  (drop (call $eat (i32.const 21))))
+(func $parse_continue (effects)
+  (call $advance)
+  (if (i32.eqz (call $suppress)) (then (i32.store (i32.const 136) (i32.const 1))))
+  (drop (call $eat (i32.const 21))))
+
+;; do <stmt> while ( cond )
+(func $parse_do (effects)
+  (call $advance)  ;; 'do'
+  (let $bodycur i32 (call $cursor_save))
+  (block $brk (loop $cont
+    (call $cursor_restore (local.get $bodycur))
+    (call $parse_statement)             ;; body
+    (let $broke i32 (call $brkflag))
+    (let $unwound i32 (i32.or (call $err) (call $retflag)))
+    ;; if body exited early (break/continue/return/err), reposition cursor past it
+    (if (i32.or (local.get $broke) (i32.or (call $contflag) (local.get $unwound)))
+      (then (call $skip_body (local.get $bodycur))))
+    (call $clear_loopflags)             ;; consume break/continue
+    (if (local.get $unwound) (then (br $brk)))
+    ;; trailing while ( cond )
+    (if (i32.eqz (call $tok_is_kw (cstring "while"))) (then (call $throw (cstring "expected while")) (br $brk)))
+    (call $advance)
+    (call $expect (i32.const 15) (cstring "expected ("))
+    (let $cond i64 (call $parse_assign))
+    (call $expect (i32.const 16) (cstring "expected )"))
+    (drop (call $eat (i32.const 21)))
+    (if (i32.or (local.get $broke) (i32.or (call $suppress) (i32.eqz (call $truthy (local.get $cond))))) (then (br $brk)))
+    (br $cont))))
+
 (func $parse_statement (effects)
-  (if (i32.or (call $err) (call $retflag)) (then (return)))
+  (if (call $unwind) (then (return)))
   (let $k i32 (call $cur))
   (if (i32.eq (local.get $k) (i32.const 17)) (then (call $parse_block) (return)))   ;; '{'
   (if (i32.eq (local.get $k) (i32.const 21)) (then (call $advance) (return)))       ;; empty ';'
@@ -697,11 +785,14 @@
       (if (call $tok_is_kw (cstring "const"))    (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
       (if (call $tok_is_kw (cstring "if"))       (then (call $parse_if) (return)))
       (if (call $tok_is_kw (cstring "while"))    (then (call $parse_while) (return)))
+      (if (call $tok_is_kw (cstring "do"))       (then (call $parse_do) (return)))
       (if (call $tok_is_kw (cstring "for"))      (then (call $parse_for) (return)))
       (if (call $tok_is_kw (cstring "function")) (then (drop (call $parse_function (i32.const 1))) (return)))
       (if (call $tok_is_kw (cstring "return"))   (then (call $parse_return) (return)))
       (if (call $tok_is_kw (cstring "throw"))    (then (call $parse_throw) (return)))
-      (if (call $tok_is_kw (cstring "try"))      (then (call $parse_try) (return)))))
+      (if (call $tok_is_kw (cstring "try"))      (then (call $parse_try) (return)))
+      (if (call $tok_is_kw (cstring "break"))    (then (call $parse_break) (return)))
+      (if (call $tok_is_kw (cstring "continue")) (then (call $parse_continue) (return)))))
   ;; expression statement
   (drop (call $parse_assign))
   (drop (call $eat (i32.const 21))))
