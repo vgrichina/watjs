@@ -101,18 +101,35 @@
 
 ;; ── function calls & native builtins ──
 
-;; native dispatch by id (1 = print, console.log style)
+(func $argn (param $argv i32) (param $argc i32) (param $i i32) (result i64) (effects)
+  (if i64 (i32.lt_s (local.get $i) (local.get $argc))
+    (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
+    (else (call $v_undef))))
+
+;; native dispatch by id (1 = print, 2 = assert)
 (func $call_native (param $id i32) (param $argc i32) (param $argv i32) (result i64) (effects)
-  (if (i32.eq (local.get $id) (i32.const 1))
+  (if (i32.eq (local.get $id) (i32.const 1))  ;; print (console.log style)
     (then
       (let $i i32 (i32.const 0))
       (block $e (loop $c
         (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
         (if (i32.gt_s (local.get $i) (i32.const 0)) (then (call $print_str (cstring " "))))
-        (call $print_str (call $to_str (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8))))))
+        (call $print_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $i))))
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (br $c)))
       (call $print_str (cstring "\n"))
+      (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 2))  ;; assert(cond[, message])
+    (then
+      (let $cond i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $truthy (local.get $cond)))
+        (then
+          (let $m i32
+            (if i32 (i32.ge_s (local.get $argc) (i32.const 2))
+              (then (call $str_concat (cstring "assert failed: ")
+                          (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+              (else (cstring "assert failed"))))
+          (call $set_err (i32.const 1)) (call $set_err_val (call $mk_str (local.get $m)))))
       (return (call $v_undef))))
   (call $v_undef))
 
@@ -151,13 +168,14 @@
   (block $ae (loop $ac
     (br_if $ae (i32.eq (call $cur) (i32.const 16)))  ;; ')'
     (br_if $ae (i32.eq (call $cur) (i32.const 0)))
+    (br_if $ae (call $err))
     (let $v i64 (call $parse_assign))
     (i64.store (i32.add (local.get $argv) (i32.mul (local.get $argc) (i32.const 8))) (local.get $v))
     (set! $argc (i32.add (local.get $argc) (i32.const 1)))
     (br_if $ae (i32.eqz (call $eat (i32.const 22))))
     (br $ac)))
   (call $expect (i32.const 16) (cstring "expected )"))
-  (if (call $suppress) (then (return (call $v_undef))))
+  (if (i32.or (call $suppress) (call $err)) (then (return (call $v_undef))))
   (if (i32.eqz (call $is_function (local.get $callee)))
     (then (call $throw (cstring "not a function")) (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $callee)))
@@ -516,6 +534,49 @@
     (then (i32.store (i32.const 88) (i32.const 1)) (i64.store (i32.const 96) (local.get $v))))
   (drop (call $eat (i32.const 21))))
 
+(func $parse_throw (effects)
+  (call $advance)  ;; 'throw'
+  (let $v i64 (call $parse_assign))
+  (if (i32.eqz (call $suppress))
+    (then (call $set_err (i32.const 1)) (call $set_err_val (local.get $v))))
+  (drop (call $eat (i32.const 21))))
+
+;; try { ... } catch (e) { ... }
+(func $parse_try (effects)
+  (call $advance)  ;; 'try'
+  (let $trycur i32 (call $cursor_save))  ;; at '{'
+  (call $parse_block)                    ;; run try block
+  (let $caught i32 (i32.const 0))
+  (let $cval i64 (call $v_undef))
+  (if (i32.and (call $err) (i32.eqz (call $suppress)))
+    (then
+      (set! $cval (call $err_val))
+      (call $set_err (i32.const 0))
+      (set! $caught (i32.const 1))
+      ;; rewind and skip the rest of the try block to reach 'catch'
+      (call $cursor_restore (local.get $trycur))
+      (call $sup_inc) (call $parse_block) (call $sup_dec)))
+  ;; 'catch'
+  (if (i32.eqz (call $tok_is_kw (cstring "catch")))
+    (then (call $throw (cstring "expected catch")) (return)))
+  (call $advance)
+  (let $ename i32 (i32.const 0))
+  (if (i32.eq (call $cur) (i32.const 15))  ;; optional ( ident )
+    (then
+      (call $advance)
+      (if (i32.eq (call $cur) (i32.const 3)) (then (set! $ename (call $ident_name)) (call $advance)))
+      (call $expect (i32.const 16) (cstring "expected )"))))
+  (if (local.get $caught)
+    (then  ;; execute catch with the bound value
+      (let $saved i32 (call $cur_scope))
+      (call $set_cur_scope (call $scope_new (local.get $saved) (i32.const 8)))
+      (if (i32.ne (local.get $ename) (i32.const 0))
+        (then (call $scope_define (call $cur_scope) (local.get $ename) (local.get $cval))))
+      (call $parse_block)
+      (call $set_cur_scope (local.get $saved)))
+    (else  ;; no error: skip catch block
+      (call $sup_inc) (call $parse_block) (call $sup_dec))))
+
 (func $parse_statement (effects)
   (if (i32.or (call $err) (call $retflag)) (then (return)))
   (let $k i32 (call $cur))
@@ -530,7 +591,9 @@
       (if (call $tok_is_kw (cstring "while"))    (then (call $parse_while) (return)))
       (if (call $tok_is_kw (cstring "for"))      (then (call $parse_for) (return)))
       (if (call $tok_is_kw (cstring "function")) (then (drop (call $parse_function (i32.const 1))) (return)))
-      (if (call $tok_is_kw (cstring "return"))   (then (call $parse_return) (return)))))
+      (if (call $tok_is_kw (cstring "return"))   (then (call $parse_return) (return)))
+      (if (call $tok_is_kw (cstring "throw"))    (then (call $parse_throw) (return)))
+      (if (call $tok_is_kw (cstring "try"))      (then (call $parse_try) (return)))))
   ;; expression statement
   (drop (call $parse_assign))
   (drop (call $eat (i32.const 21))))
@@ -546,6 +609,7 @@
   (call $set_cur_scope (local.get $g))
   (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
   (call $def_native (local.get $g) (cstring "print") (i32.const 1))
+  (call $def_native (local.get $g) (cstring "assert") (i32.const 2))
   (call $advance)  ;; load first token
   (block $brk (loop $cont
     (br_if $brk (i32.eq (call $cur) (i32.const 0)))  ;; EOF
