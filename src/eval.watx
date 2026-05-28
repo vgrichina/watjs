@@ -340,6 +340,19 @@
     (then (call $advance) (return (call $num (call $to_num (call $parse_unary))))))
   (if (i32.eq (local.get $k) (i32.const 33))  ;; !
     (then (call $advance) (return (call $mk_bool (i32.eqz (call $truthy (call $parse_unary)))))))
+  (if (i32.or (i32.eq (local.get $k) (i32.const 38)) (i32.eq (local.get $k) (i32.const 39)))  ;; prefix ++/--
+    (then
+      (call $advance)
+      (if (i32.eq (call $cur) (i32.const 3))
+        (then
+          (let $nm i32 (call $ident_name))
+          (call $advance)
+          (let $newn f64 (if f64 (i32.eq (local.get $k) (i32.const 38))
+                            (then (f64.add (call $to_num (call $var_get (local.get $nm))) (f64.const 1)))
+                            (else (f64.sub (call $to_num (call $var_get (local.get $nm))) (f64.const 1)))))
+          (if (i32.eqz (call $suppress)) (then (call $var_set (local.get $nm) (call $num (local.get $newn)))))
+          (return (call $num (local.get $newn))))   ;; prefix yields the NEW value
+        (else (call $throw (cstring "invalid ++/-- target")) (return (call $v_undef))))))
   (call $parse_postfix))
 
 ;; ── multiplicative: * / % ──
@@ -461,24 +474,53 @@
     (else (local.get $cond))))
 
 ;; ── assignment (right-assoc): IDENT '=' expr ──
+(func $var_get (param $nm i32) (result i64) (effects)
+  (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))
+  (if i64 (local.get $slot) (then (i64.load (local.get $slot))) (else (call $v_undef))))
+(func $var_set (param $nm i32) (param $v i64) (effects)
+  (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))
+  (if (local.get $slot) (then (i64.store (local.get $slot) (local.get $v)))
+    (else (call $scope_define (call $cur_scope) (local.get $nm) (local.get $v)))))
+
+;; apply a compound-assignment operator (40 += 41 -= 42 *= 43 /=)
+(func $compound (param $op i32) (param $old i64) (param $rhs i64) (result i64) (effects)
+  (if (i32.eq (local.get $op) (i32.const 40)) (then (return (call $js_add (local.get $old) (local.get $rhs)))))
+  (let $x f64 (call $to_num (local.get $old)))
+  (let $y f64 (call $to_num (local.get $rhs)))
+  (if (i32.eq (local.get $op) (i32.const 41)) (then (return (call $num (f64.sub (local.get $x) (local.get $y))))))
+  (if (i32.eq (local.get $op) (i32.const 42)) (then (return (call $num (f64.mul (local.get $x) (local.get $y))))))
+  (call $num (f64.div (local.get $x) (local.get $y))))
+
 (func $parse_assign (result i64) (effects)
-  (if (i32.eq (call $cur) (i32.const 3))  ;; IDENT — lookahead for '='
+  (if (i32.eq (call $cur) (i32.const 3))  ;; IDENT — lookahead for assignment/update
     (then
       (call $look_save)
       (let $nm i32 (call $ident_name))
       (call $advance)
-      (if (i32.eq (call $cur) (i32.const 24))  ;; '='
+      (let $op i32 (call $cur))
+      (if (i32.eq (local.get $op) (i32.const 24))  ;; '='
         (then
           (call $advance)
           (let $rhs i64 (call $parse_assign))
-          (if (i32.eqz (call $suppress))
-            (then
-              (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))
-              (if (local.get $slot)
-                (then (i64.store (local.get $slot) (local.get $rhs)))
-                (else (call $scope_define (call $cur_scope) (local.get $nm) (local.get $rhs))))))
-          (return (local.get $rhs)))
-        (else (call $look_restore)))))
+          (if (i32.eqz (call $suppress)) (then (call $var_set (local.get $nm) (local.get $rhs))))
+          (return (local.get $rhs))))
+      (if (i32.or (i32.eq (local.get $op) (i32.const 40)) (i32.or (i32.eq (local.get $op) (i32.const 41))
+            (i32.or (i32.eq (local.get $op) (i32.const 42)) (i32.eq (local.get $op) (i32.const 43)))))  ;; += -= *= /=
+        (then
+          (call $advance)
+          (let $rhs i64 (call $parse_assign))
+          (let $nv i64 (call $compound (local.get $op) (call $var_get (local.get $nm)) (local.get $rhs)))
+          (if (i32.eqz (call $suppress)) (then (call $var_set (local.get $nm) (local.get $nv))))
+          (return (local.get $nv))))
+      (if (i32.or (i32.eq (local.get $op) (i32.const 38)) (i32.eq (local.get $op) (i32.const 39)))  ;; postfix ++ / --
+        (then
+          (call $advance)
+          (let $oldn f64 (call $to_num (call $var_get (local.get $nm))))
+          (let $newn f64 (if f64 (i32.eq (local.get $op) (i32.const 38))
+                            (then (f64.add (local.get $oldn) (f64.const 1))) (else (f64.sub (local.get $oldn) (f64.const 1)))))
+          (if (i32.eqz (call $suppress)) (then (call $var_set (local.get $nm) (call $num (local.get $newn)))))
+          (return (call $num (local.get $oldn)))))  ;; postfix yields the OLD value
+      (call $look_restore)))
   ;; general LHS — may be a member/index reference (obj.x = , arr[i] = )
   (i32.store (i32.const 104) (i32.const 0))  ;; clear assignment ref
   (let $v i64 (call $parse_ternary))
