@@ -73,6 +73,14 @@
   (effects)
   (call $box (i32.const 5) (local.get $ptr)))
 
+(func $mk_fn (param $ptr i32) (result i64)
+  (effects)
+  (call $box (i32.const 6) (local.get $ptr)))
+
+(func $is_function (param $v i64) (result i32) (effects)
+  (i32.and (i32.eqz (call $is_number (local.get $v)))
+           (i32.eq (call $val_tag (local.get $v)) (i32.const 6))))
+
 ;; --- type predicates ---
 
 (func $is_undefined (param $v i64) (result i32) (effects)

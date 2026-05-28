@@ -99,22 +99,110 @@
         (else (if i32 (i32.eq (local.get $kind) (i32.const 31)) (then (f64.le (local.get $x) (local.get $y)))
         (else (f64.ge (local.get $x) (local.get $y))))))))))))
 
-;; ── builtin: print(args...) — console.log style (space-separated + newline) ──
-(func $parse_print (result i64) (effects)
-  (call $advance)  ;; consume '('  (caller ensured)
-  (let $first i32 (i32.const 1))
-  (block $brk (loop $cont
-    (br_if $brk (i32.eq (call $cur) (i32.const 16)))  ;; ')'
-    (br_if $brk (i32.eq (call $cur) (i32.const 0)))   ;; EOF
-    (if (i32.eqz (local.get $first)) (then (call $print_str (cstring " "))))
-    (set! $first (i32.const 0))
-    (let $v i64 (call $parse_assign))
-    (call $print_str (call $to_str (local.get $v)))
-    (br_if $brk (i32.eqz (call $eat (i32.const 22))))  ;; ',' else stop
-    (br $cont)))
-  (call $expect (i32.const 16) (cstring "expected )"))
-  (call $print_str (cstring "\n"))
+;; ── function calls & native builtins ──
+
+;; native dispatch by id (1 = print, console.log style)
+(func $call_native (param $id i32) (param $argc i32) (param $argv i32) (result i64) (effects)
+  (if (i32.eq (local.get $id) (i32.const 1))
+    (then
+      (let $i i32 (i32.const 0))
+      (block $e (loop $c
+        (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
+        (if (i32.gt_s (local.get $i) (i32.const 0)) (then (call $print_str (cstring " "))))
+        (call $print_str (call $to_str (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8))))))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $c)))
+      (call $print_str (cstring "\n"))
+      (return (call $v_undef))))
   (call $v_undef))
+
+;; call a user function: bind params in a fresh scope (parent = closure scope),
+;; re-scan the body via cursor restore, capture return value.
+(func $call_user (param $fn i32) (param $argc i32) (param $argv i32) (result i64) (effects)
+  (let $savedScope i32 (call $cur_scope))
+  (let $savedCur i32 (call $cursor_save))
+  (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
+  (let $ns i32 (call $scope_new (i32.load (i32.add (local.get $fn) (i32.const 4))) (i32.add (local.get $np) (i32.const 8))))
+  (let $i i32 (i32.const 0))
+  (block $be (loop $bc
+    (br_if $be (i32.ge_s (local.get $i) (local.get $np)))
+    (let $pname i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 40)) (i32.mul (local.get $i) (i32.const 4)))))
+    (let $av i64 (if i64 (i32.lt_s (local.get $i) (local.get $argc))
+                    (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
+                    (else (call $v_undef))))
+    (call $scope_define (local.get $ns) (local.get $pname) (local.get $av))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $bc)))
+  (call $set_cur_scope (local.get $ns))
+  (call $cursor_restore (i32.add (local.get $fn) (i32.const 16)))
+  (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
+  (call $parse_block)
+  (let $rv i64 (if i64 (call $retflag) (then (i64.load (i32.const 96))) (else (call $v_undef))))
+  (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
+  (call $set_cur_scope (local.get $savedScope))
+  (call $cursor_restore (local.get $savedCur))
+  (local.get $rv))
+
+;; parse and evaluate a call:  callee '(' args ')'
+(func $parse_call (param $callee i64) (result i64) (effects)
+  (call $advance)  ;; '('
+  (let $argv i32 (call $heap_alloc (i32.const 128)))  ;; up to 16 args
+  (let $argc i32 (i32.const 0))
+  (block $ae (loop $ac
+    (br_if $ae (i32.eq (call $cur) (i32.const 16)))  ;; ')'
+    (br_if $ae (i32.eq (call $cur) (i32.const 0)))
+    (let $v i64 (call $parse_assign))
+    (i64.store (i32.add (local.get $argv) (i32.mul (local.get $argc) (i32.const 8))) (local.get $v))
+    (set! $argc (i32.add (local.get $argc) (i32.const 1)))
+    (br_if $ae (i32.eqz (call $eat (i32.const 22))))
+    (br $ac)))
+  (call $expect (i32.const 16) (cstring "expected )"))
+  (if (call $suppress) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_function (local.get $callee)))
+    (then (call $throw (cstring "not a function")) (return (call $v_undef))))
+  (let $fn i32 (call $val_payload (local.get $callee)))
+  (let $nat i32 (i32.load (local.get $fn)))
+  (if i64 (local.get $nat)
+    (then (call $call_native (local.get $nat) (local.get $argc) (local.get $argv)))
+    (else (call $call_user (local.get $fn) (local.get $argc) (local.get $argv)))))
+
+;; parse a function literal/declaration. as_decl=1 binds the name in scope.
+(func $parse_function (param $as_decl i32) (result i64) (effects)
+  (call $advance)  ;; 'function'
+  (let $name i32 (i32.const 0))
+  (if (i32.eq (call $cur) (i32.const 3)) (then (set! $name (call $ident_name)) (call $advance)))
+  (call $expect (i32.const 15) (cstring "expected ("))
+  (let $params i32 (call $heap_alloc (i32.const 64)))
+  (let $np i32 (i32.const 0))
+  (block $pe (loop $pc
+    (br_if $pe (i32.ne (call $cur) (i32.const 3)))
+    (i32.store (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4))) (call $ident_name))
+    (set! $np (i32.add (local.get $np) (i32.const 1)))
+    (call $advance)
+    (br_if $pe (i32.eqz (call $eat (i32.const 22))))
+    (br $pc)))
+  (call $expect (i32.const 16) (cstring "expected )"))
+  ;; cur now at '{' — build Fn struct (40 + np*4 bytes)
+  (let $fn i32 (call $heap_alloc (i32.add (i32.const 40) (i32.mul (local.get $np) (i32.const 4)))))
+  (i32.store (local.get $fn) (i32.const 0))                                   ;; native=0
+  (i32.store (i32.add (local.get $fn) (i32.const 4)) (call $cur_scope))       ;; closure scope
+  (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))         ;; param count
+  (call $cursor_store (i32.add (local.get $fn) (i32.const 16)))               ;; body cursor at '{'
+  (let $i i32 (i32.const 0))
+  (block $ce (loop $cc
+    (br_if $ce (i32.ge_s (local.get $i) (local.get $np)))
+    (i32.store (i32.add (i32.add (local.get $fn) (i32.const 40)) (i32.mul (local.get $i) (i32.const 4)))
+               (i32.load (i32.add (local.get $params) (i32.mul (local.get $i) (i32.const 4)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cc)))
+  ;; skip the body
+  (call $sup_inc) (call $parse_block) (call $sup_dec)
+  (let $fv i64 (call $mk_fn (local.get $fn)))
+  (if (i32.and (local.get $as_decl) (i32.and (i32.ne (local.get $name) (i32.const 0)) (i32.eqz (call $suppress))))
+    (then (call $scope_define (call $cur_scope) (local.get $name) (local.get $fv))))
+  (local.get $fv))
+
+(func $retflag (result i32) (effects) (i32.load (i32.const 88)))
 
 ;; ── primary ──
 (func $parse_primary (result i64) (effects)
@@ -143,10 +231,7 @@
       (if (call $tok_is_kw (cstring "undefined")) (then (call $advance) (return (call $v_undef))))
       (if (call $tok_is_kw (cstring "NaN")) (then (call $advance) (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
       (if (call $tok_is_kw (cstring "Infinity")) (then (call $advance) (return (call $num (f64.div (f64.const 1) (f64.const 0))))))
-      (if (call $tok_is_kw (cstring "print"))
-        (then (call $advance)
-              (if (i32.eq (call $cur) (i32.const 15)) (then (return (call $parse_print)))
-                (else (call $throw (cstring "print is not a value")) (return (call $v_undef))))))
+      (if (call $tok_is_kw (cstring "function")) (then (return (call $parse_function (i32.const 0)))))
       ;; variable reference
       (let $nm i32 (call $ident_name))
       (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))
@@ -163,6 +248,16 @@
 (func $ident_name (result i32) (effects)
   (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len)))
 
+;; ── postfix: trailing call(s) ──
+(func $parse_postfix (result i64) (effects)
+  (let $v i64 (call $parse_primary))
+  (block $e (loop $c
+    (br_if $e (i32.ne (call $cur) (i32.const 15)))  ;; '('
+    (br_if $e (call $err))
+    (set! $v (call $parse_call (local.get $v)))
+    (br $c)))
+  (local.get $v))
+
 ;; ── unary: - + ! ──
 (func $parse_unary (result i64) (effects)
   (let $k i32 (call $cur))
@@ -172,7 +267,7 @@
     (then (call $advance) (return (call $num (call $to_num (call $parse_unary))))))
   (if (i32.eq (local.get $k) (i32.const 33))  ;; !
     (then (call $advance) (return (call $mk_bool (i32.eqz (call $truthy (call $parse_unary)))))))
-  (call $parse_primary))
+  (call $parse_postfix))
 
 ;; ── multiplicative: * / % ──
 (func $parse_mul (result i64) (effects)
@@ -339,10 +434,12 @@
   (block $brk (loop $cont
     (br_if $brk (i32.eq (call $cur) (i32.const 18)))  ;; '}'
     (br_if $brk (i32.eq (call $cur) (i32.const 0)))
-    (br_if $brk (call $err))
+    (br_if $brk (i32.or (call $err) (call $retflag)))
     (call $parse_statement)
     (br $cont)))
-  (call $expect (i32.const 18) (cstring "expected }"))
+  ;; if unwinding (return/error), the cursor isn't at '}'; caller restores it
+  (if (i32.eqz (i32.or (call $err) (call $retflag)))
+    (then (call $expect (i32.const 18) (cstring "expected }"))))
   (call $set_cur_scope (local.get $saved)))
 
 (func $parse_if (effects)
@@ -369,7 +466,7 @@
     (call $cursor_restore (local.get $condcur))
     (let $cond i64 (call $parse_assign))
     (call $expect (i32.const 16) (cstring "expected )"))
-    (if (i32.or (call $suppress) (i32.or (call $err) (i32.eqz (call $truthy (local.get $cond)))))
+    (if (i32.or (call $suppress) (i32.or (call $err) (i32.or (call $retflag) (i32.eqz (call $truthy (local.get $cond))))))
       (then  ;; skip body once, then exit
         (call $sup_inc) (call $parse_statement) (call $sup_dec) (br $brk))
       (else (call $parse_statement)))
@@ -399,36 +496,59 @@
     (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))
     (call $sup_dec)
     (call $expect (i32.const 16) (cstring "expected )"))
-    (if (i32.or (call $suppress) (i32.or (call $err) (i32.eqz (local.get $cond))))
+    (if (i32.or (call $suppress) (i32.or (call $err) (i32.or (call $retflag) (i32.eqz (local.get $cond)))))
       (then (call $sup_inc) (call $parse_statement) (call $sup_dec) (br $brk))
       (else
         (call $parse_statement)        ;; body
-        (call $cursor_restore (local.get $updcur))  ;; run update
-        (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))))
+        (if (i32.eqz (i32.or (call $err) (call $retflag)))   ;; run update unless unwinding
+          (then
+            (call $cursor_restore (local.get $updcur))
+            (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))))))
     (br $cont))))
 
+(func $parse_return (effects)
+  (call $advance)  ;; 'return'
+  (let $v i64 (call $v_undef))
+  (if (i32.eqz (i32.or (i32.eq (call $cur) (i32.const 21))
+                (i32.or (i32.eq (call $cur) (i32.const 18)) (i32.eq (call $cur) (i32.const 0)))))
+    (then (set! $v (call $parse_assign))))
+  (if (i32.eqz (call $suppress))
+    (then (i32.store (i32.const 88) (i32.const 1)) (i64.store (i32.const 96) (local.get $v))))
+  (drop (call $eat (i32.const 21))))
+
 (func $parse_statement (effects)
-  (if (call $err) (then (return)))
+  (if (i32.or (call $err) (call $retflag)) (then (return)))
   (let $k i32 (call $cur))
   (if (i32.eq (local.get $k) (i32.const 17)) (then (call $parse_block) (return)))   ;; '{'
   (if (i32.eq (local.get $k) (i32.const 21)) (then (call $advance) (return)))       ;; empty ';'
   (if (i32.eq (local.get $k) (i32.const 3))
     (then
-      (if (call $tok_is_kw (cstring "var"))   (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
-      (if (call $tok_is_kw (cstring "let"))   (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
-      (if (call $tok_is_kw (cstring "const")) (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
-      (if (call $tok_is_kw (cstring "if"))    (then (call $parse_if) (return)))
-      (if (call $tok_is_kw (cstring "while")) (then (call $parse_while) (return)))
-      (if (call $tok_is_kw (cstring "for"))   (then (call $parse_for) (return)))))
+      (if (call $tok_is_kw (cstring "var"))      (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
+      (if (call $tok_is_kw (cstring "let"))      (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
+      (if (call $tok_is_kw (cstring "const"))    (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
+      (if (call $tok_is_kw (cstring "if"))       (then (call $parse_if) (return)))
+      (if (call $tok_is_kw (cstring "while"))    (then (call $parse_while) (return)))
+      (if (call $tok_is_kw (cstring "for"))      (then (call $parse_for) (return)))
+      (if (call $tok_is_kw (cstring "function")) (then (drop (call $parse_function (i32.const 1))) (return)))
+      (if (call $tok_is_kw (cstring "return"))   (then (call $parse_return) (return)))))
   ;; expression statement
   (drop (call $parse_assign))
   (drop (call $eat (i32.const 21))))
 
+;; register a native builtin (nativeId) under `name` in the given scope
+(func $def_native (param $scope i32) (param $name i32) (param $id i32) (effects)
+  (let $fn i32 (call $heap_alloc (i32.const 40)))
+  (i32.store (local.get $fn) (local.get $id))
+  (call $scope_define (local.get $scope) (local.get $name) (call $mk_fn (local.get $fn))))
+
 (func $eval_program (effects)
-  (call $set_cur_scope (call $scope_new (i32.const 0) (i32.const 128)))  ;; global scope
+  (let $g i32 (call $scope_new (i32.const 0) (i32.const 256)))  ;; global scope
+  (call $set_cur_scope (local.get $g))
+  (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
+  (call $def_native (local.get $g) (cstring "print") (i32.const 1))
   (call $advance)  ;; load first token
   (block $brk (loop $cont
     (br_if $brk (i32.eq (call $cur) (i32.const 0)))  ;; EOF
-    (br_if $brk (call $err))
+    (br_if $brk (i32.or (call $err) (call $retflag)))
     (call $parse_statement)
     (br $cont))))
