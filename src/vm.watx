@@ -320,14 +320,26 @@
       (let $on i32 (i32.const 0))
       (if (i32.ne (call $tok_kind) (i32.const 18))
         (then (block $oe (loop $ol
-          ;; key: identifier or string literal → push as a string
-          (let $ok i32 (if i32 (i32.eq (call $tok_kind) (i32.const 2))
-                          (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)))
-                          (else (call $ident_name))))
-          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $ok)))
-          (call $next_token)
-          (call $next_token)  ;; ':'
-          (call $vm_c_expr (local.get $code))  ;; value
+          (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed key]: value
+            (then
+              (call $next_token)  ;; '['
+              (call $vm_c_expr (local.get $code))  ;; key expression → on stack
+              (call $next_token)  ;; ']'
+              (call $next_token)  ;; ':'
+              (call $vm_c_expr (local.get $code)))  ;; value
+            (else (if (i32.eq (call $tok_kind) (i32.const 2))  ;; "string key": value
+              (then
+                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
+                (call $next_token)
+                (call $next_token)  ;; ':'
+                (call $vm_c_expr (local.get $code)))
+              (else  ;; identifier key
+                (let $oki i32 (call $ident_name)) (call $next_token)
+                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $oki)))
+                (if (i32.eq (call $tok_kind) (i32.const 37))  ;; ': value'
+                  (then (call $next_token) (call $vm_c_expr (local.get $code)))
+                  (else  ;; shorthand { x } → value is the variable
+                    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $oki)))))))) ;; LOADVAR
           (set! $on (i32.add (local.get $on) (i32.const 1)))
           (br_if $oe (i32.eqz (call $eat (i32.const 22))))
           (br $ol)))))
