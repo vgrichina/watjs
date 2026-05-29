@@ -34,6 +34,17 @@
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (i32.const 0))
 
+;; replacement string for a match [ms,me): if repisfn, call repfn(matchStr,offset,whole)
+(func $re_repl_of (param $repfn i64) (param $repisfn i32) (param $replstr i32) (param $sub i32) (param $ms i32) (param $me i32) (result i32) (effects)
+  (if i32 (local.get $repisfn)
+    (then
+      (let $av i32 (call $heap_alloc (i32.const 24)))
+      (i64.store (local.get $av) (call $mk_str (call $substr (local.get $sub) (local.get $ms) (i32.sub (local.get $me) (local.get $ms)))))
+      (i64.store (i32.add (local.get $av) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $ms))))
+      (i64.store (i32.add (local.get $av) (i32.const 16)) (call $mk_str (local.get $sub)))
+      (call $to_str (call $call_val (local.get $repfn) (i32.const 3) (local.get $av) (call $v_undef))))
+    (else (local.get $replstr))))
+
 ;; set reg 272 (ignorecase 'i') and 276 (global 'g') from a regex value's flags
 (func $re_apply_flags (param $v i64) (effects)
   (i32.store (i32.const 272) (i32.const 0)) (i32.store (i32.const 276) (i32.const 0))

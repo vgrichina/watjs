@@ -869,14 +869,16 @@
           (let $r i32 (call $arr_new (i32.const 2)))
           (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))
           (return (call $mk_arr (local.get $r)))))
-      (if (i32.eq (local.get $id) (i32.const 103))  ;; replace(pat, repl)
+      (if (i32.eq (local.get $id) (i32.const 103))  ;; replace(pat, repl|fn)
         (then
-          (let $repl i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (let $repfn i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (let $repisfn i32 (call $is_function (local.get $repfn)))
+          (let $repl i32 (if i32 (local.get $repisfn) (then (cstring "")) (else (call $to_str (local.get $repfn)))))
           (if (i32.eqz (i32.load (i32.const 276)))  ;; not global → first match only
             (then
               (if (i32.lt_s (local.get $start) (i32.const 0)) (then (return (call $mk_str (local.get $sub)))))
               (let $end i32 (i32.load (i32.const 168)))
-              (let $out i32 (call $str_concat (call $substr (local.get $sub) (i32.const 0) (local.get $start)) (local.get $repl)))
+              (let $out i32 (call $str_concat (call $substr (local.get $sub) (i32.const 0) (local.get $start)) (call $re_repl_of (local.get $repfn) (local.get $repisfn) (local.get $repl) (local.get $sub) (local.get $start) (local.get $end))))
               (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $end) (i32.sub (call $str_len (local.get $sub)) (local.get $end)))))
               (return (call $mk_str (local.get $out))))
             (else  ;; global: replace every match
@@ -889,7 +891,7 @@
                 (let $ms i32 (i32.add (local.get $pos) (local.get $rel)))
                 (let $me i32 (i32.add (local.get $pos) (i32.load (i32.const 168))))
                 (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $pos) (i32.sub (local.get $ms) (local.get $pos)))))
-                (set! $out (call $str_concat (local.get $out) (local.get $repl)))
+                (set! $out (call $str_concat (local.get $out) (call $re_repl_of (local.get $repfn) (local.get $repisfn) (local.get $repl) (local.get $sub) (local.get $ms) (local.get $me))))
                 (if (i32.le_s (local.get $me) (local.get $ms))  ;; zero-width: emit one char, advance
                   (then (if (i32.lt_s (local.get $ms) (local.get $sln)) (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $ms) (i32.const 1)))))) (set! $pos (i32.add (local.get $ms) (i32.const 1))))
                   (else (set! $pos (local.get $me))))
