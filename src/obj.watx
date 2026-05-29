@@ -50,6 +50,56 @@
       (call $mk_str (local.get $c)))
     (else (call $v_undef))))
 
+;; substring: copy `len` bytes of string `s` starting at byte `start`
+(func $substr (param $s i32) (param $start i32) (param $len i32) (result i32) (effects)
+  (if (i32.lt_s (local.get $len) (i32.const 0)) (then (set! $len (i32.const 0))))
+  (let $p i32 (call $str_alloc (local.get $len)))
+  (let $i i32 (i32.const 0))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ge_s (local.get $i) (local.get $len)))
+    (call $str_set_byte (local.get $p) (local.get $i) (call $str_byte (local.get $s) (i32.add (local.get $start) (local.get $i))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cont)))
+  (local.get $p))
+
+;; index of `needle` in `hay`, or -1
+(func $str_indexof (param $hay i32) (param $needle i32) (result i32) (effects)
+  (let $hl i32 (call $str_len (local.get $hay)))
+  (let $nl i32 (call $str_len (local.get $needle)))
+  (if (i32.eqz (local.get $nl)) (then (return (i32.const 0))))
+  (let $i i32 (i32.const 0))
+  (let $last i32 (i32.add (i32.sub (local.get $hl) (local.get $nl)) (i32.const 1)))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ge_s (local.get $i) (local.get $last)))
+    (let $j i32 (i32.const 0))
+    (let $ok i32 (i32.const 1))
+    (block $mb (loop $ml
+      (br_if $mb (i32.ge_s (local.get $j) (local.get $nl)))
+      (if (i32.ne (call $str_byte (local.get $hay) (i32.add (local.get $i) (local.get $j))) (call $str_byte (local.get $needle) (local.get $j)))
+        (then (set! $ok (i32.const 0)) (br $mb)))
+      (set! $j (i32.add (local.get $j) (i32.const 1)))
+      (br $ml)))
+    (if (local.get $ok) (then (return (local.get $i))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cont)))
+  (i32.const -1))
+
+;; ASCII case conversion (upper=1 to upper, else to lower)
+(func $str_case (param $s i32) (param $upper i32) (result i32) (effects)
+  (let $n i32 (call $str_len (local.get $s)))
+  (let $p i32 (call $str_alloc (local.get $n)))
+  (let $i i32 (i32.const 0))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
+    (if (local.get $upper)
+      (then (if (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 122))) (then (set! $c (i32.sub (local.get $c) (i32.const 32))))))
+      (else (if (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 90))) (then (set! $c (i32.add (local.get $c) (i32.const 32)))))))
+    (call $str_set_byte (local.get $p) (local.get $i) (local.get $c))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cont)))
+  (local.get $p))
+
 ;; key is "length"?
 (func $key_is_length (param $key i64) (result i32) (effects)
   (i32.and (call $is_string (local.get $key))
@@ -71,6 +121,12 @@
         (then (return (call $num (f64.convert_i32_s (call $str_len (call $val_payload (local.get $cont))))))))
       (if (call $is_number (local.get $key))
         (then (return (call $str_char_at (call $val_payload (local.get $cont)) (i32.trunc_f64_s (call $tonum_raw (local.get $key)))))))
+      ;; methods / constructor from String.prototype (reg 156)
+      (let $sp i32 (i32.load (i32.const 156)))
+      (if (local.get $sp)
+        (then
+          (let $slot i32 (call $scope_find_local (local.get $sp) (call $to_str (local.get $key))))
+          (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
       (return (call $v_undef))))
   (if (call $is_object (local.get $cont))
     (then
