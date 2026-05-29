@@ -676,6 +676,15 @@
     (call $scope_define (local.get $ns) (local.get $pname) (local.get $av))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $bc)))
+  ;; bind `arguments` (array of all passed args)
+  (let $argsArr i32 (call $arr_new (i32.add (local.get $argc) (i32.const 1))))
+  (let $ai i32 (i32.const 0))
+  (block $age (loop $agl
+    (br_if $age (i32.ge_s (local.get $ai) (local.get $argc)))
+    (call $arr_push (local.get $argsArr) (i64.load (i32.add (local.get $argv) (i32.mul (local.get $ai) (i32.const 8)))))
+    (set! $ai (i32.add (local.get $ai) (i32.const 1)))
+    (br $agl)))
+  (call $scope_define (local.get $ns) (cstring "arguments") (call $mk_arr (local.get $argsArr)))
   (call $set_cur_scope (local.get $ns))
   (call $cursor_restore (i32.add (local.get $fn) (i32.const 16)))
   (call $hoist_vars (local.get $ns) (i32.const 0))           ;; hoist var declarations
