@@ -226,6 +226,18 @@
             (call $vm_c_expr (local.get $code))
             (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP
             (br $e)))
+        (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43)))  ;; obj.key += -= *= /= v
+          (then
+            (let $mcop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))
+                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))
+                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4)) (else (i32.const 5))))))))
+            (call $next_token)
+            (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP obj
+            (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP (old)
+            (call $vm_c_expr (local.get $code))                  ;; RHS
+            (call $vm_emit_op (local.get $code) (local.get $mcop))
+            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP
+            (br $e)))
         (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method call: obj.key(args)
           (then
             (call $vm_emit_op (local.get $code) (i32.const 32))                                      ;; DUP receiver
