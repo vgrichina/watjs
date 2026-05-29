@@ -732,6 +732,55 @@
     (then (call $scope_define (call $cur_scope) (local.get $name) (local.get $fv))))
   (local.get $fv))
 
+;; super(args) / super.method(args): the "super prototype" is the grandparent of
+;; `this` in the prototype chain (covers single-level inheritance).
+(func $parse_super (result i64) (effects)
+  (call $advance)  ;; 'super'
+  (let $thisv i64 (call $get_this))
+  (let $spo i32 (i32.const 0))
+  (if (call $is_object (local.get $thisv))
+    (then
+      (let $p1 i32 (call $scope_parent (call $val_payload (local.get $thisv))))
+      (if (local.get $p1) (then (set! $spo (call $scope_parent (local.get $p1)))))))
+  ;; collect call args helper (used by both forms)
+  (if (i32.eq (call $cur) (i32.const 23))  ;; super.method
+    (then
+      (call $advance)
+      (let $mn i32 (call $ident_name))
+      (call $advance)
+      (let $fn i64 (call $v_undef))
+      (if (local.get $spo)
+        (then (let $sl i32 (call $scope_find (local.get $spo) (local.get $mn)))
+              (if (local.get $sl) (then (set! $fn (i64.load (local.get $sl)))))))
+      (if (i32.eq (call $cur) (i32.const 15))  ;; call it
+        (then (return (call $super_call (local.get $fn) (local.get $thisv))))
+        (else (return (local.get $fn))))))
+  (if (i32.eq (call $cur) (i32.const 15))  ;; super(...) — call parent constructor
+    (then
+      (let $ctor i64 (call $v_undef))
+      (if (local.get $spo)
+        (then (let $cs i32 (call $scope_find_local (local.get $spo) (cstring "constructor")))
+              (if (local.get $cs) (then (set! $ctor (i64.load (local.get $cs)))))))
+      (return (call $super_call (local.get $ctor) (local.get $thisv)))))
+  (call $v_undef))
+
+;; parse an argument list (cursor at '(') and call `fn` with `thisv`
+(func $super_call (param $fn i64) (param $thisv i64) (result i64) (effects)
+  (call $advance)  ;; '('
+  (let $argv i32 (call $heap_alloc (i32.const 128)))
+  (let $argc i32 (i32.const 0))
+  (block $ae (loop $ac
+    (br_if $ae (i32.eq (call $cur) (i32.const 16)))
+    (br_if $ae (i32.eq (call $cur) (i32.const 0)))
+    (br_if $ae (call $err))
+    (i64.store (i32.add (local.get $argv) (i32.mul (local.get $argc) (i32.const 8))) (call $parse_assign))
+    (set! $argc (i32.add (local.get $argc) (i32.const 1)))
+    (br_if $ae (i32.eqz (call $eat (i32.const 22))))
+    (br $ac)))
+  (call $expect (i32.const 16) (cstring "expected )"))
+  (if (i32.or (call $suppress) (call $err)) (then (return (call $v_undef))))
+  (call $call_val (local.get $fn) (local.get $argc) (local.get $argv) (local.get $thisv)))
+
 ;; class Name { constructor(){} method(){} static m(){} get/set x(){} }
 (func $parse_class (param $as_decl i32) (result i64) (effects)
   (call $advance)  ;; 'class'
@@ -923,6 +972,7 @@
       (if (call $tok_is_kw (cstring "this")) (then (call $advance) (return (call $get_this))))
       (if (call $tok_is_kw (cstring "new")) (then (return (call $parse_new))))
       (if (call $tok_is_kw (cstring "class")) (then (return (call $parse_class (i32.const 0)))))
+      (if (call $tok_is_kw (cstring "super")) (then (return (call $parse_super))))
       ;; variable reference
       (let $nm i32 (call $ident_name))
       (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))

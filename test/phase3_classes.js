@@ -39,4 +39,9 @@ assert(new Empty().greet() === "hi", "no constructor");
 var sq = class { area(s) { return s * s; } };
 assert(new sq().area(4) === 16, "class expression");
 
+class Base { constructor(v){ this.v=v; } val(){ return this.v; } }
+class Derived extends Base { constructor(v){ super(v); } val(){ return super.val() * 10; } }
+var dd = new Derived(7);
+assert(dd.v === 7, "super ctor");
+assert(dd.val() === 70, "super method");
 print("class tests passed");
