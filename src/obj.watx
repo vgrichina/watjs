@@ -57,6 +57,16 @@
     (then (i32.store (local.get $a) (i32.add (local.get $i) (i32.const 1))))))
 (func $arr_push (param $a i32) (param $v i64) (effects)
   (call $arr_set (local.get $a) (call $arr_len (local.get $a)) (local.get $v)))
+;; remove element at index $i, shifting the tail down; decrements length
+(func $arr_remove (param $a i32) (param $i i32) (effects)
+  (let $n i32 (call $arr_len (local.get $a)))
+  (let $j i32 (local.get $i))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (i32.add (local.get $j) (i32.const 1)) (local.get $n)))
+    (i64.store (call $arr_slot (local.get $a) (local.get $j)) (i64.load (call $arr_slot (local.get $a) (i32.add (local.get $j) (i32.const 1)))))
+    (set! $j (i32.add (local.get $j) (i32.const 1)))
+    (br $l)))
+  (if (i32.gt_s (local.get $n) (i32.const 0)) (then (i32.store (local.get $a) (i32.sub (local.get $n) (i32.const 1))))))
 
 ;; one-character string from byte index of a string object
 (func $str_char_at (param $s i32) (param $i i32) (result i64) (effects)
