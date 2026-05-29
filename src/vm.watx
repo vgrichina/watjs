@@ -441,14 +441,19 @@
             (else (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET
           (drop (call $eat (i32.const 21)))
           (return)))
-      ;; var NAME = expr ;   /   NAME = expr ;
-      (if (call $tok_is_kw (cstring "var"))
+      ;; var NAME [= expr] (, NAME [= expr])* ;
+      (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))
         (then
           (call $next_token)
-          (let $nm i32 (call $ident_name)) (call $next_token)
-          (call $next_token)  ;; '='
-          (call $vm_c_expr (local.get $code))
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nm))  ;; STOREVAR
+          (block $vd (loop $vl
+            (let $nm i32 (call $ident_name)) (call $next_token)
+            (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' initializer
+              (then
+                (call $next_token)
+                (call $vm_c_expr (local.get $code))
+                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nm))))  ;; STOREVAR
+            (br_if $vd (i32.eqz (call $eat (i32.const 22))))  ;; ',' → another declarator
+            (br $vl)))
           (drop (call $eat (i32.const 21)))
           (return)))
       (if (call $tok_is_kw (cstring "break"))
