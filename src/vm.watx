@@ -837,13 +837,15 @@
           (let $ofvar i32 (i32.const 0))
           (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $ofvar (call $ident_name)) (call $next_token)))
           (let $isof i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of")))))
-          (if (local.get $isof)
+          (let $isin i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "in")))))
+          (if (i32.or (local.get $isof) (local.get $isin))
             (then
-              (call $next_token)  ;; 'of'
+              (call $next_token)  ;; 'of' / 'in'
               (let $ofls i32 (call $vm_loop_enter))
               (let $itn i32 (call $vm_tmpname))
               (let $rn i32 (call $vm_tmpname))
-              (call $vm_c_expr (local.get $code))                  ;; the iterable
+              (call $vm_c_expr (local.get $code))                  ;; the iterable / object
+              (if (local.get $isin) (then (call $vm_emit_op (local.get $code) (i32.const 56))))  ;; for-in: object → keys array
               (call $vm_emit_op (local.get $code) (i32.const 45))  ;; GETITER
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; STOREVAR it
               (call $next_token)  ;; ')'
@@ -1437,6 +1439,13 @@
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t)) (call $vm_get_iter (i64.load (i32.add (local.get $stack) (local.get $t)))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 56))  ;; GETKEYS — replace top object with an array of its own keys (for-in)
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $kav i32 (call $heap_alloc (i32.const 8)))
+        (i64.store (local.get $kav) (i64.load (i32.add (local.get $stack) (local.get $t))))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (call $call_native (i32.const 10) (i32.const 1) (local.get $kav) (call $v_undef)))  ;; Object.keys
         (br $disp)))
     (if (i32.and (i32.ge_s (local.get $op) (i32.const 37)) (i32.le_s (local.get $op) (i32.const 43)))  ;; & | ^ << >> >>> **
       (then
