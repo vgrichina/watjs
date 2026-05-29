@@ -308,14 +308,19 @@
       (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0 → []
       (if (i32.ne (call $tok_kind) (i32.const 20))
         (then (block $ae (loop $al
-          (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...spread
+          (br_if $ae (i32.eq (call $tok_kind) (i32.const 20)))  ;; ']' (trailing comma)
+          (if (i32.eq (call $tok_kind) (i32.const 22))  ;; elision: ,, → undefined hole
             (then
-              (call $next_token)
-              (call $vm_c_expr (local.get $code))
-              (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD into array
-            (else
-              (call $vm_c_expr (local.get $code))
-              (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
+              (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+              (call $vm_emit_op (local.get $code) (i32.const 52)))  ;; APPEND undefined
+            (else (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...spread
+              (then
+                (call $next_token)
+                (call $vm_c_expr (local.get $code))
+                (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD into array
+              (else
+                (call $vm_c_expr (local.get $code))
+                (call $vm_emit_op (local.get $code) (i32.const 52))))))  ;; APPEND
           (br_if $ae (i32.eqz (call $eat (i32.const 22))))
           (br $al)))))
       (call $next_token)  ;; ']'
