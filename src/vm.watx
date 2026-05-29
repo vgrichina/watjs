@@ -471,6 +471,17 @@
 ;; unary prefix:  - + ! ~   (binds looser than member/call/**, tighter than * /)
 (func $vm_c_unary (param $code i32) (effects)
   (let $k i32 (call $tok_kind))
+  (if (i32.or (i32.eq (local.get $k) (i32.const 38)) (i32.eq (local.get $k) (i32.const 39)))  ;; prefix ++x / --x  (result = new value)
+    (then
+      (let $pop i32 (if i32 (i32.eq (local.get $k) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
+      (call $next_token)
+      (let $pvn i32 (call $ident_name)) (call $next_token)
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; LOADVAR
+      (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 1)))
+      (call $vm_emit_op (local.get $code) (local.get $pop))
+      (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → new value is the result
+      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; STOREVAR
+      (return)))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 6)) (return)))
   (if (i32.eq (local.get $k) (i32.const 10))  ;; + (numeric coercion; just parse the operand)
