@@ -18,6 +18,7 @@
 (include "regex.watx")
 (include "json.watx")
 (include "eval.watx")
+(include "vm.watx")
 
 ;; Output a heap string via the host, unless suppressed (short-circuit branch).
 (func $print_str (param $s i32) (effects)
@@ -53,3 +54,4 @@
 
 (wasm-export "alloc_input" $alloc_input)
 (wasm-export "eval" $eval)
+(wasm-export "eval_vm" $eval_vm)
