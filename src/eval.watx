@@ -1588,9 +1588,71 @@
 (func $sup_inc (effects) (call $set_suppress (i32.add (call $suppress) (i32.const 1))))
 (func $sup_dec (effects) (call $set_suppress (i32.sub (call $suppress) (i32.const 1))))
 
+;; array destructuring: [a, b, c] = <array value already evaluated>
+(func $destructure_array (param $rhs i64) (effects)
+  (call $advance)  ;; '['
+  (let $idx i32 (i32.const 0))
+  (block $brk (loop $cont
+    (br_if $brk (i32.eq (call $cur) (i32.const 20)))  ;; ']'
+    (br_if $brk (i32.eq (call $cur) (i32.const 0)))
+    (if (i32.eq (call $cur) (i32.const 3))
+      (then
+        (let $nm i32 (call $ident_name))
+        (call $advance)
+        (let $v i64 (call $get_prop (local.get $rhs) (call $num (f64.convert_i32_s (local.get $idx)))))
+        (if (i32.eqz (call $suppress)) (then (call $scope_define (call $cur_scope) (local.get $nm) (local.get $v))))))
+    (set! $idx (i32.add (local.get $idx) (i32.const 1)))
+    (br_if $brk (i32.eqz (call $eat (i32.const 22))))
+    (br $cont)))
+  (call $expect (i32.const 20) (cstring "expected ]")))
+
+;; object destructuring: {x, y: local} = <object value already evaluated>
+(func $destructure_object (param $rhs i64) (effects)
+  (call $advance)  ;; '{'
+  (block $brk (loop $cont
+    (br_if $brk (i32.eq (call $cur) (i32.const 18)))  ;; '}'
+    (br_if $brk (i32.eq (call $cur) (i32.const 0)))
+    (if (i32.eq (call $cur) (i32.const 3))
+      (then
+        (let $key i32 (call $ident_name))
+        (call $advance)
+        (let $local i32 (local.get $key))
+        (if (i32.eq (call $cur) (i32.const 37))  ;; ':' alias
+          (then (call $advance) (if (i32.eq (call $cur) (i32.const 3)) (then (set! $local (call $ident_name)) (call $advance)))))
+        (let $v i64 (call $get_prop (local.get $rhs) (call $mk_str (local.get $key))))
+        (if (i32.eqz (call $suppress)) (then (call $scope_define (call $cur_scope) (local.get $local) (local.get $v))))))
+    (br_if $brk (i32.eqz (call $eat (i32.const 22))))
+    (br $cont)))
+  (call $expect (i32.const 18) (cstring "expected }")))
+
 (func $parse_var (effects)
   (call $advance)  ;; consume var/let/const
   (block $brk (loop $cont
+    ;; destructuring patterns
+    (if (i32.eq (call $cur) (i32.const 19))  ;; [ array pattern
+      (then
+        (let $pc i32 (call $cursor_save))
+        (call $sup_inc) (call $destructure_array (call $v_undef)) (call $sup_dec)  ;; skip pattern (no binding)
+        (call $expect (i32.const 24) (cstring "expected ="))
+        (let $rhs i64 (call $parse_assign))
+        (let $endc i32 (call $cursor_save))
+        (call $cursor_restore (local.get $pc))
+        (call $destructure_array (local.get $rhs))  ;; bind names from rhs
+        (call $cursor_restore (local.get $endc))
+        (br_if $brk (i32.eqz (call $eat (i32.const 22))))
+        (br $cont)))
+    (if (i32.eq (call $cur) (i32.const 17))  ;; { object pattern
+      (then
+        (let $pc i32 (call $cursor_save))
+        (call $sup_inc) (call $destructure_object (call $v_undef)) (call $sup_dec)
+        (call $expect (i32.const 24) (cstring "expected ="))
+        (let $rhs i64 (call $parse_assign))
+        (let $endc i32 (call $cursor_save))
+        (call $cursor_restore (local.get $pc))
+        (call $destructure_object (local.get $rhs))
+        (call $cursor_restore (local.get $endc))
+        (br_if $brk (i32.eqz (call $eat (i32.const 22))))
+        (br $cont)))
     (if (i32.ne (call $cur) (i32.const 3)) (then (call $throw (cstring "expected name")) (br $brk)))
     (let $nm i32 (call $ident_name))
     (call $advance)

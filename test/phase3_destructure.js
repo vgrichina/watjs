@@ -1,0 +1,14 @@
+var [a, b, c] = [10, 20, 30];
+assert(a === 10 && b === 20 && c === 30, "array destructure");
+var { x, y } = { x: 1, y: 2 };
+assert(x === 1 && y === 2, "object destructure");
+var { p: q } = { p: 99 };
+assert(q === 99, "object alias");
+var [m, n] = [5, 6, 7];
+assert(m === 5 && n === 6, "array partial");
+var [d, e] = [1];
+assert(d === 1 && e === undefined, "array short");
+var arr = [100, 200];
+var [first, second] = arr;
+assert(first + second === 300, "destructure from var");
+print("destructure tests passed");
