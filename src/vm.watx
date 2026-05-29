@@ -219,6 +219,25 @@
       (if (call $tok_is_kw (cstring "false"))
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 0))) (call $next_token) (return)))
       (let $vn i32 (call $ident_name)) (call $next_token)
+      (if (i32.eq (call $tok_kind) (i32.const 24))  ;; NAME = expr  (assignment expression; result = assigned value)
+        (then
+          (call $next_token)
+          (call $vm_c_expr (local.get $code))                                                          ;; RHS (right-assoc)
+          (call $vm_emit_op (local.get $code) (i32.const 32))                                           ;; DUP → leave value as the expression result
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR
+          (return)))
+      (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43)))  ;; NAME += -= *= /= expr
+        (then
+          (let $pcop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))   ;; ADD
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))   ;; SUB
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4)) (else (i32.const 5))))))))  ;; MUL/DIV
+          (call $next_token)
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; LOADVAR
+          (call $vm_c_expr (local.get $code))                                                          ;; RHS
+          (call $vm_emit_op (local.get $code) (local.get $pcop))
+          (call $vm_emit_op (local.get $code) (i32.const 32))                                           ;; DUP result
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR
+          (return)))
       (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; postfix i++ / i--
         (then
           (let $iop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
@@ -269,7 +288,13 @@
           (br $ol)))))
       (call $next_token)  ;; '}'
       (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (local.get $on))  ;; NEWOBJ n (key,val pairs)
-      (return))))
+      (return)))
+  ;; unrecognized token at expression position: push undefined and ADVANCE so the
+  ;; compiler always makes progress (an unsupported construct errors, never hangs)
+  (if (i32.ne (call $tok_kind) (i32.const 0))
+    (then
+      (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+      (call $next_token))))
 
 ;; postfix: primary followed by  (args) | [index] | .member  (chainable)
 (func $vm_c_postfix (param $code i32) (effects)
@@ -411,6 +436,12 @@
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 44)) (return)))
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "await")))  ;; await expr
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 50)) (return)))  ;; AWAIT
+  (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "typeof")))  ;; typeof expr
+    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 58)) (return)))  ;; TYPEOF
+  (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "void")))  ;; void expr → undefined
+    (then (call $next_token) (call $vm_c_unary (local.get $code))
+          (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP operand
+          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (return)))
   (call $vm_c_pow (local.get $code)))
 
 (func $vm_c_mul (param $code i32) (effects)
@@ -453,6 +484,13 @@
   (call $vm_c_shift (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
+    ;; keyword operators:  x instanceof C   |   k in obj   (relational precedence)
+    (if (i32.eq (local.get $k) (i32.const 3))
+      (then
+        (if (call $tok_is_kw (cstring "instanceof"))
+          (then (call $next_token) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 59)) (br $l)))
+        (if (call $tok_is_kw (cstring "in"))
+          (then (call $next_token) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 60)) (br $l)))))
     ;; < 29 > 30 <= 31 >= 32 === 26 !== 28 == 25 != 27
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 29)) (i32.or (i32.eq (local.get $k) (i32.const 30))
       (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.or (i32.eq (local.get $k) (i32.const 32))
@@ -872,6 +910,98 @@
           (call $vm_patch (local.get $code) (local.get $pw))
           (call $vm_patch_list (i32.const 208) (i32.const 212) (local.get $code) (call $vm_emit_cursor))  ;; break → end
           (call $vm_loop_exit (local.get $lsave))
+          (return)))
+      (if (call $tok_is_kw (cstring "switch"))  ;; switch (disc) { case E: … default: … }
+        (then
+          (call $next_token) (call $next_token)  ;; 'switch' '('
+          (call $vm_c_expr (local.get $code))
+          (call $next_token)  ;; ')'
+          (call $next_token)  ;; '{'
+          (let $sdT i32 (call $vm_tmpname))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sdT))  ;; STOREVAR disc
+          (let $slsave i32 (call $vm_loop_enter))
+          (i32.store (i32.const 216) (i32.load (i32.add (local.get $slsave) (i32.const 8))))  ;; continue passes through to enclosing loop
+          (i32.store (i32.const 220) (i32.load (i32.add (local.get $slsave) (i32.const 12))))
+          (let $sbodies i32 (call $heap_alloc (i32.const 1024)))
+          (let $spatch i32 (call $heap_alloc (i32.const 1024)))
+          (let $snc i32 (i32.const 0))
+          (let $sdefcur i32 (i32.const 0))
+          ;; Pass A: emit a test per case, record body cursors, skip bodies
+          (block $sae (loop $sal
+            (br_if $sae (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
+            (br_if $sae (i32.eq (call $tok_kind) (i32.const 0)))
+            (if (call $tok_is_kw (cstring "case"))
+              (then
+                (call $next_token)
+                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sdT))  ;; LOADVAR disc
+                (call $vm_c_expr (local.get $code))
+                (call $vm_emit_op (local.get $code) (i32.const 18))  ;; SEQ
+                (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
+                (i32.store (i32.add (local.get $spatch) (i32.mul (local.get $snc) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → bodyN (matched)
+                (call $next_token)  ;; ':'
+                (i32.store (i32.add (local.get $sbodies) (i32.mul (local.get $snc) (i32.const 4))) (call $cursor_save))
+                (set! $snc (i32.add (local.get $snc) (i32.const 1))))
+              (else
+                (if (call $tok_is_kw (cstring "default"))
+                  (then (call $next_token) (call $next_token) (set! $sdefcur (call $cursor_save)))  ;; 'default' ':'
+                  (else (call $next_token)))))
+            ;; skip this body's tokens to the next case/default/}
+            (let $sdepth i32 (i32.const 0))
+            (block $sse (loop $ssl
+              (br_if $sse (i32.eq (call $tok_kind) (i32.const 0)))
+              (if (i32.eq (call $tok_kind) (i32.const 17)) (then (set! $sdepth (i32.add (local.get $sdepth) (i32.const 1)))))
+              (if (i32.eq (call $tok_kind) (i32.const 18)) (then (br_if $sse (i32.eqz (local.get $sdepth))) (set! $sdepth (i32.sub (local.get $sdepth) (i32.const 1)))))
+              (if (i32.and (i32.eqz (local.get $sdepth)) (i32.or (call $tok_is_kw (cstring "case")) (call $tok_is_kw (cstring "default")))) (then (br $sse)))
+              (call $next_token)
+              (br $ssl)))
+            (br $sal)))
+          (call $next_token)  ;; consume the switch's '}'
+          (let $sendlex i32 (call $cursor_save))
+          (let $sdefjmp i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → default/end
+          ;; Pass B: emit each case body (fall-through), re-scanning from saved cursors
+          (let $si i32 (i32.const 0))
+          (block $sbe (loop $sbl
+            (br_if $sbe (i32.ge_s (local.get $si) (local.get $snc)))
+            (call $vm_patch (local.get $code) (i32.load (i32.add (local.get $spatch) (i32.mul (local.get $si) (i32.const 4)))))  ;; bodyN target = here
+            (call $cursor_restore (i32.load (i32.add (local.get $sbodies) (i32.mul (local.get $si) (i32.const 4)))))
+            (block $sbse (loop $sbsl
+              (br_if $sbse (i32.eq (call $tok_kind) (i32.const 18)))
+              (br_if $sbse (i32.eq (call $tok_kind) (i32.const 0)))
+              (br_if $sbse (i32.or (call $tok_is_kw (cstring "case")) (call $tok_is_kw (cstring "default"))))
+              (call $vm_c_stmt (local.get $code))
+              (br $sbsl)))
+            (set! $si (i32.add (local.get $si) (i32.const 1)))
+            (br $sbl)))
+          (call $vm_patch (local.get $code) (local.get $sdefjmp))  ;; default/end target = here
+          (if (local.get $sdefcur)
+            (then
+              (call $cursor_restore (local.get $sdefcur))
+              (block $sde (loop $sdl
+                (br_if $sde (i32.eq (call $tok_kind) (i32.const 18)))
+                (br_if $sde (i32.eq (call $tok_kind) (i32.const 0)))
+                (br_if $sde (i32.or (call $tok_is_kw (cstring "case")) (call $tok_is_kw (cstring "default"))))
+                (call $vm_c_stmt (local.get $code))
+                (br $sdl)))))
+          (call $vm_patch_list (i32.const 208) (i32.const 212) (local.get $code) (call $vm_emit_cursor))  ;; break → end
+          (call $vm_loop_exit (local.get $slsave))
+          (call $cursor_restore (local.get $sendlex))  ;; lexer resumes after the switch
+          (return)))
+      (if (call $tok_is_kw (cstring "do"))  ;; do body while ( cond ) ;
+        (then
+          (call $next_token)
+          (let $dlsave i32 (call $vm_loop_enter))
+          (let $dtop i32 (call $vm_emit_cursor))
+          (call $vm_c_stmt (local.get $code))  ;; body
+          (call $vm_patch_list (i32.const 216) (i32.const 220) (local.get $code) (call $vm_emit_cursor))  ;; continue → cond
+          (call $next_token)  ;; 'while'
+          (call $next_token)  ;; '('
+          (call $vm_c_expr (local.get $code))
+          (call $next_token)  ;; ')'
+          (drop (call $eat (i32.const 21)))
+          (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
+          (call $vm_emit_op (local.get $code) (i32.const 13)) (call $vm_emit_op (local.get $code) (local.get $dtop))  ;; JMPF(!cond) → top  ⇒ loop while cond
+          (call $vm_patch_list (i32.const 208) (i32.const 212) (local.get $code) (call $vm_emit_cursor))  ;; break → end
+          (call $vm_loop_exit (local.get $dlsave))
           (return)))
       (if (call $tok_is_kw (cstring "for"))  ;; for ( init ; cond ; update ) body  |  for (var x of E) body
         (then
@@ -1321,6 +1451,26 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $mk_bool (i32.eqz (call $truthy (i64.load (i32.add (local.get $stack) (local.get $t)))))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 58))  ;; TYPEOF (unary, in place)
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (local.get $t))
+                   (call $typeof_val (i64.load (i32.add (local.get $stack) (local.get $t)))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 59))  ;; INSTOF — [x, ctor] → bool
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
+                   (call $js_instanceof (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))
+                                        (i64.load (i32.add (local.get $stack) (local.get $sp)))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 60))  ;; IN — [key, obj] → bool
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
+                   (call $js_in (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))
+                                (i64.load (i32.add (local.get $stack) (local.get $sp)))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 2))  ;; ADD — js_add (string concat + numeric)
       (then
