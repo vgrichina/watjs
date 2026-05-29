@@ -45,6 +45,22 @@
       (call $to_str (call $call_val (local.get $repfn) (i32.const 3) (local.get $av) (call $v_undef))))
     (else (local.get $replstr))))
 
+;; index of `ndl` in `hay` at/after `from`, or -1
+(func $str_find (param $hay i32) (param $ndl i32) (param $from i32) (result i32) (effects)
+  (let $hl i32 (call $str_len (local.get $hay)))
+  (let $nl i32 (call $str_len (local.get $ndl)))
+  (let $i i32 (local.get $from))
+  (block $e (loop $l
+    (br_if $e (i32.gt_s (i32.add (local.get $i) (local.get $nl)) (local.get $hl)))
+    (let $j i32 (i32.const 0)) (let $ok i32 (i32.const 1))
+    (block $je (loop $jl
+      (br_if $je (i32.ge_s (local.get $j) (local.get $nl)))
+      (if (i32.ne (call $str_byte (local.get $hay) (i32.add (local.get $i) (local.get $j))) (call $str_byte (local.get $ndl) (local.get $j))) (then (set! $ok (i32.const 0)) (br $je)))
+      (set! $j (i32.add (local.get $j) (i32.const 1))) (br $jl)))
+    (if (local.get $ok) (then (return (local.get $i))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i32.const -1))
+
 ;; set reg 272 (ignorecase 'i') and 276 (global 'g') from a regex value's flags
 (func $re_apply_flags (param $v i64) (effects)
   (i32.store (i32.const 272) (i32.const 0)) (i32.store (i32.const 276) (i32.const 0))
