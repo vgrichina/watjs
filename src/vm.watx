@@ -193,7 +193,7 @@
           (call $vm_c_arrow (local.get $code) (local.get $ap) (local.get $anp))
           (return)))
       (call $next_token)  ;; '(' — plain grouping
-      (call $vm_c_expr (local.get $code))
+      (call $vm_c_commaexpr (local.get $code))
       (call $next_token)                                       ;; consume ')'
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 3))  ;; identifier / true / false / function-expression
@@ -670,6 +670,18 @@
       (call $next_token)  ;; ':'
       (call $vm_c_expr (local.get $code))                                   ;; else branch
       (call $vm_patch (local.get $code) (local.get $p2)))))
+
+;; comma operator: a, b, c → evaluate each (discarding all but the last). Only
+;; valid where a full expression is allowed (statement, for-clauses, parens) —
+;; NOT in argument/element lists, which call vm_c_expr directly.
+(func $vm_c_commaexpr (param $code i32) (effects)
+  (call $vm_c_expr (local.get $code))
+  (block $e (loop $l
+    (br_if $e (i32.ne (call $tok_kind) (i32.const 22)))  ;; ','
+    (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP the discarded value
+    (call $next_token)
+    (call $vm_c_expr (local.get $code))
+    (br $l))))
 
 ;; compile a function body: cursor at '(' params ')' '{' body '}'. Emits the body
 ;; inline (JMP over it) and a PUSH of the VM-fn value. magic from regs 232 (async)
@@ -1196,7 +1208,7 @@
                   (if (i32.eq (call $tok_kind) (i32.const 24))
                     (then (call $next_token) (call $vm_c_expr (local.get $code))
                           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fin2)))
-                    (else (call $look_restore) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11))))))))
+                    (else (call $look_restore) (call $vm_c_commaexpr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11))))))))
           (call $expect (i32.const 21) (cstring "expected ;"))
           (let $ftop i32 (call $vm_emit_cursor))
           (if (i32.ne (call $tok_kind) (i32.const 21))
@@ -1222,7 +1234,7 @@
           ;; re-scan + compile the update, then loop
           (call $cursor_restore (local.get $fupd))
           (if (i32.ne (call $tok_kind) (i32.const 16))
-            (then (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; update; POP
+            (then (call $vm_c_commaexpr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; update; POP
           (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $ftop))  ;; JMP top
           (call $vm_patch (local.get $code) (local.get $fpend))
           (call $vm_patch_list (i32.const 208) (i32.const 212) (local.get $code) (call $vm_emit_cursor))  ;; break → end
@@ -1253,7 +1265,7 @@
           (return)))
       (call $look_restore)))
   ;; expression statement
-  (call $vm_c_expr (local.get $code))
+  (call $vm_c_commaexpr (local.get $code))
   (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
   (drop (call $eat (i32.const 21))))
 
