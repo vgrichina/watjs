@@ -1046,6 +1046,16 @@
                 (br_if $brk (i32.eqz (call $eat (i32.const 22))))
                 (br $cont))
               (else (call $look_restore)))))
+        ;; computed key: [expr]
+        (if (i32.eq (call $cur) (i32.const 19))
+          (then
+            (call $advance)
+            (let $ck i32 (call $to_str (call $parse_assign)))
+            (call $expect (i32.const 20) (cstring "expected ]"))
+            (call $expect (i32.const 37) (cstring "expected :"))
+            (call $scope_define (local.get $o) (local.get $ck) (call $parse_assign))
+            (br_if $brk (i32.eqz (call $eat (i32.const 22))))
+            (br $cont)))
         ;; key: identifier or string literal
         (let $key i32 (i32.const 0))
         (if (i32.eq (call $cur) (i32.const 3))
@@ -1055,6 +1065,12 @@
             (else (if (i32.eq (call $cur) (i32.const 1))  ;; numeric key
               (then (set! $key (call $to_str (call $num (call $tok_num)))) (call $advance))
               (else (call $throw (cstring "bad object key")) (br $brk)))))))
+        ;; shorthand { x } === { x: x }
+        (if (i32.ne (call $cur) (i32.const 37))
+          (then
+            (call $scope_define (local.get $o) (local.get $key) (call $var_get (local.get $key)))
+            (br_if $brk (i32.eqz (call $eat (i32.const 22))))
+            (br $cont)))
         (call $expect (i32.const 37) (cstring "expected :"))
         (call $scope_define (local.get $o) (local.get $key) (call $parse_assign))
         (br_if $brk (i32.eqz (call $eat (i32.const 22))))
