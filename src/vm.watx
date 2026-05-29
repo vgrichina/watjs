@@ -1668,7 +1668,10 @@
         ;; `this instanceof F` holds inside the body and methods added later resolve.
         (let $cproto i64 (i64.load (i32.add (local.get $cfn) (i32.const 16))))
         (if (i32.eqz (call $is_object (local.get $cproto)))
-          (then (set! $cproto (call $mk_obj (call $obj_new (i32.const 8)))) (i64.store (i32.add (local.get $cfn) (i32.const 16)) (local.get $cproto))))
+          (then
+            (set! $cproto (call $mk_obj (call $obj_new (i32.const 8))))
+            (i64.store (i32.add (local.get $cfn) (i32.const 16)) (local.get $cproto))
+            (call $scope_define (call $val_payload (local.get $cproto)) (cstring "constructor") (i64.load (i32.add (local.get $stack) (local.get $cbase))))))  ;; .prototype.constructor = ctor
         (i32.store (local.get $newo) (call $val_payload (local.get $cproto)))
         (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 8))))
         (let $cns i32 (call $scope_new (call $vm_fn_parent (local.get $cfn) (local.get $gscope)) (i32.add (local.get $cnp) (i32.const 4))))

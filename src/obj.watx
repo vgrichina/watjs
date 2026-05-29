@@ -293,7 +293,10 @@
           (if (call $str_eq (local.get $ks) (cstring "prototype"))
             (then
               (if (i32.eqz (call $is_object (local.get $vproto)))  ;; lazily create .prototype (constructor functions)
-                (then (set! $vproto (call $mk_obj (call $obj_new (i32.const 8)))) (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vproto))))
+                (then
+                  (set! $vproto (call $mk_obj (call $obj_new (i32.const 8))))
+                  (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vproto))
+                  (call $scope_define (call $val_payload (local.get $vproto)) (cstring "constructor") (local.get $cont))))  ;; F.prototype.constructor === F
               (return (local.get $vproto))))
           (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
           (if (call $is_object (local.get $vproto))
