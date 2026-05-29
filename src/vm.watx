@@ -80,6 +80,18 @@
 (func $vm_get_iter (param $v i64) (result i64) (effects)
   (if (call $is_array (local.get $v))
     (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
+  (if (call $is_string (local.get $v))  ;; string → array of single-char strings, then array iterator
+    (then
+      (let $sp i32 (call $val_payload (local.get $v)))
+      (let $sn i32 (call $str_len (local.get $sp)))
+      (let $ca i32 (call $arr_new (local.get $sn)))
+      (let $si i32 (i32.const 0))
+      (block $se (loop $sl
+        (br_if $se (i32.ge_s (local.get $si) (local.get $sn)))
+        (call $arr_push (local.get $ca) (call $str_char_at (local.get $sp) (local.get $si)))
+        (set! $si (i32.add (local.get $si) (i32.const 1)))
+        (br $sl)))
+      (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $ca))))))
   (if (call $is_object (local.get $v))
     (then
       (let $itf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@iterator"))))
@@ -1665,8 +1677,24 @@
     (if (i32.eq (local.get $op) (i32.const 56))  ;; GETKEYS — replace top object with an array of its own keys (for-in)
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $kv i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
+        ;; arrays and strings enumerate as numeric index strings "0".."n-1"
+        (if (i32.or (call $is_array (local.get $kv)) (call $is_string (local.get $kv)))
+          (then
+            (let $kn i32 (if i32 (call $is_array (local.get $kv))
+                            (then (call $arr_len (call $val_payload (local.get $kv))))
+                            (else (call $str_len (call $val_payload (local.get $kv))))))
+            (let $ka i32 (call $arr_new (local.get $kn)))
+            (let $ki i32 (i32.const 0))
+            (block $ke (loop $kl
+              (br_if $ke (i32.ge_s (local.get $ki) (local.get $kn)))
+              (call $arr_push (local.get $ka) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $ki)))))
+              (set! $ki (i32.add (local.get $ki) (i32.const 1)))
+              (br $kl)))
+            (i64.store (i32.add (local.get $stack) (local.get $t)) (call $mk_arr (local.get $ka)))
+            (br $disp)))
         (let $kav i32 (call $heap_alloc (i32.const 8)))
-        (i64.store (local.get $kav) (i64.load (i32.add (local.get $stack) (local.get $t))))
+        (i64.store (local.get $kav) (local.get $kv))
         (i64.store (i32.add (local.get $stack) (local.get $t)) (call $call_native (i32.const 10) (i32.const 1) (local.get $kav) (call $v_undef)))  ;; Object.keys
         (br $disp)))
     (if (i32.and (i32.ge_s (local.get $op) (i32.const 37)) (i32.le_s (local.get $op) (i32.const 43)))  ;; & | ^ << >> >>> **
