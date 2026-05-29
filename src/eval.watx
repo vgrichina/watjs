@@ -200,6 +200,8 @@
     (br $bc)))
   (call $set_cur_scope (local.get $ns))
   (call $cursor_restore (i32.add (local.get $fn) (i32.const 16)))
+  (call $hoist_vars (local.get $ns) (i32.const 0))           ;; hoist var declarations
+  (call $cursor_restore (i32.add (local.get $fn) (i32.const 16)))
   (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
   (call $parse_block)
   (let $rv i64 (if i64 (call $retflag) (then (i64.load (i32.const 96))) (else (call $v_undef))))
@@ -973,6 +975,52 @@
   (call $scope_define (local.get $scope) (local.get $name) (local.get $v))
   (local.get $v))
 
+;; skip a nested function (cursor at 'function'): advance to its body '{' then
+;; over the balanced braces, so its inner `var`s aren't hoisted to the outer scope.
+(func $hoist_skip_fn (effects)
+  (block $b1 (loop $l1
+    (call $advance)
+    (let $k i32 (call $tok_kind))
+    (br_if $b1 (i32.eq (local.get $k) (i32.const 17)))  ;; '{'
+    (br_if $b1 (i32.eq (local.get $k) (i32.const 0)))
+    (br $l1)))
+  (let $bd i32 (i32.const 1))
+  (block $b2 (loop $l2
+    (call $advance)
+    (let $k i32 (call $tok_kind))
+    (br_if $b2 (i32.eq (local.get $k) (i32.const 0)))
+    (if (i32.eq (local.get $k) (i32.const 17)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1)))))
+    (if (i32.eq (local.get $k) (i32.const 18))
+      (then (set! $bd (i32.sub (local.get $bd) (i32.const 1))) (br_if $b2 (i32.eqz (local.get $bd)))))
+    (br $l2))))
+
+;; hoist `var` declarations: pre-define their names as undefined in `scope`.
+;; untilEof=1 scans the whole program; otherwise scans one function body whose
+;; opening '{' is the current token. Nested function bodies are skipped.
+;; (Single-declarator form handled; the common case.)
+(func $hoist_vars (param $scope i32) (param $untilEof i32) (effects)
+  (let $depth i32 (if i32 (local.get $untilEof) (then (i32.const 0)) (else (i32.const 1))))
+  (block $done (loop $scan
+    (call $advance)
+    (let $k i32 (call $tok_kind))
+    (br_if $done (i32.eq (local.get $k) (i32.const 0)))
+    (if (i32.eq (local.get $k) (i32.const 17)) (then (set! $depth (i32.add (local.get $depth) (i32.const 1)))))
+    (if (i32.eq (local.get $k) (i32.const 18))
+      (then (set! $depth (i32.sub (local.get $depth) (i32.const 1)))
+            (br_if $done (i32.and (i32.eqz (local.get $untilEof)) (i32.lt_s (local.get $depth) (i32.const 1))))))
+    (if (i32.eq (local.get $k) (i32.const 3))
+      (then
+        (if (call $tok_is_kw (cstring "function")) (then (call $hoist_skip_fn)))
+        (if (call $tok_is_kw (cstring "var"))
+          (then
+            (call $advance)
+            (if (i32.eq (call $tok_kind) (i32.const 3))
+              (then
+                (let $nm i32 (call $ident_name))
+                (if (i32.eqz (call $scope_find_local (local.get $scope) (local.get $nm)))
+                  (then (call $scope_define (local.get $scope) (local.get $nm) (call $v_undef))))))))))
+    (br $scan))))
+
 ;; JS prelude: error constructors (run at startup, in global scope)
 (func $run_prelude (effects)
   (drop (call $eval_string (cstring
@@ -1001,6 +1049,9 @@
   (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))
   (call $scope_define (local.get $g) (cstring "undefined") (call $v_undef))
   (call $run_prelude)  ;; bootstrap error constructors
+  ;; hoist top-level var declarations
+  (call $lex_init) (call $hoist_vars (local.get $g) (i32.const 1))
+  (call $lex_init)
   (call $advance)  ;; load first token
   (block $brk (loop $cont
     (br_if $brk (i32.eq (call $cur) (i32.const 0)))  ;; EOF
