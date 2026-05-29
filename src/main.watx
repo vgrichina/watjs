@@ -37,6 +37,7 @@
   (call $set_src (local.get $ptr) (local.get $len))
   (call $set_err (i32.const 0))
   (call $set_suppress (i32.const 0))
+  (i32.store (i32.const 184) (i32.const 0))  ;; typeof-unresolvable guard
   (call $lex_init)
   (call $eval_program)
   (if i32 (call $err)

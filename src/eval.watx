@@ -1207,6 +1207,8 @@
       (if (local.get $slot)
         (then (return (i64.load (local.get $slot))))
         (else
+          ;; inside a typeof operand, an unresolvable reference is `undefined`, not an error
+          (if (i32.load (i32.const 184)) (then (return (call $v_undef))))
           (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $nm) (cstring " is not defined")))
           (return (call $v_undef))))))
   ;; Unexpected token: throw AND consume it, so the parser always makes
@@ -1378,7 +1380,12 @@
           (if (i32.eqz (i32.or (i32.eq (call $cur) (i32.const 23)) (i32.or (i32.eq (call $cur) (i32.const 19)) (i32.eq (call $cur) (i32.const 15)))))
             (then (return (call $typeof_val (call $var_get (local.get $nm))))))
           (call $look_restore)))
-      (return (call $typeof_val (call $parse_unary)))))
+      ;; general operand: tolerate an unbound bare/parenthesized identifier
+      ;; (typeof never throws ReferenceError for an unresolvable reference)
+      (i32.store (i32.const 184) (i32.add (i32.load (i32.const 184)) (i32.const 1)))
+      (let $tv i64 (call $parse_unary))
+      (i32.store (i32.const 184) (i32.sub (i32.load (i32.const 184)) (i32.const 1)))
+      (return (call $typeof_val (local.get $tv)))))
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "void")))
     (then (call $advance) (drop (call $parse_unary)) (return (call $v_undef))))
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "delete")))
