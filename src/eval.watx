@@ -1220,6 +1220,35 @@
         (br_if $brk (i32.eq (call $cur) (i32.const 18)))  ;; '}'
         (br_if $brk (i32.eq (call $cur) (i32.const 0)))
         (br_if $brk (call $err))
+        ;; spread: { ...src } copies src's own enumerable properties
+        (if (i32.eq (call $cur) (i32.const 54))
+          (then
+            (call $advance)
+            (let $spv i64 (call $parse_assign))
+            (if (call $is_object (local.get $spv))
+              (then
+                (let $sps i32 (call $val_payload (local.get $spv)))
+                (let $spcnt i32 (call $scope_count (local.get $sps)))
+                (let $spi i32 (i32.const 0))
+                (block $spe (loop $spl
+                  (br_if $spe (i32.ge_s (local.get $spi) (local.get $spcnt)))
+                  (let $spnm i32 (i32.load (call $scope_entry (local.get $sps) (local.get $spi))))
+                  (call $scope_define (local.get $o) (local.get $spnm)
+                    (call $get_prop (local.get $spv) (call $mk_str (local.get $spnm))))
+                  (set! $spi (i32.add (local.get $spi) (i32.const 1)))
+                  (br $spl)))))
+            (if (call $is_array (local.get $spv))
+              (then
+                (let $spa i32 (call $val_payload (local.get $spv)))
+                (let $spj i32 (i32.const 0))
+                (block $sae (loop $sal
+                  (br_if $sae (i32.ge_s (local.get $spj) (call $arr_len (local.get $spa))))
+                  (call $scope_define (local.get $o) (call $to_str (call $num (f64.convert_i32_s (local.get $spj))))
+                    (call $arr_get (local.get $spa) (local.get $spj)))
+                  (set! $spj (i32.add (local.get $spj) (i32.const 1)))
+                  (br $sal)))))
+            (br_if $brk (i32.eqz (call $eat (i32.const 22))))
+            (br $cont)))
         ;; getter/setter: get/set <name>() {...}
         (if (i32.and (i32.eq (call $cur) (i32.const 3)) (i32.or (call $tok_is_kw (cstring "get")) (call $tok_is_kw (cstring "set"))))
           (then
