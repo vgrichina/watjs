@@ -58,16 +58,22 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
 - functions, parameters, `return`, recursion, closures, function expressions,
   `.name`/`.length`
 - `this`, method calls, `new`, prototypes (chain lookup), `.prototype`,
-  `.constructor`, `instanceof`
+  `.constructor`, `instanceof`, `in`, `delete`
+- getters/setters: object-literal `{ get x(){}, set x(v){} }` and
+  `Object.defineProperty(obj, key, {get,set}|{value})`
 - `throw`, `try`/`catch`; typed errors (engine throws `ReferenceError`/`TypeError`)
 - objects (literals, `.`/`[]` get/set, nested, prototype chain), arrays (literals,
   indexing, `.length`, push idiom), string `.length` and char indexing
-- builtins: `print`, `assert`, `eval`, `Number` (+`NaN`/`Infinity`), `String`,
-  `Boolean`, `Object`/`Object.keys`, `Math` (abs/floor/ceil/round/sqrt/max/min/
-  pow/trunc/sign + PI/E), `isNaN`, `isFinite`; error constructors via a JS prelude
+- builtins: `print`, `assert`, `eval`, `parseInt`/`parseFloat`, `isNaN`/`isFinite`;
+  `Number` (+`NaN`/`Infinity`/`MAX_SAFE_INTEGER`, `isNaN`/`isInteger`/`isFinite`),
+  `String`/`fromCharCode`, `Boolean`, `Array`/`isArray`,
+  `Object` (`keys`/`assign`/`create`/`getPrototypeOf`/`defineProperty`),
+  `Math` (abs/floor/ceil/round/sqrt/max/min/pow/trunc/sign + PI/E); error
+  constructors via a JS prelude
 - `String.prototype`: charAt/charCodeAt/indexOf/slice/substring/toUpperCase/
-  toLowerCase/toString/valueOf/constructor
-- `Array.prototype`: push/pop/indexOf/join/slice/forEach/map/includes (growable)
+  toLowerCase/split/trim/repeat/toString/valueOf/constructor
+- `Array.prototype` (growable): push/pop/indexOf/join/slice/forEach/map/filter/
+  reduce/concat/reverse/includes
 - ToPrimitive (`valueOf`/`toString`); comma operator
 
 ## Testing
