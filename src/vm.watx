@@ -1638,8 +1638,8 @@
               (set! $ai (i32.add (local.get $ai) (i32.const 1)))
               (br $aal)))
             (call $scope_define (local.get $cns) (cstring "arguments") (call $mk_arr (local.get $aobj)))))
-        (call $scope_define (local.get $cns) (cstring "this")  ;; bind `this` (receiver for methods)
-          (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef))))
+        (call $scope_define (local.get $cns) (cstring "this")  ;; bind `this`: receiver for methods, else the global object (sloppy mode)
+          (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $mk_obj (local.get $gscope)))))
         (if (i32.eq (local.get $op) (i32.const 21))  ;; TAILCALL: reuse current frame
           (then (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12)))))
           (else  ;; CALL / CALLM: push a new frame; result base drops callee (+ receiver)
