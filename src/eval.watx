@@ -732,6 +732,81 @@
     (then (call $scope_define (call $cur_scope) (local.get $name) (local.get $fv))))
   (local.get $fv))
 
+;; class Name { constructor(){} method(){} static m(){} get/set x(){} }
+(func $parse_class (param $as_decl i32) (result i64) (effects)
+  (call $advance)  ;; 'class'
+  (let $name i32 (i32.const 0))
+  (if (i32.eq (call $cur) (i32.const 3)) (then (set! $name (call $ident_name)) (call $advance)))
+  ;; extends Super
+  (let $super i64 (call $v_undef))
+  (let $hasSuper i32 (i32.const 0))
+  (if (call $tok_is_kw (cstring "extends"))
+    (then (call $advance) (set! $super (call $parse_postfix)) (set! $hasSuper (i32.const 1))))
+  (call $expect (i32.const 17) (cstring "expected {"))
+  (let $proto i32 (call $obj_new (i32.const 16)))
+  ;; if extends, link proto chain: proto.__proto__ = Super.prototype
+  (if (i32.and (local.get $hasSuper) (call $is_function (local.get $super)))
+    (then (i32.store (local.get $proto) (call $val_payload (call $fn_get_prototype (call $val_payload (local.get $super)))))))
+  (let $statics i32 (call $obj_new (i32.const 8)))
+  (let $ctor i32 (i32.const 0))
+  (block $brk (loop $cont
+    (br_if $brk (i32.eq (call $cur) (i32.const 18)))  ;; '}'
+    (br_if $brk (i32.eq (call $cur) (i32.const 0)))
+    (br_if $brk (call $err))
+    (if (i32.eq (call $cur) (i32.const 21)) (then (call $advance) (br $cont)))  ;; empty ';'
+    (let $isStatic i32 (i32.const 0))
+    (if (call $tok_is_kw (cstring "static")) (then (set! $isStatic (i32.const 1)) (call $advance)))
+    ;; get/set accessor methods
+    (if (i32.and (i32.eq (call $cur) (i32.const 3)) (i32.or (call $tok_is_kw (cstring "get")) (call $tok_is_kw (cstring "set"))))
+      (then
+        (let $ig i32 (call $tok_is_kw (cstring "get")))
+        (call $look_save)
+        (call $advance)
+        (if (i32.eq (call $cur) (i32.const 3))
+          (then
+            (let $an i32 (call $ident_name))
+            (call $advance)
+            (let $af i64 (call $parse_fn_body))
+            (call $scope_set_accessor (if i32 (local.get $isStatic) (then (local.get $statics)) (else (local.get $proto))) (local.get $an) (local.get $ig) (local.get $af))
+            (br $cont))
+          (else (call $look_restore)))))
+    ;; ordinary method (or constructor)
+    (let $mn i32 (call $ident_name))
+    (call $advance)
+    (let $mf i64 (call $parse_fn_body))
+    (if (i32.and (i32.eqz (local.get $isStatic)) (call $str_eq (local.get $mn) (cstring "constructor")))
+      (then (set! $ctor (call $val_payload (local.get $mf))))
+      (else (call $scope_define (if i32 (local.get $isStatic) (then (local.get $statics)) (else (local.get $proto))) (local.get $mn) (local.get $mf))))
+    (br $cont)))
+  (call $expect (i32.const 18) (cstring "expected }"))
+  ;; synthesize empty constructor if none
+  (if (i32.eqz (local.get $ctor))
+    (then
+      (set! $ctor (call $heap_alloc (i32.const 40)))
+      (i32.store (local.get $ctor) (i32.const 9999))             ;; empty-ctor sentinel
+      (i32.store (i32.add (local.get $ctor) (i32.const 8)) (i32.const 0))
+      (i32.store (i32.add (local.get $ctor) (i32.const 12)) (i32.const 0))))
+  ;; constructor.prototype = proto ; proto.constructor = constructor
+  (call $scope_define (call $fn_props (local.get $ctor)) (cstring "prototype") (call $mk_obj (local.get $proto)))
+  (call $scope_define (local.get $proto) (cstring "constructor") (call $mk_fn (local.get $ctor)))
+  ;; record superclass for super() (in the ctor's props)
+  (if (local.get $hasSuper) (then (call $scope_define (call $fn_props (local.get $ctor)) (cstring "__super__") (local.get $super))))
+  ;; copy static members onto the constructor function
+  (let $si i32 (i32.const 0))
+  (let $scnt i32 (call $scope_count (local.get $statics)))
+  (block $se (loop $sl
+    (br_if $se (i32.ge_s (local.get $si) (local.get $scnt)))
+    (let $e i32 (call $scope_entry (local.get $statics) (local.get $si)))
+    (call $scope_define (call $fn_props (local.get $ctor)) (i32.load (local.get $e)) (i64.load (i32.add (local.get $e) (i32.const 8))))
+    (set! $si (i32.add (local.get $si) (i32.const 1)))
+    (br $sl)))
+  (let $cv i64 (call $mk_fn (local.get $ctor)))
+  (call $scope_define (call $fn_props (local.get $ctor)) (cstring "name")
+    (call $mk_str (if i32 (i32.ne (local.get $name) (i32.const 0)) (then (local.get $name)) (else (cstring "")))))
+  (if (i32.and (local.get $as_decl) (i32.and (i32.ne (local.get $name) (i32.const 0)) (i32.eqz (call $suppress))))
+    (then (call $scope_define (call $cur_scope) (local.get $name) (local.get $cv))))
+  (local.get $cv))
+
 (func $retflag (result i32) (effects) (i32.load (i32.const 88)))
 ;; does the current token begin a statement (vs an expression)?
 (func $is_stmt_start (result i32) (effects)
@@ -742,7 +817,7 @@
   (i32.or (call $tok_is_kw (cstring "if")) (i32.or (call $tok_is_kw (cstring "while")) (i32.or (call $tok_is_kw (cstring "do"))
   (i32.or (call $tok_is_kw (cstring "for")) (i32.or (call $tok_is_kw (cstring "function")) (i32.or (call $tok_is_kw (cstring "return"))
   (i32.or (call $tok_is_kw (cstring "throw")) (i32.or (call $tok_is_kw (cstring "try")) (i32.or (call $tok_is_kw (cstring "break"))
-  (i32.or (call $tok_is_kw (cstring "continue")) (call $tok_is_kw (cstring "switch"))))))))))))))))
+  (i32.or (call $tok_is_kw (cstring "continue")) (i32.or (call $tok_is_kw (cstring "switch")) (call $tok_is_kw (cstring "class")))))))))))))))))
 ;; `this` binding (reg 144, i64)
 (func $get_this (result i64) (effects) (i64.load (i32.const 144)))
 (func $set_this (param $v i64) (effects) (i64.store (i32.const 144) (local.get $v)))
@@ -847,6 +922,7 @@
       (if (call $tok_is_kw (cstring "function")) (then (return (call $parse_function (i32.const 0)))))
       (if (call $tok_is_kw (cstring "this")) (then (call $advance) (return (call $get_this))))
       (if (call $tok_is_kw (cstring "new")) (then (return (call $parse_new))))
+      (if (call $tok_is_kw (cstring "class")) (then (return (call $parse_class (i32.const 0)))))
       ;; variable reference
       (let $nm i32 (call $ident_name))
       (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))
@@ -912,6 +988,12 @@
   (if (i32.load (local.get $fn))  ;; native constructor
     (then
       (let $nid i32 (i32.load (local.get $fn)))
+      ;; 9999 = synthesized empty class constructor → just create the instance
+      (if (i32.eq (local.get $nid) (i32.const 9999))
+        (then
+          (let $eo i32 (call $obj_new (i32.const 8)))
+          (i32.store (local.get $eo) (call $val_payload (call $fn_get_prototype (local.get $fn))))
+          (return (call $mk_obj (local.get $eo)))))
       ;; new Number/String/Boolean → a (truthy) wrapper object holding the primitive
       (if (i32.or (i32.eq (local.get $nid) (i32.const 4)) (i32.or (i32.eq (local.get $nid) (i32.const 5)) (i32.eq (local.get $nid) (i32.const 6))))
         (then
@@ -1548,7 +1630,8 @@
       (if (call $tok_is_kw (cstring "try"))      (then (call $parse_try) (return)))
       (if (call $tok_is_kw (cstring "break"))    (then (call $parse_break) (return)))
       (if (call $tok_is_kw (cstring "continue")) (then (call $parse_continue) (return)))
-      (if (call $tok_is_kw (cstring "switch"))   (then (call $parse_switch) (return)))))
+      (if (call $tok_is_kw (cstring "switch"))   (then (call $parse_switch) (return)))
+      (if (call $tok_is_kw (cstring "class"))    (then (drop (call $parse_class (i32.const 1))) (return)))))
   ;; expression statement
   (drop (call $parse_comma))
   (drop (call $eat (i32.const 21))))
