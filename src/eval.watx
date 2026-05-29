@@ -212,7 +212,7 @@
             (br $kl)))))
       (return (call $mk_arr (local.get $arr)))))
   ;; --- string methods (this = the string) ---
-  (if (i32.ge_s (local.get $id) (i32.const 11))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
     (then
       (let $s i32 (call $to_str (local.get $thisv)))
       (let $slen i32 (call $str_len (local.get $s)))
@@ -253,6 +253,97 @@
           (if (i32.lt_s (local.get $end) (i32.const 0)) (then (set! $end (i32.const 0))))
           (if (i32.gt_s (local.get $end) (local.get $slen)) (then (set! $end (local.get $slen))))
           (return (call $mk_str (call $substr (local.get $s) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))))
+      (return (call $v_undef))))
+  ;; --- array methods (this = the array) ---
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 20)) (call $is_array (local.get $thisv)))
+    (then
+      (let $arr i32 (call $val_payload (local.get $thisv)))
+      (let $n i32 (call $arr_len (local.get $arr)))
+      (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eq (local.get $id) (i32.const 20))  ;; push(...args)
+        (then
+          (let $k i32 (i32.const 0))
+          (block $pe (loop $pl
+            (br_if $pe (i32.ge_s (local.get $k) (local.get $argc)))
+            (call $arr_push (local.get $arr) (call $argn (local.get $argv) (local.get $argc) (local.get $k)))
+            (set! $k (i32.add (local.get $k) (i32.const 1)))
+            (br $pl)))
+          (return (call $num (f64.convert_i32_s (call $arr_len (local.get $arr)))))))
+      (if (i32.eq (local.get $id) (i32.const 21))  ;; pop()
+        (then
+          (if (i32.le_s (local.get $n) (i32.const 0)) (then (return (call $v_undef))))
+          (let $v i64 (call $arr_get (local.get $arr) (i32.sub (local.get $n) (i32.const 1))))
+          (i32.store (local.get $arr) (i32.sub (local.get $n) (i32.const 1)))
+          (return (local.get $v))))
+      (if (i32.eq (local.get $id) (i32.const 22))  ;; indexOf(x)
+        (then
+          (let $i i32 (i32.const 0))
+          (block $se (loop $sl
+            (br_if $se (i32.ge_s (local.get $i) (local.get $n)))
+            (if (call $strict_eq (call $arr_get (local.get $arr) (local.get $i)) (local.get $a0))
+              (then (return (call $num (f64.convert_i32_s (local.get $i))))))
+            (set! $i (i32.add (local.get $i) (i32.const 1)))
+            (br $sl)))
+          (return (call $num (f64.const -1)))))
+      (if (i32.eq (local.get $id) (i32.const 23))  ;; join(sep)
+        (then
+          (let $sep i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (call $to_str (local.get $a0))) (else (cstring ","))))
+          (let $out i32 (cstring ""))
+          (let $i i32 (i32.const 0))
+          (block $je (loop $jl
+            (br_if $je (i32.ge_s (local.get $i) (local.get $n)))
+            (if (i32.gt_s (local.get $i) (i32.const 0)) (then (set! $out (call $str_concat (local.get $out) (local.get $sep)))))
+            (let $e i64 (call $arr_get (local.get $arr) (local.get $i)))
+            (if (i32.eqz (i32.or (call $is_undefined (local.get $e)) (call $is_null (local.get $e))))
+              (then (set! $out (call $str_concat (local.get $out) (call $to_str (local.get $e))))))
+            (set! $i (i32.add (local.get $i) (i32.const 1)))
+            (br $jl)))
+          (return (call $mk_str (local.get $out)))))
+      (if (i32.eq (local.get $id) (i32.const 27))  ;; includes(x)
+        (then
+          (let $i i32 (i32.const 0))
+          (block $ie (loop $il
+            (br_if $ie (i32.ge_s (local.get $i) (local.get $n)))
+            (if (call $strict_eq (call $arr_get (local.get $arr) (local.get $i)) (local.get $a0)) (then (return (call $v_true))))
+            (set! $i (i32.add (local.get $i) (i32.const 1)))
+            (br $il)))
+          (return (call $v_false))))
+      ;; slice(start[,end]) (24)
+      (if (i32.eq (local.get $id) (i32.const 24))
+        (then
+          (let $start i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $end i32 (local.get $n))
+          (if (i32.ge_s (local.get $argc) (i32.const 2)) (then (set! $end (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+          (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.add (local.get $n) (local.get $start)))))
+          (if (i32.lt_s (local.get $end) (i32.const 0)) (then (set! $end (i32.add (local.get $n) (local.get $end)))))
+          (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.const 0))))
+          (if (i32.gt_s (local.get $end) (local.get $n)) (then (set! $end (local.get $n))))
+          (let $r i32 (call $arr_new (i32.const 8)))
+          (let $i i32 (local.get $start))
+          (block $ce (loop $cl
+            (br_if $ce (i32.ge_s (local.get $i) (local.get $end)))
+            (call $arr_push (local.get $r) (call $arr_get (local.get $arr) (local.get $i)))
+            (set! $i (i32.add (local.get $i) (i32.const 1)))
+            (br $cl)))
+          (return (call $mk_arr (local.get $r)))))
+      ;; forEach(fn) (25) / map(fn) (26)
+      (if (i32.or (i32.eq (local.get $id) (i32.const 25)) (i32.eq (local.get $id) (i32.const 26)))
+        (then
+          (let $r i32 (call $arr_new (i32.const 8)))
+          (let $i i32 (i32.const 0))
+          (let $cargv i32 (call $heap_alloc (i32.const 24)))
+          (block $fe (loop $fl
+            (br_if $fe (i32.ge_s (local.get $i) (local.get $n)))
+            (i64.store (local.get $cargv) (call $arr_get (local.get $arr) (local.get $i)))
+            (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
+            (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
+            (let $res i64 (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $v_undef)))
+            (if (i32.eq (local.get $id) (i32.const 26)) (then (call $arr_push (local.get $r) (local.get $res))))
+            (br_if $fe (call $err))
+            (set! $i (i32.add (local.get $i) (i32.const 1)))
+            (br $fl)))
+          (if (i32.eq (local.get $id) (i32.const 26)) (then (return (call $mk_arr (local.get $r)))))
+          (return (call $v_undef))))
       (return (call $v_undef))))
   (call $v_undef))
 
@@ -297,6 +388,14 @@
   (call $set_this (local.get $savedThis))
   (call $cursor_restore (local.get $savedCur))
   (local.get $rv))
+
+;; call a function value with args + this
+(func $call_val (param $fnval i64) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
+  (if (i32.eqz (call $is_function (local.get $fnval))) (then (return (call $v_undef))))
+  (let $fn i32 (call $val_payload (local.get $fnval)))
+  (if i64 (i32.load (local.get $fn))
+    (then (call $call_native (i32.load (local.get $fn)) (local.get $argc) (local.get $argv) (local.get $thisv)))
+    (else (call $call_user (local.get $fn) (local.get $argc) (local.get $argv) (local.get $thisv)))))
 
 ;; call a function value with a given `this` and no arguments
 (func $call_fn0 (param $fnval i64) (param $thisv i64) (result i64) (effects)
@@ -1260,6 +1359,17 @@
   (call $scope_define (local.get $sp) (cstring "toString") (call $mk_native (i32.const 18) (cstring "toString")))
   (call $scope_define (local.get $sp) (cstring "valueOf") (call $mk_native (i32.const 18) (cstring "valueOf")))
   (call $scope_define (local.get $sp) (cstring "constructor") (local.get $strf))
+  ;; Array.prototype (reg 160) — methods dispatched on arrays
+  (let $ap i32 (call $obj_new (i32.const 16)))
+  (i32.store (i32.const 160) (local.get $ap))
+  (call $scope_define (local.get $ap) (cstring "push") (call $mk_native (i32.const 20) (cstring "push")))
+  (call $scope_define (local.get $ap) (cstring "pop") (call $mk_native (i32.const 21) (cstring "pop")))
+  (call $scope_define (local.get $ap) (cstring "indexOf") (call $mk_native (i32.const 22) (cstring "indexOf")))
+  (call $scope_define (local.get $ap) (cstring "join") (call $mk_native (i32.const 23) (cstring "join")))
+  (call $scope_define (local.get $ap) (cstring "slice") (call $mk_native (i32.const 24) (cstring "slice")))
+  (call $scope_define (local.get $ap) (cstring "forEach") (call $mk_native (i32.const 25) (cstring "forEach")))
+  (call $scope_define (local.get $ap) (cstring "map") (call $mk_native (i32.const 26) (cstring "map")))
+  (call $scope_define (local.get $ap) (cstring "includes") (call $mk_native (i32.const 27) (cstring "includes")))
   ;; Object with .keys
   (let $objf i64 (call $def_native (local.get $g) (cstring "Object") (i32.const 9)))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "keys")) (call $mk_native (i32.const 10) (cstring "keys")))
