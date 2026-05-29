@@ -71,6 +71,21 @@
       (call $vm_emit_op (local.get $code) (i32.const 8))        ;; LOADVAR
       (call $vm_emit_op (local.get $code) (call $ident_name))
       (call $next_token)
+      ;; call suffix: f(args) [ (args) ]*  → push args, CALL argc
+      (block $cse (loop $csl
+        (br_if $cse (i32.ne (call $tok_kind) (i32.const 15)))  ;; '('
+        (call $next_token)
+        (let $argc i32 (i32.const 0))
+        (if (i32.ne (call $tok_kind) (i32.const 16))  ;; non-empty arg list
+          (then (block $ae (loop $al
+            (call $vm_c_cmp (local.get $code))
+            (set! $argc (i32.add (local.get $argc) (i32.const 1)))
+            (br_if $ae (i32.eqz (call $eat (i32.const 22))))  ;; ','
+            (br $al)))))
+        (call $next_token)  ;; ')'
+        (call $vm_emit_op (local.get $code) (i32.const 19))      ;; CALL
+        (call $vm_emit_op (local.get $code) (local.get $argc))
+        (br $csl)))
       (return))))
 
 (func $vm_c_mul (param $code i32) (effects)
@@ -124,6 +139,58 @@
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 3))
     (then
+      ;; function NAME ( params ) { body }
+      (if (call $tok_is_kw (cstring "function"))
+        (then
+          (call $next_token)
+          (let $fname i32 (call $ident_name)) (call $next_token)
+          (call $next_token)  ;; '('
+          (let $params i32 (call $heap_alloc (i32.const 256)))
+          (let $np i32 (i32.const 0))
+          (if (i32.ne (call $tok_kind) (i32.const 16))
+            (then (block $pe (loop $pl
+              (i32.store (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4))) (call $ident_name))
+              (call $next_token)
+              (set! $np (i32.add (local.get $np) (i32.const 1)))
+              (br_if $pe (i32.eqz (call $eat (i32.const 22))))
+              (br $pl)))))
+          (call $next_token)  ;; ')'
+          (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
+          (let $entry i32 (call $vm_emit_cursor))
+          (call $vm_c_stmt (local.get $code))  ;; body block
+          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+          (call $vm_emit_op (local.get $code) (i32.const 20))  ;; default RET undefined
+          (call $vm_patch (local.get $code) (local.get $pj))
+          ;; build fn struct: @0 entry, @4 nparams, @8.. param name ptrs
+          (let $fn i32 (call $heap_alloc (i32.add (i32.const 8) (i32.mul (local.get $np) (i32.const 4)))))
+          (i32.store (local.get $fn) (local.get $entry))
+          (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $np))
+          (let $ci i32 (i32.const 0))
+          (block $ce (loop $cl
+            (br_if $ce (i32.ge_s (local.get $ci) (local.get $np)))
+            (i32.store (i32.add (i32.add (local.get $fn) (i32.const 8)) (i32.mul (local.get $ci) (i32.const 4)))
+                       (i32.load (i32.add (local.get $params) (i32.mul (local.get $ci) (i32.const 4)))))
+            (set! $ci (i32.add (local.get $ci) (i32.const 1)))
+            (br $cl)))
+          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_fn (local.get $fn)))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fname))  ;; STOREVAR
+          (return)))
+      ;; return [expr] ;   (tail call peephole: trailing CALL → TAILCALL)
+      (if (call $tok_is_kw (cstring "return"))
+        (then
+          (call $next_token)
+          (if (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0))))
+            (then
+              (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+              (call $vm_emit_op (local.get $code) (i32.const 20))
+              (drop (call $eat (i32.const 21)))
+              (return)))
+          (call $vm_c_cmp (local.get $code))
+          (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 19))  ;; ends in CALL?
+            (then (i32.store (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8))) (i32.const 21)))  ;; → TAILCALL
+            (else (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET
+          (drop (call $eat (i32.const 21)))
+          (return)))
       ;; var NAME = expr ;   /   NAME = expr ;
       (if (call $tok_is_kw (cstring "var"))
         (then
@@ -232,15 +299,19 @@
   (local.get $code))
 
 ;; ── resumable VM context — execution state reified in memory ──
-;; layout: @0 code, @4 ip, @8 stack, @12 sp, @16 done, @20 scope (variables)
+;; layout: @0 code, @4 ip, @8 stack, @12 sp, @16 done, @20 scope (current),
+;;         @24 curframe (in-memory call-frame chain), @28 gscope (globals)
 (func $vm_new (param $code i32) (result i32) (effects)
-  (let $ctx i32 (call $heap_alloc (i32.const 28)))
+  (let $ctx i32 (call $heap_alloc (i32.const 32)))
+  (let $gs i32 (call $scope_new (i32.const 0) (i32.const 16)))
   (i32.store (local.get $ctx) (local.get $code))
   (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.const 0))           ;; ip
-  (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 8192)))  ;; operand stack
+  (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 65536)))  ;; operand stack
   (i32.store (i32.add (local.get $ctx) (i32.const 12)) (i32.const 0))          ;; sp
   (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 0))          ;; done
-  (i32.store (i32.add (local.get $ctx) (i32.const 20)) (call $scope_new (i32.const 0) (i32.const 16)))  ;; variable scope
+  (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $gs))        ;; current scope = globals
+  (i32.store (i32.add (local.get $ctx) (i32.const 24)) (i32.const 0))          ;; no active frame
+  (i32.store (i32.add (local.get $ctx) (i32.const 28)) (local.get $gs))        ;; global scope (closure parent)
   (local.get $ctx))
 
 (func $vm_done (param $ctx i32) (result i32) (effects) (i32.load (i32.add (local.get $ctx) (i32.const 16))))
@@ -255,6 +326,8 @@
   (let $ip i32 (i32.load (i32.add (local.get $ctx) (i32.const 4))))
   (let $sp i32 (i32.load (i32.add (local.get $ctx) (i32.const 12))))
   (let $scope i32 (i32.load (i32.add (local.get $ctx) (i32.const 20))))
+  (let $frame i32 (i32.load (i32.add (local.get $ctx) (i32.const 24))))
+  (let $gscope i32 (i32.load (i32.add (local.get $ctx) (i32.const 28))))
   (loop $disp
     (let $op i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
     (set! $ip (i32.add (local.get $ip) (i32.const 4)))
@@ -263,6 +336,8 @@
         (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
         (i32.store (i32.add (local.get $ctx) (i32.const 4)) (local.get $ip))
         (i32.store (i32.add (local.get $ctx) (i32.const 12)) (local.get $sp))
+        (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $scope))
+        (i32.store (i32.add (local.get $ctx) (i32.const 24)) (local.get $frame))
         (return (if i64 (i32.gt_s (local.get $sp) (i32.const 0))
                   (then (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
                   (else (call $v_undef))))))
@@ -271,7 +346,56 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (i32.store (i32.add (local.get $ctx) (i32.const 4)) (local.get $ip))
         (i32.store (i32.add (local.get $ctx) (i32.const 12)) (local.get $sp))
+        (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $scope))
+        (i32.store (i32.add (local.get $ctx) (i32.const 24)) (local.get $frame))
         (return (i64.load (i32.add (local.get $stack) (local.get $sp))))))
+    (if (i32.or (i32.eq (local.get $op) (i32.const 19)) (i32.eq (local.get $op) (i32.const 21)))  ;; CALL / TAILCALL (operand: argc)
+      (then
+        (let $argc i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))  ;; callee slot
+        (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
+        (let $centry i32 (i32.load (local.get $cfn)))
+        (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 4))))
+        (let $cns i32 (call $scope_new (local.get $gscope) (i32.add (local.get $cnp) (i32.const 4))))
+        (let $pi i32 (i32.const 0))
+        (block $pe (loop $pl
+          (br_if $pe (i32.ge_s (local.get $pi) (local.get $cnp)))
+          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 8)) (i32.mul (local.get $pi) (i32.const 4))))
+            (if i64 (i32.lt_s (local.get $pi) (local.get $argc))
+              (then (i64.load (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.mul (i32.add (local.get $pi) (i32.const 1)) (i32.const 8))))))
+              (else (call $v_undef))))
+          (set! $pi (i32.add (local.get $pi) (i32.const 1)))
+          (br $pl)))
+        (if (i32.eq (local.get $op) (i32.const 19))  ;; CALL: push a new frame
+          (then
+            (let $fr i32 (call $heap_alloc (i32.const 16)))
+            (i32.store (local.get $fr) (local.get $ip))                     ;; return ip
+            (i32.store (i32.add (local.get $fr) (i32.const 4)) (local.get $frame))   ;; parent
+            (i32.store (i32.add (local.get $fr) (i32.const 8)) (local.get $scope))   ;; caller scope
+            (i32.store (i32.add (local.get $fr) (i32.const 12)) (local.get $cbase))  ;; operand base
+            (set! $frame (local.get $fr))
+            (set! $sp (local.get $cbase)))
+          (else  ;; TAILCALL: reuse the current frame (so callee returns to our caller)
+            (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12))))))
+        (set! $scope (local.get $cns))
+        (set! $ip (local.get $centry))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 20))  ;; RET
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $rv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (if (i32.eqz (local.get $frame))  ;; top-level return → halt
+          (then
+            (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
+            (return (local.get $rv))))
+        (set! $ip (i32.load (local.get $frame)))
+        (set! $scope (i32.load (i32.add (local.get $frame) (i32.const 8))))
+        (let $rb i32 (i32.load (i32.add (local.get $frame) (i32.const 12))))
+        (set! $frame (i32.load (i32.add (local.get $frame) (i32.const 4))))
+        (i64.store (i32.add (local.get $stack) (local.get $rb)) (local.get $rv))
+        (set! $sp (i32.add (local.get $rb) (i32.const 8)))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 1))  ;; PUSH imm
       (then
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (i64.load (i32.add (local.get $code) (local.get $ip))))
