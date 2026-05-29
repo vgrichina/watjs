@@ -736,7 +736,24 @@
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
     (call $vm_patch (local.get $code) (i32.load (i32.add (local.get $patches) (i32.mul (local.get $i) (i32.const 4)))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
-    (br $pl))))
+    (br $pl)))
+  ;; ?? nullish coalescing (token 56): a ?? b → a unless a is null/undefined
+  (let $npat i32 (call $heap_alloc (i32.const 256)))
+  (let $nn i32 (i32.const 0))
+  (block $ne (loop $nl
+    (br_if $ne (i32.ne (call $tok_kind) (i32.const 56)))
+    (call $next_token)
+    (i32.store (i32.add (local.get $npat) (i32.mul (local.get $nn) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 68)))  ;; JMP_NN (keep non-nullish left)
+    (set! $nn (i32.add (local.get $nn) (i32.const 1)))
+    (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP nullish left
+    (call $vm_c_and (local.get $code))
+    (br $nl)))
+  (let $ni i32 (i32.const 0))
+  (block $npe (loop $npl
+    (br_if $npe (i32.ge_s (local.get $ni) (local.get $nn)))
+    (call $vm_patch (local.get $code) (i32.load (i32.add (local.get $npat) (i32.mul (local.get $ni) (i32.const 4)))))
+    (set! $ni (i32.add (local.get $ni) (i32.const 1)))
+    (br $npl))))
 
 ;; conditional  c ? t : e  (lowest precedence, right-assoc)
 (func $vm_c_expr (param $code i32) (effects)
@@ -2035,6 +2052,13 @@
         (let $tgt i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (if (call $truthy (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))) (then (set! $ip (local.get $tgt))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 68))  ;; JMP_NN — jump if top is NOT null/undefined, keep it (for ??)
+      (then
+        (let $tgt i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $nv i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        (if (i32.eqz (i32.or (call $is_null (local.get $nv)) (call $is_undefined (local.get $nv)))) (then (set! $ip (local.get $tgt))))
         (br $disp)))
     (if (i32.or (i32.and (i32.ge_s (local.get $op) (i32.const 14)) (i32.le_s (local.get $op) (i32.const 18)))
                 (i32.and (i32.ge_s (local.get $op) (i32.const 24)) (i32.le_s (local.get $op) (i32.const 26))))  ;; comparisons + eq/neq
