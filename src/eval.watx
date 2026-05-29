@@ -495,6 +495,10 @@
       (return (call $mk_obj (local.get $feo)))))
   (if (i32.eq (local.get $id) (i32.const 150))  ;; generator .next() — resumes the VM context
     (then (return (call $vm_gen_result (local.get $thisv)))))
+  (if (i32.eq (local.get $id) (i32.const 151))  ;; Promise.resolve(v)
+    (then (return (call $vm_promise (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 152))  ;; promise.then(cb)
+    (then (return (call $vm_promise_then (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 93))  ;; obj.hasOwnProperty(key)
     (then
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
@@ -2927,6 +2931,10 @@
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
   (drop (call $def_native (local.get $g) (cstring "Map") (i32.const 120)))
   (drop (call $def_native (local.get $g) (cstring "Set") (i32.const 130)))
+  ;; Promise object with a resolve() factory (minimal; see vm.watx)
+  (let $promo i32 (call $obj_new (i32.const 4)))
+  (call $scope_define (local.get $promo) (cstring "resolve") (call $mk_native (i32.const 151) (cstring "resolve")))
+  (call $scope_define (local.get $g) (cstring "Promise") (call $mk_obj (local.get $promo)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "of")) (call $mk_native (i32.const 110) (cstring "of")))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 111) (cstring "from")))
   ;; Math object with methods + constants
