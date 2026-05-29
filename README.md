@@ -54,7 +54,8 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
 - Number literals: decimal, exponent, `0x`/`0b`/`0o`
 - `var` (with hoisting)/`let`/`const`, assignment, lexical scope, blocks
 - `if`/`else`, `while`, `do`/`while`, `for`, `for`-`in`, `for`-`of`, `switch`
-  (fall-through), `break`, `continue`
+  (fall-through), `break`, `continue`, labelled statements (`label:`,
+  `break label`, `continue label`)
 - functions, parameters, `return`, recursion, closures, function expressions,
   `.name`/`.length`, `arguments` object
 - arrow functions (`x=>e`, `(a,b)=>e`, `()=>{...}`), template literals
@@ -147,7 +148,7 @@ and array elision (holes).
 
 Not implemented: **generators**/**async** (need continuation capture — a
 bytecode-VM rewrite), tail-call optimization, regex groups/alternation/
-backrefs/flags, labelled statements, BigInt, modules, `Proxy`/`Reflect`,
+backrefs/flags, BigInt, modules, `Proxy`/`Reflect`,
 TypedArrays, full Unicode (identifiers, property escapes), strict-mode
 semantics, spec-exact (shortest round-trip) number-to-string and denormals,
 regex literals (`/.../`), named-function-expression name binding,
