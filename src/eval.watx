@@ -605,6 +605,20 @@
           (if (i32.gt_s (local.get $end) (local.get $slen)) (then (set! $end (local.get $slen))))
           (return (call $mk_str (call $substr (local.get $s) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))))
       (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 138))  ;; substr(start, length) — legacy
+    (then
+      (let $s2 i32 (call $to_str (local.get $thisv)))
+      (let $sl2 i32 (call $str_len (local.get $s2)))
+      (let $st i32 (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (if (i32.lt_s (local.get $st) (i32.const 0))
+        (then (set! $st (i32.add (local.get $sl2) (local.get $st))) (if (i32.lt_s (local.get $st) (i32.const 0)) (then (set! $st (i32.const 0))))))
+      (if (i32.gt_s (local.get $st) (local.get $sl2)) (then (set! $st (local.get $sl2))))
+      (let $ln i32 (i32.sub (local.get $sl2) (local.get $st)))  ;; default → to end
+      (if (i32.ge_s (local.get $argc) (i32.const 2))
+        (then (set! $ln (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+      (if (i32.lt_s (local.get $ln) (i32.const 0)) (then (set! $ln (i32.const 0))))
+      (if (i32.gt_s (local.get $ln) (i32.sub (local.get $sl2) (local.get $st))) (then (set! $ln (i32.sub (local.get $sl2) (local.get $st)))))
+      (return (call $mk_str (call $substr (local.get $s2) (local.get $st) (local.get $ln))))))
   ;; --- string2 methods (this = string): 60 split,61 trim,62 repeat,63 includes,64 startsWith,65 endsWith,66 padStart,67 padEnd,68 at ---
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 60)) (i32.le_s (local.get $id) (i32.const 68)))
     (then
@@ -778,6 +792,25 @@
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl)))
           (return (local.get $racc))))
       (return (call $v_undef))))
+  (if (i32.and (i32.eq (local.get $id) (i32.const 137)) (call $is_array (local.get $thisv)))  ;; reduceRight(fn[, init])
+    (then
+      (let $rarr i32 (call $val_payload (local.get $thisv)))
+      (let $rfn i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $racc2 i64 (call $v_undef))
+      (let $ri i32 (i32.sub (call $arr_len (local.get $rarr)) (i32.const 1)))
+      (if (i32.ge_s (local.get $argc) (i32.const 2))
+        (then (set! $racc2 (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+        (else (set! $racc2 (call $arr_get (local.get $rarr) (local.get $ri))) (set! $ri (i32.sub (local.get $ri) (i32.const 1)))))
+      (let $rcargv i32 (call $heap_alloc (i32.const 32)))
+      (block $rde (loop $rdl (br_if $rde (i32.lt_s (local.get $ri) (i32.const 0)))
+        (i64.store (local.get $rcargv) (local.get $racc2))
+        (i64.store (i32.add (local.get $rcargv) (i32.const 8)) (call $arr_get (local.get $rarr) (local.get $ri)))
+        (i64.store (i32.add (local.get $rcargv) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $ri))))
+        (i64.store (i32.add (local.get $rcargv) (i32.const 24)) (local.get $thisv))
+        (set! $racc2 (call $call_val (local.get $rfn) (i32.const 4) (local.get $rcargv) (call $v_undef)))
+        (br_if $rde (call $err))
+        (set! $ri (i32.sub (local.get $ri) (i32.const 1))) (br $rdl)))
+      (return (local.get $racc2))))
   ;; --- static object/array/number/string methods (ids 80-87) ---
   (if (i32.eq (local.get $id) (i32.const 105))  ;; JSON.stringify(v)
     (then
@@ -2902,6 +2935,7 @@
   (call $scope_define (local.get $sp) (cstring "indexOf") (call $mk_native (i32.const 13) (cstring "indexOf")))
   (call $scope_define (local.get $sp) (cstring "slice") (call $mk_native (i32.const 14) (cstring "slice")))
   (call $scope_define (local.get $sp) (cstring "substring") (call $mk_native (i32.const 15) (cstring "substring")))
+  (call $scope_define (local.get $sp) (cstring "substr") (call $mk_native (i32.const 138) (cstring "substr")))
   (call $scope_define (local.get $sp) (cstring "toUpperCase") (call $mk_native (i32.const 16) (cstring "toUpperCase")))
   (call $scope_define (local.get $sp) (cstring "toLowerCase") (call $mk_native (i32.const 17) (cstring "toLowerCase")))
   (call $scope_define (local.get $sp) (cstring "toString") (call $mk_native (i32.const 18) (cstring "toString")))
@@ -2945,6 +2979,7 @@
   (call $scope_define (local.get $ap) (cstring "reverse") (call $mk_native (i32.const 71) (cstring "reverse")))
   (call $scope_define (local.get $ap) (cstring "filter") (call $mk_native (i32.const 72) (cstring "filter")))
   (call $scope_define (local.get $ap) (cstring "reduce") (call $mk_native (i32.const 73) (cstring "reduce")))
+  (call $scope_define (local.get $ap) (cstring "reduceRight") (call $mk_native (i32.const 137) (cstring "reduceRight")))
   (call $scope_define (local.get $ap) (cstring "find") (call $mk_native (i32.const 74) (cstring "find")))
   (call $scope_define (local.get $ap) (cstring "findIndex") (call $mk_native (i32.const 75) (cstring "findIndex")))
   (call $scope_define (local.get $ap) (cstring "some") (call $mk_native (i32.const 76) (cstring "some")))
