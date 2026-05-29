@@ -435,6 +435,21 @@
             (call $vm_emit_op (local.get $code) (local.get $mcop))
             (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP
             (br $e)))
+        (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; obj.key++ / obj.key-- (postfix → old value)
+          (then
+            (let $mpop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
+            (call $next_token)
+            (let $mpt i32 (call $vm_tmpname))
+            (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP obj → [obj, obj]
+            (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP → [obj, old]
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; STOREVAR @@t=old → [obj]
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; LOADVAR old → [obj, old]
+            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 1)))
+            (call $vm_emit_op (local.get $code) (local.get $mpop))  ;; old±1 → [obj, new]
+            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP → [new]
+            (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP → []
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; LOADVAR old (result)
+            (br $e)))
         (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method call: obj.key(args)
           (then
             (call $vm_emit_op (local.get $code) (i32.const 32))                                      ;; DUP receiver
@@ -1378,6 +1393,7 @@
   (let $ctx i32 (call $heap_alloc (i32.const 40)))
   (let $gs i32 (call $scope_new (i32.const 0) (i32.const 256)))
   (call $setup_globals (local.get $gs))  ;; builtins, prototypes, Math, etc.
+  (call $scope_define (local.get $gs) (cstring "this") (call $mk_obj (local.get $gs)))  ;; global `this` = the global object
   (i32.store (local.get $ctx) (local.get $code))
   (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.const 0))           ;; ip
   (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 1048576)))  ;; operand stack (1 MB; heap grows on demand)
