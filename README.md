@@ -63,6 +63,8 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
   `Object.defineProperty(obj, key, {get,set}|{value})`
 - classes: declarations/expressions, methods, `static`, `get`/`set`, `extends`,
   `super()`/`super.m()` (single-level inheritance)
+- regex (backtracking): `RegExp`/`.test()`, `String` `match`/`replace`/`search` —
+  literals, `.`, classes `[..]`/`[^..]`, `\d\w\s`+negations, anchors, `* + ? {n,m}`
 - `throw`, `try`/`catch`; typed errors (engine throws `ReferenceError`/`TypeError`)
 - objects (literals, `.`/`[]` get/set, nested, prototype chain), arrays (literals,
   indexing, `.length`, push idiom), string `.length` and char indexing
@@ -113,10 +115,12 @@ function-expression-as-loop-condition edge cases, boxed-primitive `valueOf` corn
 
 ## Known limitations / next increments
 
-Boxed primitive wrappers (`new Number/String/Boolean` as objects), getters/setters,
-`Object`/`Array.prototype` methods (`keys`, `push`, `map`, `forEach`, `join`, …),
-labelled statements, `**`, `delete`/`in`, regex, BigInt, generators, `async`/`await`,
-classes, modules, `Proxy`/`Reflect`, TypedArrays, Unicode (escapes, non-ASCII
-whitespace, identifiers), strict mode, spec-exact (shortest round-trip)
-number-to-string, multi-declarator var hoisting, array growth beyond literal
-capacity (64). Each is an incremental step toward broader test262 coverage.
+Not implemented: regex groups/alternation/backrefs/flags, labelled statements,
+`**`, BigInt, modules, `Proxy`/`Reflect`, TypedArrays, full Unicode (identifiers,
+property escapes), strict-mode semantics, spec-exact (shortest round-trip)
+number-to-string, multi-declarator var hoisting, regex literals (`/.../`).
+
+**Generators and `async`/`await`** need continuation capture (suspend/resume a
+call mid-execution). The re-scan/parse-and-evaluate interpreter cannot suspend a
+WAT call stack, so these require re-architecting around an explicit bytecode VM
+with a savable stack — a different engine, not an incremental feature.
