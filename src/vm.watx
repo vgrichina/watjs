@@ -200,6 +200,8 @@
     (then
       (if (call $tok_is_kw (cstring "function"))  ;; function expression → pushes the fn value
         (then (drop (call $vm_c_function (local.get $code))) (return)))
+      (if (call $tok_is_kw (cstring "class"))  ;; class expression → pushes the class value
+        (then (call $vm_c_class (local.get $code) (i32.const 1)) (return)))
       (if (call $tok_is_kw (cstring "super"))  ;; super(args)  |  super.method(args)
         (then
           (call $next_token)
@@ -257,6 +259,10 @@
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1))) (call $next_token) (return)))
       (if (call $tok_is_kw (cstring "false"))
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 0))) (call $next_token) (return)))
+      (if (call $tok_is_kw (cstring "undefined"))
+        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (call $next_token) (return)))
+      (if (call $tok_is_kw (cstring "null"))
+        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_null)) (call $next_token) (return)))
       (let $vn i32 (call $ident_name)) (call $next_token)
       (if (i32.eq (call $tok_kind) (i32.const 52))  ;; NAME => body  (single-param arrow, no parens)
         (then
@@ -505,7 +511,19 @@
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "await")))  ;; await expr
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 50)) (return)))  ;; AWAIT
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "typeof")))  ;; typeof expr
-    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 58)) (return)))  ;; TYPEOF
+    (then
+      (call $next_token)  ;; consume 'typeof'
+      (if (i32.eq (call $tok_kind) (i32.const 3))  ;; typeof <identifier …>
+        (then
+          (let $tsc i32 (call $cursor_save))  ;; positioned at the identifier
+          (let $tnm i32 (call $ident_name))
+          (call $next_token)
+          (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 15))))
+            (then (call $cursor_restore (local.get $tsc)) (call $vm_c_pow (local.get $code)))  ;; member/call → normal operand
+            (else (call $vm_emit_op (local.get $code) (i32.const 62)) (call $vm_emit_op (local.get $code) (local.get $tnm))))  ;; bare var → LOADVAR_SOFT (no ReferenceError)
+          (call $vm_emit_op (local.get $code) (i32.const 58))  ;; TYPEOF
+          (return)))
+      (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 58)) (return)))  ;; TYPEOF of other expr
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "void")))  ;; void expr → undefined
     (then (call $next_token) (call $vm_c_unary (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP operand
@@ -751,6 +769,64 @@
     (br $cl)))
   (call $vm_emit_op (local.get $code) (i32.const 61)) (call $vm_emit_op (local.get $code) (local.get $fn)))  ;; CLOSURE (capture defining scope)
 
+;; class declaration/expression. Cursor at 'class'. Builds the prototype object,
+;; the constructor, and methods (static members stored on the prototype for now).
+;; isExpr=1 leaves the class value on the operand stack; isExpr=0 (declaration)
+;; STOREVARs it under the class name.
+(func $vm_c_class (param $code i32) (param $isExpr i32) (effects)
+  (call $next_token)  ;; 'class'
+  (let $clsname i32 (i32.const 0))  ;; optional (anonymous class expression)
+  (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eqz (call $tok_is_kw (cstring "extends"))))
+    (then (set! $clsname (call $ident_name)) (call $next_token)))
+  (let $protoT i32 (call $vm_tmpname))
+  (let $ctorT i32 (call $vm_tmpname))
+  (let $superT i32 (i32.const 0))
+  (if (call $tok_is_kw (cstring "extends"))
+    (then
+      (call $next_token)
+      (set! $superT (call $vm_tmpname))
+      (call $vm_c_postfix (local.get $code))
+      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $superT))))
+  (call $next_token)  ;; '{'
+  (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWOBJ 0 → empty proto
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $protoT))
+  (if (local.get $superT)
+    (then
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $superT))
+      (call $vm_emit_op (local.get $code) (i32.const 57))  ;; EXTEND → [proto]
+      (call $vm_emit_op (local.get $code) (i32.const 11))))
+  (let $hasctor i32 (i32.const 0))
+  (block $cme (loop $cml
+    (br_if $cme (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
+    (br_if $cme (i32.eq (call $tok_kind) (i32.const 0)))
+    (if (call $str_eq (call $ident_name) (cstring "static"))  ;; consume `static` modifier (see note above)
+      (then
+        (let $stc i32 (call $cursor_save))
+        (call $next_token)
+        (if (i32.eq (call $tok_kind) (i32.const 15)) (then (call $cursor_restore (local.get $stc))))))  ;; method named "static"
+    (let $mn i32 (call $ident_name)) (call $next_token)
+    (if (call $str_eq (local.get $mn) (cstring "constructor"))
+      (then
+        (call $vm_c_fnbody (local.get $code))
+        (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))
+        (set! $hasctor (i32.const 1)))
+      (else
+        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
+        (call $vm_c_fnbody (local.get $code))
+        (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $mn))
+        (call $vm_emit_op (local.get $code) (i32.const 11))))
+    (br $cml)))
+  (call $next_token)  ;; '}'
+  (if (i32.eqz (local.get $hasctor))
+    (then (call $vm_emit_empty_fn (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ctorT))   ;; LOADVAR ctor
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
+  (call $vm_emit_op (local.get $code) (i32.const 51))  ;; SETPROTO → [ctor]
+  ;; expression → leave [ctor] on the stack; declaration → bind the name
+  (if (i32.eqz (local.get $isExpr))
+    (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname)))))  ;; STOREVAR C
+
 ;; statement compiler — emits bytecode (control flow via jumps, not re-scanning)
 (func $vm_c_stmt (param $code i32) (effects)
   ;; block { ... }
@@ -768,61 +844,7 @@
     (then
       ;; class NAME { constructor(...){...} method(){...} ... }
       (if (call $tok_is_kw (cstring "class"))
-        (then
-          (call $next_token)
-          (let $clsname i32 (call $ident_name)) (call $next_token)
-          (let $protoT i32 (call $vm_tmpname))
-          (let $ctorT i32 (call $vm_tmpname))
-          (let $superT i32 (i32.const 0))  ;; temp holding the superclass (extends)
-          (if (call $tok_is_kw (cstring "extends"))
-            (then
-              (call $next_token)
-              (set! $superT (call $vm_tmpname))
-              (call $vm_c_postfix (local.get $code))  ;; the superclass expression
-              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $superT))))  ;; STOREVAR super
-          (call $next_token)  ;; '{'
-          (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWOBJ 0 → empty proto
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; STOREVAR proto
-          ;; link inheritance if extends
-          (if (local.get $superT)
-            (then
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $superT))  ;; LOADVAR super
-              (call $vm_emit_op (local.get $code) (i32.const 57))  ;; EXTEND → [proto]
-              (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP
-          (let $hasctor i32 (i32.const 0))
-          (block $cme (loop $cml
-            (br_if $cme (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
-            (br_if $cme (i32.eq (call $tok_kind) (i32.const 0)))
-            ;; `static` modifier: consume it (static members are stored on the prototype
-            ;; for now — get_prop on the constructor reads that same scope; spec-exact
-            ;; static/instance isolation is future work). A method literally named
-            ;; "static" is `static(` — detected by the '(' that follows.
-            (if (call $str_eq (call $ident_name) (cstring "static"))
-              (then
-                (let $stc i32 (call $cursor_save))
-                (call $next_token)
-                (if (i32.eq (call $tok_kind) (i32.const 15)) (then (call $cursor_restore (local.get $stc))))))  ;; '(' → it's a method named "static"
-            (let $mn i32 (call $ident_name)) (call $next_token)
-            (if (call $str_eq (local.get $mn) (cstring "constructor"))
-              (then
-                (call $vm_c_fnbody (local.get $code))  ;; PUSH ctor fn
-                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))  ;; STOREVAR ctor
-                (set! $hasctor (i32.const 1)))
-              (else
-                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
-                (call $vm_c_fnbody (local.get $code))  ;; PUSH method fn
-                (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; SETPROP proto.method
-                (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP
-            (br $cml)))
-          (call $next_token)  ;; '}'
-          (if (i32.eqz (local.get $hasctor))
-            (then (call $vm_emit_empty_fn (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))))
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ctorT))   ;; LOADVAR ctor
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
-          (call $vm_emit_op (local.get $code) (i32.const 51))  ;; SETPROTO → [ctor]
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname))  ;; STOREVAR C
-          (return)))
+        (then (call $vm_c_class (local.get $code) (i32.const 0)) (return)))  ;; class declaration
       ;; async function … (mark the next function declaration async)
       (if (call $tok_is_kw (cstring "async"))
         (then
@@ -1649,11 +1671,15 @@
                    (call $js_add (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))
                                  (i64.load (i32.add (local.get $stack) (local.get $sp)))))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 8))  ;; LOADVAR (operand: name ptr)
+    (if (i32.or (i32.eq (local.get $op) (i32.const 8)) (i32.eq (local.get $op) (i32.const 62)))  ;; LOADVAR (8) / LOADVAR_SOFT (62, typeof)
       (then
         (let $nm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (let $slot i32 (call $scope_find (local.get $scope) (local.get $nm)))
+        ;; unresolvable reference → ReferenceError (GetValue), unless this is a
+        ;; soft load for `typeof x`, which must yield undefined without throwing
+        (if (i32.and (i32.eqz (local.get $slot)) (i32.eq (local.get $op) (i32.const 8)))
+          (then (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $nm) (cstring " is not defined"))) (br $disp)))
         (i64.store (i32.add (local.get $stack) (local.get $sp))
                    (if i64 (local.get $slot) (then (i64.load (local.get $slot))) (else (call $v_undef))))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))

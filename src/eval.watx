@@ -27,6 +27,15 @@
   (let $fnval i64 (i64.load (local.get $slot)))
   (if (i32.eqz (call $is_function (local.get $fnval))) (then (return (call $mk_str (local.get $msg)))))
   (let $fn i32 (call $val_payload (local.get $fnval)))
+  ;; VM-function constructor (running under the bytecode VM): build the instance
+  ;; directly — link to its @16 prototype and set .message (mirrors the ctor body).
+  (if (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
+    (then
+      (let $vproto i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
+      (let $vo i32 (call $obj_new (i32.const 8)))
+      (if (call $is_object (local.get $vproto)) (then (i32.store (local.get $vo) (call $val_payload (local.get $vproto)))))
+      (call $scope_define (local.get $vo) (cstring "message") (call $mk_str (local.get $msg)))
+      (return (call $mk_obj (local.get $vo)))))
   (if (i32.load (local.get $fn)) (then (return (call $mk_str (local.get $msg)))))  ;; native: skip
   (let $proto i64 (call $fn_get_prototype (local.get $fn)))
   (let $o i32 (call $obj_new (i32.const 8)))
