@@ -779,8 +779,8 @@
           (let $nm i32 (call $ident_name))
           (call $advance)
           (let $newn f64 (if f64 (i32.eq (local.get $k) (i32.const 38))
-                            (then (f64.add (call $to_num (call $var_get (local.get $nm))) (f64.const 1)))
-                            (else (f64.sub (call $to_num (call $var_get (local.get $nm))) (f64.const 1)))))
+                            (then (f64.add (call $to_num (call $var_get_checked (local.get $nm))) (f64.const 1)))
+                            (else (f64.sub (call $to_num (call $var_get_checked (local.get $nm))) (f64.const 1)))))
           (if (i32.eqz (call $suppress)) (then (call $var_set (local.get $nm) (call $num (local.get $newn)))))
           (return (call $num (local.get $newn))))   ;; prefix yields the NEW value
         (else (call $throw (cstring "invalid ++/-- target")) (return (call $v_undef))))))
@@ -955,6 +955,12 @@
   (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))
   (if (local.get $slot) (then (i64.store (local.get $slot) (local.get $v)))
     (else (call $scope_define (call $cur_scope) (local.get $nm) (local.get $v)))))
+;; like var_get but throws ReferenceError if unbound (for ++/--/op=)
+(func $var_get_checked (param $nm i32) (result i64) (effects)
+  (let $slot i32 (call $scope_find (call $cur_scope) (local.get $nm)))
+  (if (i32.eqz (local.get $slot))
+    (then (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $nm) (cstring " is not defined"))) (return (call $v_undef))))
+  (i64.load (local.get $slot)))
 
 ;; apply a compound-assignment operator (40 += 41 -= 42 *= 43 /=)
 (func $compound (param $op i32) (param $old i64) (param $rhs i64) (result i64) (effects)
@@ -983,13 +989,13 @@
         (then
           (call $advance)
           (let $rhs i64 (call $parse_assign))
-          (let $nv i64 (call $compound (local.get $op) (call $var_get (local.get $nm)) (local.get $rhs)))
+          (let $nv i64 (call $compound (local.get $op) (call $var_get_checked (local.get $nm)) (local.get $rhs)))
           (if (i32.eqz (call $suppress)) (then (call $var_set (local.get $nm) (local.get $nv))))
           (return (local.get $nv))))
       (if (i32.or (i32.eq (local.get $op) (i32.const 38)) (i32.eq (local.get $op) (i32.const 39)))  ;; postfix ++ / --
         (then
           (call $advance)
-          (let $oldn f64 (call $to_num (call $var_get (local.get $nm))))
+          (let $oldn f64 (call $to_num (call $var_get_checked (local.get $nm))))
           (let $newn f64 (if f64 (i32.eq (local.get $op) (i32.const 38))
                             (then (f64.add (local.get $oldn) (f64.const 1))) (else (f64.sub (local.get $oldn) (f64.const 1)))))
           (if (i32.eqz (call $suppress)) (then (call $var_set (local.get $nm) (call $num (local.get $newn)))))
