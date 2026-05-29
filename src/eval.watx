@@ -196,7 +196,7 @@
             (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a)))))
         (then (return (local.get $a))))
       (return (call $mk_obj (call $obj_new (i32.const 8))))))
-  (if (i32.eq (local.get $id) (i32.const 10))  ;; Object.keys(o)
+  (if (i32.or (i32.eq (local.get $id) (i32.const 10)) (i32.eq (local.get $id) (i32.const 112)))  ;; Object.keys / getOwnPropertyNames
     (then
       (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $arr i32 (call $arr_new (i32.const 16)))
@@ -234,6 +234,87 @@
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $kl)))))
       (return (call $mk_arr (local.get $arr)))))
+  (if (i32.eq (local.get $id) (i32.const 109))  ;; str.replaceAll(search, repl)
+    (then
+      (let $rals i32 (call $to_str (local.get $thisv)))
+      (let $rasearch i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (let $rarepl i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (i32.eqz (call $str_len (local.get $rasearch))) (then (return (call $mk_str (local.get $rals)))))
+      (let $raparts i32 (call $str_split (local.get $rals) (local.get $rasearch)))
+      (let $raout i32 (cstring ""))
+      (let $rai i32 (i32.const 0))
+      (block $rae (loop $ral
+        (br_if $rae (i32.ge_s (local.get $rai) (call $arr_len (local.get $raparts))))
+        (if (i32.gt_s (local.get $rai) (i32.const 0)) (then (set! $raout (call $str_concat (local.get $raout) (local.get $rarepl)))))
+        (set! $raout (call $str_concat (local.get $raout) (call $val_payload (call $arr_get (local.get $raparts) (local.get $rai)))))
+        (set! $rai (i32.add (local.get $rai) (i32.const 1)))
+        (br $ral)))
+      (return (call $mk_str (local.get $raout)))))
+  (if (i32.eq (local.get $id) (i32.const 110))  ;; Array.of(...args)
+    (then
+      (let $ofa i32 (call $arr_new (i32.const 4)))
+      (let $ofi i32 (i32.const 0))
+      (block $ofe (loop $ofl
+        (br_if $ofe (i32.ge_s (local.get $ofi) (local.get $argc)))
+        (call $arr_push (local.get $ofa) (call $argn (local.get $argv) (local.get $argc) (local.get $ofi)))
+        (set! $ofi (i32.add (local.get $ofi) (i32.const 1)))
+        (br $ofl)))
+      (return (call $mk_arr (local.get $ofa)))))
+  (if (i32.eq (local.get $id) (i32.const 111))  ;; Array.from(src[, mapFn])
+    (then
+      (let $frs i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $frm i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $fra i32 (call $arr_new (i32.const 4)))
+      (if (call $is_array (local.get $frs))
+        (then
+          (let $frp i32 (call $val_payload (local.get $frs)))
+          (let $fri i32 (i32.const 0))
+          (block $fre (loop $frl
+            (br_if $fre (i32.ge_s (local.get $fri) (call $arr_len (local.get $frp))))
+            (call $arr_push (local.get $fra) (call $arr_get (local.get $frp) (local.get $fri)))
+            (set! $fri (i32.add (local.get $fri) (i32.const 1)))
+            (br $frl)))))
+      (if (call $is_string (local.get $frs))
+        (then
+          (let $frsp i32 (call $val_payload (local.get $frs)))
+          (let $frj i32 (i32.const 0))
+          (block $frse (loop $frsl
+            (br_if $frse (i32.ge_s (local.get $frj) (call $str_len (local.get $frsp))))
+            (call $arr_push (local.get $fra) (call $str_char_at (local.get $frsp) (local.get $frj)))
+            (set! $frj (i32.add (local.get $frj) (i32.const 1)))
+            (br $frsl)))))
+      (if (call $is_object (local.get $frs))
+        (then
+          (let $frnx i64 (call $get_prop (local.get $frs) (call $mk_str (cstring "next"))))
+          (if (call $is_function (local.get $frnx))
+            (then  ;; iterator
+              (block $frie (loop $fril
+                (let $frr i64 (call $call_fn0 (local.get $frnx) (local.get $frs)))
+                (br_if $frie (call $err))
+                (br_if $frie (call $truthy (call $get_prop (local.get $frr) (call $mk_str (cstring "done")))))
+                (call $arr_push (local.get $fra) (call $get_prop (local.get $frr) (call $mk_str (cstring "value"))))
+                (br $fril))))
+            (else  ;; array-like: indices 0..length-1
+              (let $frln i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $frs) (call $mk_str (cstring "length"))))))
+              (let $frk i32 (i32.const 0))
+              (block $frle (loop $frll
+                (br_if $frle (i32.ge_s (local.get $frk) (local.get $frln)))
+                (call $arr_push (local.get $fra) (call $get_prop (local.get $frs) (call $num (f64.convert_i32_s (local.get $frk)))))
+                (set! $frk (i32.add (local.get $frk) (i32.const 1)))
+                (br $frll)))))))
+      (if (call $is_function (local.get $frm))  ;; apply mapFn(elem, i)
+        (then
+          (let $frmi i32 (i32.const 0))
+          (let $frmlen i32 (call $arr_len (local.get $fra)))
+          (block $frme (loop $frmlp
+            (br_if $frme (i32.ge_s (local.get $frmi) (local.get $frmlen)))
+            (let $frav i32 (call $heap_alloc (i32.const 16)))
+            (i64.store (local.get $frav) (call $arr_get (local.get $fra) (local.get $frmi)))
+            (i64.store (i32.add (local.get $frav) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $frmi))))
+            (call $arr_set (local.get $fra) (local.get $frmi) (call $call_val (local.get $frm) (i32.const 2) (local.get $frav) (call $v_undef)))
+            (set! $frmi (i32.add (local.get $frmi) (i32.const 1)))
+            (br $frmlp)))))
+      (return (call $mk_arr (local.get $fra)))))
   (if (i32.eq (local.get $id) (i32.const 98))  ;; Number.isSafeInteger(x)
     (then
       (let $siv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -2535,6 +2616,7 @@
   (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCharCode")) (call $mk_native (i32.const 87) (cstring "fromCharCode")))
   (call $scope_define (local.get $sp) (cstring "match") (call $mk_native (i32.const 102) (cstring "match")))
   (call $scope_define (local.get $sp) (cstring "replace") (call $mk_native (i32.const 103) (cstring "replace")))
+  (call $scope_define (local.get $sp) (cstring "replaceAll") (call $mk_native (i32.const 109) (cstring "replaceAll")))
   (call $scope_define (local.get $sp) (cstring "search") (call $mk_native (i32.const 104) (cstring "search")))
   ;; Array.prototype (reg 160) — methods dispatched on arrays
   (let $ap i32 (call $obj_new (i32.const 48)))
@@ -2569,6 +2651,8 @@
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
+  (call $set_prop (local.get $arrf) (call $mk_str (cstring "of")) (call $mk_native (i32.const 110) (cstring "of")))
+  (call $set_prop (local.get $arrf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 111) (cstring "from")))
   ;; Math object with methods + constants
   (let $mo i32 (call $obj_new (i32.const 24)))
   (let $mv i64 (call $mk_obj (local.get $mo)))
@@ -2594,6 +2678,7 @@
   ;; Object with .keys
   (let $objf i64 (call $def_native (local.get $g) (cstring "Object") (i32.const 9)))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "keys")) (call $mk_native (i32.const 10) (cstring "keys")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "getOwnPropertyNames")) (call $mk_native (i32.const 112) (cstring "getOwnPropertyNames")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "assign")) (call $mk_native (i32.const 80) (cstring "assign")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "create")) (call $mk_native (i32.const 81) (cstring "create")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getPrototypeOf")) (call $mk_native (i32.const 82) (cstring "getPrototypeOf")))
