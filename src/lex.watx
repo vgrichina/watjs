@@ -344,8 +344,63 @@
   (call $set_tok (local.get $k) (call $pos) (local.get $n))
   (call $set_pos (i32.add (call $pos) (local.get $n))))
 
+;; Is the previous token's identifier one after which `/` begins a regex?
+(func $is_regex_kw (param $s i32) (param $l i32) (result i32) (effects)
+  (let $w i32 (call $str_from_src (i32.add (call $src) (local.get $s)) (local.get $l)))
+  (i32.or (call $str_eq (local.get $w) (cstring "return"))
+  (i32.or (call $str_eq (local.get $w) (cstring "typeof"))
+  (i32.or (call $str_eq (local.get $w) (cstring "instanceof"))
+  (i32.or (call $str_eq (local.get $w) (cstring "in"))
+  (i32.or (call $str_eq (local.get $w) (cstring "of"))
+  (i32.or (call $str_eq (local.get $w) (cstring "new"))
+  (i32.or (call $str_eq (local.get $w) (cstring "delete"))
+  (i32.or (call $str_eq (local.get $w) (cstring "void"))
+  (i32.or (call $str_eq (local.get $w) (cstring "do"))
+  (i32.or (call $str_eq (local.get $w) (cstring "else"))
+  (i32.or (call $str_eq (local.get $w) (cstring "yield"))
+  (i32.or (call $str_eq (local.get $w) (cstring "await"))
+  (i32.or (call $str_eq (local.get $w) (cstring "case"))
+          (call $str_eq (local.get $w) (cstring "throw"))))))))))))))))
+
+;; Can a '/' at the current position begin a regex literal? (true unless the
+;; previous token produced a value.)
+(func $regex_allowed (param $prevk i32) (param $prevs i32) (param $prevl i32) (result i32) (effects)
+  (if i32 (i32.or (i32.eq (local.get $prevk) (i32.const 1)) (i32.or (i32.eq (local.get $prevk) (i32.const 2))
+          (i32.or (i32.eq (local.get $prevk) (i32.const 16)) (i32.or (i32.eq (local.get $prevk) (i32.const 20))
+          (i32.or (i32.eq (local.get $prevk) (i32.const 53)) (i32.eq (local.get $prevk) (i32.const 57)))))))
+    (then (i32.const 0))
+    (else (if i32 (i32.eq (local.get $prevk) (i32.const 3))
+            (then (call $is_regex_kw (local.get $prevs) (local.get $prevl)))
+            (else (i32.const 1))))))
+
+;; Lex a regex literal /pattern/flags. Cursor at '/'. TOK_KIND=57, TOK_START/LEN
+;; = pattern; flag range → regs 264/268.
+(func $lex_regex (effects)
+  (let $start i32 (call $pos))
+  (call $set_pos (i32.add (local.get $start) (i32.const 1)))  ;; skip '/'
+  (let $inclass i32 (i32.const 0))
+  (block $e (loop $l
+    (let $ch i32 (call $ch_at (i32.const 0)))
+    (br_if $e (i32.eq (local.get $ch) (i32.const -1)))
+    (if (i32.eq (local.get $ch) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $l)))  ;; '\' escape
+    (if (i32.eq (local.get $ch) (i32.const 91)) (then (set! $inclass (i32.const 1))))  ;; '['
+    (if (i32.eq (local.get $ch) (i32.const 93)) (then (set! $inclass (i32.const 0))))  ;; ']'
+    (if (i32.and (i32.eq (local.get $ch) (i32.const 47)) (i32.eqz (local.get $inclass))) (then (br $e)))  ;; unescaped '/'
+    (call $set_pos (i32.add (call $pos) (i32.const 1)))
+    (br $l)))
+  (let $patlen i32 (i32.sub (call $pos) (i32.add (local.get $start) (i32.const 1))))
+  (call $set_pos (i32.add (call $pos) (i32.const 1)))  ;; skip closing '/'
+  (let $flagstart i32 (call $pos))
+  (block $fe (loop $fl (br_if $fe (i32.eqz (call $is_alpha (call $ch_at (i32.const 0))))) (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $fl)))
+  (i32.store (i32.const 264) (local.get $flagstart))
+  (i32.store (i32.const 268) (i32.sub (call $pos) (local.get $flagstart)))
+  (call $set_tok (i32.const 57) (i32.add (local.get $start) (i32.const 1)) (local.get $patlen)))
+
 ;; Read the next token into the TOK_* registers.
 (func $next_token (effects)
+  (let $prevk i32 (call $tok_kind))
+  (let $prevs i32 (call $tok_start))
+  (let $prevl i32 (call $tok_len))
   (call $skip_trivia)
   (let $c i32 (call $ch_at (i32.const 0)))
   (let $c1 i32 (call $ch_at (i32.const 1)))
@@ -368,6 +423,10 @@
     (then (call $op_tok (i32.const 50) (i32.const 3)) (return)))  ;; >>>
   (if (i32.and (i32.eq (local.get $c) (i32.const 46)) (i32.and (i32.eq (local.get $c1) (i32.const 46)) (i32.eq (local.get $c2) (i32.const 46))))
     (then (call $op_tok (i32.const 54) (i32.const 3)) (return)))  ;; ... (spread/rest)
+
+  ;; regex literal: '/' in expression position (before /= and / division)
+  (if (i32.and (i32.eq (local.get $c) (i32.const 47)) (call $regex_allowed (local.get $prevk) (local.get $prevs) (local.get $prevl)))
+    (then (call $lex_regex) (return)))
 
   ;; 2-char: ++ -- += -= *= /= == != <= >= && ||
   (if (i32.and (i32.eq (local.get $c) (i32.const 43)) (i32.eq (local.get $c1) (i32.const 43)))
