@@ -1499,9 +1499,38 @@
 ;; 104 (valid), 112 (container i64), 120 (key i64); calls clear it.
 (func $parse_postfix (result i64) (effects)
   (let $v i64 (call $parse_primary))
+  (let $oc i32 (i32.const 0))  ;; set once an optional-chain (?.) short-circuits → rest suppressed
   (block $e (loop $c
     (br_if $e (call $err))
     (let $k i32 (call $cur))
+    (if (i32.eq (local.get $k) (i32.const 55))  ;; '?.' optional chaining
+      (then
+        (call $advance)
+        ;; short-circuit the rest of the chain (yielding undefined) if base is nullish
+        (if (i32.and (i32.or (call $is_null (local.get $v)) (call $is_undefined (local.get $v))) (i32.eqz (local.get $oc)))
+          (then (call $sup_inc) (set! $oc (i32.const 1))))
+        (if (i32.eq (call $cur) (i32.const 15))  ;; ?.(args)
+          (then
+            (let $thisv i64 (if i64 (i32.load (i32.const 104)) (then (i64.load (i32.const 112))) (else (call $v_undef))))
+            (i32.store (i32.const 104) (i32.const 0))
+            (set! $v (call $parse_call (local.get $v) (local.get $thisv)))
+            (br $c)))
+        (if (i32.eq (call $cur) (i32.const 19))  ;; ?.[expr]
+          (then
+            (call $advance)
+            (let $key i64 (call $parse_assign))
+            (call $expect (i32.const 20) (cstring "expected ]"))
+            (let $cont i64 (local.get $v))
+            (set! $v (call $get_prop (local.get $v) (local.get $key)))
+            (i32.store (i32.const 104) (i32.const 1)) (i64.store (i32.const 112) (local.get $cont)) (i64.store (i32.const 120) (local.get $key))
+            (br $c)))
+        ;; ?.name
+        (let $key i64 (call $mk_str (call $ident_name)))
+        (call $advance)
+        (let $cont i64 (local.get $v))
+        (set! $v (call $get_prop (local.get $v) (local.get $key)))
+        (i32.store (i32.const 104) (i32.const 1)) (i64.store (i32.const 112) (local.get $cont)) (i64.store (i32.const 120) (local.get $key))
+        (br $c)))
     (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' call
       (then
         (let $thisv i64 (if i64 (i32.load (i32.const 104)) (then (i64.load (i32.const 112))) (else (call $v_undef))))
@@ -1529,6 +1558,7 @@
         (i32.store (i32.const 104) (i32.const 1)) (i64.store (i32.const 112) (local.get $cont)) (i64.store (i32.const 120) (local.get $key))
         (br $c)))
     (br $e)))
+  (if (local.get $oc) (then (call $sup_dec) (return (call $v_undef))))  ;; chain short-circuited → undefined
   (local.get $v))
 
 ;; ── unary: - + ! typeof void ──
@@ -1756,6 +1786,17 @@
 ;; ── ternary ?: ──
 (func $parse_ternary (result i64) (effects)
   (let $cond i64 (call $parse_or))
+  ;; nullish coalescing  a ?? b  (left-assoc, binds tighter than ?:)
+  (block $nc (loop $ncl
+    (br_if $nc (i32.ne (call $cur) (i32.const 56)))  ;; ??
+    (call $advance)
+    (if (i32.or (call $is_null (local.get $cond)) (call $is_undefined (local.get $cond)))
+      (then (set! $cond (call $parse_or)))                  ;; left is nullish → take right
+      (else                                                  ;; left present → keep it, skip right
+        (call $set_suppress (i32.add (call $suppress) (i32.const 1)))
+        (drop (call $parse_or))
+        (call $set_suppress (i32.sub (call $suppress) (i32.const 1)))))
+    (br $ncl)))
   (if i64 (i32.eq (call $cur) (i32.const 36))  ;; ?
     (then
       (call $advance)
