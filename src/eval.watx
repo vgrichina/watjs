@@ -347,6 +347,86 @@
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl)))
           (return (local.get $racc))))
       (return (call $v_undef))))
+  ;; --- static object/array/number/string methods (ids 80-87) ---
+  (if (i32.eq (local.get $id) (i32.const 88))  ;; Array(...): Array(n)->len n, else from args
+    (then
+      (if (i32.and (i32.eq (local.get $argc) (i32.const 1)) (call $is_number (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+        (then
+          (let $arlen i32 (i32.trunc_f64_s (call $tonum_raw (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+          (let $arx i32 (call $arr_new (i32.add (local.get $arlen) (i32.const 1))))
+          (if (i32.gt_s (local.get $arlen) (i32.const 0)) (then (call $arr_set (local.get $arx) (i32.sub (local.get $arlen) (i32.const 1)) (call $v_undef))))
+          (return (call $mk_arr (local.get $arx)))))
+      (let $arx2 i32 (call $arr_new (i32.const 8)))
+      (let $i i32 (i32.const 0))
+      (block $ae (loop $al
+        (br_if $ae (i32.ge_s (local.get $i) (local.get $argc)))
+        (call $arr_push (local.get $arx2) (call $argn (local.get $argv) (local.get $argc) (local.get $i)))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $al)))
+      (return (call $mk_arr (local.get $arx2)))))
+  (if (i32.eq (local.get $id) (i32.const 80))  ;; Object.assign(target, ...sources)
+    (then
+      (let $t i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $k i32 (i32.const 1))
+      (block $ae (loop $al
+        (br_if $ae (i32.ge_s (local.get $k) (local.get $argc)))
+        (let $sv i64 (call $argn (local.get $argv) (local.get $argc) (local.get $k)))
+        (if (call $is_object (local.get $sv))
+          (then
+            (let $ss i32 (call $val_payload (local.get $sv)))
+            (let $cn i32 (call $scope_count (local.get $ss)))
+            (let $i i32 (i32.const 0))
+            (block $ce (loop $cl
+              (br_if $ce (i32.ge_s (local.get $i) (local.get $cn)))
+              (let $en i32 (call $scope_entry (local.get $ss) (local.get $i)))
+              (call $set_prop (local.get $t) (call $mk_str (i32.load (local.get $en))) (i64.load (i32.add (local.get $en) (i32.const 8))))
+              (set! $i (i32.add (local.get $i) (i32.const 1)))
+              (br $cl)))))
+        (set! $k (i32.add (local.get $k) (i32.const 1)))
+        (br $al)))
+      (return (local.get $t))))
+  (if (i32.eq (local.get $id) (i32.const 81))  ;; Object.create(proto)
+    (then
+      (let $crp i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $cro i32 (call $obj_new (i32.const 8)))
+      (if (call $is_object (local.get $crp)) (then (i32.store (local.get $cro) (call $val_payload (local.get $crp)))))
+      (return (call $mk_obj (local.get $cro)))))
+  (if (i32.eq (local.get $id) (i32.const 82))  ;; Object.getPrototypeOf(o)
+    (then
+      (let $ov i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_object (local.get $ov))
+        (then
+          (let $par i32 (call $scope_parent (call $val_payload (local.get $ov))))
+          (if (local.get $par) (then (return (call $mk_obj (local.get $par)))))))
+      (return (call $v_null))))
+  (if (i32.eq (local.get $id) (i32.const 83))  ;; Array.isArray(x)
+    (then (return (call $mk_bool (call $is_array (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+  (if (i32.eq (local.get $id) (i32.const 84))  ;; Number.isNaN(x) — no coercion
+    (then
+      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (return (call $mk_bool (i32.and (call $is_number (local.get $a)) (f64.ne (call $tonum_raw (local.get $a)) (call $tonum_raw (local.get $a))))))))
+  (if (i32.eq (local.get $id) (i32.const 85))  ;; Number.isInteger(x)
+    (then
+      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_number (local.get $a))) (then (return (call $v_false))))
+      (let $d f64 (call $tonum_raw (local.get $a)))
+      (return (call $mk_bool (i32.and (f64.eq (local.get $d) (local.get $d)) (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (i32.and (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0))) (f64.eq (local.get $d) (f64.trunc (local.get $d))))))))))
+  (if (i32.eq (local.get $id) (i32.const 86))  ;; Number.isFinite(x) — no coercion
+    (then
+      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_number (local.get $a))) (then (return (call $v_false))))
+      (let $d f64 (call $tonum_raw (local.get $a)))
+      (return (call $mk_bool (i32.and (f64.eq (local.get $d) (local.get $d)) (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0)))))))))
+  (if (i32.eq (local.get $id) (i32.const 87))  ;; String.fromCharCode(...codes)
+    (then
+      (let $fcp i32 (call $str_alloc (local.get $argc)))
+      (let $i i32 (i32.const 0))
+      (block $fe (loop $fl
+        (br_if $fe (i32.ge_s (local.get $i) (local.get $argc)))
+        (call $str_set_byte (local.get $fcp) (local.get $i) (i32.and (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (local.get $i)))) (i32.const 255)))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $fl)))
+      (return (call $mk_str (local.get $fcp)))))
   (if (i32.eq (local.get $id) (i32.const 50))  ;; parseInt(s[,radix])
     (then (return (call $num (call $parse_int_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
             (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (i32.const 0))))))))
@@ -1514,6 +1594,9 @@
   (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NEGATIVE_INFINITY")) (call $num (f64.div (f64.const -1) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "MAX_SAFE_INTEGER")) (call $num (f64.const 9007199254740991)))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "isNaN")) (call $mk_native (i32.const 84) (cstring "isNaN")))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "isInteger")) (call $mk_native (i32.const 85) (cstring "isInteger")))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "isFinite")) (call $mk_native (i32.const 86) (cstring "isFinite")))
   (let $strf i64 (call $def_native (local.get $g) (cstring "String") (i32.const 5)))
   ;; String.prototype (reg 156) — methods dispatched on string primitives
   (let $sp i32 (call $obj_new (i32.const 16)))
@@ -1531,6 +1614,7 @@
   (call $scope_define (local.get $sp) (cstring "split") (call $mk_native (i32.const 60) (cstring "split")))
   (call $scope_define (local.get $sp) (cstring "trim") (call $mk_native (i32.const 61) (cstring "trim")))
   (call $scope_define (local.get $sp) (cstring "repeat") (call $mk_native (i32.const 62) (cstring "repeat")))
+  (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCharCode")) (call $mk_native (i32.const 87) (cstring "fromCharCode")))
   ;; Array.prototype (reg 160) — methods dispatched on arrays
   (let $ap i32 (call $obj_new (i32.const 16)))
   (i32.store (i32.const 160) (local.get $ap))
@@ -1546,6 +1630,9 @@
   (call $scope_define (local.get $ap) (cstring "reverse") (call $mk_native (i32.const 71) (cstring "reverse")))
   (call $scope_define (local.get $ap) (cstring "filter") (call $mk_native (i32.const 72) (cstring "filter")))
   (call $scope_define (local.get $ap) (cstring "reduce") (call $mk_native (i32.const 73) (cstring "reduce")))
+  ;; Array global constructor + isArray
+  (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
+  (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
   ;; Math object with methods + constants
   (let $mo i32 (call $obj_new (i32.const 24)))
   (let $mv i64 (call $mk_obj (local.get $mo)))
@@ -1565,6 +1652,9 @@
   ;; Object with .keys
   (let $objf i64 (call $def_native (local.get $g) (cstring "Object") (i32.const 9)))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "keys")) (call $mk_native (i32.const 10) (cstring "keys")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "assign")) (call $mk_native (i32.const 80) (cstring "assign")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "create")) (call $mk_native (i32.const 81) (cstring "create")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "getPrototypeOf")) (call $mk_native (i32.const 82) (cstring "getPrototypeOf")))
   ;; global NaN / Infinity / undefined
   (call $scope_define (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))
