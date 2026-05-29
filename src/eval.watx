@@ -734,15 +734,29 @@
 ;; parse and evaluate a call:  callee '(' args ')'
 (func $parse_call (param $callee i64) (param $thisv i64) (result i64) (effects)
   (call $advance)  ;; '('
-  (let $argv i32 (call $heap_alloc (i32.const 128)))  ;; up to 16 args
+  (let $argv i32 (call $heap_alloc (i32.const 1024)))  ;; up to 128 args
   (let $argc i32 (i32.const 0))
   (block $ae (loop $ac
     (br_if $ae (i32.eq (call $cur) (i32.const 16)))  ;; ')'
     (br_if $ae (i32.eq (call $cur) (i32.const 0)))
     (br_if $ae (call $err))
-    (let $v i64 (call $parse_assign))
-    (i64.store (i32.add (local.get $argv) (i32.mul (local.get $argc) (i32.const 8))) (local.get $v))
-    (set! $argc (i32.add (local.get $argc) (i32.const 1)))
+    (if (i32.eq (call $cur) (i32.const 54))  ;; ...spread
+      (then
+        (call $advance)
+        (let $sv i64 (call $parse_assign))
+        (if (call $is_array (local.get $sv))
+          (then
+            (let $sa i32 (call $val_payload (local.get $sv)))
+            (let $si i32 (i32.const 0))
+            (block $se2 (loop $sl2
+              (br_if $se2 (i32.ge_s (local.get $si) (call $arr_len (local.get $sa))))
+              (i64.store (i32.add (local.get $argv) (i32.mul (local.get $argc) (i32.const 8))) (call $arr_get (local.get $sa) (local.get $si)))
+              (set! $argc (i32.add (local.get $argc) (i32.const 1)))
+              (set! $si (i32.add (local.get $si) (i32.const 1)))
+              (br $sl2))))))
+      (else
+        (i64.store (i32.add (local.get $argv) (i32.mul (local.get $argc) (i32.const 8))) (call $parse_assign))
+        (set! $argc (i32.add (local.get $argc) (i32.const 1)))))
     (br_if $ae (i32.eqz (call $eat (i32.const 22))))
     (br $ac)))
   (call $expect (i32.const 16) (cstring "expected )"))
@@ -980,7 +994,20 @@
         (br_if $brk (i32.eq (call $cur) (i32.const 20)))  ;; ']'
         (br_if $brk (i32.eq (call $cur) (i32.const 0)))
         (br_if $brk (call $err))
-        (call $arr_push (local.get $a) (call $parse_assign))
+        (if (i32.eq (call $cur) (i32.const 54))  ;; ...spread
+          (then
+            (call $advance)
+            (let $sv i64 (call $parse_assign))
+            (if (call $is_array (local.get $sv))
+              (then
+                (let $sa i32 (call $val_payload (local.get $sv)))
+                (let $si i32 (i32.const 0))
+                (block $se2 (loop $sl2
+                  (br_if $se2 (i32.ge_s (local.get $si) (call $arr_len (local.get $sa))))
+                  (call $arr_push (local.get $a) (call $arr_get (local.get $sa) (local.get $si)))
+                  (set! $si (i32.add (local.get $si) (i32.const 1)))
+                  (br $sl2))))))
+          (else (call $arr_push (local.get $a) (call $parse_assign))))
         (br_if $brk (i32.eqz (call $eat (i32.const 22))))
         (br $cont)))
       (call $expect (i32.const 20) (cstring "expected ]"))
