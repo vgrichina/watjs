@@ -1062,16 +1062,25 @@
         (call $next_token)
         (if (i32.eq (call $tok_kind) (i32.const 15)) (then (call $cursor_restore (local.get $stc))))))  ;; method named "static"
     (let $mn i32 (call $ident_name)) (call $next_token)
-    (if (call $str_eq (local.get $mn) (cstring "constructor"))
+    (if (i32.ne (call $tok_kind) (i32.const 15))  ;; not '(' → class field (stored on the prototype; spec puts instance fields per-instance — simplification)
       (then
-        (call $vm_c_fnbody (local.get $code) (i32.const 0))
-        (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))
-        (set! $hasctor (i32.const 1)))
-      (else
-        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
-        (call $vm_c_fnbody (local.get $code) (i32.const 0))
-        (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $mn))
-        (call $vm_emit_op (local.get $code) (i32.const 11))))
+        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
+        (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = initializer
+          (then (call $next_token) (call $vm_c_expr (local.get $code)))
+          (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))
+        (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; SETPROP
+        (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
+        (drop (call $eat (i32.const 21))))  ;; optional ';'
+      (else (if (call $str_eq (local.get $mn) (cstring "constructor"))
+        (then
+          (call $vm_c_fnbody (local.get $code) (i32.const 0))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))
+          (set! $hasctor (i32.const 1)))
+        (else
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
+          (call $vm_c_fnbody (local.get $code) (i32.const 0))
+          (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $mn))
+          (call $vm_emit_op (local.get $code) (i32.const 11))))))
     (br $cml)))
   (call $next_token)  ;; '}'
   (if (i32.eqz (local.get $hasctor))
@@ -1337,9 +1346,12 @@
           (if (local.get $hascatch)
             (then
               (call $next_token)  ;; 'catch'
-              (call $next_token)  ;; '('
-              (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; bind name
-              (call $next_token) (call $next_token)  ;; var ')'
+              (if (i32.eq (call $tok_kind) (i32.const 15))  ;; catch (e) — optional binding
+                (then
+                  (call $next_token)  ;; '('
+                  (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; bind name
+                  (call $next_token) (call $next_token))  ;; var ')'
+                (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@catch"))))  ;; catch {} — bind to a throwaway
               (call $vm_c_stmt (local.get $code))  ;; catch block
               (set! $jcatch (call $vm_emit_jump (local.get $code) (i32.const 12))))  ;; JMP → Lnormal (run finally)
             (else
