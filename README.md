@@ -78,13 +78,14 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
   `Math` (abs/floor/ceil/round/sqrt/max/min/pow/trunc/sign + PI/E); error
   constructors via a JS prelude
 - `String.prototype`: charAt/charCodeAt/indexOf/slice/substring/toUpperCase/
-  toLowerCase/split/trim/repeat/includes/startsWith/endsWith/padStart/padEnd/at/
-  toString/valueOf/constructor
-- `Array.prototype` (growable): push/pop/indexOf/join/slice/forEach/map/filter/
-  reduce/concat/reverse/includes/find/findIndex/some/every/sort/at/fill
+  toLowerCase/split/trim/trimStart/trimEnd/repeat/includes/startsWith/endsWith/
+  padStart/padEnd/at/replaceAll/toString/valueOf/constructor
+- `Array.prototype` (growable): push/pop/indexOf/lastIndexOf/join/slice/forEach/
+  map/filter/reduce/concat/reverse/includes/find/findIndex/findLast/
+  findLastIndex/some/every/sort/at/fill/flat/flatMap
 - `Object.prototype.hasOwnProperty`; `Object.values`/`Object.entries`/
-  `getOwnPropertyNames`; `Array.of`/`Array.from` (arrays, strings, iterators,
-  array-likes, optional map); `String.prototype.replaceAll`
+  `getOwnPropertyNames`/`fromEntries`; `Array.of`/`Array.from` (arrays, strings,
+  iterators, array-likes, optional map)
 - optional chaining (`a?.b`, `a?.[i]`, `a?.()`, short-circuiting) and nullish
   coalescing (`a ?? b`)
 - `Map` and `Set` (set/get/has/delete/add/forEach/clear/size, chaining)
