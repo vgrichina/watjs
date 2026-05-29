@@ -462,7 +462,7 @@
     (br_if $brk (call $unwind))
     (if (call $is_stmt_start)
       (then (call $parse_statement))
-      (else (set! $result (call $parse_assign)) (drop (call $eat (i32.const 21)))))
+      (else (set! $result (call $parse_comma)) (drop (call $eat (i32.const 21)))))
     (br $cont)))
   (call $set_src (local.get $oldsrc) (local.get $oldlen))
   (call $cursor_restore (local.get $oldcur))
@@ -578,7 +578,7 @@
   ;; ( expr )
   (if (i32.eq (local.get $k) (i32.const 15))
     (then (call $advance)
-          (let $v i64 (call $parse_assign))
+          (let $v i64 (call $parse_comma))
           (call $expect (i32.const 16) (cstring "expected )"))
           (return (local.get $v))))
   ;; array literal [ ... ]
@@ -1011,6 +1011,17 @@
       (return (local.get $rhs))))
   (local.get $v))
 
+;; comma operator (full Expression): evaluate left-to-right, yield the last.
+;; Used at statement / paren / condition sites; arg/array/init use parse_assign.
+(func $parse_comma (result i64) (effects)
+  (let $v i64 (call $parse_assign))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ne (call $cur) (i32.const 22)))  ;; ','
+    (call $advance)
+    (set! $v (call $parse_assign))
+    (br $cont)))
+  (local.get $v))
+
 ;; ── statements ──
 
 (func $sup_inc (effects) (call $set_suppress (i32.add (call $suppress) (i32.const 1))))
@@ -1049,7 +1060,7 @@
 (func $parse_if (effects)
   (call $advance)  ;; 'if'
   (call $expect (i32.const 15) (cstring "expected ("))
-  (let $cond i64 (call $parse_assign))
+  (let $cond i64 (call $parse_comma))
   (call $expect (i32.const 16) (cstring "expected )"))
   (let $take i32 (i32.and (i32.eqz (call $suppress)) (call $truthy (local.get $cond))))
   (if (local.get $take)
@@ -1073,7 +1084,7 @@
   (let $condcur i32 (call $cursor_save))
   (block $brk (loop $cont
     (call $cursor_restore (local.get $condcur))
-    (let $cond i64 (call $parse_assign))
+    (let $cond i64 (call $parse_comma))
     (call $expect (i32.const 16) (cstring "expected )"))
     (let $bodycur i32 (call $cursor_save))
     (if (i32.or (call $suppress) (i32.or (call $err) (i32.or (call $retflag) (i32.eqz (call $truthy (local.get $cond))))))
@@ -1092,7 +1103,7 @@
     (then
       (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))
         (then (call $parse_var))
-        (else (drop (call $parse_assign))))))
+        (else (drop (call $parse_comma))))))
   (call $expect (i32.const 21) (cstring "expected ;"))
   (let $condcur i32 (call $cursor_save))
   (block $brk (loop $cont
@@ -1100,12 +1111,12 @@
     ;; cond (empty => true)
     (let $cond i32 (i32.const 1))
     (if (i32.ne (call $cur) (i32.const 21))
-      (then (set! $cond (call $truthy (call $parse_assign)))))
+      (then (set! $cond (call $truthy (call $parse_comma)))))
     (call $expect (i32.const 21) (cstring "expected ;"))
     (let $updcur i32 (call $cursor_save))
     ;; skip update to reach body
     (call $sup_inc)
-    (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))
+    (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_comma))))
     (call $sup_dec)
     (call $expect (i32.const 16) (cstring "expected )"))
     (let $bodycur i32 (call $cursor_save))
@@ -1118,7 +1129,7 @@
     (if (i32.eqz (i32.or (call $err) (call $retflag)))   ;; run update unless unwinding
       (then
         (call $cursor_restore (local.get $updcur))
-        (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_assign))))))
+        (if (i32.ne (call $cur) (i32.const 16)) (then (drop (call $parse_comma))))))
     (br $cont))))
 
 (func $parse_return (effects)
@@ -1126,7 +1137,7 @@
   (let $v i64 (call $v_undef))
   (if (i32.eqz (i32.or (i32.eq (call $cur) (i32.const 21))
                 (i32.or (i32.eq (call $cur) (i32.const 18)) (i32.eq (call $cur) (i32.const 0)))))
-    (then (set! $v (call $parse_assign))))
+    (then (set! $v (call $parse_comma))))
   (if (i32.eqz (call $suppress))
     (then (i32.store (i32.const 88) (i32.const 1)) (i64.store (i32.const 96) (local.get $v))))
   (drop (call $eat (i32.const 21))))
@@ -1220,7 +1231,7 @@
     (if (i32.eqz (call $tok_is_kw (cstring "while"))) (then (call $throw (cstring "expected while")) (br $brk)))
     (call $advance)
     (call $expect (i32.const 15) (cstring "expected ("))
-    (let $cond i64 (call $parse_assign))
+    (let $cond i64 (call $parse_comma))
     (call $expect (i32.const 16) (cstring "expected )"))
     (drop (call $eat (i32.const 21)))
     (if (i32.or (local.get $broke) (i32.or (call $suppress) (i32.eqz (call $truthy (local.get $cond))))) (then (br $brk)))
@@ -1230,7 +1241,7 @@
 (func $parse_switch (effects)
   (call $advance)  ;; 'switch'
   (call $expect (i32.const 15) (cstring "expected ("))
-  (let $disc i64 (call $parse_assign))
+  (let $disc i64 (call $parse_comma))
   (call $expect (i32.const 16) (cstring "expected )"))
   (call $expect (i32.const 17) (cstring "expected {"))
   (let $matchcur i32 (i32.const 0))
@@ -1305,7 +1316,7 @@
       (if (call $tok_is_kw (cstring "continue")) (then (call $parse_continue) (return)))
       (if (call $tok_is_kw (cstring "switch"))   (then (call $parse_switch) (return)))))
   ;; expression statement
-  (drop (call $parse_assign))
+  (drop (call $parse_comma))
   (drop (call $eat (i32.const 21))))
 
 ;; register a native builtin (nativeId) under `name` in the given scope
