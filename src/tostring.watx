@@ -38,6 +38,87 @@
         (br $cl)))
       (local.get $j))))
 
+;; Format a non-negative integral f64 (any magnitude) into scratch[start..]
+;; using most-significant-digit extraction — avoids the i64.trunc trap for
+;; values above ~9.2e18. Exact up to 2^53; approximate (but non-trapping) above.
+(func $emit_f64int (param $start i32) (param $v f64) (result i32) (effects)
+  (if i32 (f64.lt (local.get $v) (f64.const 1))
+    (then
+      (i32.store8 (i32.add (call $scratch) (local.get $start)) (i32.const 48)) ;; '0'
+      (i32.add (local.get $start) (i32.const 1)))
+    (else
+      (let $p f64 (f64.const 1))  ;; largest power of 10 <= v
+      (block $pe (loop $pl
+        (br_if $pe (f64.gt (f64.mul (local.get $p) (f64.const 10)) (local.get $v)))
+        (set! $p (f64.mul (local.get $p) (f64.const 10)))
+        (br $pl)))
+      (let $n i32 (local.get $start))
+      (block $de (loop $dl
+        (let $dig i32 (i32.trunc_f64_s (f64.floor (f64.div (local.get $v) (local.get $p)))))
+        (if (i32.gt_s (local.get $dig) (i32.const 9)) (then (set! $dig (i32.const 9))))
+        (if (i32.lt_s (local.get $dig) (i32.const 0)) (then (set! $dig (i32.const 0))))
+        (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.add (i32.const 48) (local.get $dig)))
+        (set! $n (i32.add (local.get $n) (i32.const 1)))
+        (set! $v (f64.sub (local.get $v) (f64.mul (f64.convert_i32_s (local.get $dig)) (local.get $p))))
+        (set! $p (f64.div (local.get $p) (f64.const 10)))
+        (br_if $de (f64.lt (local.get $p) (f64.const 1)))
+        (br $dl)))
+      (local.get $n))))
+
+;; Exponential notation "d.dddde±XX" for very large/small magnitudes.
+(func $num_to_exp (param $d f64) (result i32) (effects)
+  (let $n i32 (i32.const 0))
+  (let $ax f64 (f64.abs (local.get $d)))
+  (if (f64.lt (local.get $d) (f64.const 0))
+    (then (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.const 45))
+          (set! $n (i32.add (local.get $n) (i32.const 1)))))
+  ;; normalize ax into [1,10), tracking decimal exponent $e
+  (let $e i32 (i32.const 0))
+  (block $ue (loop $ul
+    (br_if $ue (f64.lt (local.get $ax) (f64.const 10)))
+    (set! $ax (f64.div (local.get $ax) (f64.const 10)))
+    (set! $e (i32.add (local.get $e) (i32.const 1)))
+    (br $ul)))
+  (block $le (loop $ll
+    (br_if $le (f64.ge (local.get $ax) (f64.const 1)))
+    (set! $ax (f64.mul (local.get $ax) (f64.const 10)))
+    (set! $e (i32.sub (local.get $e) (i32.const 1)))
+    (br $ll)))
+  ;; leading digit
+  (let $dig i32 (i32.trunc_f64_s (f64.floor (local.get $ax))))
+  (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.add (i32.const 48) (local.get $dig)))
+  (set! $n (i32.add (local.get $n) (i32.const 1)))
+  (set! $ax (f64.sub (local.get $ax) (f64.convert_i32_s (local.get $dig))))
+  ;; '.' then up to 16 fractional significant digits (trailing zeros trimmed)
+  (let $dot i32 (local.get $n))
+  (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.const 46))
+  (set! $n (i32.add (local.get $n) (i32.const 1)))
+  (let $lastnz i32 (local.get $dot))  ;; if no nonzero frac digit, drop the '.'
+  (let $k i32 (i32.const 0))
+  (block $fe (loop $fl
+    (br_if $fe (i32.ge_s (local.get $k) (i32.const 16)))
+    (set! $ax (f64.mul (local.get $ax) (f64.const 10)))
+    (let $dg i32 (i32.trunc_f64_s (f64.floor (local.get $ax))))
+    (if (i32.gt_s (local.get $dg) (i32.const 9)) (then (set! $dg (i32.const 9))))
+    (if (i32.lt_s (local.get $dg) (i32.const 0)) (then (set! $dg (i32.const 0))))
+    (set! $ax (f64.sub (local.get $ax) (f64.convert_i32_s (local.get $dg))))
+    (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.add (i32.const 48) (local.get $dg)))
+    (set! $n (i32.add (local.get $n) (i32.const 1)))
+    (if (i32.ne (local.get $dg) (i32.const 0)) (then (set! $lastnz (local.get $n))))
+    (set! $k (i32.add (local.get $k) (i32.const 1)))
+    (br $fl)))
+  (set! $n (local.get $lastnz))
+  ;; 'e', sign, exponent magnitude
+  (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.const 101))  ;; 'e'
+  (set! $n (i32.add (local.get $n) (i32.const 1)))
+  (if (i32.ge_s (local.get $e) (i32.const 0))
+    (then (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.const 43)))   ;; '+'
+    (else (i32.store8 (i32.add (call $scratch) (local.get $n)) (i32.const 45))    ;; '-'
+          (set! $e (i32.sub (i32.const 0) (local.get $e)))))
+  (set! $n (i32.add (local.get $n) (i32.const 1)))
+  (set! $n (call $emit_u64 (local.get $n) (i64.extend_i32_u (local.get $e))))
+  (call $str_from_src (call $scratch) (local.get $n)))
+
 ;; Convert a number (f64) to a heap Str.
 (func $num_to_str (param $d f64) (result i32) (effects)
   ;; NaN
@@ -47,6 +128,8 @@
   (if (f64.eq (local.get $d) (f64.div (f64.const -1) (f64.const 0))) (then (return (cstring "-Infinity"))))
   ;; zero
   (if (f64.eq (local.get $d) (f64.const 0)) (then (return (cstring "0"))))
+  ;; very large magnitude (>= 1e21): JS uses exponential notation
+  (if (f64.ge (f64.abs (local.get $d)) (f64.const 1e21)) (then (return (call $num_to_exp (local.get $d)))))
 
   (let $n i32 (i32.const 0))  ;; scratch index
   (let $neg i32 (f64.lt (local.get $d) (f64.const 0)))
@@ -58,8 +141,10 @@
   (let $ipart f64 (f64.floor (local.get $ax)))
   (let $frac f64 (f64.sub (local.get $ax) (local.get $ipart)))
 
-  ;; integer part (assume < 9.2e18 so i64 fits; otherwise approximate)
-  (set! $n (call $emit_u64 (local.get $n) (i64.trunc_f64_u (local.get $ipart))))
+  ;; integer part: use exact i64 path when it fits, else f64 digit extraction
+  (if (f64.lt (local.get $ipart) (f64.const 9.2e18))
+    (then (set! $n (call $emit_u64 (local.get $n) (i64.trunc_f64_u (local.get $ipart)))))
+    (else (set! $n (call $emit_f64int (local.get $n) (local.get $ipart)))))
 
   ;; fractional part
   (if (f64.gt (local.get $frac) (f64.const 0))

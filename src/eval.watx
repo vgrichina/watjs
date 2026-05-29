@@ -707,6 +707,9 @@
 (func $f64_pow (param $x f64) (param $y f64) (result f64) (effects)
   ;; x**0 == 1 (incl NaN/Inf base)
   (if (f64.eq (local.get $y) (f64.const 0)) (then (return (f64.const 1))))
+  ;; NaN exponent → NaN; NaN base with non-zero exponent → NaN
+  (if (f64.ne (local.get $y) (local.get $y)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (if (f64.ne (local.get $x) (local.get $x)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
   ;; non-integer or out-of-range exponent: no transcendentals here — handle a few
   ;; limits, else NaN. Critically, never i32.trunc an Inf/huge value (it traps).
   (if (i32.or (f64.ne (local.get $y) (f64.trunc (local.get $y))) (f64.ge (f64.abs (local.get $y)) (f64.const 1073741824)))
