@@ -502,8 +502,8 @@
       (return)))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 6)) (return)))
-  (if (i32.eq (local.get $k) (i32.const 10))  ;; + (numeric coercion; just parse the operand)
-    (then (call $next_token) (call $vm_c_unary (local.get $code)) (return)))
+  (if (i32.eq (local.get $k) (i32.const 10))  ;; + (numeric coercion)
+    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 63)) (return)))  ;; TONUM
   (if (i32.eq (local.get $k) (i32.const 33))  ;; !
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 23)) (return)))
   (if (i32.eq (local.get $k) (i32.const 47))  ;; ~
@@ -1629,11 +1629,11 @@
         (set! $ip (i32.add (local.get $ip) (i32.const 8)))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 6))  ;; NEG
+    (if (i32.eq (local.get $op) (i32.const 6))  ;; NEG (ToNumber, then negate)
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t))
-                   (call $num (f64.neg (call $tonum_raw (i64.load (i32.add (local.get $stack) (local.get $t)))))))
+                   (call $num (f64.neg (call $to_num (i64.load (i32.add (local.get $stack) (local.get $t)))))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 23))  ;; NOT (unary, in place)
       (then
@@ -1662,6 +1662,12 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $typeof_val (i64.load (i32.add (local.get $stack) (local.get $t)))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 63))  ;; TONUM (unary +, in place) — ToNumber
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (local.get $t))
+                   (call $num (call $to_num (i64.load (i32.add (local.get $stack) (local.get $t))))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 59))  ;; INSTOF — [x, ctor] → bool
       (then
@@ -1909,10 +1915,10 @@
         (if (i32.eq (local.get $op) (i32.const 43)) (then (set! $wr (call $num (call $f64_pow (call $tonum_raw (local.get $wa)) (call $tonum_raw (local.get $wb)))))))
         (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (local.get $wr))
         (br $disp)))
-    ;; binary: pop b, then a
+    ;; binary arithmetic (- * / %): pop b, then a — ToNumber both (bool/string/obj coercion)
     (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
-    (let $b f64 (call $tonum_raw (i64.load (i32.add (local.get $stack) (local.get $sp)))))
-    (let $a f64 (call $tonum_raw (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
+    (let $b f64 (call $to_num (i64.load (i32.add (local.get $stack) (local.get $sp)))))
+    (let $a f64 (call $to_num (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
     (let $r f64 (f64.const 0))
     (if (i32.eq (local.get $op) (i32.const 3)) (then (set! $r (f64.sub (local.get $a) (local.get $b)))))
     (if (i32.eq (local.get $op) (i32.const 4)) (then (set! $r (f64.mul (local.get $a) (local.get $b)))))
