@@ -53,8 +53,8 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
   `instanceof`
 - Number literals: decimal, exponent, `0x`/`0b`/`0o`
 - `var` (with hoisting)/`let`/`const`, assignment, lexical scope, blocks
-- `if`/`else`, `while`, `do`/`while`, `for`, `switch` (fall-through), `break`,
-  `continue`
+- `if`/`else`, `while`, `do`/`while`, `for`, `for`-`in`, `for`-`of`, `switch`
+  (fall-through), `break`, `continue`
 - functions, parameters, `return`, recursion, closures, function expressions,
   `.name`/`.length`
 - `this`, method calls, `new`, prototypes (chain lookup), `.prototype`,
@@ -102,10 +102,13 @@ write source via `alloc_input`, call `eval`, and check the result.
 The full tc39 harness (`sta.js` + `assert.js`) loads and runs, and real test262
 cases pass at a solid rate:
 
-- **39/39** on a targeted batch (expressions/typeof/logical/conditional/types).
-- **~88% (58/66)** across *fresh, untargeted* samples spanning for/while/do/switch/
-  block/comma/postfix/multiplication/modulus/number/logical-and/undefined — i.e.
-  cases not used while developing.
+Coverage varies sharply by feature area:
+
+- **~88%** on fresh *core-language* samples (for/while/do/switch/block/comma/
+  postfix/arithmetic/number/logical/types) + 39/39 on a targeted batch.
+- **~33%** on ES6-feature-heavy samples (for-of/object/try/exponentiation) — these
+  need Symbol + the iterator protocol, destructuring, spread, computed property
+  names, `arguments`, generators, which aren't implemented.
 
 Passing the **entire** suite (50,000+ files) is a person-years effort — it requires
 essentially all of ECMAScript to spec precision (regex, generators, async, classes,
