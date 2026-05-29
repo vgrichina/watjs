@@ -83,24 +83,6 @@
       (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
       (call $next_token)
       (return)))
-  (if (i32.eq (call $tok_kind) (i32.const 11))  ;; unary -
-    (then
-      (call $next_token)
-      (call $vm_c_primary (local.get $code))
-      (call $vm_emit_op (local.get $code) (i32.const 6))      ;; NEG
-      (return)))
-  (if (i32.eq (call $tok_kind) (i32.const 33))  ;; unary !
-    (then
-      (call $next_token)
-      (call $vm_c_primary (local.get $code))
-      (call $vm_emit_op (local.get $code) (i32.const 23))     ;; NOT
-      (return)))
-  (if (i32.eq (call $tok_kind) (i32.const 47))  ;; unary ~
-    (then
-      (call $next_token)
-      (call $vm_c_primary (local.get $code))
-      (call $vm_emit_op (local.get $code) (i32.const 44))     ;; BNOT
-      (return)))
   (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ( expr )
     (then
       (call $next_token)
@@ -223,22 +205,35 @@
         (br $l)))
     (br $e))))
 
-;; ** exponentiation (right-assoc, binds tighter than * / %)
+;; ** exponentiation (right-assoc, binds tighter than unary; left is postfix)
 (func $vm_c_pow (param $code i32) (effects)
   (call $vm_c_postfix (local.get $code))
   (if (i32.eq (call $tok_kind) (i32.const 51))  ;; **
     (then
       (call $next_token)
-      (call $vm_c_pow (local.get $code))  ;; right-associative
+      (call $vm_c_unary (local.get $code))  ;; right operand may have a unary prefix; right-assoc via unary→pow
       (call $vm_emit_op (local.get $code) (i32.const 43)))))  ;; POW
 
+;; unary prefix:  - + ! ~   (binds looser than member/call/**, tighter than * /)
+(func $vm_c_unary (param $code i32) (effects)
+  (let $k i32 (call $tok_kind))
+  (if (i32.eq (local.get $k) (i32.const 11))  ;; -
+    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 6)) (return)))
+  (if (i32.eq (local.get $k) (i32.const 10))  ;; + (numeric coercion; just parse the operand)
+    (then (call $next_token) (call $vm_c_unary (local.get $code)) (return)))
+  (if (i32.eq (local.get $k) (i32.const 33))  ;; !
+    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 23)) (return)))
+  (if (i32.eq (local.get $k) (i32.const 47))  ;; ~
+    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 44)) (return)))
+  (call $vm_c_pow (local.get $code)))
+
 (func $vm_c_mul (param $code i32) (effects)
-  (call $vm_c_pow (local.get $code))
+  (call $vm_c_unary (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 12)) (i32.or (i32.eq (local.get $k) (i32.const 13)) (i32.eq (local.get $k) (i32.const 14))))))
     (call $next_token)
-    (call $vm_c_pow (local.get $code))
+    (call $vm_c_unary (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 12)) (then (i32.const 4))
       (else (if i32 (i32.eq (local.get $k) (i32.const 13)) (then (i32.const 5)) (else (i32.const 22))))))  ;; * / %
@@ -371,6 +366,8 @@
 ;; Returns the function's name ptr (0 if anonymous).
 (func $vm_c_function (param $code i32) (result i32) (effects)
   (call $next_token)  ;; 'function'
+  (let $isgen i32 (i32.eq (call $tok_kind) (i32.const 12)))  ;; function*  (* is kind 12)
+  (if (local.get $isgen) (then (call $next_token)))
   (let $fname i32 (i32.const 0))
   (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $fname (call $ident_name)) (call $next_token)))  ;; optional name
   (call $next_token)  ;; '('
@@ -391,7 +388,7 @@
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; default RET undefined
   (call $vm_patch (local.get $code) (local.get $pj))
   (let $fn i32 (call $heap_alloc (i32.add (i32.const 16) (i32.mul (local.get $np) (i32.const 4)))))
-  (i32.store (local.get $fn) (i32.const 1448232526))  ;; VM_MAGIC
+  (i32.store (local.get $fn) (if i32 (local.get $isgen) (then (i32.const 1448232527)) (else (i32.const 1448232526))))  ;; VM_MAGIC_GEN / VM_MAGIC
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
@@ -470,6 +467,13 @@
             (then
               (i32.store (i32.add (i32.load (i32.const 216)) (i32.mul (i32.load (i32.const 220)) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 12)))
               (i32.store (i32.const 220) (i32.add (i32.load (i32.const 220)) (i32.const 1)))))
+          (drop (call $eat (i32.const 21)))
+          (return)))
+      (if (call $tok_is_kw (cstring "yield"))
+        (then
+          (call $next_token)
+          (call $vm_c_expr (local.get $code))
+          (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD (suspend with value)
           (drop (call $eat (i32.const 21)))
           (return)))
       (if (call $tok_is_kw (cstring "print"))
@@ -703,6 +707,13 @@
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))  ;; callee slot
         (let $rbase i32 (if i32 (local.get $isM) (then (i32.sub (local.get $cbase) (i32.const 8))) (else (local.get $cbase))))  ;; result base
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
+        (if (i32.eq (i32.load (local.get $cfn)) (i32.const 1448232527))  ;; generator function → return an iterator
+          (then
+            (let $gv i64 (call $vm_make_generator (local.get $cfn) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8))) (local.get $gscope)))
+            (set! $sp (local.get $rbase))
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $gv))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
         (if (i32.ne (i32.load (local.get $cfn)) (i32.const 1448232526))  ;; not a VM-fn → native built-in
           (then
             (let $thisv i64 (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef))))
@@ -954,6 +965,48 @@
 ;; entry: compile then run a single expression to HALT, returning the number
 (func $eval_vm (param $ptr i32) (param $len i32) (result f64) (effects)
   (call $tonum_raw (call $vm_step (call $vm_new (call $vm_compile (local.get $ptr) (local.get $len))))))
+
+;; create a generator object from a function* — a suspended VM context plus a
+;; `next` method. Calling gen() does NOT run the body; each gen.next() resumes.
+(func $vm_make_generator (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (result i64) (effects)
+  (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
+  (let $ns i32 (call $scope_new (local.get $gscope) (i32.add (local.get $np) (i32.const 4))))
+  (let $i i32 (i32.const 0))
+  (block $pe (loop $pl
+    (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
+    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 16)) (i32.mul (local.get $i) (i32.const 4))))
+      (if i64 (i32.lt_s (local.get $i) (local.get $argc))
+        (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
+        (else (call $v_undef))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $pl)))
+  (let $ctx i32 (call $heap_alloc (i32.const 32)))
+  (i32.store (local.get $ctx) (i32.load (i32.add (local.get $fn) (i32.const 12))))            ;; code
+  (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.load (i32.add (local.get $fn) (i32.const 4))))  ;; ip = entry
+  (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 8192)))
+  (i32.store (i32.add (local.get $ctx) (i32.const 12)) (i32.const 0))
+  (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 0))                          ;; not done
+  (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $ns))
+  (i32.store (i32.add (local.get $ctx) (i32.const 24)) (i32.const 0))
+  (i32.store (i32.add (local.get $ctx) (i32.const 28)) (local.get $gscope))
+  (let $g i32 (call $obj_new (i32.const 4)))
+  (call $scope_define (local.get $g) (cstring "@@ctx") (call $num (f64.convert_i32_s (local.get $ctx))))
+  (call $scope_define (local.get $g) (cstring "next") (call $mk_native (i32.const 150) (cstring "next")))
+  (call $mk_obj (local.get $g)))
+
+;; gen.next(): resume the generator context, return { value, done }
+(func $vm_gen_result (param $genv i64) (result i64) (effects)
+  (let $ctx i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $genv) (call $mk_str (cstring "@@ctx"))))))
+  (let $r i32 (call $obj_new (i32.const 2)))
+  (if (call $vm_done (local.get $ctx))
+    (then
+      (call $scope_define (local.get $r) (cstring "value") (call $v_undef))
+      (call $scope_define (local.get $r) (cstring "done") (call $v_true)))
+    (else
+      (let $v i64 (call $vm_step (local.get $ctx)))
+      (call $scope_define (local.get $r) (cstring "value") (local.get $v))
+      (call $scope_define (local.get $r) (cstring "done") (call $mk_bool (call $vm_done (local.get $ctx))))))
+  (call $mk_obj (local.get $r)))
 
 ;; native->VM bridge: invoke a VM-fn (magic-marked struct) from engine code
 ;; (e.g. Array.prototype.map calling its callback). Runs the function body in a
