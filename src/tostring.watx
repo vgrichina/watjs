@@ -134,7 +134,21 @@
       (else (if f64 (call $is_null (local.get $v)) (then (f64.const 0))
       (else (if f64 (call $is_string (local.get $v))
                (then (call $str_to_num (call $val_payload (local.get $v))))
-      (else (f64.div (f64.const 0) (f64.const 0)))))))))))  ;; undefined/object → NaN
+      (else (if f64 (call $is_object (local.get $v))
+               (then (call $obj_to_num (local.get $v)))
+      (else (f64.div (f64.const 0) (f64.const 0)))))))))))))  ;; undefined → NaN
+
+;; ToNumber for an object: prefer valueOf(), then __prim__ wrapper slot, else NaN.
+(func $obj_to_num (param $v i64) (result f64) (effects)
+  (let $vo i64 (call $get_prop (local.get $v) (call $mk_str (cstring "valueOf"))))
+  (if (call $is_function (local.get $vo))
+    (then
+      (let $r i64 (call $call_fn0 (local.get $vo) (local.get $v)))
+      (if (i32.eqz (call $is_object (local.get $r))) (then (return (call $to_num (local.get $r)))))))
+  (let $o i32 (call $val_payload (local.get $v)))
+  (let $slot i32 (call $scope_find_local (local.get $o) (cstring "__prim__")))
+  (if (local.get $slot) (then (return (call $to_num (i64.load (local.get $slot))))))
+  (f64.div (f64.const 0) (f64.const 0)))
 
 ;; Parse a string object as a number (decimal). Empty/whitespace → 0; bad → NaN.
 ;; Minimal: optional sign, digits, optional fraction. Leading/trailing spaces ok.

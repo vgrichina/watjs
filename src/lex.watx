@@ -85,6 +85,16 @@
       (let $c i32 (call $ch_at (i32.const 0)))
       (if (call $is_space (local.get $c))
         (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $again)))
+      ;; multibyte Unicode whitespace: NBSP (C2 A0), LS/PS (E2 80 A8/A9), BOM (EF BB BF)
+      (if (i32.and (i32.eq (local.get $c) (i32.const 194)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 160)))
+        (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $again)))
+      (if (i32.and (i32.eq (local.get $c) (i32.const 226))
+            (i32.and (i32.eq (call $ch_at (i32.const 1)) (i32.const 128))
+              (i32.or (i32.eq (call $ch_at (i32.const 2)) (i32.const 168)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 169)))))
+        (then (call $set_pos (i32.add (call $pos) (i32.const 3))) (br $again)))
+      (if (i32.and (i32.eq (local.get $c) (i32.const 239))
+            (i32.and (i32.eq (call $ch_at (i32.const 1)) (i32.const 187)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 191))))
+        (then (call $set_pos (i32.add (call $pos) (i32.const 3))) (br $again)))
       ;; // line comment
       (if (i32.and (i32.eq (local.get $c) (i32.const 47)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 47)))
         (then

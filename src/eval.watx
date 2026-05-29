@@ -507,8 +507,16 @@
   (if (i32.eqz (call $is_function (local.get $callee)))
     (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $callee)))
-  (if (i32.load (local.get $fn))  ;; native constructor — invoke native, return its result
-    (then (return (call $call_native (i32.load (local.get $fn)) (local.get $argc) (local.get $argv)))))
+  (if (i32.load (local.get $fn))  ;; native constructor
+    (then
+      (let $nid i32 (i32.load (local.get $fn)))
+      ;; new Number/String/Boolean → a (truthy) wrapper object holding the primitive
+      (if (i32.or (i32.eq (local.get $nid) (i32.const 4)) (i32.or (i32.eq (local.get $nid) (i32.const 5)) (i32.eq (local.get $nid) (i32.const 6))))
+        (then
+          (let $wo i32 (call $obj_new (i32.const 8)))
+          (call $scope_define (local.get $wo) (cstring "__prim__") (call $call_native (local.get $nid) (local.get $argc) (local.get $argv)))
+          (return (call $mk_obj (local.get $wo)))))
+      (return (call $call_native (local.get $nid) (local.get $argc) (local.get $argv)))))
   (let $proto i64 (call $fn_get_prototype (local.get $fn)))
   (let $o i32 (call $obj_new (i32.const 16)))
   (i32.store (local.get $o) (call $val_payload (local.get $proto)))  ;; proto chain link
