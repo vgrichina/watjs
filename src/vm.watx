@@ -161,6 +161,37 @@
     (then
       (if (call $tok_is_kw (cstring "function"))  ;; function expression → pushes the fn value
         (then (drop (call $vm_c_function (local.get $code))) (return)))
+      (if (call $tok_is_kw (cstring "super"))  ;; super(args)  |  super.method(args)
+        (then
+          (call $next_token)
+          (if (i32.eq (call $tok_kind) (i32.const 15))  ;; super(...) → call parent ctor with this
+            (then
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))   ;; receiver
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@super"))  ;; parent ctor
+              (call $next_token)
+              (let $sargc i32 (i32.const 0))
+              (if (i32.ne (call $tok_kind) (i32.const 16))
+                (then (block $se (loop $sl (call $vm_c_expr (local.get $code)) (set! $sargc (i32.add (local.get $sargc) (i32.const 1))) (br_if $se (i32.eqz (call $eat (i32.const 22)))) (br $sl)))))
+              (call $next_token)  ;; ')'
+              (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $sargc))  ;; CALLM (this = instance)
+              (return)))
+          (if (i32.eq (call $tok_kind) (i32.const 23))  ;; super.method(...)
+            (then
+              (call $next_token)
+              (let $smn i32 (call $ident_name)) (call $next_token)
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))   ;; receiver
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@superproto"))
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $smn))  ;; [this, method]
+              (call $next_token)  ;; '('
+              (let $smargc i32 (i32.const 0))
+              (if (i32.ne (call $tok_kind) (i32.const 16))
+                (then (block $sme (loop $sml (call $vm_c_expr (local.get $code)) (set! $smargc (i32.add (local.get $smargc) (i32.const 1))) (br_if $sme (i32.eqz (call $eat (i32.const 22)))) (br $sml)))))
+              (call $next_token)  ;; ')'
+              (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $smargc))  ;; CALLM
+              (return)))
+          (return)))
       (if (call $tok_is_kw (cstring "new"))  ;; new F(args)  /  new a.b.C(args)
         (then
           (call $next_token)
@@ -600,11 +631,25 @@
         (then
           (call $next_token)
           (let $clsname i32 (call $ident_name)) (call $next_token)
-          (call $next_token)  ;; '{'
           (let $protoT i32 (call $vm_tmpname))
           (let $ctorT i32 (call $vm_tmpname))
+          (let $superT i32 (i32.const 0))  ;; temp holding the superclass (extends)
+          (if (call $tok_is_kw (cstring "extends"))
+            (then
+              (call $next_token)
+              (set! $superT (call $vm_tmpname))
+              (call $vm_c_postfix (local.get $code))  ;; the superclass expression
+              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $superT))))  ;; STOREVAR super
+          (call $next_token)  ;; '{'
           (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWOBJ 0 → empty proto
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; STOREVAR proto
+          ;; link inheritance if extends
+          (if (local.get $superT)
+            (then
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $superT))  ;; LOADVAR super
+              (call $vm_emit_op (local.get $code) (i32.const 57))  ;; EXTEND → [proto]
+              (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP
           (let $hasctor i32 (i32.const 0))
           (block $cme (loop $cml
             (br_if $cme (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
@@ -1165,6 +1210,16 @@
             (set! $sp (local.get $rbase))))
         (set! $scope (local.get $cns))
         (set! $ip (local.get $centry))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 57))  ;; EXTEND — [protoObj, superCtor] → link inheritance, leaves [protoObj]
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $superc i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $protos i32 (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
+        (let $sproto i64 (i64.load (i32.add (call $val_payload (local.get $superc)) (i32.const 16))))  ;; superCtor's prototype value
+        (if (call $is_object (local.get $sproto)) (then (i32.store (local.get $protos) (call $val_payload (local.get $sproto)))))  ;; proto chain → super.prototype
+        (call $scope_define (local.get $protos) (cstring "@@super") (local.get $superc))
+        (call $scope_define (local.get $protos) (cstring "@@superproto") (local.get $sproto))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 51))  ;; SETPROTO — [ctor, proto] → ctor.@16 = proto, leaves [ctor]
       (then
