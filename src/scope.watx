@@ -53,6 +53,29 @@
     (br $cont)))
   (local.get $slot))
 
+;; delete `name` from scope `s` (own only). Returns 1 if it was present.
+(func $scope_delete (param $s i32) (param $name i32) (result i32) (effects)
+  (let $n i32 (call $scope_count (local.get $s)))
+  (let $i i32 (i32.const 0))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ge_s (local.get $i) (local.get $n)))
+    (if (call $str_eq (i32.load (call $scope_entry (local.get $s) (local.get $i))) (local.get $name))
+      (then
+        (let $j i32 (local.get $i))
+        (block $se (loop $sl
+          (br_if $se (i32.ge_s (i32.add (local.get $j) (i32.const 1)) (local.get $n)))
+          (let $dst i32 (call $scope_entry (local.get $s) (local.get $j)))
+          (let $src i32 (call $scope_entry (local.get $s) (i32.add (local.get $j) (i32.const 1))))
+          (i32.store (local.get $dst) (i32.load (local.get $src)))
+          (i64.store (i32.add (local.get $dst) (i32.const 8)) (i64.load (i32.add (local.get $src) (i32.const 8))))
+          (set! $j (i32.add (local.get $j) (i32.const 1)))
+          (br $sl)))
+        (i32.store (i32.add (local.get $s) (i32.const 4)) (i32.sub (local.get $n) (i32.const 1)))
+        (return (i32.const 1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cont)))
+  (i32.const 0))
+
 ;; define (or overwrite) `name`=`val` in scope `s`. Grows by linear append;
 ;; assumes capacity is sufficient (scopes are sized generously).
 (func $scope_define (param $s i32) (param $name i32) (param $val i64) (effects)

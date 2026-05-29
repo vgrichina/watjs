@@ -300,6 +300,31 @@
     (br $cont)))
   (call $v_false))
 
+;; key in obj  (property existence, including prototype chain for objects)
+(func $js_in (param $key i64) (param $obj i64) (result i64) (effects)
+  (if (call $is_object (local.get $obj))
+    (then (return (call $mk_bool (i32.ne (call $scope_find (call $val_payload (local.get $obj)) (call $to_str (local.get $key))) (i32.const 0))))))
+  (if (call $is_array (local.get $obj))
+    (then
+      (if (call $key_is_length (local.get $key)) (then (return (call $v_true))))
+      (if (call $is_number (local.get $key))
+        (then
+          (let $i i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
+          (return (call $mk_bool (i32.and (i32.ge_s (local.get $i) (i32.const 0)) (i32.lt_s (local.get $i) (call $arr_len (call $val_payload (local.get $obj)))))))))
+      (return (call $v_false))))
+  (call $throw_type (cstring "TypeError") (cstring "cannot use 'in' on non-object"))
+  (call $v_false))
+
+;; delete container[key]
+(func $delete_prop (param $cont i64) (param $key i64) (effects)
+  (if (call $is_object (local.get $cont))
+    (then (drop (call $scope_delete (call $val_payload (local.get $cont)) (call $to_str (local.get $key)))) (return)))
+  (if (call $is_array (local.get $cont))
+    (then
+      (if (call $is_number (local.get $key))
+        (then (call $arr_set (call $val_payload (local.get $cont)) (i32.trunc_f64_s (call $tonum_raw (local.get $key))) (call $v_undef))))
+      (return))))
+
 ;; set_prop(container, key, val)
 (func $set_prop (param $cont i64) (param $key i64) (param $val i64) (effects)
   (if (call $is_array (local.get $cont))

@@ -861,6 +861,14 @@
       (return (call $typeof_val (call $parse_unary)))))
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "void")))
     (then (call $advance) (drop (call $parse_unary)) (return (call $v_undef))))
+  (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "delete")))
+    (then
+      (call $advance)
+      (i32.store (i32.const 104) (i32.const 0))  ;; clear REF
+      (drop (call $parse_postfix))               ;; evaluate operand, records member/index ref
+      (if (i32.load (i32.const 104))
+        (then (if (i32.eqz (call $suppress)) (then (call $delete_prop (i64.load (i32.const 112)) (i64.load (i32.const 120)))))))
+      (return (call $v_true))))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
     (then (call $advance) (return (call $num (f64.neg (call $to_num (call $parse_unary)))))))
   (if (i32.eq (local.get $k) (i32.const 10))  ;; +
@@ -928,6 +936,8 @@
     ;; instanceof (keyword operator)
     (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "instanceof")))
       (then (call $advance) (set! $left (call $js_instanceof (local.get $left) (call $parse_shift))) (br $cont)))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "in")))
+      (then (call $advance) (set! $left (call $js_in (local.get $left) (call $parse_shift))) (br $cont)))
     (br_if $brk (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 29)) (i32.or (i32.eq (local.get $k) (i32.const 30))
                           (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.eq (local.get $k) (i32.const 32)))))))
     (call $advance)
