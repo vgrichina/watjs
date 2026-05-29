@@ -74,7 +74,7 @@
     (call $vm_emit_op (local.get $code) (if i32 (i32.eq (local.get $k) (i32.const 10)) (then (i32.const 2)) (else (i32.const 3))))
     (br $l))))
 
-;; compile [ptr,len) → a fresh bytecode buffer (returns its pointer)
+;; compile a single arithmetic expression, HALT-terminated
 (func $vm_compile (param $ptr i32) (param $len i32) (result i32) (effects)
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
@@ -85,28 +85,76 @@
   (call $vm_emit_op (local.get $code) (i32.const 0))  ;; HALT
   (local.get $code))
 
-;; ── interpreter: dispatch loop over an in-memory operand stack ──
-(func $vm_run (param $code i32) (result i64) (effects)
-  (let $stack i32 (call $heap_alloc (i32.const 8192)))  ;; operand stack lives in memory
-  (let $sp i32 (i32.const 0))  ;; byte offset of next free slot
-  (let $ip i32 (i32.const 0))  ;; byte offset into code
-  (block $halt (loop $disp
+;; compile a ';'-separated list of expressions, YIELDing each — a stand-in for a
+;; generator body, to exercise suspend/resume. Layout: [expr YIELD]* HALT
+(func $vm_compile_gen (param $ptr i32) (param $len i32) (result i32) (effects)
+  (call $set_src (local.get $ptr) (local.get $len))
+  (call $lex_init)
+  (call $next_token)
+  (let $code i32 (call $heap_alloc (i32.const 8192)))
+  (call $vm_set_emit_cursor (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.eq (call $tok_kind) (i32.const 0)))  ;; EOF
+    (call $vm_c_add (local.get $code))
+    (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD
+    (br_if $e (i32.ne (call $tok_kind) (i32.const 21)))  ;; ';'
+    (call $next_token)
+    (br $l)))
+  (call $vm_emit_op (local.get $code) (i32.const 0))  ;; HALT
+  (local.get $code))
+
+;; ── resumable VM context — execution state reified in memory ──
+;; layout: @0 code, @4 ip, @8 stack, @12 sp, @16 done
+(func $vm_new (param $code i32) (result i32) (effects)
+  (let $ctx i32 (call $heap_alloc (i32.const 24)))
+  (i32.store (local.get $ctx) (local.get $code))
+  (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.const 0))           ;; ip
+  (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 8192)))  ;; operand stack
+  (i32.store (i32.add (local.get $ctx) (i32.const 12)) (i32.const 0))          ;; sp
+  (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 0))          ;; done
+  (local.get $ctx))
+
+(func $vm_done (param $ctx i32) (result i32) (effects) (i32.load (i32.add (local.get $ctx) (i32.const 16))))
+
+;; run from the context's saved (ip, sp) until the next YIELD or HALT.
+;; YIELD → returns the yielded value, state saved for the next call (done=0).
+;; HALT  → sets done=1, returns the final top-of-stack value (or undefined).
+;; This is the mechanism the re-scan evaluator structurally cannot provide.
+(func $vm_step (param $ctx i32) (result i64) (effects)
+  (let $code i32 (i32.load (local.get $ctx)))
+  (let $stack i32 (i32.load (i32.add (local.get $ctx) (i32.const 8))))
+  (let $ip i32 (i32.load (i32.add (local.get $ctx) (i32.const 4))))
+  (let $sp i32 (i32.load (i32.add (local.get $ctx) (i32.const 12))))
+  (loop $disp
     (let $op i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
     (set! $ip (i32.add (local.get $ip) (i32.const 4)))
-    (if (i32.eq (local.get $op) (i32.const 0)) (then (br $halt)))  ;; HALT
+    (if (i32.eq (local.get $op) (i32.const 0))  ;; HALT
+      (then
+        (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
+        (i32.store (i32.add (local.get $ctx) (i32.const 4)) (local.get $ip))
+        (i32.store (i32.add (local.get $ctx) (i32.const 12)) (local.get $sp))
+        (return (if i64 (i32.gt_s (local.get $sp) (i32.const 0))
+                  (then (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+                  (else (call $v_undef))))))
+    (if (i32.eq (local.get $op) (i32.const 7))  ;; YIELD — suspend
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (i32.store (i32.add (local.get $ctx) (i32.const 4)) (local.get $ip))
+        (i32.store (i32.add (local.get $ctx) (i32.const 12)) (local.get $sp))
+        (return (i64.load (i32.add (local.get $stack) (local.get $sp))))))
     (if (i32.eq (local.get $op) (i32.const 1))  ;; PUSH imm
       (then
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (i64.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 8)))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 6))  ;; NEG (unary, in place)
+    (if (i32.eq (local.get $op) (i32.const 6))  ;; NEG
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $num (f64.neg (call $tonum_raw (i64.load (i32.add (local.get $stack) (local.get $t)))))))
         (br $disp)))
-    ;; binary ops: pop b, then a (a is below b)
+    ;; binary: pop b, then a
     (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
     (let $b f64 (call $tonum_raw (i64.load (i32.add (local.get $stack) (local.get $sp)))))
     (let $a f64 (call $tonum_raw (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
@@ -116,9 +164,15 @@
     (if (i32.eq (local.get $op) (i32.const 4)) (then (set! $r (f64.mul (local.get $a) (local.get $b)))))
     (if (i32.eq (local.get $op) (i32.const 5)) (then (set! $r (f64.div (local.get $a) (local.get $b)))))
     (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (call $num (local.get $r)))
-    (br $disp)))
-  (i64.load (local.get $stack)))  ;; result = bottom of the operand stack
+    (br $disp))
+  (call $v_undef))  ;; unreachable (loop always returns)
 
-;; entry: compile then run [ptr,len), returning the numeric result (milestone 1)
+;; entry: compile then run a single expression to HALT, returning the number
 (func $eval_vm (param $ptr i32) (param $len i32) (result f64) (effects)
-  (call $tonum_raw (call $vm_run (call $vm_compile (local.get $ptr) (local.get $len)))))
+  (call $tonum_raw (call $vm_step (call $vm_new (call $vm_compile (local.get $ptr) (local.get $len))))))
+
+;; generator demo: start a ';'-separated yield-list; gen_next pulls each value
+(func $vm_gen_start (param $ptr i32) (param $len i32) (result i32) (effects)
+  (call $vm_new (call $vm_compile_gen (local.get $ptr) (local.get $len))))
+(func $vm_gen_next (param $ctx i32) (result f64) (effects)
+  (call $tonum_raw (call $vm_step (local.get $ctx))))

@@ -55,3 +55,6 @@
 (wasm-export "alloc_input" $alloc_input)
 (wasm-export "eval" $eval)
 (wasm-export "eval_vm" $eval_vm)
+(wasm-export "vm_gen_start" $vm_gen_start)
+(wasm-export "vm_gen_next" $vm_gen_next)
+(wasm-export "vm_done" $vm_done)
