@@ -918,6 +918,17 @@
               (let $end i32 (i32.load (i32.const 168)))
               (let $r i32 (call $arr_new (i32.const 2)))
               (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))
+              ;; capture groups: m[1], m[2], … (undefined if a group didn't participate)
+              (let $gi i32 (i32.const 1))
+              (block $gce (loop $gcl
+                (br_if $gce (i32.gt_s (local.get $gi) (i32.load (i32.const 284))))
+                (let $cb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $gi) (i32.const 1)) (i32.const 8))))
+                (let $cs i32 (i32.load (local.get $cb)))
+                (if (i32.lt_s (local.get $cs) (i32.const 0))
+                  (then (call $arr_push (local.get $r) (call $v_undef)))
+                  (else (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $cs) (i32.sub (i32.load (i32.add (local.get $cb) (i32.const 4))) (local.get $cs)))))))
+                (set! $gi (i32.add (local.get $gi) (i32.const 1)))
+                (br $gcl)))
               (return (call $mk_arr (local.get $r))))
             (else  ;; global → every match
               (let $r i32 (call $arr_new (i32.const 4)))
