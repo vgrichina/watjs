@@ -111,6 +111,28 @@
     (then
       (if (call $tok_is_kw (cstring "function"))  ;; function expression → pushes the fn value
         (then (drop (call $vm_c_function (local.get $code))) (return)))
+      (if (call $tok_is_kw (cstring "new"))  ;; new F(args)  /  new a.b.C(args)
+        (then
+          (call $next_token)
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; LOADVAR ctor
+          (call $next_token)
+          (block $nme (loop $nml  ;; member path on the constructor (no call)
+            (br_if $nme (i32.ne (call $tok_kind) (i32.const 23)))  ;; '.'
+            (call $next_token)
+            (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; GETPROP
+            (call $next_token)
+            (br $nml)))
+          (call $next_token)  ;; '('
+          (let $nargc i32 (i32.const 0))
+          (if (i32.ne (call $tok_kind) (i32.const 16))
+            (then (block $nae (loop $nal
+              (call $vm_c_expr (local.get $code))
+              (set! $nargc (i32.add (local.get $nargc) (i32.const 1)))
+              (br_if $nae (i32.eqz (call $eat (i32.const 22))))
+              (br $nal)))))
+          (call $next_token)  ;; ')'
+          (call $vm_emit_op (local.get $code) (i32.const 46)) (call $vm_emit_op (local.get $code) (local.get $nargc))  ;; NEW
+          (return)))
       (if (call $tok_is_kw (cstring "true"))
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1))) (call $next_token) (return)))
       (if (call $tok_is_kw (cstring "false"))
@@ -801,18 +823,58 @@
               (else (call $v_undef))))
           (set! $pi (i32.add (local.get $pi) (i32.const 1)))
           (br $pl)))
+        (call $scope_define (local.get $cns) (cstring "this")  ;; bind `this` (receiver for methods)
+          (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef))))
         (if (i32.eq (local.get $op) (i32.const 21))  ;; TAILCALL: reuse current frame
           (then (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12)))))
           (else  ;; CALL / CALLM: push a new frame; result base drops callee (+ receiver)
-            (let $fr i32 (call $heap_alloc (i32.const 16)))
+            (let $fr i32 (call $heap_alloc (i32.const 20)))
             (i32.store (local.get $fr) (local.get $ip))
             (i32.store (i32.add (local.get $fr) (i32.const 4)) (local.get $frame))
             (i32.store (i32.add (local.get $fr) (i32.const 8)) (local.get $scope))
             (i32.store (i32.add (local.get $fr) (i32.const 12)) (local.get $rbase))
+            (i32.store (i32.add (local.get $fr) (i32.const 16)) (i32.const 0))  ;; not a constructor frame
             (set! $frame (local.get $fr))
             (set! $sp (local.get $rbase))))
         (set! $scope (local.get $cns))
         (set! $ip (local.get $centry))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 46))  ;; NEW argc — construct an instance
+      (then
+        (let $argc i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))
+        (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
+        (if (i32.ne (i32.load (local.get $cfn)) (i32.const 1448232526))  ;; native ctor (Map/Set/…) → use its return
+          (then
+            (let $res i64 (call $call_native (i32.load (local.get $cfn)) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8))) (call $v_undef)))
+            (set! $sp (local.get $cbase))
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $res))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
+        (let $newo i32 (call $obj_new (i32.const 8)))
+        (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 8))))
+        (let $cns i32 (call $scope_new (local.get $gscope) (i32.add (local.get $cnp) (i32.const 4))))
+        (let $pi i32 (i32.const 0))
+        (block $pe (loop $pl
+          (br_if $pe (i32.ge_s (local.get $pi) (local.get $cnp)))
+          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 16)) (i32.mul (local.get $pi) (i32.const 4))))
+            (if i64 (i32.lt_s (local.get $pi) (local.get $argc))
+              (then (i64.load (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.mul (i32.add (local.get $pi) (i32.const 1)) (i32.const 8))))))
+              (else (call $v_undef))))
+          (set! $pi (i32.add (local.get $pi) (i32.const 1)))
+          (br $pl)))
+        (call $scope_define (local.get $cns) (cstring "this") (call $mk_obj (local.get $newo)))
+        (let $fr i32 (call $heap_alloc (i32.const 20)))
+        (i32.store (local.get $fr) (local.get $ip))
+        (i32.store (i32.add (local.get $fr) (i32.const 4)) (local.get $frame))
+        (i32.store (i32.add (local.get $fr) (i32.const 8)) (local.get $scope))
+        (i32.store (i32.add (local.get $fr) (i32.const 12)) (local.get $cbase))
+        (i32.store (i32.add (local.get $fr) (i32.const 16)) (local.get $newo))  ;; constructor frame → new object
+        (set! $frame (local.get $fr))
+        (set! $sp (local.get $cbase))
+        (set! $scope (local.get $cns))
+        (set! $ip (i32.load (i32.add (local.get $cfn) (i32.const 4))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 20))  ;; RET
       (then
@@ -822,6 +884,11 @@
           (then
             (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
             (return (local.get $rv))))
+        ;; constructor: unless the body returns an object, the result is the new instance
+        (let $fnew i32 (i32.load (i32.add (local.get $frame) (i32.const 16))))
+        (if (local.get $fnew)
+          (then (if (i32.eqz (i32.or (call $is_object (local.get $rv)) (i32.or (call $is_array (local.get $rv)) (call $is_function (local.get $rv)))))
+            (then (set! $rv (call $mk_obj (local.get $fnew)))))))
         (set! $ip (i32.load (local.get $frame)))
         (set! $scope (i32.load (i32.add (local.get $frame) (i32.const 8))))
         (let $rb i32 (i32.load (i32.add (local.get $frame) (i32.const 12))))
