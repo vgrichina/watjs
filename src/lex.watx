@@ -57,10 +57,12 @@
     (else (i32.load8_u (i32.add (call $src) (local.get $i))))))
 
 (func $is_space (param $c i32) (result i32) (effects)
-  (i32.or (i32.eq (local.get $c) (i32.const 32))
-    (i32.or (i32.eq (local.get $c) (i32.const 9))
-      (i32.or (i32.eq (local.get $c) (i32.const 10))
-              (i32.eq (local.get $c) (i32.const 13))))))
+  (i32.or (i32.eq (local.get $c) (i32.const 32))   ;; space
+    (i32.or (i32.eq (local.get $c) (i32.const 9))   ;; \t
+      (i32.or (i32.eq (local.get $c) (i32.const 10))  ;; \n
+        (i32.or (i32.eq (local.get $c) (i32.const 13))  ;; \r
+          (i32.or (i32.eq (local.get $c) (i32.const 11))  ;; \v
+                  (i32.eq (local.get $c) (i32.const 12))))))))  ;; \f
 
 (func $is_digit (param $c i32) (result i32) (effects)
   (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))))

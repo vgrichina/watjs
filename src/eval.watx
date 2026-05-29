@@ -19,6 +19,28 @@
   (if (i32.and (i32.eqz (call $err)) (i32.eqz (call $suppress)))
     (then (call $set_err (i32.const 1)) (call $set_err_val (call $mk_str (local.get $msg))))))
 
+;; construct an error object of the named type (looked up in the global scope)
+;; with the given message Str; falls back to a plain string if the type is absent.
+(func $make_error (param $typecstr i32) (param $msg i32) (result i64) (effects)
+  (let $slot i32 (call $scope_find (i32.load (i32.const 152)) (local.get $typecstr)))
+  (if (i32.eqz (local.get $slot)) (then (return (call $mk_str (local.get $msg)))))
+  (let $fnval i64 (i64.load (local.get $slot)))
+  (if (i32.eqz (call $is_function (local.get $fnval))) (then (return (call $mk_str (local.get $msg)))))
+  (let $fn i32 (call $val_payload (local.get $fnval)))
+  (if (i32.load (local.get $fn)) (then (return (call $mk_str (local.get $msg)))))  ;; native: skip
+  (let $proto i64 (call $fn_get_prototype (local.get $fn)))
+  (let $o i32 (call $obj_new (i32.const 8)))
+  (i32.store (local.get $o) (call $val_payload (local.get $proto)))
+  (let $argv i32 (call $heap_alloc (i32.const 8)))
+  (i64.store (local.get $argv) (call $mk_str (local.get $msg)))
+  (drop (call $call_user (local.get $fn) (i32.const 1) (local.get $argv) (call $mk_obj (local.get $o))))
+  (call $mk_obj (local.get $o)))
+
+;; throw a typed error (ReferenceError / TypeError / ...)
+(func $throw_type (param $typecstr i32) (param $msg i32) (effects)
+  (if (i32.and (i32.eqz (call $err)) (i32.eqz (call $suppress)))
+    (then (call $set_err (i32.const 1)) (call $set_err_val (call $make_error (local.get $typecstr) (local.get $msg))))))
+
 (func $cur (result i32) (effects) (call $tok_kind))
 (func $advance (effects) (call $next_token))
 (func $eat (param $k i32) (result i32) (effects)  ;; if cur==k, advance & return 1
@@ -225,7 +247,7 @@
   (call $expect (i32.const 16) (cstring "expected )"))
   (if (i32.or (call $suppress) (call $err)) (then (return (call $v_undef))))
   (if (i32.eqz (call $is_function (local.get $callee)))
-    (then (call $throw (cstring "not a function")) (return (call $v_undef))))
+    (then (call $throw_type (cstring "TypeError") (cstring "not a function")) (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $callee)))
   (let $nat i32 (i32.load (local.get $fn)))
   (if i64 (local.get $nat)
@@ -376,8 +398,7 @@
       (if (local.get $slot)
         (then (return (i64.load (local.get $slot))))
         (else
-          (if (i32.eqz (call $suppress))
-            (then (call $throw (call $str_concat (local.get $nm) (cstring " is not defined")))))
+          (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $nm) (cstring " is not defined")))
           (return (call $v_undef))))))
   ;; Unexpected token: throw AND consume it, so the parser always makes
   ;; progress (critical under suppress, where throw is a no-op — otherwise
@@ -430,7 +451,7 @@
       (call $expect (i32.const 16) (cstring "expected )"))))
   (if (i32.or (call $suppress) (call $err)) (then (return (call $v_undef))))
   (if (i32.eqz (call $is_function (local.get $callee)))
-    (then (call $throw (cstring "not a constructor")) (return (call $v_undef))))
+    (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $callee)))
   (if (i32.load (local.get $fn))  ;; native constructor — invoke native, return its result
     (then (return (call $call_native (i32.load (local.get $fn)) (local.get $argc) (local.get $argv)))))
@@ -952,9 +973,15 @@
   (call $scope_define (local.get $scope) (local.get $name) (local.get $v))
   (local.get $v))
 
+;; JS prelude: error constructors (run at startup, in global scope)
+(func $run_prelude (effects)
+  (drop (call $eval_string (cstring
+    "function Error(m){ if (m !== undefined) this.message = String(m); }\nError.prototype.name = 'Error';\nError.prototype.message = '';\nError.prototype.toString = function(){ if (this.message === '') return this.name; return this.name + ': ' + this.message; };\nfunction TypeError(m){ if (m !== undefined) this.message = String(m); }\nTypeError.prototype.name = 'TypeError'; TypeError.prototype.message = ''; TypeError.prototype.toString = Error.prototype.toString;\nfunction RangeError(m){ if (m !== undefined) this.message = String(m); }\nRangeError.prototype.name = 'RangeError'; RangeError.prototype.message = ''; RangeError.prototype.toString = Error.prototype.toString;\nfunction ReferenceError(m){ if (m !== undefined) this.message = String(m); }\nReferenceError.prototype.name = 'ReferenceError'; ReferenceError.prototype.message = ''; ReferenceError.prototype.toString = Error.prototype.toString;\nfunction SyntaxError(m){ if (m !== undefined) this.message = String(m); }\nSyntaxError.prototype.name = 'SyntaxError'; SyntaxError.prototype.message = ''; SyntaxError.prototype.toString = Error.prototype.toString;\nfunction EvalError(m){ if (m !== undefined) this.message = String(m); }\nEvalError.prototype.name = 'EvalError'; EvalError.prototype.toString = Error.prototype.toString;\nfunction URIError(m){ if (m !== undefined) this.message = String(m); }\nURIError.prototype.name = 'URIError'; URIError.prototype.toString = Error.prototype.toString;\n"))))
+
 (func $eval_program (effects)
   (let $g i32 (call $scope_new (i32.const 0) (i32.const 256)))  ;; global scope
   (call $set_cur_scope (local.get $g))
+  (i32.store (i32.const 152) (local.get $g))  ;; GLOBAL_SCOPE register (for make_error)
   (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
   (drop (call $def_native (local.get $g) (cstring "print") (i32.const 1)))
   (drop (call $def_native (local.get $g) (cstring "assert") (i32.const 2)))
@@ -973,6 +1000,7 @@
   (call $scope_define (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))
   (call $scope_define (local.get $g) (cstring "undefined") (call $v_undef))
+  (call $run_prelude)  ;; bootstrap error constructors
   (call $advance)  ;; load first token
   (block $brk (loop $cont
     (br_if $brk (i32.eq (call $cur) (i32.const 0)))  ;; EOF

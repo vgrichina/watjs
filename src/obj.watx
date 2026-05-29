@@ -92,7 +92,7 @@
           (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
       (return (call $v_undef))))
   ;; undefined / null → TypeError
-  (call $throw (cstring "cannot read property of null or undefined"))
+  (call $throw_type (cstring "TypeError") (cstring "cannot read property of null or undefined"))
   (call $v_undef))
 
 ;; get-or-create a function's property map
@@ -120,7 +120,7 @@
 ;; x instanceof F : walk x's prototype chain looking for F.prototype
 (func $js_instanceof (param $x i64) (param $f i64) (result i64) (effects)
   (if (i32.eqz (call $is_function (local.get $f)))
-    (then (call $throw (cstring "right operand of instanceof is not callable")) (return (call $v_false))))
+    (then (call $throw_type (cstring "TypeError") (cstring "right operand of instanceof is not callable")) (return (call $v_false))))
   (if (i32.eqz (call $is_object (local.get $x))) (then (return (call $v_false))))
   (let $protoScope i32 (call $val_payload (call $fn_get_prototype (call $val_payload (local.get $f)))))
   (let $p i32 (call $scope_parent (call $val_payload (local.get $x))))
@@ -147,4 +147,4 @@
     (then
       (call $scope_define (call $fn_props (call $val_payload (local.get $cont))) (call $to_str (local.get $key)) (local.get $val))
       (return)))
-  (call $throw (cstring "cannot set property of non-object")))
+  (call $throw_type (cstring "TypeError") (cstring "cannot set property of non-object")))
