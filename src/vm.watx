@@ -127,7 +127,22 @@
       (then
         (call $next_token)
         (let $key i32 (call $ident_name)) (call $next_token)
-        (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP
+        (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method call: obj.key(args)
+          (then
+            (call $vm_emit_op (local.get $code) (i32.const 32))                                      ;; DUP receiver
+            (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP → [obj, method]
+            (call $next_token)  ;; '('
+            (let $margc i32 (i32.const 0))
+            (if (i32.ne (call $tok_kind) (i32.const 16))
+              (then (block $me (loop $ml
+                (call $vm_c_expr (local.get $code))
+                (set! $margc (i32.add (local.get $margc) (i32.const 1)))
+                (br_if $me (i32.eqz (call $eat (i32.const 22))))
+                (br $ml)))))
+            (call $next_token)  ;; ')'
+            (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $margc)))  ;; CALLM
+          (else
+            (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))))  ;; GETPROP
         (br $l)))
     (br $e))))
 
@@ -266,14 +281,16 @@
           (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
           (call $vm_emit_op (local.get $code) (i32.const 20))  ;; default RET undefined
           (call $vm_patch (local.get $code) (local.get $pj))
-          ;; build fn struct: @0 entry, @4 nparams, @8.. param name ptrs
-          (let $fn i32 (call $heap_alloc (i32.add (i32.const 8) (i32.mul (local.get $np) (i32.const 4)))))
-          (i32.store (local.get $fn) (local.get $entry))
-          (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $np))
+          ;; build fn struct: @0 magic (distinguishes VM-fn from native), @4 entry,
+          ;; @8 nparams, @12.. param name ptrs
+          (let $fn i32 (call $heap_alloc (i32.add (i32.const 12) (i32.mul (local.get $np) (i32.const 4)))))
+          (i32.store (local.get $fn) (i32.const 1448232526))  ;; VM_MAGIC
+          (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
+          (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))
           (let $ci i32 (i32.const 0))
           (block $ce (loop $cl
             (br_if $ce (i32.ge_s (local.get $ci) (local.get $np)))
-            (i32.store (i32.add (i32.add (local.get $fn) (i32.const 8)) (i32.mul (local.get $ci) (i32.const 4)))
+            (i32.store (i32.add (i32.add (local.get $fn) (i32.const 12)) (i32.mul (local.get $ci) (i32.const 4)))
                        (i32.load (i32.add (local.get $params) (i32.mul (local.get $ci) (i32.const 4)))))
             (set! $ci (i32.add (local.get $ci) (i32.const 1)))
             (br $cl)))
@@ -408,7 +425,8 @@
 ;;         @24 curframe (in-memory call-frame chain), @28 gscope (globals)
 (func $vm_new (param $code i32) (result i32) (effects)
   (let $ctx i32 (call $heap_alloc (i32.const 32)))
-  (let $gs i32 (call $scope_new (i32.const 0) (i32.const 16)))
+  (let $gs i32 (call $scope_new (i32.const 0) (i32.const 256)))
+  (call $setup_globals (local.get $gs))  ;; builtins, prototypes, Math, etc.
   (i32.store (local.get $ctx) (local.get $code))
   (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.const 0))           ;; ip
   (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 65536)))  ;; operand stack
@@ -454,40 +472,53 @@
         (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $scope))
         (i32.store (i32.add (local.get $ctx) (i32.const 24)) (local.get $frame))
         (return (i64.load (i32.add (local.get $stack) (local.get $sp))))))
-    (if (i32.or (i32.eq (local.get $op) (i32.const 19)) (i32.eq (local.get $op) (i32.const 21)))  ;; CALL / TAILCALL (operand: argc)
+    (if (i32.eq (local.get $op) (i32.const 32))  ;; DUP top
+      (then
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.or (i32.eq (local.get $op) (i32.const 19)) (i32.or (i32.eq (local.get $op) (i32.const 21)) (i32.eq (local.get $op) (i32.const 33))))  ;; CALL / TAILCALL / CALLM
       (then
         (let $argc i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $isM i32 (i32.eq (local.get $op) (i32.const 33)))  ;; method call → receiver is below the callee
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))  ;; callee slot
+        (let $rbase i32 (if i32 (local.get $isM) (then (i32.sub (local.get $cbase) (i32.const 8))) (else (local.get $cbase))))  ;; result base
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
-        (let $centry i32 (i32.load (local.get $cfn)))
-        (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 4))))
-        ;; TAILCALL reuses the current frame's scope (args are already evaluated on
-        ;; the operand stack), so tail recursion allocates nothing per call → O(1) space.
+        (if (i32.ne (i32.load (local.get $cfn)) (i32.const 1448232526))  ;; not a VM-fn → native built-in
+          (then
+            (let $thisv i64 (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef))))
+            (let $res i64 (call $call_native (i32.load (local.get $cfn)) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8))) (local.get $thisv)))
+            (set! $sp (local.get $rbase))
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $res))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
+        (let $centry i32 (i32.load (i32.add (local.get $cfn) (i32.const 4))))
+        (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 8))))
+        ;; TAILCALL reuses the current frame's scope → O(1)-space tail recursion
         (let $cns i32 (if i32 (i32.eq (local.get $op) (i32.const 21))
                         (then (local.get $scope))
                         (else (call $scope_new (local.get $gscope) (i32.add (local.get $cnp) (i32.const 4))))))
-        (if (i32.eq (local.get $op) (i32.const 21)) (then (i32.store (i32.add (local.get $cns) (i32.const 4)) (i32.const 0))))  ;; clear before rebind
+        (if (i32.eq (local.get $op) (i32.const 21)) (then (i32.store (i32.add (local.get $cns) (i32.const 4)) (i32.const 0))))
         (let $pi i32 (i32.const 0))
         (block $pe (loop $pl
           (br_if $pe (i32.ge_s (local.get $pi) (local.get $cnp)))
-          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 8)) (i32.mul (local.get $pi) (i32.const 4))))
+          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 12)) (i32.mul (local.get $pi) (i32.const 4))))
             (if i64 (i32.lt_s (local.get $pi) (local.get $argc))
               (then (i64.load (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.mul (i32.add (local.get $pi) (i32.const 1)) (i32.const 8))))))
               (else (call $v_undef))))
           (set! $pi (i32.add (local.get $pi) (i32.const 1)))
           (br $pl)))
-        (if (i32.eq (local.get $op) (i32.const 19))  ;; CALL: push a new frame
-          (then
+        (if (i32.eq (local.get $op) (i32.const 21))  ;; TAILCALL: reuse current frame
+          (then (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12)))))
+          (else  ;; CALL / CALLM: push a new frame; result base drops callee (+ receiver)
             (let $fr i32 (call $heap_alloc (i32.const 16)))
-            (i32.store (local.get $fr) (local.get $ip))                     ;; return ip
-            (i32.store (i32.add (local.get $fr) (i32.const 4)) (local.get $frame))   ;; parent
-            (i32.store (i32.add (local.get $fr) (i32.const 8)) (local.get $scope))   ;; caller scope
-            (i32.store (i32.add (local.get $fr) (i32.const 12)) (local.get $cbase))  ;; operand base
+            (i32.store (local.get $fr) (local.get $ip))
+            (i32.store (i32.add (local.get $fr) (i32.const 4)) (local.get $frame))
+            (i32.store (i32.add (local.get $fr) (i32.const 8)) (local.get $scope))
+            (i32.store (i32.add (local.get $fr) (i32.const 12)) (local.get $rbase))
             (set! $frame (local.get $fr))
-            (set! $sp (local.get $cbase)))
-          (else  ;; TAILCALL: reuse the current frame (so callee returns to our caller)
-            (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12))))))
+            (set! $sp (local.get $rbase))))
         (set! $scope (local.get $cns))
         (set! $ip (local.get $centry))
         (br $disp)))

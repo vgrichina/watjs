@@ -2825,12 +2825,10 @@
   (drop (call $eval_string (cstring
     "function Error(m){ if (m !== undefined) this.message = String(m); }\nError.prototype.name = 'Error';\nError.prototype.message = '';\nError.prototype.toString = function(){ if (this.message === '') return this.name; return this.name + ': ' + this.message; };\nfunction TypeError(m){ if (m !== undefined) this.message = String(m); }\nTypeError.prototype.name = 'TypeError'; TypeError.prototype.message = ''; TypeError.prototype.toString = Error.prototype.toString;\nfunction RangeError(m){ if (m !== undefined) this.message = String(m); }\nRangeError.prototype.name = 'RangeError'; RangeError.prototype.message = ''; RangeError.prototype.toString = Error.prototype.toString;\nfunction ReferenceError(m){ if (m !== undefined) this.message = String(m); }\nReferenceError.prototype.name = 'ReferenceError'; ReferenceError.prototype.message = ''; ReferenceError.prototype.toString = Error.prototype.toString;\nfunction SyntaxError(m){ if (m !== undefined) this.message = String(m); }\nSyntaxError.prototype.name = 'SyntaxError'; SyntaxError.prototype.message = ''; SyntaxError.prototype.toString = Error.prototype.toString;\nfunction EvalError(m){ if (m !== undefined) this.message = String(m); }\nEvalError.prototype.name = 'EvalError'; EvalError.prototype.toString = Error.prototype.toString;\nfunction URIError(m){ if (m !== undefined) this.message = String(m); }\nURIError.prototype.name = 'URIError'; URIError.prototype.toString = Error.prototype.toString;\n"))))
 
-(func $eval_program (effects)
-  (let $g i32 (call $scope_new (i32.const 0) (i32.const 256)))  ;; global scope
-  (call $set_cur_scope (local.get $g))
+;; Register all builtins/globals into scope $g — shared by the re-scan engine
+;; (eval_program) and the bytecode VM (eval_prog) so both see the same protos.
+(func $setup_globals (param $g i32) (effects)
   (i32.store (i32.const 152) (local.get $g))  ;; GLOBAL_SCOPE register (for make_error)
-  (call $set_this (call $mk_obj (local.get $g)))  ;; `this` at top level = the global object
-  (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
   (drop (call $def_native (local.get $g) (cstring "print") (i32.const 1)))
   (drop (call $def_native (local.get $g) (cstring "assert") (i32.const 2)))
   (drop (call $def_native (local.get $g) (cstring "eval") (i32.const 3)))
@@ -2963,9 +2961,15 @@
   ;; global NaN / Infinity / undefined
   (call $scope_define (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))
-  (call $scope_define (local.get $g) (cstring "undefined") (call $v_undef))
+  (call $scope_define (local.get $g) (cstring "undefined") (call $v_undef)))
+
+(func $eval_program (effects)
+  (let $g i32 (call $scope_new (i32.const 0) (i32.const 256)))  ;; global scope
+  (call $set_cur_scope (local.get $g))
+  (call $set_this (call $mk_obj (local.get $g)))  ;; `this` at top level = the global object
+  (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
+  (call $setup_globals (local.get $g))
   (call $run_prelude)  ;; bootstrap error constructors
-  ;; hoist top-level var declarations
   (call $lex_init) (call $hoist_vars (local.get $g) (i32.const 1))
   (call $lex_init)
   (call $advance)  ;; load first token
