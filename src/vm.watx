@@ -418,10 +418,12 @@
               (call $next_token)
               (call $vm_c_expr (local.get $code))  ;; [obj, src]
               (call $vm_emit_op (local.get $code) (i32.const 69)))  ;; OSPREAD → [obj]
-          (else (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed]: value
+          (else (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed]: value  |  [computed](){} method
             (then
-              (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']'
-              (call $next_token) (call $vm_c_expr (local.get $code))  ;; ':' value
+              (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']' → [obj, key]
+              (if (i32.eq (call $tok_kind) (i32.const 15))  ;; computed method
+                (then (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [obj, key, fn]
+                (else (call $next_token) (call $vm_c_expr (local.get $code))))  ;; ': value'
               (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
             (else (if (i32.eq (call $tok_kind) (i32.const 2))  ;; "string": value
               (then
