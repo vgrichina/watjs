@@ -210,6 +210,7 @@
   (i32.store (local.get $fn) (i32.const 0))                                   ;; native=0
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (call $cur_scope))       ;; closure scope
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))         ;; param count
+  (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))          ;; props (lazy)
   (call $cursor_store (i32.add (local.get $fn) (i32.const 16)))               ;; body cursor at '{'
   (let $i i32 (i32.const 0))
   (block $ce (loop $cc
@@ -221,6 +222,9 @@
   ;; skip the body
   (call $sup_inc) (call $parse_block) (call $sup_dec)
   (let $fv i64 (call $mk_fn (local.get $fn)))
+  ;; store .name (function name, or "")
+  (call $scope_define (call $fn_props (local.get $fn)) (cstring "name")
+    (call $mk_str (if i32 (i32.ne (local.get $name) (i32.const 0)) (then (local.get $name)) (else (cstring "")))))
   (if (i32.and (local.get $as_decl) (i32.and (i32.ne (local.get $name) (i32.const 0)) (i32.eqz (call $suppress))))
     (then (call $scope_define (call $cur_scope) (local.get $name) (local.get $fv))))
   (local.get $fv))
@@ -772,11 +776,30 @@
     (then (call $set_err (i32.const 1)) (call $set_err_val (local.get $v))))
   (drop (call $eat (i32.const 21))))
 
+;; skip a 'catch' clause (header + block) without executing it
+(func $skip_catch (effects)
+  (if (call $tok_is_kw (cstring "catch"))
+    (then
+      (call $advance)
+      (if (i32.eq (call $cur) (i32.const 15))
+        (then (call $advance)
+              (if (i32.eq (call $cur) (i32.const 3)) (then (call $advance)))
+              (call $expect (i32.const 16) (cstring "expected )"))))
+      (call $sup_inc) (call $parse_block) (call $sup_dec))))
+
 ;; try { ... } catch (e) { ... }
 (func $parse_try (effects)
   (call $advance)  ;; 'try'
   (let $trycur i32 (call $cursor_save))  ;; at '{'
   (call $parse_block)                    ;; run try block
+  ;; case A: try exited via return/break/continue (NOT error) — skip rest of try
+  ;; and the catch clause, then propagate the control-flow flag.
+  (if (i32.and (i32.or (call $retflag) (i32.or (call $brkflag) (call $contflag))) (i32.eqz (call $err)))
+    (then
+      (call $cursor_restore (local.get $trycur))
+      (call $sup_inc) (call $parse_block) (call $sup_dec)  ;; skip rest of try block
+      (call $skip_catch)
+      (return)))
   (let $caught i32 (i32.const 0))
   (let $cval i64 (call $v_undef))
   (if (i32.and (call $err) (i32.eqz (call $suppress)))
@@ -869,6 +892,9 @@
 (func $def_native (param $scope i32) (param $name i32) (param $id i32) (effects)
   (let $fn i32 (call $heap_alloc (i32.const 40)))
   (i32.store (local.get $fn) (local.get $id))
+  (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))   ;; nparam
+  (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))  ;; props (lazy)
+  (call $scope_define (call $fn_props (local.get $fn)) (cstring "name") (call $mk_str (local.get $name)))
   (call $scope_define (local.get $scope) (local.get $name) (call $mk_fn (local.get $fn))))
 
 (func $eval_program (effects)

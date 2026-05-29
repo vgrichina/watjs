@@ -84,6 +84,7 @@
       (let $fn i32 (call $val_payload (local.get $cont)))
       (let $ks i32 (call $to_str (local.get $key)))
       (if (call $str_eq (local.get $ks) (cstring "prototype")) (then (return (call $fn_get_prototype (local.get $fn)))))
+      (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
       (let $props i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
       (if (local.get $props)
         (then
@@ -109,8 +110,11 @@
   (let $slot i32 (call $scope_find_local (local.get $props) (cstring "prototype")))
   (if i64 (local.get $slot) (then (i64.load (local.get $slot)))
     (else
-      (let $pv i64 (call $mk_obj (call $obj_new (i32.const 8))))
+      (let $po i32 (call $obj_new (i32.const 8)))
+      (let $pv i64 (call $mk_obj (local.get $po)))
       (call $scope_define (local.get $props) (cstring "prototype") (local.get $pv))
+      ;; F.prototype.constructor === F
+      (call $scope_define (local.get $po) (cstring "constructor") (call $mk_fn (local.get $fn)))
       (local.get $pv))))
 
 ;; x instanceof F : walk x's prototype chain looking for F.prototype
