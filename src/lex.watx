@@ -220,10 +220,88 @@
     (let $c i32 (call $ch_at (i32.const 0)))
     (br_if $se (i32.eq (local.get $c) (i32.const -1)))
     (br_if $se (i32.eq (local.get $c) (local.get $quote)))
+    ;; skip escaped char (so \" \\ etc. don't end the string)
+    (if (i32.eq (local.get $c) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $sl)))
   (call $set_tok (i32.const 2) (local.get $start) (i32.sub (call $pos) (local.get $start)))
   (call $set_pos (i32.add (call $pos) (i32.const 1))))  ;; skip closing quote
+
+;; hex digit value, or -1
+(func $hexval (param $c i32) (result i32) (effects)
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))) (then (return (i32.sub (local.get $c) (i32.const 48)))))
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 102))) (then (return (i32.add (i32.sub (local.get $c) (i32.const 97)) (i32.const 10)))))
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 70))) (then (return (i32.add (i32.sub (local.get $c) (i32.const 65)) (i32.const 10)))))
+  (i32.const -1))
+
+;; Decode a raw string-literal body [src,len) (between quotes) into a heap Str,
+;; processing escapes: \n \t \r \b \f \v \0 \\ \" \' \` \/ \xHH \uHHHH.
+(func $decode_str (param $src i32) (param $len i32) (result i32) (effects)
+  (let $p i32 (call $str_alloc (local.get $len)))   ;; upper bound (escapes shrink)
+  (let $i i32 (i32.const 0))
+  (let $o i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $len)))
+    (let $c i32 (i32.load8_u (i32.add (local.get $src) (local.get $i))))
+    (if (i32.and (i32.eq (local.get $c) (i32.const 92)) (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $len)))
+      (then
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (let $n i32 (i32.load8_u (i32.add (local.get $src) (local.get $i))))
+        (if (i32.eq (local.get $n) (i32.const 117))  ;; \uHHHH
+          (then
+            (let $cp i32 (i32.const 0))
+            (let $j i32 (i32.const 0))
+            (block $he (loop $hl
+              (br_if $he (i32.ge_s (local.get $j) (i32.const 4)))
+              (let $h i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1))))))
+              (br_if $he (i32.lt_s (local.get $h) (i32.const 0)))
+              (set! $cp (i32.add (i32.mul (local.get $cp) (i32.const 16)) (local.get $h)))
+              (set! $i (i32.add (local.get $i) (i32.const 1)))
+              (set! $j (i32.add (local.get $j) (i32.const 1)))
+              (br $hl)))
+            (set! $o (call $utf8_emit (local.get $p) (local.get $o) (local.get $cp))))
+          (else (if (i32.eq (local.get $n) (i32.const 120))  ;; \xHH
+            (then
+              (let $h1 i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1))))))
+              (let $h2 i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 2))))))
+              (call $str_set_byte (local.get $p) (local.get $o) (i32.add (i32.mul (local.get $h1) (i32.const 16)) (local.get $h2)))
+              (set! $o (i32.add (local.get $o) (i32.const 1)))
+              (set! $i (i32.add (local.get $i) (i32.const 2))))
+            (else
+              (call $str_set_byte (local.get $p) (local.get $o) (call $esc_byte (local.get $n)))
+              (set! $o (i32.add (local.get $o) (i32.const 1))))))))
+      (else
+        (call $str_set_byte (local.get $p) (local.get $o) (local.get $c))
+        (set! $o (i32.add (local.get $o) (i32.const 1)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l)))
+  (i32.store (local.get $p) (local.get $o))  ;; fix actual length
+  (local.get $p))
+
+;; single-char escape -> byte
+(func $esc_byte (param $n i32) (result i32) (effects)
+  (if (i32.eq (local.get $n) (i32.const 110)) (then (return (i32.const 10))))  ;; n
+  (if (i32.eq (local.get $n) (i32.const 116)) (then (return (i32.const 9))))   ;; t
+  (if (i32.eq (local.get $n) (i32.const 114)) (then (return (i32.const 13))))  ;; r
+  (if (i32.eq (local.get $n) (i32.const 98))  (then (return (i32.const 8))))   ;; b
+  (if (i32.eq (local.get $n) (i32.const 102)) (then (return (i32.const 12))))  ;; f
+  (if (i32.eq (local.get $n) (i32.const 118)) (then (return (i32.const 11))))  ;; v
+  (if (i32.eq (local.get $n) (i32.const 48))  (then (return (i32.const 0))))   ;; 0
+  (local.get $n))  ;; \\ \" \' \` \/ and others → literal
+
+;; emit codepoint as UTF-8 into Str p at offset o; returns new offset
+(func $utf8_emit (param $p i32) (param $o i32) (param $cp i32) (result i32) (effects)
+  (if (i32.lt_s (local.get $cp) (i32.const 128))
+    (then (call $str_set_byte (local.get $p) (local.get $o) (local.get $cp)) (return (i32.add (local.get $o) (i32.const 1)))))
+  (if (i32.lt_s (local.get $cp) (i32.const 2048))
+    (then
+      (call $str_set_byte (local.get $p) (local.get $o) (i32.or (i32.const 192) (i32.shr_u (local.get $cp) (i32.const 6))))
+      (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 1)) (i32.or (i32.const 128) (i32.and (local.get $cp) (i32.const 63))))
+      (return (i32.add (local.get $o) (i32.const 2)))))
+  (call $str_set_byte (local.get $p) (local.get $o) (i32.or (i32.const 224) (i32.shr_u (local.get $cp) (i32.const 12))))
+  (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 1)) (i32.or (i32.const 128) (i32.and (i32.shr_u (local.get $cp) (i32.const 6)) (i32.const 63))))
+  (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 2)) (i32.or (i32.const 128) (i32.and (local.get $cp) (i32.const 63))))
+  (i32.add (local.get $o) (i32.const 3)))
 
 ;; helper: emit a single/double-char operator token of kind $k spanning $n chars
 (func $op_tok (param $k i32) (param $n i32) (effects)

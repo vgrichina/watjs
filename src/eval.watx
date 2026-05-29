@@ -358,7 +358,7 @@
   ;; string
   (if (i32.eq (local.get $k) (i32.const 2))
     (then
-      (let $s i32 (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len)))
+      (let $s i32 (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)))
       (call $advance) (return (call $mk_str (local.get $s)))))
   ;; ( expr )
   (if (i32.eq (local.get $k) (i32.const 15))
@@ -394,7 +394,7 @@
         (if (i32.eq (call $cur) (i32.const 3))
           (then (set! $key (call $ident_name)) (call $advance))
           (else (if (i32.eq (call $cur) (i32.const 2))
-            (then (set! $key (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len))) (call $advance))
+            (then (set! $key (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))) (call $advance))
             (else (call $throw (cstring "bad object key")) (br $brk)))))
         (call $expect (i32.const 37) (cstring "expected :"))
         (call $scope_define (local.get $o) (local.get $key) (call $parse_assign))
