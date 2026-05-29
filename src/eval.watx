@@ -189,7 +189,38 @@
     (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
           (return (call $mk_bool (i32.and (f64.eq (local.get $d) (local.get $d))
             (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0)))))))))
+  (if (i32.eq (local.get $id) (i32.const 9))  ;; Object(x)
+    (then
+      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.and (i32.eqz (call $is_number (local.get $a)))
+            (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a)))))
+        (then (return (local.get $a))))
+      (return (call $mk_obj (call $obj_new (i32.const 8))))))
+  (if (i32.eq (local.get $id) (i32.const 10))  ;; Object.keys(o)
+    (then
+      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $arr i32 (call $arr_new (i32.const 16)))
+      (if (call $is_object (local.get $a))
+        (then
+          (let $sc i32 (call $val_payload (local.get $a)))
+          (let $cnt i32 (call $scope_count (local.get $sc)))
+          (let $i i32 (i32.const 0))
+          (block $ke (loop $kl
+            (br_if $ke (i32.ge_s (local.get $i) (local.get $cnt)))
+            (call $arr_push (local.get $arr) (call $mk_str (i32.load (call $scope_entry (local.get $sc) (local.get $i)))))
+            (set! $i (i32.add (local.get $i) (i32.const 1)))
+            (br $kl)))))
+      (return (call $mk_arr (local.get $arr)))))
   (call $v_undef))
+
+;; create a standalone native function value (for attaching as a property)
+(func $mk_native (param $id i32) (param $name i32) (result i64) (effects)
+  (let $fn i32 (call $heap_alloc (i32.const 40)))
+  (i32.store (local.get $fn) (local.get $id))
+  (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))
+  (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))
+  (call $scope_define (call $fn_props (local.get $fn)) (cstring "name") (call $mk_str (local.get $name)))
+  (call $mk_fn (local.get $fn)))
 
 ;; call a user function: bind params in a fresh scope (parent = closure scope),
 ;; re-scan the body via cursor restore, capture return value.
@@ -1165,6 +1196,9 @@
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NEGATIVE_INFINITY")) (call $num (f64.div (f64.const -1) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "MAX_SAFE_INTEGER")) (call $num (f64.const 9007199254740991)))
   (drop (call $def_native (local.get $g) (cstring "String") (i32.const 5)))
+  ;; Object with .keys
+  (let $objf i64 (call $def_native (local.get $g) (cstring "Object") (i32.const 9)))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "keys")) (call $mk_native (i32.const 10) (cstring "keys")))
   ;; global NaN / Infinity / undefined
   (call $scope_define (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))
