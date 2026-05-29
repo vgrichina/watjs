@@ -300,7 +300,7 @@
           (call $vm_emit_op (local.get $code) (local.get $iop))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR → leaves old
           (return)))
-      (call $vm_emit_op (local.get $code) (i32.const 8))        ;; LOADVAR
+      (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 240)) (then (i32.const 62)) (else (i32.const 8))))  ;; LOADVAR_SOFT inside typeof, else LOADVAR
       (call $vm_emit_op (local.get $code) (local.get $vn))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 19))  ;; array literal [ ... ]  (supports ...spread)
@@ -571,17 +571,13 @@
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "typeof")))  ;; typeof expr
     (then
       (call $next_token)  ;; consume 'typeof'
-      (if (i32.eq (call $tok_kind) (i32.const 3))  ;; typeof <identifier …>
-        (then
-          (let $tsc i32 (call $cursor_save))  ;; positioned at the identifier
-          (let $tnm i32 (call $ident_name))
-          (call $next_token)
-          (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 15))))
-            (then (call $cursor_restore (local.get $tsc)) (call $vm_c_pow (local.get $code)))  ;; member/call → normal operand
-            (else (call $vm_emit_op (local.get $code) (i32.const 62)) (call $vm_emit_op (local.get $code) (local.get $tnm))))  ;; bare var → LOADVAR_SOFT (no ReferenceError)
-          (call $vm_emit_op (local.get $code) (i32.const 58))  ;; TYPEOF
-          (return)))
-      (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 58)) (return)))  ;; TYPEOF of other expr
+      ;; reg 240 = "inside typeof operand" depth: while >0, vm_c_primary loads
+      ;; variables softly (undefined for unbound, no ReferenceError) so typeof x,
+      ;; typeof(x), typeof undeclared all yield "undefined" instead of throwing.
+      (i32.store (i32.const 240) (i32.add (i32.load (i32.const 240)) (i32.const 1)))
+      (call $vm_c_unary (local.get $code))
+      (i32.store (i32.const 240) (i32.sub (i32.load (i32.const 240)) (i32.const 1)))
+      (call $vm_emit_op (local.get $code) (i32.const 58)) (return)))  ;; TYPEOF
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "void")))  ;; void expr → undefined
     (then (call $next_token) (call $vm_c_unary (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP operand
@@ -1371,6 +1367,7 @@
 (func $vm_compile_prog (param $ptr i32) (param $len i32) (result i32) (effects)
   (i32.store (i32.const 208) (i32.const 0)) (i32.store (i32.const 216) (i32.const 0))  ;; no enclosing loop
   (i32.store (i32.const 224) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; temp counter, async flag
+  (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
   (let $code i32 (call $heap_alloc (i32.const 131072)))
   (call $vm_set_emit_cursor (i32.const 0))
   ;; the Error-hierarchy prelude is compiled into the same buffer first, so its
