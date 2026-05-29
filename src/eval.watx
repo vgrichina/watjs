@@ -681,8 +681,12 @@
   (call $hoist_vars (local.get $ns) (i32.const 0))           ;; hoist var declarations
   (call $cursor_restore (i32.add (local.get $fn) (i32.const 16)))
   (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
-  (call $parse_block)
-  (let $rv i64 (if i64 (call $retflag) (then (i64.load (i32.const 96))) (else (call $v_undef))))
+  (let $rv i64 (call $v_undef))
+  (if (i32.eq (call $cur) (i32.const 17))  ;; '{' → statement body
+    (then
+      (call $parse_block)
+      (if (call $retflag) (then (set! $rv (i64.load (i32.const 96))))))
+    (else (set! $rv (call $parse_assign))))  ;; expression body (arrow) → implicit return
   (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
   (call $clear_loopflags)                   ;; a break/continue must not escape a call
   (call $set_cur_scope (local.get $savedScope))
@@ -1400,13 +1404,61 @@
   (if (i32.eq (local.get $op) (i32.const 42)) (then (return (call $num (f64.mul (local.get $x) (local.get $y))))))
   (call $num (f64.div (local.get $x) (local.get $y))))
 
+;; build an arrow function: cursor is at the body (expr or '{'); params given
+(func $make_arrow (param $params i32) (param $np i32) (result i64) (effects)
+  (let $fn i32 (call $heap_alloc (i32.add (i32.const 40) (i32.mul (local.get $np) (i32.const 4)))))
+  (i32.store (local.get $fn) (i32.const 0))
+  (i32.store (i32.add (local.get $fn) (i32.const 4)) (call $cur_scope))
+  (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))
+  (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))
+  (call $cursor_store (i32.add (local.get $fn) (i32.const 16)))
+  (let $i i32 (i32.const 0))
+  (block $ce (loop $cc
+    (br_if $ce (i32.ge_s (local.get $i) (local.get $np)))
+    (i32.store (i32.add (i32.add (local.get $fn) (i32.const 40)) (i32.mul (local.get $i) (i32.const 4)))
+               (i32.load (i32.add (local.get $params) (i32.mul (local.get $i) (i32.const 4)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cc)))
+  (call $sup_inc)
+  (if (i32.eq (call $cur) (i32.const 17)) (then (call $parse_block)) (else (drop (call $parse_assign))))
+  (call $sup_dec)
+  (call $mk_fn (local.get $fn)))
+
 (func $parse_assign (result i64) (effects)
-  (if (i32.eq (call $cur) (i32.const 3))  ;; IDENT — lookahead for assignment/update
+  ;; ( params ) => arrow
+  (if (i32.eq (call $cur) (i32.const 15))
+    (then
+      (let $fc i32 (call $cursor_save))
+      (call $advance)
+      (let $aprm i32 (call $heap_alloc (i32.const 64)))
+      (let $anp i32 (i32.const 0))
+      (let $aok i32 (i32.const 1))
+      (block $pe (loop $pc
+        (br_if $pe (i32.eq (call $cur) (i32.const 16)))
+        (if (i32.ne (call $cur) (i32.const 3)) (then (set! $aok (i32.const 0)) (br $pe)))
+        (i32.store (i32.add (local.get $aprm) (i32.mul (local.get $anp) (i32.const 4))) (call $ident_name))
+        (set! $anp (i32.add (local.get $anp) (i32.const 1)))
+        (call $advance)
+        (br_if $pe (i32.eqz (call $eat (i32.const 22))))
+        (br $pc)))
+      (if (i32.and (local.get $aok) (i32.eq (call $cur) (i32.const 16)))
+        (then
+          (call $advance)
+          (if (i32.eq (call $cur) (i32.const 52))  ;; '=>'
+            (then (call $advance) (return (call $make_arrow (local.get $aprm) (local.get $anp)))))))
+      (call $cursor_restore (local.get $fc))))
+  (if (i32.eq (call $cur) (i32.const 3))  ;; IDENT — lookahead for assignment/update/arrow
     (then
       (call $look_save)
       (let $nm i32 (call $ident_name))
       (call $advance)
       (let $op i32 (call $cur))
+      (if (i32.eq (local.get $op) (i32.const 52))  ;; ident => arrow (1 param)
+        (then
+          (call $advance)
+          (let $p1 i32 (call $heap_alloc (i32.const 8)))
+          (i32.store (local.get $p1) (local.get $nm))
+          (return (call $make_arrow (local.get $p1) (i32.const 1)))))
       (if (i32.eq (local.get $op) (i32.const 24))  ;; '='
         (then
           (call $advance)

@@ -355,6 +355,8 @@
     (then (call $op_tok (i32.const 42) (i32.const 2)) (return)))  ;; *=
   (if (i32.and (i32.eq (local.get $c) (i32.const 47)) (i32.eq (local.get $c1) (i32.const 61)))
     (then (call $op_tok (i32.const 43) (i32.const 2)) (return)))  ;; /=
+  (if (i32.and (i32.eq (local.get $c) (i32.const 61)) (i32.eq (local.get $c1) (i32.const 62)))
+    (then (call $op_tok (i32.const 52) (i32.const 2)) (return)))  ;; =>
   (if (i32.and (i32.eq (local.get $c) (i32.const 61)) (i32.eq (local.get $c1) (i32.const 61)))
     (then (call $op_tok (i32.const 25) (i32.const 2)) (return)))
   (if (i32.and (i32.eq (local.get $c) (i32.const 33)) (i32.eq (local.get $c1) (i32.const 61)))

@@ -1,0 +1,16 @@
+var sq = x => x * x;
+assert(sq(6) === 36, "single param");
+var add = (a, b) => a + b;
+assert(add(3, 4) === 7, "two params");
+var const42 = () => 42;
+assert(const42() === 42, "no params");
+var blk = n => { var r = n * 2; return r + 1; };
+assert(blk(10) === 21, "block body");
+assert([1, 2, 3, 4].map(x => x * x).join(",") === "1,4,9,16", "map arrow");
+assert([1, 2, 3, 4, 5].filter(x => x % 2 === 1).join(",") === "1,3,5", "filter arrow");
+assert([1, 2, 3, 4].reduce((a, b) => a + b, 0) === 10, "reduce arrow");
+var compose = (f, g) => x => f(g(x));
+var inc = x => x + 1;
+var dbl = x => x * 2;
+assert(compose(inc, dbl)(5) === 11, "curried arrow");
+print("arrow tests passed");
