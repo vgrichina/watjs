@@ -77,10 +77,20 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
   `Math` (abs/floor/ceil/round/sqrt/max/min/pow/trunc/sign + PI/E); error
   constructors via a JS prelude
 - `String.prototype`: charAt/charCodeAt/indexOf/slice/substring/toUpperCase/
-  toLowerCase/split/trim/repeat/toString/valueOf/constructor
+  toLowerCase/split/trim/repeat/includes/startsWith/endsWith/toString/valueOf/
+  constructor
 - `Array.prototype` (growable): push/pop/indexOf/join/slice/forEach/map/filter/
-  reduce/concat/reverse/includes
-- `JSON.stringify`/`JSON.parse`; `**` exponentiation
+  reduce/concat/reverse/includes/find/findIndex/some/every/sort
+- `Object.prototype.hasOwnProperty`; `Object.values`/`Object.entries`
+- `++`/`--` (prefix & postfix) and `+= -= *= /=` on identifiers *and*
+  member/index targets (`obj.x++`, `arr[i] += n`)
+- function-scoped `var` (hoisted out of blocks/loops) vs block-scoped `let`/`const`
+- `this` is the global object at top level and in plain (sloppy) calls;
+  error construction (`new TypeError("m").toString() === "TypeError: m"`)
+- functions carry their source buffer, so prelude- and `eval`-defined functions
+  are callable from any context
+- `JSON.stringify`/`JSON.parse`; `**` exponentiation (NaN/Inf-correct)
+- number→string incl. exponential notation for very large/small magnitudes
 - ToPrimitive (`valueOf`/`toString`); comma operator
 
 ## Testing
@@ -102,30 +112,31 @@ write source via `alloc_input`, call `eval`, and check the result.
 ## test262 status
 
 The full tc39 harness (`sta.js` + `assert.js`) loads and runs, and real test262
-cases pass at a solid rate:
+cases pass at a solid rate on the curated sample sets in `test262/`:
 
-Coverage varies sharply by feature area:
+- `batch`: **39/39**, `cases`: **4/4**
+- `broad`: **34/36**, `broad2`: **29/30**, `broad3`: **20/24**
+- combined ≈ **95%** of these ~133 curated core-language + ES5/ES6 samples.
 
-- **~88%** on fresh *core-language* samples (for/while/do/switch/block/comma/
-  postfix/arithmetic/number/logical/types) + 39/39 on a targeted batch.
-- **~33%** on ES6-feature-heavy samples (for-of/object/try/exponentiation) — these
-  need Symbol + the iterator protocol, destructuring, spread, computed property
-  names, `arguments`, generators, which aren't implemented.
+The remaining failures are mostly architectural or niche: the iterator protocol
+(`Symbol.iterator`, `Array.prototype.entries/keys`), tail-call optimization,
+shortest-round-trip / denormal number formatting, named-function-expression name
+scoping, and `arguments` aliasing.
 
 Passing the **entire** suite (50,000+ files) is a person-years effort — it requires
 essentially all of ECMAScript to spec precision (regex, generators, async, classes,
 Proxy, TypedArrays, BigInt, modules, full Unicode, …). This is a real, growing
-core-language subset on a steady trajectory, not the finished suite. The remaining
-failures in the samples are niche: shortest-round-trip number formatting,
-function-expression-as-loop-condition edge cases, boxed-primitive `valueOf` corners.
+core-language subset on a steady trajectory, not the finished suite.
 
 ## Known limitations / next increments
 
-Not implemented: destructuring, default/rest params, computed property names,
-Symbol + the iterator protocol, regex groups/alternation/backrefs/flags, labelled
-statements, BigInt, modules, `Proxy`/`Reflect`, TypedArrays, full Unicode
-(identifiers, property escapes), strict-mode semantics, spec-exact (shortest
-round-trip) number-to-string, regex literals (`/.../`).
+Not implemented: default/rest params, Symbol + the iterator protocol
+(`for-of` over custom iterables, `Array.prototype.entries/keys`), tail-call
+optimization, regex groups/alternation/backrefs/flags, labelled statements,
+BigInt, modules, `Proxy`/`Reflect`, TypedArrays, full Unicode (identifiers,
+property escapes), strict-mode semantics, spec-exact (shortest round-trip)
+number-to-string, regex literals (`/.../`), named-function-expression name
+binding, `arguments` aliasing.
 
 **Generators and `async`/`await`** need continuation capture (suspend/resume a
 call mid-execution). The re-scan/parse-and-evaluate interpreter cannot suspend a
