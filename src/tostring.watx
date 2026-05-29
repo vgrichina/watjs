@@ -128,7 +128,9 @@
   (if (f64.eq (local.get $d) (f64.div (f64.const -1) (f64.const 0))) (then (return (cstring "-Infinity"))))
   ;; zero
   (if (f64.eq (local.get $d) (f64.const 0)) (then (return (cstring "0"))))
-  ;; very large magnitude (>= 1e21): JS uses exponential notation
+  ;; very large magnitude (>= 1e21): JS uses exponential notation. (Tiny
+  ;; magnitudes would too, but our mantissa extraction is lossy there, so the
+  ;; decimal path below gives cleaner output for the common small-number range.)
   (if (f64.ge (f64.abs (local.get $d)) (f64.const 1e21)) (then (return (call $num_to_exp (local.get $d)))))
 
   (let $n i32 (i32.const 0))  ;; scratch index

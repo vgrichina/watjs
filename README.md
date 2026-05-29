@@ -82,6 +82,8 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
 - `Array.prototype` (growable): push/pop/indexOf/join/slice/forEach/map/filter/
   reduce/concat/reverse/includes/find/findIndex/some/every/sort
 - `Object.prototype.hasOwnProperty`; `Object.values`/`Object.entries`
+- iterator protocol: `for-of` over iterables (objects with `next()` /
+  `Symbol.iterator`), `Array.prototype.entries`/`keys`/`values`, array elision
 - `++`/`--` (prefix & postfix) and `+= -= *= /=` on identifiers *and*
   member/index targets (`obj.x++`, `arr[i] += n`)
 - function-scoped `var` (hoisted out of blocks/loops) vs block-scoped `let`/`const`
@@ -115,13 +117,13 @@ The full tc39 harness (`sta.js` + `assert.js`) loads and runs, and real test262
 cases pass at a solid rate on the curated sample sets in `test262/`:
 
 - `batch`: **39/39**, `cases`: **4/4**
-- `broad`: **34/36**, `broad2`: **29/30**, `broad3`: **20/24**
-- combined ≈ **95%** of these ~133 curated core-language + ES5/ES6 samples.
+- `broad`: **35/36**, `broad2`: **29/30**, `broad3`: **23/24**
+- combined ≈ **98%** of these ~133 curated core-language + ES5/ES6 samples.
 
-The remaining failures are mostly architectural or niche: the iterator protocol
-(`Symbol.iterator`, `Array.prototype.entries/keys`), tail-call optimization,
-shortest-round-trip / denormal number formatting, named-function-expression name
-scoping, and `arguments` aliasing.
+The 3 remaining failures are genuine architectural/precision walls: tail-call
+optimization (would overflow the WAT call stack — needs a bytecode VM),
+shortest-round-trip / denormal number formatting, and mapped-`arguments`
+aliasing (a deprecated sloppy-mode behavior).
 
 Passing the **entire** suite (50,000+ files) is a person-years effort — it requires
 essentially all of ECMAScript to spec precision (regex, generators, async, classes,
@@ -130,13 +132,18 @@ core-language subset on a steady trajectory, not the finished suite.
 
 ## Known limitations / next increments
 
-Not implemented: default/rest params, Symbol + the iterator protocol
-(`for-of` over custom iterables, `Array.prototype.entries/keys`), tail-call
-optimization, regex groups/alternation/backrefs/flags, labelled statements,
-BigInt, modules, `Proxy`/`Reflect`, TypedArrays, full Unicode (identifiers,
-property escapes), strict-mode semantics, spec-exact (shortest round-trip)
-number-to-string, regex literals (`/.../`), named-function-expression name
-binding, `arguments` aliasing.
+Implemented this round: the iterator protocol — `for-of` over any object with a
+`next()` method (or an `@@iterator`/`Symbol.iterator` method returning one),
+`Array.prototype.entries/keys/values`, `Symbol.iterator` (as a sentinel key),
+and array elision (holes).
+
+Not implemented: default/rest params, **generators**/**async** (need
+continuation capture — a bytecode-VM rewrite), tail-call optimization, regex
+groups/alternation/backrefs/flags, labelled statements, BigInt, modules,
+`Proxy`/`Reflect`, TypedArrays, full Unicode (identifiers, property escapes),
+strict-mode semantics, spec-exact (shortest round-trip) number-to-string and
+denormals, regex literals (`/.../`), named-function-expression name binding,
+mapped-`arguments` aliasing.
 
 **Generators and `async`/`await`** need continuation capture (suspend/resume a
 call mid-execution). The re-scan/parse-and-evaluate interpreter cannot suspend a
