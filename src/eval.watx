@@ -1254,7 +1254,8 @@
   (i32.or (call $tok_is_kw (cstring "undefined"))
   (i32.or (call $tok_is_kw (cstring "NaN"))
   (i32.or (call $tok_is_kw (cstring "Infinity"))
-          (call $tok_is_kw (cstring "function")))))))))
+  (i32.or (call $tok_is_kw (cstring "function"))
+          (call $tok_is_kw (cstring "this"))))))))))
 
 ;; ── new Constructor(args) ──
 (func $parse_new (result i64) (effects)
@@ -2222,6 +2223,7 @@
   (let $g i32 (call $scope_new (i32.const 0) (i32.const 256)))  ;; global scope
   (call $set_cur_scope (local.get $g))
   (i32.store (i32.const 152) (local.get $g))  ;; GLOBAL_SCOPE register (for make_error)
+  (call $set_this (call $mk_obj (local.get $g)))  ;; `this` at top level = the global object
   (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
   (drop (call $def_native (local.get $g) (cstring "print") (i32.const 1)))
   (drop (call $def_native (local.get $g) (cstring "assert") (i32.const 2)))
