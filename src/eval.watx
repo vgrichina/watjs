@@ -1792,6 +1792,7 @@
   (call $expect (i32.const 18) (cstring "expected }")))
 
 (func $parse_var (effects)
+  (let $isVar i32 (call $tok_is_kw (cstring "var")))  ;; var is function-scoped (hoisted); let/const block-scoped
   (call $advance)  ;; consume var/let/const
   (block $brk (loop $cont
     ;; destructuring patterns
@@ -1823,10 +1824,16 @@
     (let $nm i32 (call $ident_name))
     (call $advance)
     (let $val i64 (call $v_undef))
+    (let $hasInit i32 (i32.const 0))
     (if (i32.eq (call $cur) (i32.const 24))
-      (then (call $advance) (set! $val (call $parse_assign))))
+      (then (call $advance) (set! $val (call $parse_assign)) (set! $hasInit (i32.const 1))))
     (if (i32.eqz (call $suppress))
-      (then (call $scope_define (call $cur_scope) (local.get $nm) (local.get $val))))
+      (then
+        (if (local.get $isVar)
+          ;; var: assign to the hoisted binding (found up-chain); bare `var x;` keeps any prior value
+          (then (if (local.get $hasInit) (then (call $var_set (local.get $nm) (local.get $val)))))
+          ;; let/const: bind in the current (block) scope
+          (else (call $scope_define (call $cur_scope) (local.get $nm) (local.get $val))))))
     (br_if $brk (i32.eqz (call $eat (i32.const 22))))  ;; ',' continues
     (br $cont))))
 
