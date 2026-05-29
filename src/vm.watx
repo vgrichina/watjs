@@ -248,6 +248,29 @@
     (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' call
       (then
         (call $next_token)
+        ;; lookahead: does any argument use ...spread?
+        (let $spc i32 (call $cursor_save))
+        (let $sphas i32 (i32.const 0)) (let $spd i32 (i32.const 0))
+        (block $spe (loop $spl
+          (br_if $spe (i32.eq (call $tok_kind) (i32.const 0)))
+          (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $spd (i32.add (local.get $spd) (i32.const 1)))))
+          (if (i32.eq (call $tok_kind) (i32.const 16)) (then (br_if $spe (i32.eqz (local.get $spd))) (set! $spd (i32.sub (local.get $spd) (i32.const 1)))))
+          (if (i32.and (i32.eq (call $tok_kind) (i32.const 54)) (i32.eqz (local.get $spd))) (then (set! $sphas (i32.const 1))))
+          (call $next_token) (br $spl)))
+        (call $cursor_restore (local.get $spc))
+        (if (local.get $sphas)
+          (then  ;; build an args array, then CALLSPREAD
+            (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+            (if (i32.ne (call $tok_kind) (i32.const 16))
+              (then (block $se2 (loop $sl2
+                (if (i32.eq (call $tok_kind) (i32.const 54))
+                  (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
+                  (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
+                (br_if $se2 (i32.eqz (call $eat (i32.const 22))))
+                (br $sl2)))))
+            (call $next_token)  ;; ')'
+            (call $vm_emit_op (local.get $code) (i32.const 54))  ;; CALLSPREAD
+            (br $l)))
         (let $argc i32 (i32.const 0))
         (if (i32.ne (call $tok_kind) (i32.const 16))
           (then (block $ce (loop $cl
@@ -298,6 +321,29 @@
             (call $vm_emit_op (local.get $code) (i32.const 32))                                      ;; DUP receiver
             (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP → [obj, method]
             (call $next_token)  ;; '('
+            ;; lookahead for ...spread in the method args
+            (let $mspc i32 (call $cursor_save))
+            (let $mhas i32 (i32.const 0)) (let $mspd i32 (i32.const 0))
+            (block $mspe (loop $mspl
+              (br_if $mspe (i32.eq (call $tok_kind) (i32.const 0)))
+              (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $mspd (i32.add (local.get $mspd) (i32.const 1)))))
+              (if (i32.eq (call $tok_kind) (i32.const 16)) (then (br_if $mspe (i32.eqz (local.get $mspd))) (set! $mspd (i32.sub (local.get $mspd) (i32.const 1)))))
+              (if (i32.and (i32.eq (call $tok_kind) (i32.const 54)) (i32.eqz (local.get $mspd))) (then (set! $mhas (i32.const 1))))
+              (call $next_token) (br $mspl)))
+            (call $cursor_restore (local.get $mspc))
+            (if (local.get $mhas)
+              (then  ;; [obj, method] → build args array → CALLMSPREAD
+                (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+                (if (i32.ne (call $tok_kind) (i32.const 16))
+                  (then (block $ms2 (loop $ml2
+                    (if (i32.eq (call $tok_kind) (i32.const 54))
+                      (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))
+                      (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))
+                    (br_if $ms2 (i32.eqz (call $eat (i32.const 22))))
+                    (br $ml2)))))
+                (call $next_token)  ;; ')'
+                (call $vm_emit_op (local.get $code) (i32.const 55))  ;; CALLMSPREAD
+                (br $l)))
             (let $margc i32 (i32.const 0))
             (if (i32.ne (call $tok_kind) (i32.const 16))
               (then (block $me (loop $ml
@@ -1237,6 +1283,20 @@
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 11))  ;; POP
       (then (set! $sp (i32.sub (local.get $sp) (i32.const 8))) (br $disp)))
+    (if (i32.or (i32.eq (local.get $op) (i32.const 54)) (i32.eq (local.get $op) (i32.const 55)))  ;; CALLSPREAD / CALLMSPREAD
+      (then
+        (let $ism i32 (i32.eq (local.get $op) (i32.const 55)))  ;; method: receiver below callee
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $argsv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $calleev i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $sthis i64 (call $v_undef))
+        (if (local.get $ism) (then (set! $sp (i32.sub (local.get $sp) (i32.const 8))) (set! $sthis (i64.load (i32.add (local.get $stack) (local.get $sp))))))
+        (let $sarr i32 (call $val_payload (local.get $argsv)))
+        (let $sres i64 (call $call_val (local.get $calleev) (call $arr_len (local.get $sarr)) (call $arr_data (local.get $sarr)) (local.get $sthis)))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $sres))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 52))  ;; APPEND — [arr, v] → arr.push(v), leaves [arr]
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
