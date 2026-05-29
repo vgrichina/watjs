@@ -744,6 +744,9 @@
 (func $call_user (param $fn i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   (let $savedScope i32 (call $cur_scope))
   (let $savedThis i64 (call $get_this))
+  ;; sloppy-mode: a plain call (undefined this) sees the global object as `this`
+  (if (call $is_undefined (local.get $thisv))
+    (then (set! $thisv (call $mk_obj (i32.load (i32.const 152))))))
   (call $set_this (local.get $thisv))
   (let $savedCur i32 (call $cursor_save))
   (let $savedSrc i32 (call $src))         ;; the function body may live in a different source
