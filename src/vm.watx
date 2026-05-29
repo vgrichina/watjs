@@ -82,9 +82,19 @@
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1))) (call $next_token) (return)))
       (if (call $tok_is_kw (cstring "false"))
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 0))) (call $next_token) (return)))
+      (let $vn i32 (call $ident_name)) (call $next_token)
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; postfix i++ / i--
+        (then
+          (let $iop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
+          (call $next_token)
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; LOADVAR
+          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP (old value)
+          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 1)))
+          (call $vm_emit_op (local.get $code) (local.get $iop))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR → leaves old
+          (return)))
       (call $vm_emit_op (local.get $code) (i32.const 8))        ;; LOADVAR
-      (call $vm_emit_op (local.get $code) (call $ident_name))
-      (call $next_token)
+      (call $vm_emit_op (local.get $code) (local.get $vn))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 19))  ;; array literal [ ... ]
     (then
@@ -403,13 +413,71 @@
           (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $top))  ;; JMP top
           (call $vm_patch (local.get $code) (local.get $pw))
           (return)))
-      ;; assignment:  NAME = expr ;
+      (if (call $tok_is_kw (cstring "for"))  ;; for ( init ; cond ; update ) body
+        (then
+          (call $next_token) (call $next_token)  ;; 'for' '('
+          ;; init (consumes up to ';')
+          (if (i32.ne (call $tok_kind) (i32.const 21))
+            (then
+              (if (call $tok_is_kw (cstring "var"))
+                (then
+                  (call $next_token) (let $fin i32 (call $ident_name)) (call $next_token) (call $next_token)  ;; var NAME =
+                  (call $vm_c_expr (local.get $code))
+                  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fin)))
+                (else
+                  (call $look_save)
+                  (let $fin2 i32 (call $ident_name)) (call $next_token)
+                  (if (i32.eq (call $tok_kind) (i32.const 24))
+                    (then (call $next_token) (call $vm_c_expr (local.get $code))
+                          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fin2)))
+                    (else (call $look_restore) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11))))))))
+          (call $expect (i32.const 21) (cstring "expected ;"))
+          (let $ftop i32 (call $vm_emit_cursor))
+          (if (i32.ne (call $tok_kind) (i32.const 21))
+            (then (call $vm_c_expr (local.get $code)))
+            (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1)))))
+          (call $expect (i32.const 21) (cstring "expected ;"))
+          (let $fpend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end
+          ;; save update-clause cursor, skip its tokens to the ')'
+          (let $fupd i32 (call $cursor_save))
+          (let $fdepth i32 (i32.const 0))
+          (block $fse (loop $fsl
+            (br_if $fse (i32.eq (call $tok_kind) (i32.const 0)))
+            (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $fdepth (i32.add (local.get $fdepth) (i32.const 1)))))
+            (if (i32.eq (call $tok_kind) (i32.const 16))
+              (then (br_if $fse (i32.eqz (local.get $fdepth))) (set! $fdepth (i32.sub (local.get $fdepth) (i32.const 1)))))
+            (call $next_token)
+            (br $fsl)))
+          (call $next_token)  ;; ')'
+          (call $vm_c_stmt (local.get $code))  ;; body
+          (let $fpost i32 (call $cursor_save))
+          ;; re-scan + compile the update, then loop
+          (call $cursor_restore (local.get $fupd))
+          (if (i32.ne (call $tok_kind) (i32.const 16))
+            (then (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; update; POP
+          (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $ftop))  ;; JMP top
+          (call $vm_patch (local.get $code) (local.get $fpend))
+          (call $cursor_restore (local.get $fpost))  ;; lexer resumes after the body
+          (return)))
+      ;; assignment:  NAME = expr ;   |  NAME op= expr ;
       (call $look_save)
       (let $an i32 (call $ident_name)) (call $next_token)
       (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '='
         (then
           (call $next_token)
           (call $vm_c_expr (local.get $code))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR
+          (drop (call $eat (i32.const 21)))
+          (return)))
+      (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43)))  ;; += -= *= /=
+        (then
+          (let $cop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))   ;; ADD
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))   ;; SUB
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4)) (else (i32.const 5))))))))  ;; MUL/DIV
+          (call $next_token)
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; LOADVAR
+          (call $vm_c_expr (local.get $code))                                                                       ;; RHS
+          (call $vm_emit_op (local.get $code) (local.get $cop))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR
           (drop (call $eat (i32.const 21)))
           (return)))
