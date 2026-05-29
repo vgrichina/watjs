@@ -95,6 +95,12 @@
       (call $vm_c_primary (local.get $code))
       (call $vm_emit_op (local.get $code) (i32.const 23))     ;; NOT
       (return)))
+  (if (i32.eq (call $tok_kind) (i32.const 47))  ;; unary ~
+    (then
+      (call $next_token)
+      (call $vm_c_primary (local.get $code))
+      (call $vm_emit_op (local.get $code) (i32.const 44))     ;; BNOT
+      (return)))
   (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ( expr )
     (then
       (call $next_token)
@@ -217,13 +223,22 @@
         (br $l)))
     (br $e))))
 
-(func $vm_c_mul (param $code i32) (effects)
+;; ** exponentiation (right-assoc, binds tighter than * / %)
+(func $vm_c_pow (param $code i32) (effects)
   (call $vm_c_postfix (local.get $code))
+  (if (i32.eq (call $tok_kind) (i32.const 51))  ;; **
+    (then
+      (call $next_token)
+      (call $vm_c_pow (local.get $code))  ;; right-associative
+      (call $vm_emit_op (local.get $code) (i32.const 43)))))  ;; POW
+
+(func $vm_c_mul (param $code i32) (effects)
+  (call $vm_c_pow (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 12)) (i32.or (i32.eq (local.get $k) (i32.const 13)) (i32.eq (local.get $k) (i32.const 14))))))
     (call $next_token)
-    (call $vm_c_postfix (local.get $code))
+    (call $vm_c_pow (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 12)) (then (i32.const 4))
       (else (if i32 (i32.eq (local.get $k) (i32.const 13)) (then (i32.const 5)) (else (i32.const 22))))))  ;; * / %
@@ -239,9 +254,22 @@
     (call $vm_emit_op (local.get $code) (if i32 (i32.eq (local.get $k) (i32.const 10)) (then (i32.const 2)) (else (i32.const 3))))
     (br $l))))
 
+;; bit shifts:  << 48  >> 49  >>> 50  → opcodes 40..42 (between additive and relational)
+(func $vm_c_shift (param $code i32) (effects)
+  (call $vm_c_add (local.get $code))
+  (block $e (loop $l
+    (let $k i32 (call $tok_kind))
+    (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 48)) (i32.or (i32.eq (local.get $k) (i32.const 49)) (i32.eq (local.get $k) (i32.const 50))))))
+    (call $next_token)
+    (call $vm_c_add (local.get $code))
+    (call $vm_emit_op (local.get $code)
+      (if i32 (i32.eq (local.get $k) (i32.const 48)) (then (i32.const 40))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 49)) (then (i32.const 41)) (else (i32.const 42))))))
+    (br $l))))
+
 ;; relational / equality:  < 29  > 30  <= 31  >= 32  === 26  → opcodes 14..18
 (func $vm_c_cmp (param $code i32) (effects)
-  (call $vm_c_add (local.get $code))
+  (call $vm_c_shift (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     ;; < 29 > 30 <= 31 >= 32 === 26 !== 28 == 25 != 27
@@ -250,7 +278,7 @@
       (i32.or (i32.eq (local.get $k) (i32.const 26)) (i32.or (i32.eq (local.get $k) (i32.const 28))
       (i32.or (i32.eq (local.get $k) (i32.const 25)) (i32.eq (local.get $k) (i32.const 27)))))))))))
     (call $next_token)
-    (call $vm_c_add (local.get $code))
+    (call $vm_c_shift (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 29)) (then (i32.const 14))
       (else (if i32 (i32.eq (local.get $k) (i32.const 30)) (then (i32.const 15))
@@ -261,9 +289,32 @@
       (else (if i32 (i32.eq (local.get $k) (i32.const 25)) (then (i32.const 25)) (else (i32.const 26))))))))))))))))
     (br $l))))
 
+;; bitwise &  ^  |  (between equality and logical-and; & tightest, | loosest)
+(func $vm_c_bitand (param $code i32) (effects)
+  (call $vm_c_cmp (local.get $code))
+  (block $e (loop $l
+    (br_if $e (i32.ne (call $tok_kind) (i32.const 44)))  ;; &
+    (call $next_token) (call $vm_c_cmp (local.get $code))
+    (call $vm_emit_op (local.get $code) (i32.const 37))  ;; BAND
+    (br $l))))
+(func $vm_c_bitxor (param $code i32) (effects)
+  (call $vm_c_bitand (local.get $code))
+  (block $e (loop $l
+    (br_if $e (i32.ne (call $tok_kind) (i32.const 46)))  ;; ^
+    (call $next_token) (call $vm_c_bitand (local.get $code))
+    (call $vm_emit_op (local.get $code) (i32.const 39))  ;; BXOR
+    (br $l))))
+(func $vm_c_bitor (param $code i32) (effects)
+  (call $vm_c_bitxor (local.get $code))
+  (block $e (loop $l
+    (br_if $e (i32.ne (call $tok_kind) (i32.const 45)))  ;; |
+    (call $next_token) (call $vm_c_bitxor (local.get $code))
+    (call $vm_emit_op (local.get $code) (i32.const 38))  ;; BOR
+    (br $l))))
+
 ;; logical AND (&&, kind 34): short-circuit via JMPF_PEEK (keep falsy operand)
 (func $vm_c_and (param $code i32) (effects)
-  (call $vm_c_cmp (local.get $code))
+  (call $vm_c_bitor (local.get $code))
   (let $patches i32 (call $heap_alloc (i32.const 256)))
   (let $np i32 (i32.const 0))
   (block $e (loop $l
@@ -865,6 +916,27 @@
         (if (i32.eq (local.get $op) (i32.const 25)) (then (set! $cr (call $loose_eq (local.get $ca) (local.get $cb)))))           ;; ==
         (if (i32.eq (local.get $op) (i32.const 26)) (then (set! $cr (i32.eqz (call $loose_eq (local.get $ca) (local.get $cb))))))  ;; !=
         (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (call $mk_bool (local.get $cr)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 44))  ;; BNOT (unary ~)
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (local.get $t))
+                   (call $num (f64.convert_i32_s (i32.xor (call $to_int32 (i64.load (i32.add (local.get $stack) (local.get $t)))) (i32.const -1)))))
+        (br $disp)))
+    (if (i32.and (i32.ge_s (local.get $op) (i32.const 37)) (i32.le_s (local.get $op) (i32.const 43)))  ;; & | ^ << >> >>> **
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $wb i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $wa i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        (let $wr i64 (call $v_undef))
+        (if (i32.eq (local.get $op) (i32.const 37)) (then (set! $wr (call $num (f64.convert_i32_s (i32.and (call $to_int32 (local.get $wa)) (call $to_int32 (local.get $wb))))))))
+        (if (i32.eq (local.get $op) (i32.const 38)) (then (set! $wr (call $num (f64.convert_i32_s (i32.or (call $to_int32 (local.get $wa)) (call $to_int32 (local.get $wb))))))))
+        (if (i32.eq (local.get $op) (i32.const 39)) (then (set! $wr (call $num (f64.convert_i32_s (i32.xor (call $to_int32 (local.get $wa)) (call $to_int32 (local.get $wb))))))))
+        (if (i32.eq (local.get $op) (i32.const 40)) (then (set! $wr (call $num (f64.convert_i32_s (i32.shl (call $to_int32 (local.get $wa)) (i32.and (call $to_int32 (local.get $wb)) (i32.const 31))))))))
+        (if (i32.eq (local.get $op) (i32.const 41)) (then (set! $wr (call $num (f64.convert_i32_s (i32.shr_s (call $to_int32 (local.get $wa)) (i32.and (call $to_int32 (local.get $wb)) (i32.const 31))))))))
+        (if (i32.eq (local.get $op) (i32.const 42)) (then (set! $wr (call $num (f64.convert_i32_u (i32.shr_u (call $to_int32 (local.get $wa)) (i32.and (call $to_int32 (local.get $wb)) (i32.const 31))))))))
+        (if (i32.eq (local.get $op) (i32.const 43)) (then (set! $wr (call $num (call $f64_pow (call $tonum_raw (local.get $wa)) (call $tonum_raw (local.get $wb)))))))
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (local.get $wr))
         (br $disp)))
     ;; binary: pop b, then a
     (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
