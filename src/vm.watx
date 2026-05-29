@@ -615,11 +615,68 @@
             (else (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET
           (drop (call $eat (i32.const 21)))
           (return)))
-      ;; var NAME [= expr] (, NAME [= expr])* ;
+      ;; var NAME [= expr] (, …)* ;   |   var [a,b] = e ;   |   var {x,y} = e ;
       (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))
         (then
           (call $next_token)
           (block $vd (loop $vl
+            (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [ array pattern ] = e
+              (then
+                (call $next_token)
+                (let $dnames i32 (call $heap_alloc (i32.const 256)))
+                (let $dcnt i32 (i32.const 0))
+                (block $dpe (loop $dpl
+                  (br_if $dpe (i32.eq (call $tok_kind) (i32.const 20)))
+                  (i32.store (i32.add (local.get $dnames) (i32.mul (local.get $dcnt) (i32.const 4))) (call $ident_name))
+                  (call $next_token)
+                  (set! $dcnt (i32.add (local.get $dcnt) (i32.const 1)))
+                  (br_if $dpe (i32.eqz (call $eat (i32.const 22))))
+                  (br $dpl)))
+                (call $next_token) (call $next_token)  ;; ']' '='
+                (call $vm_c_expr (local.get $code))
+                (let $dtmp i32 (call $vm_tmpname))
+                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $dtmp))  ;; STOREVAR tmp
+                (let $di i32 (i32.const 0))
+                (block $de (loop $dl
+                  (br_if $de (i32.ge_s (local.get $di) (local.get $dcnt)))
+                  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $dtmp))  ;; LOADVAR tmp
+                  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (local.get $di))))
+                  (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX
+                  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $dnames) (i32.mul (local.get $di) (i32.const 4)))))  ;; STOREVAR name
+                  (set! $di (i32.add (local.get $di) (i32.const 1)))
+                  (br $dl)))
+                (br_if $vd (i32.eqz (call $eat (i32.const 22))))
+                (br $vl)))
+            (if (i32.eq (call $tok_kind) (i32.const 17))  ;; { object pattern } = e
+              (then
+                (call $next_token)
+                (let $okeys i32 (call $heap_alloc (i32.const 256)))
+                (let $obinds i32 (call $heap_alloc (i32.const 256)))
+                (let $ocnt i32 (i32.const 0))
+                (block $ope (loop $opl
+                  (br_if $ope (i32.eq (call $tok_kind) (i32.const 18)))
+                  (let $okey i32 (call $ident_name)) (call $next_token)
+                  (let $obind i32 (local.get $okey))
+                  (if (i32.eq (call $tok_kind) (i32.const 37)) (then (call $next_token) (set! $obind (call $ident_name)) (call $next_token)))  ;; {key: bind}
+                  (i32.store (i32.add (local.get $okeys) (i32.mul (local.get $ocnt) (i32.const 4))) (local.get $okey))
+                  (i32.store (i32.add (local.get $obinds) (i32.mul (local.get $ocnt) (i32.const 4))) (local.get $obind))
+                  (set! $ocnt (i32.add (local.get $ocnt) (i32.const 1)))
+                  (br_if $ope (i32.eqz (call $eat (i32.const 22))))
+                  (br $opl)))
+                (call $next_token) (call $next_token)  ;; '}' '='
+                (call $vm_c_expr (local.get $code))
+                (let $otmp i32 (call $vm_tmpname))
+                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $otmp))
+                (let $oi i32 (i32.const 0))
+                (block $oe (loop $ol
+                  (br_if $oe (i32.ge_s (local.get $oi) (local.get $ocnt)))
+                  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $otmp))
+                  (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $okeys) (i32.mul (local.get $oi) (i32.const 4)))))  ;; GETPROP key
+                  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $obinds) (i32.mul (local.get $oi) (i32.const 4)))))  ;; STOREVAR bind
+                  (set! $oi (i32.add (local.get $oi) (i32.const 1)))
+                  (br $ol)))
+                (br_if $vd (i32.eqz (call $eat (i32.const 22))))
+                (br $vl)))
             (let $nm i32 (call $ident_name)) (call $next_token)
             (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' initializer
               (then
