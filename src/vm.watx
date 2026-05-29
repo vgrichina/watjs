@@ -98,6 +98,26 @@
           (br $al)))))
       (call $next_token)  ;; ']'
       (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (local.get $n))  ;; NEWARRAY n
+      (return)))
+  (if (i32.eq (call $tok_kind) (i32.const 17))  ;; object literal { k: v, ... }
+    (then
+      (call $next_token)
+      (let $on i32 (i32.const 0))
+      (if (i32.ne (call $tok_kind) (i32.const 18))
+        (then (block $oe (loop $ol
+          ;; key: identifier or string literal → push as a string
+          (let $ok i32 (if i32 (i32.eq (call $tok_kind) (i32.const 2))
+                          (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)))
+                          (else (call $ident_name))))
+          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $ok)))
+          (call $next_token)
+          (call $next_token)  ;; ':'
+          (call $vm_c_expr (local.get $code))  ;; value
+          (set! $on (i32.add (local.get $on) (i32.const 1)))
+          (br_if $oe (i32.eqz (call $eat (i32.const 22))))
+          (br $ol)))))
+      (call $next_token)  ;; '}'
+      (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (local.get $on))  ;; NEWOBJ n (key,val pairs)
       (return))))
 
 ;; postfix: primary followed by  (args) | [index] | .member  (chainable)
@@ -123,12 +143,24 @@
         (call $next_token)
         (call $vm_c_expr (local.get $code))
         (call $next_token)  ;; ']'
+        (if (i32.eq (call $tok_kind) (i32.const 24))  ;; arr[i] = v
+          (then
+            (call $next_token)
+            (call $vm_c_expr (local.get $code))
+            (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX
+            (br $e)))
         (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX
         (br $l)))
     (if (i32.eq (local.get $k) (i32.const 23))  ;; '.' member
       (then
         (call $next_token)
         (let $key i32 (call $ident_name)) (call $next_token)
+        (if (i32.eq (call $tok_kind) (i32.const 24))  ;; obj.key = v
+          (then
+            (call $next_token)
+            (call $vm_c_expr (local.get $code))
+            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP
+            (br $e)))
         (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method call: obj.key(args)
           (then
             (call $vm_emit_op (local.get $code) (i32.const 32))                                      ;; DUP receiver
@@ -633,6 +665,45 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $get_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (local.get $key)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 34))  ;; SETPROP (operand: name) — [obj, val]
+      (then
+        (let $nm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $v i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (call $set_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (call $mk_str (local.get $nm)) (local.get $v))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))  ;; assignment yields the value
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 35))  ;; SETIDX — [obj, key, val]
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $v i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $key i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (call $set_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (local.get $key) (local.get $v))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 36))  ;; NEWOBJ n (operand) — n (key,val) pairs on top
+      (then
+        (let $on i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $obj i32 (call $obj_new (i32.add (local.get $on) (i32.const 2))))
+        (let $base i32 (i32.sub (local.get $sp) (i32.mul (local.get $on) (i32.const 16))))  ;; each pair = 16 bytes
+        (let $oi i32 (i32.const 0))
+        (block $noe (loop $nol
+          (br_if $noe (i32.ge_s (local.get $oi) (local.get $on)))
+          (let $slot i32 (i32.add (local.get $base) (i32.mul (local.get $oi) (i32.const 16))))
+          (call $scope_define (local.get $obj)
+            (call $to_str (i64.load (i32.add (local.get $stack) (local.get $slot))))           ;; key
+            (i64.load (i32.add (local.get $stack) (i32.add (local.get $slot) (i32.const 8)))))  ;; value
+          (set! $oi (i32.add (local.get $oi) (i32.const 1)))
+          (br $nol)))
+        (set! $sp (local.get $base))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $mk_obj (local.get $obj)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 12))  ;; JMP (operand: target)
       (then (set! $ip (i32.load (i32.add (local.get $code) (local.get $ip)))) (br $disp)))
