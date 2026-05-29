@@ -1082,6 +1082,22 @@
       (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $resumeval))
       (set! $sp (i32.add (local.get $sp) (i32.const 8)))))
   (loop $disp
+    ;; a native (assert, get_prop on null, throw_type, …) raised an error via the
+    ;; engine err flag — convert it into a VM exception (unwind to handler / halt)
+    (if (call $err)
+      (then
+        (let $exc i64 (call $err_val))
+        (call $set_err (i32.const 0))
+        (if (i32.eqz (local.get $handler))  ;; uncaught → re-raise to the host and halt
+          (then (call $set_err (i32.const 1)) (call $set_err_val (local.get $exc))
+                (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1)) (return (local.get $exc))))
+        (set! $frame (i32.load (i32.add (local.get $handler) (i32.const 8))))
+        (set! $sp (i32.load (i32.add (local.get $handler) (i32.const 12))))
+        (set! $scope (i32.load (i32.add (local.get $handler) (i32.const 16))))
+        (set! $ip (i32.load (local.get $handler)))
+        (call $scope_define (local.get $scope) (i32.load (i32.add (local.get $handler) (i32.const 4))) (local.get $exc))
+        (set! $handler (i32.load (i32.add (local.get $handler) (i32.const 20))))
+        (br $disp)))
     (let $op i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
     (set! $ip (i32.add (local.get $ip) (i32.const 4)))
     (if (i32.eq (local.get $op) (i32.const 0))  ;; HALT
@@ -1132,8 +1148,9 @@
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $exc i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
-        (if (i32.eqz (local.get $handler))  ;; uncaught → halt
+        (if (i32.eqz (local.get $handler))  ;; uncaught → re-raise to host and halt
           (then
+            (call $set_err (i32.const 1)) (call $set_err_val (local.get $exc))
             (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
             (return (local.get $exc))))
         ;; unwind to the handler: restore its frame/sp/scope, bind the exception, jump to catch
@@ -1671,12 +1688,22 @@
 ;; run a whole program on the VM (variables, if/while via jumps, print). Drives
 ;; vm_step to HALT — real stateful execution, all state in linear memory.
 (func $eval_prog (param $ptr i32) (param $len i32) (result i32) (effects)
+  (call $set_err (i32.const 0))
   (let $ctx i32 (call $vm_new (call $vm_compile_prog (local.get $ptr) (local.get $len))))
+  (if (call $err) (then (return (i32.const 1))))  ;; compile-time error
   (block $e (loop $l
     (br_if $e (call $vm_done (local.get $ctx)))
     (drop (call $vm_step (local.get $ctx) (call $v_undef)))
     (br $l)))
-  (i32.const 0))
+  ;; uncaught exception → report its message to the host like eval() does
+  (if i32 (call $err)
+    (then
+      (let $ev i64 (call $err_val))
+      (call $set_err (i32.const 0))
+      (let $s i32 (call $to_str (local.get $ev)))
+      (call $host_throw (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)))
+      (i32.const 1))
+    (else (i32.const 0))))
 
 ;; generator demo: start a ';'-separated yield-list; gen_next pulls each value
 (func $vm_gen_start (param $ptr i32) (param $len i32) (result i32) (effects)
