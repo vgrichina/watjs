@@ -377,6 +377,8 @@
 ;; postfix: primary followed by  (args) | [index] | .member  (chainable)
 (func $vm_c_postfix (param $code i32) (effects)
   (call $vm_c_primary (local.get $code))
+  (let $ocpat i32 (call $heap_alloc (i32.const 256)))  ;; optional-chaining (?.) short-circuit jumps
+  (let $ocn i32 (i32.const 0))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' call
@@ -560,7 +562,42 @@
           (else
             (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))))  ;; GETPROP
         (br $l)))
-    (br $e))))
+    (if (i32.eq (local.get $k) (i32.const 55))  ;; ?. optional chaining — short-circuit whole chain to undefined if receiver nullish
+      (then
+        (call $next_token)
+        (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP receiver → [R, R]
+        (let $jacc i32 (call $vm_emit_jump (local.get $code) (i32.const 68)))  ;; JMP_NN → access (not nullish)
+        (call $vm_emit_op (local.get $code) (i32.const 11))  ;; nullish: POP dup
+        (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP receiver
+        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; PUSH undefined
+        (i32.store (i32.add (local.get $ocpat) (i32.mul (local.get $ocn) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → chain end
+        (set! $ocn (i32.add (local.get $ocn) (i32.const 1)))
+        (call $vm_patch (local.get $code) (local.get $jacc))  ;; access lands here: [R, R]
+        (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP dup → [R]
+        (if (i32.eq (call $tok_kind) (i32.const 19))  ;; ?.[idx]
+          (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token) (call $vm_emit_op (local.get $code) (i32.const 31)))  ;; GETIDX
+          (else
+            (let $ock i32 (call $ident_name)) (call $next_token)
+            (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ?.m(args) optional method call
+              (then
+                (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP receiver
+                (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $ock))  ;; GETPROP → [R, method]
+                (call $next_token)
+                (let $oca i32 (i32.const 0))
+                (if (i32.ne (call $tok_kind) (i32.const 16))
+                  (then (block $oce (loop $ocl (call $vm_c_expr (local.get $code)) (set! $oca (i32.add (local.get $oca) (i32.const 1))) (br_if $oce (i32.eqz (call $eat (i32.const 22)))) (br $ocl)))))
+                (call $next_token)
+                (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $oca)))  ;; CALLM
+              (else (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $ock))))))  ;; GETPROP
+        (br $l)))
+    (br $e)))
+  ;; patch optional-chaining short-circuits to the end of the chain
+  (let $oci i32 (i32.const 0))
+  (block $ocpe (loop $ocpl
+    (br_if $ocpe (i32.ge_s (local.get $oci) (local.get $ocn)))
+    (call $vm_patch (local.get $code) (i32.load (i32.add (local.get $ocpat) (i32.mul (local.get $oci) (i32.const 4)))))
+    (set! $oci (i32.add (local.get $oci) (i32.const 1)))
+    (br $ocpl))))
 
 ;; ** exponentiation (right-assoc, binds tighter than unary; left is postfix)
 (func $vm_c_pow (param $code i32) (effects)
