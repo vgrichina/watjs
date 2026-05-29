@@ -254,6 +254,11 @@
           (if (i32.gt_s (local.get $end) (local.get $slen)) (then (set! $end (local.get $slen))))
           (return (call $mk_str (call $substr (local.get $s) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))))
       (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 50))  ;; parseInt(s[,radix])
+    (then (return (call $num (call $parse_int_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+            (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (i32.const 0))))))))
+  (if (i32.eq (local.get $id) (i32.const 51))  ;; parseFloat(s)
+    (then (return (call $num (call $str_to_num (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
   ;; --- Math methods (no this) ---
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 40)) (i32.le_s (local.get $id) (i32.const 49)))
     (then
@@ -1398,6 +1403,8 @@
   (drop (call $def_native (local.get $g) (cstring "Boolean") (i32.const 6)))
   (drop (call $def_native (local.get $g) (cstring "isNaN") (i32.const 7)))
   (drop (call $def_native (local.get $g) (cstring "isFinite") (i32.const 8)))
+  (drop (call $def_native (local.get $g) (cstring "parseInt") (i32.const 50)))
+  (drop (call $def_native (local.get $g) (cstring "parseFloat") (i32.const 51)))
   ;; Number with NaN / Infinity constants
   (let $numf i64 (call $def_native (local.get $g) (cstring "Number") (i32.const 4)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
