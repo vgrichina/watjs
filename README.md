@@ -87,6 +87,7 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
   array-likes, optional map); `String.prototype.replaceAll`
 - optional chaining (`a?.b`, `a?.[i]`, `a?.()`, short-circuiting) and nullish
   coalescing (`a ?? b`)
+- `Map` and `Set` (set/get/has/delete/add/forEach/clear/size, chaining)
 - `Number.isSafeInteger` + `MIN/MAX_SAFE_INTEGER`/`EPSILON`/`MAX_VALUE`/
   `POSITIVE/NEGATIVE_INFINITY`; `Math.hypot`
 - default (`b = expr`) and rest (`...args`) parameters; object spread (`{ ...o }`)
