@@ -81,7 +81,11 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
   toString/valueOf/constructor
 - `Array.prototype` (growable): push/pop/indexOf/join/slice/forEach/map/filter/
   reduce/concat/reverse/includes/find/findIndex/some/every/sort/at/fill
-- `Object.prototype.hasOwnProperty`; `Object.values`/`Object.entries`
+- `Object.prototype.hasOwnProperty`; `Object.values`/`Object.entries`/
+  `getOwnPropertyNames`; `Array.of`/`Array.from` (arrays, strings, iterators,
+  array-likes, optional map); `String.prototype.replaceAll`
+- optional chaining (`a?.b`, `a?.[i]`, `a?.()`, short-circuiting) and nullish
+  coalescing (`a ?? b`)
 - `Number.isSafeInteger` + `MIN/MAX_SAFE_INTEGER`/`EPSILON`/`MAX_VALUE`/
   `POSITIVE/NEGATIVE_INFINITY`; `Math.hypot`
 - default (`b = expr`) and rest (`...args`) parameters; object spread (`{ ...o }`)
