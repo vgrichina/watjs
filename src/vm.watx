@@ -1237,13 +1237,25 @@
 
 ;; compile a whole program (statement list) → HALT-terminated bytecode
 (func $vm_compile_prog (param $ptr i32) (param $len i32) (result i32) (effects)
+  (i32.store (i32.const 208) (i32.const 0)) (i32.store (i32.const 216) (i32.const 0))  ;; no enclosing loop
+  (i32.store (i32.const 224) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; temp counter, async flag
+  (let $code i32 (call $heap_alloc (i32.const 131072)))
+  (call $vm_set_emit_cursor (i32.const 0))
+  ;; the Error-hierarchy prelude is compiled into the same buffer first, so its
+  ;; constructors exist (as VM functions) before user code runs (new ReferenceError, etc.)
+  (let $pre i32 (call $prelude_src))
+  (call $set_src (i32.add (local.get $pre) (i32.const 4)) (call $str_len (local.get $pre)))
+  (call $lex_init)
+  (call $next_token)
+  (block $pe (loop $pl
+    (br_if $pe (i32.eq (call $tok_kind) (i32.const 0)))
+    (br_if $pe (call $err))
+    (call $vm_c_stmt (local.get $code))
+    (br $pl)))
+  ;; now the user program
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
   (call $next_token)
-  (i32.store (i32.const 208) (i32.const 0)) (i32.store (i32.const 216) (i32.const 0))  ;; no enclosing loop
-  (i32.store (i32.const 224) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; temp counter, async flag
-  (let $code i32 (call $heap_alloc (i32.const 65536)))
-  (call $vm_set_emit_cursor (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.eq (call $tok_kind) (i32.const 0)))
     (br_if $e (call $err))
