@@ -42,6 +42,33 @@
 (func $vm_patch (param $code i32) (param $loc i32) (effects)  ;; patch placeholder to current cursor
   (i32.store (i32.add (local.get $code) (local.get $loc)) (call $vm_emit_cursor)))
 
+;; loop-context for break/continue: reg 208 break-list ptr, 212 break count,
+;; 216 continue-list ptr, 220 continue count. Saved/restored around each loop.
+(func $vm_loop_enter (result i32) (effects)
+  (let $save i32 (call $heap_alloc (i32.const 16)))
+  (i32.store (local.get $save) (i32.load (i32.const 208)))
+  (i32.store (i32.add (local.get $save) (i32.const 4)) (i32.load (i32.const 212)))
+  (i32.store (i32.add (local.get $save) (i32.const 8)) (i32.load (i32.const 216)))
+  (i32.store (i32.add (local.get $save) (i32.const 12)) (i32.load (i32.const 220)))
+  (i32.store (i32.const 208) (call $heap_alloc (i32.const 1024))) (i32.store (i32.const 212) (i32.const 0))
+  (i32.store (i32.const 216) (call $heap_alloc (i32.const 1024))) (i32.store (i32.const 220) (i32.const 0))
+  (local.get $save))
+(func $vm_loop_exit (param $save i32) (effects)
+  (i32.store (i32.const 208) (i32.load (local.get $save)))
+  (i32.store (i32.const 212) (i32.load (i32.add (local.get $save) (i32.const 4))))
+  (i32.store (i32.const 216) (i32.load (i32.add (local.get $save) (i32.const 8))))
+  (i32.store (i32.const 220) (i32.load (i32.add (local.get $save) (i32.const 12)))))
+;; patch every jump recorded in (listreg, countreg) to point at $target
+(func $vm_patch_list (param $listreg i32) (param $countreg i32) (param $code i32) (param $target i32) (effects)
+  (let $list i32 (i32.load (local.get $listreg)))
+  (let $n i32 (i32.load (local.get $countreg)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (i32.store (i32.add (local.get $code) (i32.load (i32.add (local.get $list) (i32.mul (local.get $i) (i32.const 4))))) (local.get $target))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l))))
+
 ;; ── compiler: source → bytecode (precedence-climbing, reuses the lexer) ──
 (func $vm_c_primary (param $code i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 1))  ;; NUM literal
@@ -376,6 +403,24 @@
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nm))  ;; STOREVAR
           (drop (call $eat (i32.const 21)))
           (return)))
+      (if (call $tok_is_kw (cstring "break"))
+        (then
+          (call $next_token)
+          (if (i32.load (i32.const 208))  ;; inside a loop
+            (then
+              (i32.store (i32.add (i32.load (i32.const 208)) (i32.mul (i32.load (i32.const 212)) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 12)))
+              (i32.store (i32.const 212) (i32.add (i32.load (i32.const 212)) (i32.const 1)))))
+          (drop (call $eat (i32.const 21)))
+          (return)))
+      (if (call $tok_is_kw (cstring "continue"))
+        (then
+          (call $next_token)
+          (if (i32.load (i32.const 216))
+            (then
+              (i32.store (i32.add (i32.load (i32.const 216)) (i32.mul (i32.load (i32.const 220)) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 12)))
+              (i32.store (i32.const 220) (i32.add (i32.load (i32.const 220)) (i32.const 1)))))
+          (drop (call $eat (i32.const 21)))
+          (return)))
       (if (call $tok_is_kw (cstring "print"))
         (then
           (call $next_token)
@@ -405,17 +450,22 @@
       (if (call $tok_is_kw (cstring "while"))
         (then
           (call $next_token) (call $next_token)  ;; 'while' '('
+          (let $lsave i32 (call $vm_loop_enter))
           (let $top i32 (call $vm_emit_cursor))
           (call $vm_c_expr (local.get $code))
           (call $next_token)  ;; ')'
           (let $pw i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end
           (call $vm_c_stmt (local.get $code))
+          (call $vm_patch_list (i32.const 216) (i32.const 220) (local.get $code) (local.get $top))  ;; continue → top
           (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $top))  ;; JMP top
           (call $vm_patch (local.get $code) (local.get $pw))
+          (call $vm_patch_list (i32.const 208) (i32.const 212) (local.get $code) (call $vm_emit_cursor))  ;; break → end
+          (call $vm_loop_exit (local.get $lsave))
           (return)))
       (if (call $tok_is_kw (cstring "for"))  ;; for ( init ; cond ; update ) body
         (then
           (call $next_token) (call $next_token)  ;; 'for' '('
+          (let $flsave i32 (call $vm_loop_enter))
           ;; init (consumes up to ';')
           (if (i32.ne (call $tok_kind) (i32.const 21))
             (then
@@ -451,13 +501,17 @@
           (call $next_token)  ;; ')'
           (call $vm_c_stmt (local.get $code))  ;; body
           (let $fpost i32 (call $cursor_save))
+          ;; continue → the update clause (compiled next)
+          (call $vm_patch_list (i32.const 216) (i32.const 220) (local.get $code) (call $vm_emit_cursor))
           ;; re-scan + compile the update, then loop
           (call $cursor_restore (local.get $fupd))
           (if (i32.ne (call $tok_kind) (i32.const 16))
             (then (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; update; POP
           (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $ftop))  ;; JMP top
           (call $vm_patch (local.get $code) (local.get $fpend))
+          (call $vm_patch_list (i32.const 208) (i32.const 212) (local.get $code) (call $vm_emit_cursor))  ;; break → end
           (call $cursor_restore (local.get $fpost))  ;; lexer resumes after the body
+          (call $vm_loop_exit (local.get $flsave))
           (return)))
       ;; assignment:  NAME = expr ;   |  NAME op= expr ;
       (call $look_save)
@@ -492,6 +546,7 @@
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
   (call $next_token)
+  (i32.store (i32.const 208) (i32.const 0)) (i32.store (i32.const 216) (i32.const 0))  ;; no enclosing loop
   (let $code i32 (call $heap_alloc (i32.const 65536)))
   (call $vm_set_emit_cursor (i32.const 0))
   (block $e (loop $l
