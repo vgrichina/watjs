@@ -13,18 +13,42 @@
 (func $cur_scope (result i32) (effects) (i32.load (i32.const 40)))
 (func $set_cur_scope (param $s i32) (effects) (i32.store (i32.const 40) (local.get $s)))
 
-;; allocate a new scope with given parent and capacity for `cap` entries
+;; allocate a new scope with given parent and capacity for `cap` entries.
+;; Header is 16 bytes [parent@0][count@4][cap@8][entriesPtr@12]; the entries
+;; live in a SEPARATE block so they can be relocated on growth while the header
+;; (and thus every pointer to the scope) stays valid.
 (func $scope_new (param $parent i32) (param $cap i32) (result i32) (effects)
-  (let $s i32 (call $heap_alloc (i32.add (i32.const 16) (i32.mul (local.get $cap) (i32.const 16)))))
+  (let $cp i32 (if i32 (i32.lt_s (local.get $cap) (i32.const 4)) (then (i32.const 4)) (else (local.get $cap))))
+  (let $s i32 (call $heap_alloc (i32.const 16)))
   (i32.store (local.get $s) (local.get $parent))
   (i32.store (i32.add (local.get $s) (i32.const 4)) (i32.const 0))
-  (i32.store (i32.add (local.get $s) (i32.const 8)) (local.get $cap))
+  (i32.store (i32.add (local.get $s) (i32.const 8)) (local.get $cp))
+  (i32.store (i32.add (local.get $s) (i32.const 12)) (call $heap_alloc (i32.mul (local.get $cp) (i32.const 16))))
   (local.get $s))
 
 (func $scope_parent (param $s i32) (result i32) (effects) (i32.load (local.get $s)))
 (func $scope_count (param $s i32) (result i32) (effects) (i32.load (i32.add (local.get $s) (i32.const 4))))
 (func $scope_entry (param $s i32) (param $i i32) (result i32) (effects)
-  (i32.add (i32.add (local.get $s) (i32.const 16)) (i32.mul (local.get $i) (i32.const 16))))
+  (i32.add (i32.load (i32.add (local.get $s) (i32.const 12))) (i32.mul (local.get $i) (i32.const 16))))
+
+;; ensure room for one more entry; double + relocate the entries block if full.
+(func $scope_ensure (param $s i32) (effects)
+  (let $cnt i32 (i32.load (i32.add (local.get $s) (i32.const 4))))
+  (let $cap i32 (i32.load (i32.add (local.get $s) (i32.const 8))))
+  (if (i32.ge_s (local.get $cnt) (local.get $cap))
+    (then
+      (let $ncap i32 (i32.mul (local.get $cap) (i32.const 2)))
+      (let $old i32 (i32.load (i32.add (local.get $s) (i32.const 12))))
+      (let $new i32 (call $heap_alloc (i32.mul (local.get $ncap) (i32.const 16))))
+      (let $bytes i32 (i32.mul (local.get $cnt) (i32.const 16)))
+      (let $k i32 (i32.const 0))
+      (block $e (loop $l
+        (br_if $e (i32.ge_s (local.get $k) (local.get $bytes)))
+        (i32.store (i32.add (local.get $new) (local.get $k)) (i32.load (i32.add (local.get $old) (local.get $k))))
+        (set! $k (i32.add (local.get $k) (i32.const 4)))
+        (br $l)))
+      (i32.store (i32.add (local.get $s) (i32.const 8)) (local.get $ncap))
+      (i32.store (i32.add (local.get $s) (i32.const 12)) (local.get $new)))))
 
 ;; find the value-slot pointer for `name` within scope `s` only (not parents);
 ;; returns 0 if absent.
@@ -103,6 +127,7 @@
   (if (local.get $slot)
     (then (i32.store (i32.sub (local.get $slot) (i32.const 4)) (i32.const 0)) (i64.store (local.get $slot) (local.get $val)))
     (else
+      (call $scope_ensure (local.get $s))
       (let $i i32 (call $scope_count (local.get $s)))
       (let $e i32 (call $scope_entry (local.get $s) (local.get $i)))
       (i32.store (local.get $e) (local.get $name))
@@ -119,6 +144,7 @@
   (if (local.get $slot)
     (then (i32.store (i32.sub (local.get $slot) (i32.const 4)) (i32.const 1)) (i64.store (local.get $slot) (i64.extend_i32_u (local.get $cell))))
     (else
+      (call $scope_ensure (local.get $s))
       (let $i i32 (call $scope_count (local.get $s)))
       (let $e i32 (call $scope_entry (local.get $s) (local.get $i)))
       (i32.store (local.get $e) (local.get $name))
