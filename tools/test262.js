@@ -100,7 +100,8 @@ async function runSource(src) {
         if (fs.existsSync(ip)) full += fs.readFileSync(ip, 'utf8') + '\n';
       }
     }
-    full += src;
+    // $MAX_ITERATIONS: test262 host hook for tail-call tests (substituted by the driver).
+    full += src.replace(/\$MAX_ITERATIONS/g, '100000');
     const r = await runSource(full);
     const wantThrow = !!meta.negative;
     const ok = r.threw === wantThrow;

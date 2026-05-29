@@ -740,7 +740,7 @@
 ;; compile a function body: cursor at '(' params ')' '{' body '}'. Emits the body
 ;; inline (JMP over it) and a PUSH of the VM-fn value. magic from regs 232 (async)
 ;; / 236 (generator), both cleared here.
-(func $vm_c_fnbody (param $code i32) (effects)
+(func $vm_c_fnbody (param $code i32) (param $selfname i32) (effects)
   (call $next_token)  ;; '('
   (let $params i32 (call $heap_alloc (i32.const 256)))
   (let $np i32 (i32.const 0))
@@ -776,7 +776,11 @@
                (i32.load (i32.add (local.get $params) (i32.mul (local.get $ci) (i32.const 4)))))
     (set! $ci (i32.add (local.get $ci) (i32.const 1)))
     (br $cl)))
-  (call $vm_emit_op (local.get $code) (i32.const 61)) (call $vm_emit_op (local.get $code) (local.get $fn)))  ;; CLOSURE (capture defining scope)
+  ;; named function: CLOSURE_NAMED binds the name to the function inside its own
+  ;; body (recursive named function expressions); anonymous: plain CLOSURE.
+  (if (local.get $selfname)
+    (then (call $vm_emit_op (local.get $code) (i32.const 64)) (call $vm_emit_op (local.get $code) (local.get $fn)) (call $vm_emit_op (local.get $code) (local.get $selfname)))  ;; CLOSURE_NAMED
+    (else (call $vm_emit_op (local.get $code) (i32.const 61)) (call $vm_emit_op (local.get $code) (local.get $fn)))))  ;; CLOSURE
 
 ;; emit a PUSH of an empty (no-op) VM function — used for a class with no constructor
 (func $vm_emit_empty_fn (param $code i32) (effects)
@@ -800,7 +804,7 @@
   (if (i32.eq (call $tok_kind) (i32.const 12)) (then (i32.store (i32.const 236) (i32.const 1)) (call $next_token)))  ;; function*
   (let $fname i32 (i32.const 0))
   (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $fname (call $ident_name)) (call $next_token)))  ;; optional name
-  (call $vm_c_fnbody (local.get $code))
+  (call $vm_c_fnbody (local.get $code) (local.get $fname))
   (local.get $fname))
 
 ;; arrow function: cursor at '=>'; params already collected into $params[$np].
@@ -874,12 +878,12 @@
     (let $mn i32 (call $ident_name)) (call $next_token)
     (if (call $str_eq (local.get $mn) (cstring "constructor"))
       (then
-        (call $vm_c_fnbody (local.get $code))
+        (call $vm_c_fnbody (local.get $code) (i32.const 0))
         (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))
         (set! $hasctor (i32.const 1)))
       (else
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
-        (call $vm_c_fnbody (local.get $code))
+        (call $vm_c_fnbody (local.get $code) (i32.const 0))
         (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $mn))
         (call $vm_emit_op (local.get $code) (i32.const 11))))
     (br $cml)))
@@ -1776,6 +1780,28 @@
           (br $cpl)))
         (i32.store (i32.add (local.get $nf) (i32.const 24)) (local.get $scope))  ;; capture defining scope
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $mk_fn (local.get $nf)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 64))  ;; CLOSURE_NAMED — operands: template ptr, name ptr (named fn expression)
+      (then
+        (let $tmpl i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (let $cnm i32 (i32.load (i32.add (local.get $code) (i32.add (local.get $ip) (i32.const 4)))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 8)))
+        (let $tsz i32 (i32.add (i32.const 28) (i32.mul (i32.load (i32.add (local.get $tmpl) (i32.const 8))) (i32.const 4))))
+        (let $nf i32 (call $heap_alloc (local.get $tsz)))
+        (let $bi i32 (i32.const 0))
+        (block $cne (loop $cnl
+          (br_if $cne (i32.ge_s (local.get $bi) (local.get $tsz)))
+          (i32.store (i32.add (local.get $nf) (local.get $bi)) (i32.load (i32.add (local.get $tmpl) (local.get $bi))))
+          (set! $bi (i32.add (local.get $bi) (i32.const 4)))
+          (br $cnl)))
+        ;; intermediate scope { name: fn } closed over by the function, so the
+        ;; name resolves to itself inside the body but does not leak outside
+        (let $nsc i32 (call $scope_new (local.get $scope) (i32.const 4)))
+        (let $fnv i64 (call $mk_fn (local.get $nf)))
+        (call $scope_define (local.get $nsc) (local.get $cnm) (local.get $fnv))
+        (i32.store (i32.add (local.get $nf) (i32.const 24)) (local.get $nsc))  ;; closureScope = intermediate
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $fnv))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 58))  ;; TYPEOF (unary, in place)
