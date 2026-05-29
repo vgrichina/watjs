@@ -794,6 +794,15 @@
           (block $cme (loop $cml
             (br_if $cme (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
             (br_if $cme (i32.eq (call $tok_kind) (i32.const 0)))
+            ;; `static` modifier: consume it (static members are stored on the prototype
+            ;; for now — get_prop on the constructor reads that same scope; spec-exact
+            ;; static/instance isolation is future work). A method literally named
+            ;; "static" is `static(` — detected by the '(' that follows.
+            (if (call $str_eq (call $ident_name) (cstring "static"))
+              (then
+                (let $stc i32 (call $cursor_save))
+                (call $next_token)
+                (if (i32.eq (call $tok_kind) (i32.const 15)) (then (call $cursor_restore (local.get $stc))))))  ;; '(' → it's a method named "static"
             (let $mn i32 (call $ident_name)) (call $next_token)
             (if (call $str_eq (local.get $mn) (cstring "constructor"))
               (then
@@ -1300,6 +1309,26 @@
   (let $cs i32 (i32.load (i32.add (local.get $fn) (i32.const 24))))
   (if i32 (local.get $cs) (then (local.get $cs)) (else (local.get $fallback))))
 
+;; x instanceof F for VM functions: the prototype object is at fn@16, and an
+;; instance's scope-parent chain links to it (see the NEW opcode). Native fns
+;; (Map/Set/…) fall back to the production js_instanceof.
+(func $vm_instanceof (param $x i64) (param $f i64) (result i64) (effects)
+  (if (i32.eqz (call $is_function (local.get $f))) (then (return (call $v_false))))
+  (if (i32.eqz (call $is_object (local.get $x))) (then (return (call $v_false))))
+  (let $fp i32 (call $val_payload (local.get $f)))
+  (if (i32.ne (i32.load (local.get $fp)) (i32.const 1448232526))
+    (then (return (call $js_instanceof (local.get $x) (local.get $f)))))  ;; native ctor
+  (let $proto i64 (i64.load (i32.add (local.get $fp) (i32.const 16))))
+  (if (i32.eqz (call $is_object (local.get $proto))) (then (return (call $v_false))))
+  (let $protoScope i32 (call $val_payload (local.get $proto)))
+  (let $p i32 (call $scope_parent (call $val_payload (local.get $x))))
+  (block $brk (loop $cont
+    (br_if $brk (i32.eqz (local.get $p)))
+    (if (i32.eq (local.get $p) (local.get $protoScope)) (then (return (call $v_true))))
+    (set! $p (call $scope_parent (local.get $p)))
+    (br $cont)))
+  (call $v_false))
+
 ;; run from the context's saved (ip, sp) until the next YIELD or HALT.
 ;; YIELD → returns the yielded value, state saved for the next call (done=0).
 ;; HALT  → sets done=1, returns the final top-of-stack value (or undefined).
@@ -1587,7 +1616,7 @@
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
-                   (call $js_instanceof (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))
+                   (call $vm_instanceof (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))
                                         (i64.load (i32.add (local.get $stack) (local.get $sp)))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 60))  ;; IN — [key, obj] → bool
