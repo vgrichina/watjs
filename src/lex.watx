@@ -171,7 +171,18 @@
                             (f64.convert_i32_s (i32.sub (local.get $c) (i32.const 48)))))
         (call $set_pos (i32.add (call $pos) (i32.const 1)))
         (br $el)))
-      (set! $val (f64.mul (local.get $val) (call $pow10 (f64.mul (local.get $esign) (local.get $exp)))))))
+      ;; apply the exponent by repeated *10 / /10 on val directly. Computing
+      ;; 10^exp as one factor overflows for large |exp| (10^324 → Infinity, so
+      ;; 1/Inf → 0 lost all denormals); stepping keeps small values representable.
+      (let $en i32 (i32.trunc_f64_s (local.get $exp)))
+      (let $ei i32 (i32.const 0))
+      (block $xe (loop $xl
+        (br_if $xe (i32.ge_s (local.get $ei) (local.get $en)))
+        (set! $val (if f64 (f64.lt (local.get $esign) (f64.const 0))
+                      (then (f64.div (local.get $val) (f64.const 10)))
+                      (else (f64.mul (local.get $val) (f64.const 10)))))
+        (set! $ei (i32.add (local.get $ei) (i32.const 1)))
+        (br $xl)))))
   (f64.store (i32.const 32) (local.get $val))
   (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start))))
 
