@@ -61,6 +61,8 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
   `.constructor`, `instanceof`, `in`, `delete`
 - getters/setters: object-literal `{ get x(){}, set x(v){} }` and
   `Object.defineProperty(obj, key, {get,set}|{value})`
+- classes: declarations/expressions, methods, `static`, `get`/`set`, `extends`,
+  `super()`/`super.m()` (single-level inheritance)
 - `throw`, `try`/`catch`; typed errors (engine throws `ReferenceError`/`TypeError`)
 - objects (literals, `.`/`[]` get/set, nested, prototype chain), arrays (literals,
   indexing, `.length`, push idiom), string `.length` and char indexing
