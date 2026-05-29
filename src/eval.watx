@@ -2379,6 +2379,11 @@
   (call $scope_define (local.get $ap) (cstring "entries") (call $mk_native (i32.const 95) (cstring "entries")))
   (call $scope_define (local.get $ap) (cstring "keys") (call $mk_native (i32.const 96) (cstring "keys")))
   (call $scope_define (local.get $ap) (cstring "values") (call $mk_native (i32.const 97) (cstring "values")))
+  (call $scope_define (local.get $ap) (cstring "@@iterator") (call $mk_native (i32.const 97) (cstring "values")))
+  ;; Symbol.iterator is modelled as the sentinel property key "@@iterator"
+  (let $symo i32 (call $obj_new (i32.const 4)))
+  (call $scope_define (local.get $symo) (cstring "iterator") (call $mk_str (cstring "@@iterator")))
+  (call $scope_define (local.get $g) (cstring "Symbol") (call $mk_obj (local.get $symo)))
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
