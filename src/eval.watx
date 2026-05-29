@@ -626,7 +626,18 @@
 
 ;; x ** y for integer y (repeated multiply); fractional y -> NaN (no transcendentals)
 (func $f64_pow (param $x f64) (param $y f64) (result f64) (effects)
-  (if (f64.ne (local.get $y) (f64.trunc (local.get $y))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  ;; x**0 == 1 (incl NaN/Inf base)
+  (if (f64.eq (local.get $y) (f64.const 0)) (then (return (f64.const 1))))
+  ;; non-integer or out-of-range exponent: no transcendentals here — handle a few
+  ;; limits, else NaN. Critically, never i32.trunc an Inf/huge value (it traps).
+  (if (i32.or (f64.ne (local.get $y) (f64.trunc (local.get $y))) (f64.ge (f64.abs (local.get $y)) (f64.const 1073741824)))
+    (then
+      (let $ax f64 (f64.abs (local.get $x)))
+      (return (if f64 (f64.gt (local.get $ax) (f64.const 1))
+        (then (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.div (f64.const 1) (f64.const 0))) (else (f64.const 0))))  ;; |x|>1
+      (else (if f64 (f64.lt (local.get $ax) (f64.const 1))
+        (then (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.const 0)) (else (f64.div (f64.const 1) (f64.const 0)))))  ;; |x|<1
+        (else (f64.div (f64.const 0) (f64.const 0)))))))))  ;; |x|==1 → NaN for non-finite exponent
   (let $n i32 (i32.trunc_f64_s (f64.abs (local.get $y))))
   (let $r f64 (f64.const 1))
   (let $i i32 (i32.const 0))
