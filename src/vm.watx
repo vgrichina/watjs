@@ -1147,6 +1147,19 @@
   (block $cme (loop $cml
     (br_if $cme (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
     (br_if $cme (i32.eq (call $tok_kind) (i32.const 0)))
+    (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed](){} method  |  [computed] = field
+      (then
+        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
+        (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']' → [proto, key]
+        (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method
+          (then (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [proto, key, fn]
+          (else (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = field initializer
+            (then (call $next_token) (call $vm_c_expr (local.get $code)))
+            (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))))
+        (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [val]
+        (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
+        (drop (call $eat (i32.const 21)))
+        (br $cml)))
     (if (call $str_eq (call $ident_name) (cstring "static"))  ;; consume `static` modifier (see note above)
       (then
         (let $stc i32 (call $cursor_save))
