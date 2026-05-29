@@ -322,7 +322,11 @@
           (if (i32.eqz (call $suppress))
             (then (call $throw (call $str_concat (local.get $nm) (cstring " is not defined")))))
           (return (call $v_undef))))))
+  ;; Unexpected token: throw AND consume it, so the parser always makes
+  ;; progress (critical under suppress, where throw is a no-op — otherwise
+  ;; the enclosing statement loop would spin forever).
   (call $throw (cstring "unexpected token"))
+  (if (i32.ne (call $cur) (i32.const 0)) (then (call $advance)))
   (call $v_undef))
 
 (func $ident_name (result i32) (effects)
