@@ -240,6 +240,42 @@
       (let $o i32 (call $val_payload (local.get $thisv)))
       (let $ks i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (return (call $mk_bool (i32.ne (call $scope_find_local (local.get $o) (local.get $ks)) (i32.const 0))))))
+  ;; array iterator constructors: entries(95)->kind 2, keys(96)->0, values(97)->1
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 95)) (i32.le_s (local.get $id) (i32.const 97)))
+    (then
+      (let $itobj i32 (call $obj_new (i32.const 8)))
+      (call $scope_define (local.get $itobj) (cstring "@@arr") (local.get $thisv))
+      (call $scope_define (local.get $itobj) (cstring "@@i") (call $num (f64.const 0)))
+      (call $scope_define (local.get $itobj) (cstring "@@kind")
+        (call $num (f64.convert_i32_s (if i32 (i32.eq (local.get $id) (i32.const 95)) (then (i32.const 2))
+          (else (if i32 (i32.eq (local.get $id) (i32.const 96)) (then (i32.const 0)) (else (i32.const 1))))))))
+      (call $scope_define (local.get $itobj) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")))
+      (return (call $mk_obj (local.get $itobj)))))
+  (if (i32.eq (local.get $id) (i32.const 94))  ;; array-iterator .next()
+    (then
+      (let $itarrv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@arr"))))
+      (let $itarr i32 (call $val_payload (local.get $itarrv)))
+      (let $itix i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
+      (let $itkind i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@kind"))))))
+      (let $itres i32 (call $obj_new (i32.const 2)))
+      (if (i32.ge_s (local.get $itix) (call $arr_len (local.get $itarr)))
+        (then
+          (call $scope_define (local.get $itres) (cstring "value") (call $v_undef))
+          (call $scope_define (local.get $itres) (cstring "done") (call $v_true)))
+        (else
+          (let $itval i64 (call $v_undef))
+          (if (i32.eq (local.get $itkind) (i32.const 0)) (then (set! $itval (call $num (f64.convert_i32_s (local.get $itix))))))
+          (if (i32.eq (local.get $itkind) (i32.const 1)) (then (set! $itval (call $arr_get (local.get $itarr) (local.get $itix)))))
+          (if (i32.eq (local.get $itkind) (i32.const 2))
+            (then
+              (let $itpair i32 (call $arr_new (i32.const 2)))
+              (call $arr_push (local.get $itpair) (call $num (f64.convert_i32_s (local.get $itix))))
+              (call $arr_push (local.get $itpair) (call $arr_get (local.get $itarr) (local.get $itix)))
+              (set! $itval (call $mk_arr (local.get $itpair)))))
+          (call $scope_define (local.get $itres) (cstring "value") (local.get $itval))
+          (call $scope_define (local.get $itres) (cstring "done") (call $v_false))
+          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@i") (call $num (f64.convert_i32_s (i32.add (local.get $itix) (i32.const 1)))))))
+      (return (call $mk_obj (local.get $itres)))))
   ;; --- string methods (this = the string) ---
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
     (then
@@ -1112,6 +1148,8 @@
         (br_if $brk (i32.eq (call $cur) (i32.const 20)))  ;; ']'
         (br_if $brk (i32.eq (call $cur) (i32.const 0)))
         (br_if $brk (call $err))
+        (if (i32.eq (call $cur) (i32.const 22))  ;; elision: empty slot → undefined hole
+          (then (call $arr_push (local.get $a) (call $v_undef)) (call $advance) (br $cont)))
         (if (i32.eq (call $cur) (i32.const 54))  ;; ...spread
           (then
             (call $advance)
@@ -1929,6 +1967,30 @@
   (let $coll i64 (call $parse_assign))
   (call $expect (i32.const 16) (cstring "expected )"))
   (let $bodycur i32 (call $cursor_save))
+  ;; iterator protocol: for-of over an object that is/produces an iterator
+  (if (i32.and (local.get $isOf) (call $is_object (local.get $coll)))
+    (then
+      (let $iter i64 (local.get $coll))
+      (let $itfn i64 (call $get_prop (local.get $coll) (call $mk_str (cstring "@@iterator"))))
+      (if (call $is_function (local.get $itfn))
+        (then (set! $iter (call $call_fn0 (local.get $itfn) (local.get $coll)))))
+      (let $nextfn i64 (call $get_prop (local.get $iter) (call $mk_str (cstring "next"))))
+      (if (call $is_function (local.get $nextfn))
+        (then
+          (block $ibrk (loop $icont
+            (br_if $ibrk (call $suppress))
+            (let $r i64 (call $call_fn0 (local.get $nextfn) (local.get $iter)))
+            (br_if $ibrk (call $err))
+            (br_if $ibrk (call $truthy (call $get_prop (local.get $r) (call $mk_str (cstring "done")))))
+            (call $var_set (local.get $vn) (call $get_prop (local.get $r) (call $mk_str (cstring "value"))))
+            (call $cursor_restore (local.get $bodycur))
+            (call $parse_statement)
+            (if (call $brkflag) (then (call $clear_loopflags) (br $ibrk)))
+            (i32.store (i32.const 136) (i32.const 0))  ;; clear continue
+            (br_if $ibrk (i32.or (call $err) (call $retflag)))
+            (br $icont)))
+          (call $skip_body (local.get $bodycur))
+          (return)))))
   ;; determine count and source kind
   (let $count i32 (i32.const 0))
   (let $payload i32 (i32.const 0))
@@ -2314,6 +2376,9 @@
   (call $scope_define (local.get $ap) (cstring "some") (call $mk_native (i32.const 76) (cstring "some")))
   (call $scope_define (local.get $ap) (cstring "every") (call $mk_native (i32.const 77) (cstring "every")))
   (call $scope_define (local.get $ap) (cstring "sort") (call $mk_native (i32.const 78) (cstring "sort")))
+  (call $scope_define (local.get $ap) (cstring "entries") (call $mk_native (i32.const 95) (cstring "entries")))
+  (call $scope_define (local.get $ap) (cstring "keys") (call $mk_native (i32.const 96) (cstring "keys")))
+  (call $scope_define (local.get $ap) (cstring "values") (call $mk_native (i32.const 97) (cstring "values")))
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
