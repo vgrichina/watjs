@@ -435,6 +435,25 @@
             (call $next_token)  ;; ')'
             (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $iargc))  ;; CALLM
             (br $l)))
+        (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; obj[key]++ / obj[key]-- (postfix)
+          (then
+            (let $xop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
+            (call $next_token)
+            (let $xk i32 (call $vm_tmpname)) (let $xo i32 (call $vm_tmpname))
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; STOREVAR @@k=key → [obj]
+            (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [obj, obj]
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; LOADVAR key → [obj, obj, key]
+            (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [obj, old]
+            (call $vm_emit_op (local.get $code) (i32.const 63))  ;; TONUM → [obj, oldnum]
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $xo))  ;; STOREVAR @@old → [obj]
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; LOADVAR key → [obj, key]
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xo))  ;; LOADVAR oldnum → [obj, key, oldnum]
+            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 1)))
+            (call $vm_emit_op (local.get $code) (local.get $xop))  ;; → [obj, key, new]
+            (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [new]
+            (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP → []
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xo))  ;; LOADVAR oldnum (result)
+            (br $l)))
         (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX
         (br $l)))
     (if (i32.eq (local.get $k) (i32.const 23))  ;; '.' member
@@ -1610,6 +1629,18 @@
               (else (call $v_undef))))
           (set! $pi (i32.add (local.get $pi) (i32.const 1)))
           (br $pl)))
+        ;; bind `arguments` to an array of the actual call arguments (CALL/CALLM only;
+        ;; skipped for TAILCALL to keep tail recursion allocation-free)
+        (if (i32.ne (local.get $op) (i32.const 21))
+          (then
+            (let $aobj i32 (call $arr_new (local.get $argc)))
+            (let $ai i32 (i32.const 0))
+            (block $aae (loop $aal
+              (br_if $aae (i32.ge_s (local.get $ai) (local.get $argc)))
+              (call $arr_push (local.get $aobj) (i64.load (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.mul (i32.add (local.get $ai) (i32.const 1)) (i32.const 8))))))
+              (set! $ai (i32.add (local.get $ai) (i32.const 1)))
+              (br $aal)))
+            (call $scope_define (local.get $cns) (cstring "arguments") (call $mk_arr (local.get $aobj)))))
         (call $scope_define (local.get $cns) (cstring "this")  ;; bind `this` (receiver for methods)
           (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef))))
         (if (i32.eq (local.get $op) (i32.const 21))  ;; TAILCALL: reuse current frame
