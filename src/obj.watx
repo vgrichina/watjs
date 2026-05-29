@@ -396,6 +396,7 @@
   (if (call $is_object (local.get $cont))
     (then
       (let $o i32 (call $val_payload (local.get $cont)))
+      (if (call $scope_find_local (local.get $o) (cstring "@@frozen")) (then (return)))  ;; Object.freeze: ignore writes
       (let $ks i32 (call $to_str (local.get $key)))
       (let $slot i32 (call $scope_find (local.get $o) (local.get $ks)))
       (if (local.get $slot)  ;; guard before entry_kind (i32.and would deref slot-4 even when 0)

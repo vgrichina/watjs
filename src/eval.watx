@@ -605,6 +605,16 @@
           (if (i32.gt_s (local.get $end) (local.get $slen)) (then (set! $end (local.get $slen))))
           (return (call $mk_str (call $substr (local.get $s) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))))
       (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 139))  ;; Object.freeze(o) → mark @@frozen, return o
+    (then
+      (let $fo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_object (local.get $fo)) (then (call $scope_define (call $val_payload (local.get $fo)) (cstring "@@frozen") (call $v_true))))
+      (return (local.get $fo))))
+  (if (i32.eq (local.get $id) (i32.const 140))  ;; Object.isFrozen(o)
+    (then
+      (let $io i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_object (local.get $io))) (then (return (call $v_true))))  ;; non-objects are "frozen"
+      (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $io)) (cstring "@@frozen")) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 138))  ;; substr(start, length) — legacy
     (then
       (let $s2 i32 (call $to_str (local.get $thisv)))
@@ -2921,6 +2931,8 @@
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isInteger")) (call $mk_native (i32.const 85) (cstring "isInteger")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isFinite")) (call $mk_native (i32.const 86) (cstring "isFinite")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isSafeInteger")) (call $mk_native (i32.const 98) (cstring "isSafeInteger")))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "parseInt")) (call $mk_native (i32.const 50) (cstring "parseInt")))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "parseFloat")) (call $mk_native (i32.const 51) (cstring "parseFloat")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "MIN_SAFE_INTEGER")) (call $num (f64.const -9007199254740991)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "EPSILON")) (call $num (f64.const 2.220446049250313e-16)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "MAX_VALUE")) (call $num (f64.const 1.7976931348623157e308)))
@@ -3032,6 +3044,8 @@
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getOwnPropertyNames")) (call $mk_native (i32.const 112) (cstring "getOwnPropertyNames")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "fromEntries")) (call $mk_native (i32.const 115) (cstring "fromEntries")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "assign")) (call $mk_native (i32.const 80) (cstring "assign")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "freeze")) (call $mk_native (i32.const 139) (cstring "freeze")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "isFrozen")) (call $mk_native (i32.const 140) (cstring "isFrozen")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "create")) (call $mk_native (i32.const 81) (cstring "create")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getPrototypeOf")) (call $mk_native (i32.const 82) (cstring "getPrototypeOf")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "defineProperty")) (call $mk_native (i32.const 90) (cstring "defineProperty")))
