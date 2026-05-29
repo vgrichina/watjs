@@ -1633,6 +1633,16 @@
       (call $advance) (return (call $mk_str (local.get $s)))))
   ;; template literal
   (if (i32.eq (local.get $k) (i32.const 53)) (then (return (call $parse_template))))
+  ;; regex literal → RegExp(pattern, flags)
+  (if (i32.eq (local.get $k) (i32.const 57))
+    (then
+      (let $rpat i32 (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len)))
+      (let $rflg i32 (call $str_from_src (i32.add (call $src) (i32.load (i32.const 264))) (i32.load (i32.const 268))))
+      (call $advance)
+      (let $rargv i32 (call $heap_alloc (i32.const 16)))
+      (i64.store (local.get $rargv) (call $mk_str (local.get $rpat)))
+      (i64.store (i32.add (local.get $rargv) (i32.const 8)) (call $mk_str (local.get $rflg)))
+      (return (call $call_native (i32.const 100) (i32.const 2) (local.get $rargv) (call $v_undef)))))
   ;; ( expr )
   (if (i32.eq (local.get $k) (i32.const 15))
     (then (call $advance)
