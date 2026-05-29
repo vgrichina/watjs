@@ -234,6 +234,24 @@
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $kl)))))
       (return (call $mk_arr (local.get $arr)))))
+  (if (i32.eq (local.get $id) (i32.const 98))  ;; Number.isSafeInteger(x)
+    (then
+      (let $siv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_number (local.get $siv))) (then (return (call $v_false))))
+      (let $sid f64 (call $tonum_raw (local.get $siv)))
+      (return (call $mk_bool (i32.and (f64.eq (local.get $sid) (f64.trunc (local.get $sid)))
+        (i32.and (f64.eq (local.get $sid) (local.get $sid)) (f64.le (f64.abs (local.get $sid)) (f64.const 9007199254740991))))))))
+  (if (i32.eq (local.get $id) (i32.const 52))  ;; Math.hypot(...args)
+    (then
+      (let $hs f64 (f64.const 0))
+      (let $hi i32 (i32.const 0))
+      (block $he (loop $hl
+        (br_if $he (i32.ge_s (local.get $hi) (local.get $argc)))
+        (let $hv f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (local.get $hi))))
+        (set! $hs (f64.add (local.get $hs) (f64.mul (local.get $hv) (local.get $hv))))
+        (set! $hi (i32.add (local.get $hi) (i32.const 1)))
+        (br $hl)))
+      (return (call $num (f64.sqrt (local.get $hs))))))
   (if (i32.eq (local.get $id) (i32.const 93))  ;; obj.hasOwnProperty(key)
     (then
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
@@ -319,8 +337,8 @@
           (if (i32.gt_s (local.get $end) (local.get $slen)) (then (set! $end (local.get $slen))))
           (return (call $mk_str (call $substr (local.get $s) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))))
       (return (call $v_undef))))
-  ;; --- string2 methods (this = string): 60 split,61 trim,62 repeat,63 includes,64 startsWith,65 endsWith ---
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 60)) (i32.le_s (local.get $id) (i32.const 65)))
+  ;; --- string2 methods (this = string): 60 split,61 trim,62 repeat,63 includes,64 startsWith,65 endsWith,66 padStart,67 padEnd,68 at ---
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 60)) (i32.le_s (local.get $id) (i32.const 68)))
     (then
       (let $s i32 (call $to_str (local.get $thisv)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -352,6 +370,30 @@
             (set! $k (i32.add (local.get $k) (i32.const 1)))
             (br $rl)))
           (return (call $mk_str (local.get $out)))))
+      (if (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.eq (local.get $id) (i32.const 67)))  ;; padStart/padEnd
+        (then
+          (let $padt i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $pads i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (cstring " "))))
+          (let $padsl i32 (call $str_len (local.get $s)))
+          (if (i32.or (i32.ge_s (local.get $padsl) (local.get $padt)) (i32.eqz (call $str_len (local.get $pads))))
+            (then (return (call $mk_str (local.get $s)))))
+          (let $padn i32 (i32.sub (local.get $padt) (local.get $padsl)))
+          (let $padb i32 (cstring ""))
+          (block $pe2 (loop $pl2
+            (br_if $pe2 (i32.ge_s (call $str_len (local.get $padb)) (local.get $padn)))
+            (set! $padb (call $str_concat (local.get $padb) (local.get $pads)))
+            (br $pl2)))
+          (set! $padb (call $substr (local.get $padb) (i32.const 0) (local.get $padn)))
+          (if (i32.eq (local.get $id) (i32.const 66))
+            (then (return (call $mk_str (call $str_concat (local.get $padb) (local.get $s)))))
+            (else (return (call $mk_str (call $str_concat (local.get $s) (local.get $padb))))))))
+      (if (i32.eq (local.get $id) (i32.const 68))  ;; at(i) — supports negative index
+        (then
+          (let $atix i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $atsl i32 (call $str_len (local.get $s)))
+          (if (i32.lt_s (local.get $atix) (i32.const 0)) (then (set! $atix (i32.add (local.get $atix) (local.get $atsl)))))
+          (if (i32.or (i32.lt_s (local.get $atix) (i32.const 0)) (i32.ge_s (local.get $atix) (local.get $atsl))) (then (return (call $v_undef))))
+          (return (call $str_char_at (local.get $s) (local.get $atix)))))
       (return (call $v_undef))))
   ;; --- array3 methods (this = array): 74 find, 75 findIndex, 76 some, 77 every, 78 sort ---
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 74)) (i32.le_s (local.get $id) (i32.const 78))) (call $is_array (local.get $thisv)))
@@ -673,6 +715,21 @@
           (let $v i64 (call $arr_get (local.get $arr) (i32.sub (local.get $n) (i32.const 1))))
           (i32.store (local.get $arr) (i32.sub (local.get $n) (i32.const 1)))
           (return (local.get $v))))
+      (if (i32.eq (local.get $id) (i32.const 28))  ;; at(i) — supports negative index
+        (then
+          (let $atx i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (if (i32.lt_s (local.get $atx) (i32.const 0)) (then (set! $atx (i32.add (local.get $atx) (local.get $n)))))
+          (if (i32.or (i32.lt_s (local.get $atx) (i32.const 0)) (i32.ge_s (local.get $atx) (local.get $n))) (then (return (call $v_undef))))
+          (return (call $arr_get (local.get $arr) (local.get $atx)))))
+      (if (i32.eq (local.get $id) (i32.const 29))  ;; fill(v) — fill all slots
+        (then
+          (let $fk i32 (i32.const 0))
+          (block $fe (loop $fl
+            (br_if $fe (i32.ge_s (local.get $fk) (local.get $n)))
+            (call $arr_set (local.get $arr) (local.get $fk) (local.get $a0))
+            (set! $fk (i32.add (local.get $fk) (i32.const 1)))
+            (br $fl)))
+          (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 22))  ;; indexOf(x)
         (then
           (let $i i32 (i32.const 0))
@@ -2405,6 +2462,12 @@
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isNaN")) (call $mk_native (i32.const 84) (cstring "isNaN")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isInteger")) (call $mk_native (i32.const 85) (cstring "isInteger")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isFinite")) (call $mk_native (i32.const 86) (cstring "isFinite")))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "isSafeInteger")) (call $mk_native (i32.const 98) (cstring "isSafeInteger")))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "MIN_SAFE_INTEGER")) (call $num (f64.const -9007199254740991)))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "EPSILON")) (call $num (f64.const 2.220446049250313e-16)))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "MAX_VALUE")) (call $num (f64.const 1.7976931348623157e308)))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "NEGATIVE_INFINITY")) (call $num (f64.div (f64.const -1) (f64.const 0))))
   (let $strf i64 (call $def_native (local.get $g) (cstring "String") (i32.const 5)))
   ;; String.prototype (reg 156) — methods dispatched on string primitives
   (let $sp i32 (call $obj_new (i32.const 48)))
@@ -2425,6 +2488,9 @@
   (call $scope_define (local.get $sp) (cstring "includes") (call $mk_native (i32.const 63) (cstring "includes")))
   (call $scope_define (local.get $sp) (cstring "startsWith") (call $mk_native (i32.const 64) (cstring "startsWith")))
   (call $scope_define (local.get $sp) (cstring "endsWith") (call $mk_native (i32.const 65) (cstring "endsWith")))
+  (call $scope_define (local.get $sp) (cstring "padStart") (call $mk_native (i32.const 66) (cstring "padStart")))
+  (call $scope_define (local.get $sp) (cstring "padEnd") (call $mk_native (i32.const 67) (cstring "padEnd")))
+  (call $scope_define (local.get $sp) (cstring "at") (call $mk_native (i32.const 68) (cstring "at")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCharCode")) (call $mk_native (i32.const 87) (cstring "fromCharCode")))
   (call $scope_define (local.get $sp) (cstring "match") (call $mk_native (i32.const 102) (cstring "match")))
   (call $scope_define (local.get $sp) (cstring "replace") (call $mk_native (i32.const 103) (cstring "replace")))
@@ -2440,6 +2506,8 @@
   (call $scope_define (local.get $ap) (cstring "forEach") (call $mk_native (i32.const 25) (cstring "forEach")))
   (call $scope_define (local.get $ap) (cstring "map") (call $mk_native (i32.const 26) (cstring "map")))
   (call $scope_define (local.get $ap) (cstring "includes") (call $mk_native (i32.const 27) (cstring "includes")))
+  (call $scope_define (local.get $ap) (cstring "at") (call $mk_native (i32.const 28) (cstring "at")))
+  (call $scope_define (local.get $ap) (cstring "fill") (call $mk_native (i32.const 29) (cstring "fill")))
   (call $scope_define (local.get $ap) (cstring "concat") (call $mk_native (i32.const 70) (cstring "concat")))
   (call $scope_define (local.get $ap) (cstring "reverse") (call $mk_native (i32.const 71) (cstring "reverse")))
   (call $scope_define (local.get $ap) (cstring "filter") (call $mk_native (i32.const 72) (cstring "filter")))
@@ -2474,6 +2542,7 @@
   (call $scope_define (local.get $mo) (cstring "pow") (call $mk_native (i32.const 47) (cstring "pow")))
   (call $scope_define (local.get $mo) (cstring "trunc") (call $mk_native (i32.const 48) (cstring "trunc")))
   (call $scope_define (local.get $mo) (cstring "sign") (call $mk_native (i32.const 49) (cstring "sign")))
+  (call $scope_define (local.get $mo) (cstring "hypot") (call $mk_native (i32.const 52) (cstring "hypot")))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "PI")) (call $num (f64.const 3.141592653589793)))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "E")) (call $num (f64.const 2.718281828459045)))
   ;; JSON object
