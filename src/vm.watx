@@ -922,7 +922,7 @@
               (call $vm_emit_op (local.get $code) (i32.const 20))
               (drop (call $eat (i32.const 21)))
               (return)))
-          (call $vm_c_expr (local.get $code))
+          (call $vm_c_commaexpr (local.get $code))
           (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 19))  ;; ends in CALL?
             (then (i32.store (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8))) (i32.const 21)))  ;; → TAILCALL
             (else (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET
