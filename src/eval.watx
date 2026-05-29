@@ -132,6 +132,29 @@
               (else (cstring "assert failed"))))
           (call $set_err (i32.const 1)) (call $set_err_val (call $mk_str (local.get $m)))))
       (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 3))  ;; eval(src)
+    (then
+      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_string (local.get $a))
+        (then (return (call $eval_string (call $val_payload (local.get $a))))))
+      (return (local.get $a))))
+  (if (i32.eq (local.get $id) (i32.const 4))  ;; Number(x)
+    (then
+      (if (i32.eqz (local.get $argc)) (then (return (call $num (f64.const 0)))))
+      (return (call $num (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+  (if (i32.eq (local.get $id) (i32.const 5))  ;; String(x)
+    (then
+      (if (i32.eqz (local.get $argc)) (then (return (call $mk_str (cstring "")))))
+      (return (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+  (if (i32.eq (local.get $id) (i32.const 6))  ;; Boolean(x)
+    (then (return (call $mk_bool (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+  (if (i32.eq (local.get $id) (i32.const 7))  ;; isNaN(x)
+    (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+          (return (call $mk_bool (f64.ne (local.get $d) (local.get $d))))))
+  (if (i32.eq (local.get $id) (i32.const 8))  ;; isFinite(x)
+    (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+          (return (call $mk_bool (i32.and (f64.eq (local.get $d) (local.get $d))
+            (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0)))))))))
   (call $v_undef))
 
 ;; call a user function: bind params in a fresh scope (parent = closure scope),
@@ -164,6 +187,26 @@
   (call $set_this (local.get $savedThis))
   (call $cursor_restore (local.get $savedCur))
   (local.get $rv))
+
+;; eval(string): re-enter the parser on the string, return the completion value.
+(func $eval_string (param $s i32) (result i64) (effects)
+  (let $oldsrc i32 (call $src))
+  (let $oldlen i32 (call $src_len))
+  (let $oldcur i32 (call $cursor_save))
+  (call $set_src (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)))
+  (call $lex_init)
+  (call $advance)
+  (let $result i64 (call $v_undef))
+  (block $brk (loop $cont
+    (br_if $brk (i32.eq (call $cur) (i32.const 0)))
+    (br_if $brk (call $unwind))
+    (if (call $is_stmt_start)
+      (then (call $parse_statement))
+      (else (set! $result (call $parse_assign)) (drop (call $eat (i32.const 21)))))
+    (br $cont)))
+  (call $set_src (local.get $oldsrc) (local.get $oldlen))
+  (call $cursor_restore (local.get $oldcur))
+  (local.get $result))
 
 ;; parse and evaluate a call:  callee '(' args ')'
 (func $parse_call (param $callee i64) (param $thisv i64) (result i64) (effects)
@@ -230,6 +273,16 @@
   (local.get $fv))
 
 (func $retflag (result i32) (effects) (i32.load (i32.const 88)))
+;; does the current token begin a statement (vs an expression)?
+(func $is_stmt_start (result i32) (effects)
+  (if (i32.eq (call $cur) (i32.const 17)) (then (return (i32.const 1))))  ;; {
+  (if (i32.eq (call $cur) (i32.const 21)) (then (return (i32.const 1))))  ;; ;
+  (if (i32.ne (call $cur) (i32.const 3)) (then (return (i32.const 0))))
+  (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (i32.or (call $tok_is_kw (cstring "const"))
+  (i32.or (call $tok_is_kw (cstring "if")) (i32.or (call $tok_is_kw (cstring "while")) (i32.or (call $tok_is_kw (cstring "do"))
+  (i32.or (call $tok_is_kw (cstring "for")) (i32.or (call $tok_is_kw (cstring "function")) (i32.or (call $tok_is_kw (cstring "return"))
+  (i32.or (call $tok_is_kw (cstring "throw")) (i32.or (call $tok_is_kw (cstring "try")) (i32.or (call $tok_is_kw (cstring "break"))
+          (call $tok_is_kw (cstring "continue")))))))))))))))
 ;; `this` binding (reg 144, i64)
 (func $get_this (result i64) (effects) (i64.load (i32.const 144)))
 (func $set_this (param $v i64) (effects) (i64.store (i32.const 144) (local.get $v)))
@@ -889,20 +942,37 @@
   (drop (call $eat (i32.const 21))))
 
 ;; register a native builtin (nativeId) under `name` in the given scope
-(func $def_native (param $scope i32) (param $name i32) (param $id i32) (effects)
+(func $def_native (param $scope i32) (param $name i32) (param $id i32) (result i64) (effects)
   (let $fn i32 (call $heap_alloc (i32.const 40)))
   (i32.store (local.get $fn) (local.get $id))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))   ;; nparam
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))  ;; props (lazy)
   (call $scope_define (call $fn_props (local.get $fn)) (cstring "name") (call $mk_str (local.get $name)))
-  (call $scope_define (local.get $scope) (local.get $name) (call $mk_fn (local.get $fn))))
+  (let $v i64 (call $mk_fn (local.get $fn)))
+  (call $scope_define (local.get $scope) (local.get $name) (local.get $v))
+  (local.get $v))
 
 (func $eval_program (effects)
   (let $g i32 (call $scope_new (i32.const 0) (i32.const 256)))  ;; global scope
   (call $set_cur_scope (local.get $g))
   (i32.store (i32.const 88) (i32.const 0))  ;; clear RETFLAG
-  (call $def_native (local.get $g) (cstring "print") (i32.const 1))
-  (call $def_native (local.get $g) (cstring "assert") (i32.const 2))
+  (drop (call $def_native (local.get $g) (cstring "print") (i32.const 1)))
+  (drop (call $def_native (local.get $g) (cstring "assert") (i32.const 2)))
+  (drop (call $def_native (local.get $g) (cstring "eval") (i32.const 3)))
+  (drop (call $def_native (local.get $g) (cstring "Boolean") (i32.const 6)))
+  (drop (call $def_native (local.get $g) (cstring "isNaN") (i32.const 7)))
+  (drop (call $def_native (local.get $g) (cstring "isFinite") (i32.const 8)))
+  ;; Number with NaN / Infinity constants
+  (let $numf i64 (call $def_native (local.get $g) (cstring "Number") (i32.const 4)))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "NEGATIVE_INFINITY")) (call $num (f64.div (f64.const -1) (f64.const 0))))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "MAX_SAFE_INTEGER")) (call $num (f64.const 9007199254740991)))
+  (drop (call $def_native (local.get $g) (cstring "String") (i32.const 5)))
+  ;; global NaN / Infinity / undefined
+  (call $scope_define (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
+  (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))
+  (call $scope_define (local.get $g) (cstring "undefined") (call $v_undef))
   (call $advance)  ;; load first token
   (block $brk (loop $cont
     (br_if $brk (i32.eq (call $cur) (i32.const 0)))  ;; EOF
