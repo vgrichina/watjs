@@ -1110,12 +1110,16 @@
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $jl)))
           (return (call $mk_str (local.get $out)))))
-      (if (i32.eq (local.get $id) (i32.const 27))  ;; includes(x)
+      (if (i32.eq (local.get $id) (i32.const 27))  ;; includes(x) — SameValueZero (matches NaN)
         (then
           (let $i i32 (i32.const 0))
+          (let $a0nan i32 (i32.and (call $is_number (local.get $a0)) (f64.ne (call $tonum_raw (local.get $a0)) (call $tonum_raw (local.get $a0)))))
           (block $ie (loop $il
             (br_if $ie (i32.ge_s (local.get $i) (local.get $n)))
-            (if (call $strict_eq (call $arr_get (local.get $arr) (local.get $i)) (local.get $a0)) (then (return (call $v_true))))
+            (let $iel i64 (call $arr_get (local.get $arr) (local.get $i)))
+            (if (i32.or (call $strict_eq (local.get $iel) (local.get $a0))
+                        (i32.and (local.get $a0nan) (i32.and (call $is_number (local.get $iel)) (f64.ne (call $tonum_raw (local.get $iel)) (call $tonum_raw (local.get $iel))))))
+              (then (return (call $v_true))))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $il)))
           (return (call $v_false))))
