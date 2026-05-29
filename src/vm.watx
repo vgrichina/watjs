@@ -69,6 +69,24 @@
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $l))))
 
+;; fresh unique temp variable name "@@t<n>" (for desugaring for-of), reg 224 counter
+(func $vm_tmpname (result i32) (effects)
+  (let $n i32 (i32.load (i32.const 224)))
+  (i32.store (i32.const 224) (i32.add (local.get $n) (i32.const 1)))
+  (call $str_concat (cstring "@@t") (call $num_to_str (f64.convert_i32_s (local.get $n)))))
+
+;; coerce a value to an iterator: arrays → values-iterator; objects with
+;; @@iterator → call it; objects with .next → themselves (generators included).
+(func $vm_get_iter (param $v i64) (result i64) (effects)
+  (if (call $is_array (local.get $v))
+    (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
+  (if (call $is_object (local.get $v))
+    (then
+      (let $itf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@iterator"))))
+      (if (call $is_function (local.get $itf)) (then (return (call $call_val (local.get $itf) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
+      (return (local.get $v))))
+  (local.get $v))
+
 ;; ── compiler: source → bytecode (precedence-climbing, reuses the lexer) ──
 (func $vm_c_primary (param $code i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 1))  ;; NUM literal
@@ -522,9 +540,49 @@
           (call $vm_patch_list (i32.const 208) (i32.const 212) (local.get $code) (call $vm_emit_cursor))  ;; break → end
           (call $vm_loop_exit (local.get $lsave))
           (return)))
-      (if (call $tok_is_kw (cstring "for"))  ;; for ( init ; cond ; update ) body
+      (if (call $tok_is_kw (cstring "for"))  ;; for ( init ; cond ; update ) body  |  for (var x of E) body
         (then
           (call $next_token) (call $next_token)  ;; 'for' '('
+          ;; detect for-of:  [var] IDENT of E
+          (let $ofdetect i32 (call $cursor_save))
+          (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (call $next_token)))
+          (let $ofvar i32 (i32.const 0))
+          (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $ofvar (call $ident_name)) (call $next_token)))
+          (let $isof i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of")))))
+          (if (local.get $isof)
+            (then
+              (call $next_token)  ;; 'of'
+              (let $ofls i32 (call $vm_loop_enter))
+              (let $itn i32 (call $vm_tmpname))
+              (let $rn i32 (call $vm_tmpname))
+              (call $vm_c_expr (local.get $code))                  ;; the iterable
+              (call $vm_emit_op (local.get $code) (i32.const 45))  ;; GETITER
+              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; STOREVAR it
+              (call $next_token)  ;; ')'
+              (let $oftop i32 (call $vm_emit_cursor))
+              ;; r = it.next()
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; LOADVAR it
+              (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "next"))  ;; GETPROP next
+              (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; CALLM 0
+              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $rn))  ;; STOREVAR r
+              ;; if (r.done) break  → emit (!done); JMPF end
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $rn))  ;; LOADVAR r
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "done"))  ;; GETPROP done
+              (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
+              (let $ofpend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end (pops)
+              ;; x = r.value
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $rn))  ;; LOADVAR r
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "value"))  ;; GETPROP value
+              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))  ;; STOREVAR x
+              (call $vm_c_stmt (local.get $code))  ;; body
+              (call $vm_patch_list (i32.const 216) (i32.const 220) (local.get $code) (local.get $oftop))  ;; continue → next iteration
+              (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $oftop))  ;; JMP top
+              (call $vm_patch (local.get $code) (local.get $ofpend))  ;; done → here
+              (call $vm_patch_list (i32.const 208) (i32.const 212) (local.get $code) (call $vm_emit_cursor))  ;; break → end
+              (call $vm_loop_exit (local.get $ofls))
+              (return)))
+          (call $cursor_restore (local.get $ofdetect))  ;; not for-of → regular for
           (let $flsave i32 (call $vm_loop_enter))
           ;; init (consumes up to ';')
           (if (i32.ne (call $tok_kind) (i32.const 21))
@@ -938,6 +996,11 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $num (f64.convert_i32_s (i32.xor (call $to_int32 (i64.load (i32.add (local.get $stack) (local.get $t)))) (i32.const -1)))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 45))  ;; GETITER — replace top with its iterator
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (call $vm_get_iter (i64.load (i32.add (local.get $stack) (local.get $t)))))
         (br $disp)))
     (if (i32.and (i32.ge_s (local.get $op) (i32.const 37)) (i32.le_s (local.get $op) (i32.const 43)))  ;; & | ^ << >> >>> **
       (then
