@@ -30,13 +30,17 @@
   (i32.store (i32.const 16) (i32.const 0)))  ;; clear ERR
 
 ;; Bump-allocate `size` bytes, 8-byte aligned. Returns the block pointer.
+;; Grows linear memory on demand (up to the module max of 512 pages / 32 MB)
+;; so long-running programs and deep recursion aren't capped at the 1 MB
+;; initial size. (A real reclaiming GC over this untyped heap is future work.)
 (func $heap_alloc (param $size i32) (result i32)
   (effects)
   (let $p i32 (call $heap_ptr))
-  ;; advance by size rounded up to 8
-  (call $set_heap_ptr
-    (i32.add (local.get $p)
-             (i32.and (i32.add (local.get $size) (i32.const 7)) (i32.const -8))))
+  (let $end i32 (i32.add (local.get $p) (i32.and (i32.add (local.get $size) (i32.const 7)) (i32.const -8))))
+  (let $cur i32 (i32.mul (memory.size) (i32.const 65536)))
+  (if (i32.gt_u (local.get $end) (local.get $cur))
+    (then (drop (memory.grow (i32.div_u (i32.add (i32.sub (local.get $end) (local.get $cur)) (i32.const 65535)) (i32.const 65536))))))
+  (call $set_heap_ptr (local.get $end))
   (local.get $p))
 
 ;; --- registers: source & lexer ---
