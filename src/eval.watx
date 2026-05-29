@@ -453,6 +453,46 @@
           (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@sk") (call $mk_arr (call $arr_new (i32.const 4))))
           (return (call $v_undef))))
       (return (call $v_undef))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 113)) (i32.eq (local.get $id) (i32.const 114)))  ;; trimStart / trimEnd
+    (then
+      (let $tts i32 (call $to_str (local.get $thisv)))
+      (let $ttn i32 (call $str_len (local.get $tts)))
+      (if (i32.eq (local.get $id) (i32.const 113))  ;; trimStart
+        (then
+          (let $tst i32 (i32.const 0))
+          (block $tse (loop $tsl
+            (br_if $tse (i32.ge_s (local.get $tst) (local.get $ttn)))
+            (let $tc i32 (call $str_byte (local.get $tts) (local.get $tst)))
+            (br_if $tse (i32.eqz (i32.or (i32.eq (local.get $tc) (i32.const 32)) (i32.or (i32.eq (local.get $tc) (i32.const 9)) (i32.or (i32.eq (local.get $tc) (i32.const 10)) (i32.eq (local.get $tc) (i32.const 13)))))))
+            (set! $tst (i32.add (local.get $tst) (i32.const 1)))
+            (br $tsl)))
+          (return (call $mk_str (call $substr (local.get $tts) (local.get $tst) (i32.sub (local.get $ttn) (local.get $tst)))))))
+      (let $ten i32 (local.get $ttn))  ;; trimEnd
+      (block $tee (loop $tel
+        (br_if $tee (i32.le_s (local.get $ten) (i32.const 0)))
+        (let $tc2 i32 (call $str_byte (local.get $tts) (i32.sub (local.get $ten) (i32.const 1))))
+        (br_if $tee (i32.eqz (i32.or (i32.eq (local.get $tc2) (i32.const 32)) (i32.or (i32.eq (local.get $tc2) (i32.const 9)) (i32.or (i32.eq (local.get $tc2) (i32.const 10)) (i32.eq (local.get $tc2) (i32.const 13)))))))
+        (set! $ten (i32.sub (local.get $ten) (i32.const 1)))
+        (br $tel)))
+      (return (call $mk_str (call $substr (local.get $tts) (i32.const 0) (local.get $ten))))))
+  (if (i32.eq (local.get $id) (i32.const 115))  ;; Object.fromEntries(iterable)
+    (then
+      (let $feo i32 (call $obj_new (i32.const 8)))
+      (let $fesrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_array (local.get $fesrc))
+        (then
+          (let $fea i32 (call $val_payload (local.get $fesrc)))
+          (let $fei i32 (i32.const 0))
+          (block $fee2 (loop $fel2
+            (br_if $fee2 (i32.ge_s (local.get $fei) (call $arr_len (local.get $fea))))
+            (let $fepair i64 (call $arr_get (local.get $fea) (local.get $fei)))
+            (if (call $is_array (local.get $fepair))
+              (then
+                (let $pp i32 (call $val_payload (local.get $fepair)))
+                (call $scope_define (local.get $feo) (call $to_str (call $arr_get (local.get $pp) (i32.const 0))) (call $arr_get (local.get $pp) (i32.const 1)))))
+            (set! $fei (i32.add (local.get $fei) (i32.const 1)))
+            (br $fel2)))))
+      (return (call $mk_obj (local.get $feo)))))
   (if (i32.eq (local.get $id) (i32.const 93))  ;; obj.hasOwnProperty(key)
     (then
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
@@ -931,6 +971,51 @@
             (set! $fk (i32.add (local.get $fk) (i32.const 1)))
             (br $fl)))
           (return (local.get $thisv))))
+      (if (i32.eq (local.get $id) (i32.const 30))  ;; lastIndexOf(x)
+        (then
+          (let $li i32 (i32.sub (local.get $n) (i32.const 1)))
+          (block $lie (loop $lil
+            (br_if $lie (i32.lt_s (local.get $li) (i32.const 0)))
+            (if (call $strict_eq (call $arr_get (local.get $arr) (local.get $li)) (local.get $a0)) (then (return (call $num (f64.convert_i32_s (local.get $li))))))
+            (set! $li (i32.sub (local.get $li) (i32.const 1)))
+            (br $lil)))
+          (return (call $num (f64.const -1)))))
+      (if (i32.or (i32.eq (local.get $id) (i32.const 31)) (i32.eq (local.get $id) (i32.const 32)))  ;; flat([depth]) / flatMap(cb)
+        (then
+          (let $fsrc i32 (local.get $arr))
+          (let $fdepth i32 (i32.const 1))
+          (if (i32.eq (local.get $id) (i32.const 31))  ;; flat: optional depth arg
+            (then (if (i32.ge_s (local.get $argc) (i32.const 1)) (then (set! $fdepth (i32.trunc_f64_s (call $to_num (local.get $a0))))))))
+          (if (i32.eq (local.get $id) (i32.const 32))  ;; flatMap: map first, then flatten depth 1
+            (then
+              (let $fm i32 (call $arr_new (i32.const 4)))
+              (let $fmi i32 (i32.const 0))
+              (block $fme (loop $fml
+                (br_if $fme (i32.ge_s (local.get $fmi) (local.get $n)))
+                (let $fcb i32 (call $heap_alloc (i32.const 16)))
+                (i64.store (local.get $fcb) (call $arr_get (local.get $arr) (local.get $fmi)))
+                (i64.store (i32.add (local.get $fcb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $fmi))))
+                (call $arr_push (local.get $fm) (call $call_val (local.get $a0) (i32.const 2) (local.get $fcb) (call $v_undef)))
+                (set! $fmi (i32.add (local.get $fmi) (i32.const 1)))
+                (br $fml)))
+              (set! $fsrc (local.get $fm))))
+          (let $fdest i32 (call $arr_new (i32.const 4)))
+          (call $arr_flatten (local.get $fsrc) (local.get $fdest) (local.get $fdepth))
+          (return (call $mk_arr (local.get $fdest)))))
+      (if (i32.or (i32.eq (local.get $id) (i32.const 33)) (i32.eq (local.get $id) (i32.const 34)))  ;; findLast / findLastIndex
+        (then
+          (let $fli i32 (i32.sub (local.get $n) (i32.const 1)))
+          (block $flie (loop $flil
+            (br_if $flie (i32.lt_s (local.get $fli) (i32.const 0)))
+            (let $fle i64 (call $arr_get (local.get $arr) (local.get $fli)))
+            (let $fcb2 i32 (call $heap_alloc (i32.const 16)))
+            (i64.store (local.get $fcb2) (local.get $fle))
+            (i64.store (i32.add (local.get $fcb2) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $fli))))
+            (if (call $truthy (call $call_val (local.get $a0) (i32.const 2) (local.get $fcb2) (call $v_undef)))
+              (then (return (if i64 (i32.eq (local.get $id) (i32.const 33)) (then (local.get $fle)) (else (call $num (f64.convert_i32_s (local.get $fli))))))))
+            (set! $fli (i32.sub (local.get $fli) (i32.const 1)))
+            (br $flil)))
+          (return (if i64 (i32.eq (local.get $id) (i32.const 33)) (then (call $v_undef)) (else (call $num (f64.const -1)))))))
       (if (i32.eq (local.get $id) (i32.const 22))  ;; indexOf(x)
         (then
           (let $i i32 (i32.const 0))
@@ -2790,6 +2875,8 @@
   (call $scope_define (local.get $sp) (cstring "includes") (call $mk_native (i32.const 63) (cstring "includes")))
   (call $scope_define (local.get $sp) (cstring "startsWith") (call $mk_native (i32.const 64) (cstring "startsWith")))
   (call $scope_define (local.get $sp) (cstring "endsWith") (call $mk_native (i32.const 65) (cstring "endsWith")))
+  (call $scope_define (local.get $sp) (cstring "trimStart") (call $mk_native (i32.const 113) (cstring "trimStart")))
+  (call $scope_define (local.get $sp) (cstring "trimEnd") (call $mk_native (i32.const 114) (cstring "trimEnd")))
   (call $scope_define (local.get $sp) (cstring "padStart") (call $mk_native (i32.const 66) (cstring "padStart")))
   (call $scope_define (local.get $sp) (cstring "padEnd") (call $mk_native (i32.const 67) (cstring "padEnd")))
   (call $scope_define (local.get $sp) (cstring "at") (call $mk_native (i32.const 68) (cstring "at")))
@@ -2811,6 +2898,11 @@
   (call $scope_define (local.get $ap) (cstring "includes") (call $mk_native (i32.const 27) (cstring "includes")))
   (call $scope_define (local.get $ap) (cstring "at") (call $mk_native (i32.const 28) (cstring "at")))
   (call $scope_define (local.get $ap) (cstring "fill") (call $mk_native (i32.const 29) (cstring "fill")))
+  (call $scope_define (local.get $ap) (cstring "lastIndexOf") (call $mk_native (i32.const 30) (cstring "lastIndexOf")))
+  (call $scope_define (local.get $ap) (cstring "flat") (call $mk_native (i32.const 31) (cstring "flat")))
+  (call $scope_define (local.get $ap) (cstring "flatMap") (call $mk_native (i32.const 32) (cstring "flatMap")))
+  (call $scope_define (local.get $ap) (cstring "findLast") (call $mk_native (i32.const 33) (cstring "findLast")))
+  (call $scope_define (local.get $ap) (cstring "findLastIndex") (call $mk_native (i32.const 34) (cstring "findLastIndex")))
   (call $scope_define (local.get $ap) (cstring "concat") (call $mk_native (i32.const 70) (cstring "concat")))
   (call $scope_define (local.get $ap) (cstring "reverse") (call $mk_native (i32.const 71) (cstring "reverse")))
   (call $scope_define (local.get $ap) (cstring "filter") (call $mk_native (i32.const 72) (cstring "filter")))
@@ -2861,6 +2953,7 @@
   (let $objf i64 (call $def_native (local.get $g) (cstring "Object") (i32.const 9)))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "keys")) (call $mk_native (i32.const 10) (cstring "keys")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getOwnPropertyNames")) (call $mk_native (i32.const 112) (cstring "getOwnPropertyNames")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "fromEntries")) (call $mk_native (i32.const 115) (cstring "fromEntries")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "assign")) (call $mk_native (i32.const 80) (cstring "assign")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "create")) (call $mk_native (i32.const 81) (cstring "create")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getPrototypeOf")) (call $mk_native (i32.const 82) (cstring "getPrototypeOf")))

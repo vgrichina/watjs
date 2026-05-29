@@ -67,6 +67,18 @@
     (set! $j (i32.add (local.get $j) (i32.const 1)))
     (br $l)))
   (if (i32.gt_s (local.get $n) (i32.const 0)) (then (i32.store (local.get $a) (i32.sub (local.get $n) (i32.const 1))))))
+;; append elements of $src to $dest, recursing into nested arrays while depth>0
+(func $arr_flatten (param $src i32) (param $dest i32) (param $depth i32) (effects)
+  (let $i i32 (i32.const 0))
+  (let $n i32 (call $arr_len (local.get $src)))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $el i64 (call $arr_get (local.get $src) (local.get $i)))
+    (if (i32.and (i32.gt_s (local.get $depth) (i32.const 0)) (call $is_array (local.get $el)))
+      (then (call $arr_flatten (call $val_payload (local.get $el)) (local.get $dest) (i32.sub (local.get $depth) (i32.const 1))))
+      (else (call $arr_push (local.get $dest) (local.get $el))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l))))
 
 ;; one-character string from byte index of a string object
 (func $str_char_at (param $s i32) (param $i i32) (result i64) (effects)
