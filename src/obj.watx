@@ -254,6 +254,9 @@
               (if (call $is_function (local.get $get)) (then (return (call $call_fn0 (local.get $get) (local.get $cont)))))
               (return (call $v_undef))))
           (return (i64.load (local.get $slot)))))
+      ;; Object.prototype fallback methods (objects have no real proto object yet)
+      (if (call $str_eq (call $to_str (local.get $key)) (cstring "hasOwnProperty"))
+        (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
       (return (call $v_undef))))
   (if (call $is_function (local.get $cont))
     (then
