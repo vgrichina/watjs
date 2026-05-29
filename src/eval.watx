@@ -1259,9 +1259,11 @@
   (if (i32.eqz (call $is_function (local.get $fnval))) (then (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $fnval)))
   (let $argv i32 (call $heap_alloc (i32.const 8)))
-  (if i64 (i32.load (local.get $fn))
+  (if i64 (i32.eq (i32.load (local.get $fn)) (i32.const 1448232526))  ;; VM-fn → run on the VM
+    (then (call $vm_call_fn (local.get $fn) (i32.const 0) (local.get $argv) (local.get $thisv)))
+  (else (if i64 (i32.load (local.get $fn))
     (then (call $call_native (i32.load (local.get $fn)) (i32.const 0) (local.get $argv) (local.get $thisv)))
-    (else (call $call_user (local.get $fn) (i32.const 0) (local.get $argv) (local.get $thisv)))))
+    (else (call $call_user (local.get $fn) (i32.const 0) (local.get $argv) (local.get $thisv)))))))
 
 ;; eval(string): re-enter the parser on the string, return the completion value.
 (func $eval_string (param $s i32) (result i64) (effects)
