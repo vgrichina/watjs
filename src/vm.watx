@@ -651,7 +651,7 @@
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; default RET undefined
   (call $vm_patch (local.get $code) (local.get $pj))
-  (let $fn i32 (call $heap_alloc (i32.add (i32.const 24) (i32.mul (local.get $np) (i32.const 4)))))  ;; @16 proto (i64), @24 params
+  (let $fn i32 (call $heap_alloc (i32.add (i32.const 28) (i32.mul (local.get $np) (i32.const 4)))))  ;; @16 proto (i64), @24 closureScope, @28 params
   (let $isasync i32 (i32.load (i32.const 232)))
   (let $isgen i32 (i32.load (i32.const 236)))
   (i32.store (i32.const 232) (i32.const 0)) (i32.store (i32.const 236) (i32.const 0))
@@ -661,14 +661,15 @@
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
   (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))  ;; prototype (set by class compilation)
+  (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))    ;; closureScope (filled at runtime by CLOSURE)
   (let $ci i32 (i32.const 0))
   (block $ce (loop $cl
     (br_if $ce (i32.ge_s (local.get $ci) (local.get $np)))
-    (i32.store (i32.add (i32.add (local.get $fn) (i32.const 24)) (i32.mul (local.get $ci) (i32.const 4)))
+    (i32.store (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $ci) (i32.const 4)))
                (i32.load (i32.add (local.get $params) (i32.mul (local.get $ci) (i32.const 4)))))
     (set! $ci (i32.add (local.get $ci) (i32.const 1)))
     (br $cl)))
-  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_fn (local.get $fn))))  ;; PUSH fn
+  (call $vm_emit_op (local.get $code) (i32.const 61)) (call $vm_emit_op (local.get $code) (local.get $fn)))  ;; CLOSURE (capture defining scope)
 
 ;; emit a PUSH of an empty (no-op) VM function — used for a class with no constructor
 (func $vm_emit_empty_fn (param $code i32) (effects)
@@ -677,12 +678,13 @@
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET undefined
   (call $vm_patch (local.get $code) (local.get $pj))
-  (let $fn i32 (call $heap_alloc (i32.const 24)))
+  (let $fn i32 (call $heap_alloc (i32.const 28)))
   (i32.store (local.get $fn) (i32.const 1448232526))
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
   (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))
+  (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))    ;; closureScope (0 → gscope fallback)
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_fn (local.get $fn))))
 
 ;; function declaration/expression: cursor at 'function'. Returns name ptr (0 if anonymous).
@@ -710,20 +712,21 @@
       (call $vm_c_expr (local.get $code))
       (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET value
   (call $vm_patch (local.get $code) (local.get $pj))
-  (let $fn i32 (call $heap_alloc (i32.add (i32.const 24) (i32.mul (local.get $np) (i32.const 4)))))
+  (let $fn i32 (call $heap_alloc (i32.add (i32.const 28) (i32.mul (local.get $np) (i32.const 4)))))
   (i32.store (local.get $fn) (i32.const 1448232526))  ;; NORMAL fn
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
   (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))
+  (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))    ;; closureScope (filled at runtime by CLOSURE)
   (let $ci i32 (i32.const 0))
   (block $ce (loop $cl
     (br_if $ce (i32.ge_s (local.get $ci) (local.get $np)))
-    (i32.store (i32.add (i32.add (local.get $fn) (i32.const 24)) (i32.mul (local.get $ci) (i32.const 4)))
+    (i32.store (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $ci) (i32.const 4)))
                (i32.load (i32.add (local.get $params) (i32.mul (local.get $ci) (i32.const 4)))))
     (set! $ci (i32.add (local.get $ci) (i32.const 1)))
     (br $cl)))
-  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_fn (local.get $fn))))  ;; PUSH fn
+  (call $vm_emit_op (local.get $code) (i32.const 61)) (call $vm_emit_op (local.get $code) (local.get $fn)))  ;; CLOSURE (capture defining scope)
 
 ;; statement compiler — emits bytecode (control flow via jumps, not re-scanning)
 (func $vm_c_stmt (param $code i32) (effects)
@@ -1267,6 +1270,13 @@
 
 (func $vm_done (param $ctx i32) (result i32) (effects) (i32.load (i32.add (local.get $ctx) (i32.const 16))))
 
+;; A called function's enclosing scope is its captured closureScope (@24), or
+;; the provided fallback (global scope) for statically-built fns (class methods,
+;; empty constructors) that never ran a CLOSURE op.
+(func $vm_fn_parent (param $fn i32) (param $fallback i32) (result i32) (effects)
+  (let $cs i32 (i32.load (i32.add (local.get $fn) (i32.const 24))))
+  (if i32 (local.get $cs) (then (local.get $cs)) (else (local.get $fallback))))
+
 ;; run from the context's saved (ip, sp) until the next YIELD or HALT.
 ;; YIELD → returns the yielded value, state saved for the next call (done=0).
 ;; HALT  → sets done=1, returns the final top-of-stack value (or undefined).
@@ -1407,12 +1417,12 @@
         ;; TAILCALL reuses the current frame's scope → O(1)-space tail recursion
         (let $cns i32 (if i32 (i32.eq (local.get $op) (i32.const 21))
                         (then (local.get $scope))
-                        (else (call $scope_new (local.get $gscope) (i32.add (local.get $cnp) (i32.const 4))))))
+                        (else (call $scope_new (call $vm_fn_parent (local.get $cfn) (local.get $gscope)) (i32.add (local.get $cnp) (i32.const 4))))))
         (if (i32.eq (local.get $op) (i32.const 21)) (then (i32.store (i32.add (local.get $cns) (i32.const 4)) (i32.const 0))))
         (let $pi i32 (i32.const 0))
         (block $pe (loop $pl
           (br_if $pe (i32.ge_s (local.get $pi) (local.get $cnp)))
-          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 24)) (i32.mul (local.get $pi) (i32.const 4))))
+          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 28)) (i32.mul (local.get $pi) (i32.const 4))))
             (if i64 (i32.lt_s (local.get $pi) (local.get $argc))
               (then (i64.load (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.mul (i32.add (local.get $pi) (i32.const 1)) (i32.const 8))))))
               (else (call $v_undef))))
@@ -1468,11 +1478,11 @@
         (let $cproto i64 (i64.load (i32.add (local.get $cfn) (i32.const 16))))
         (if (call $is_object (local.get $cproto)) (then (i32.store (local.get $newo) (call $val_payload (local.get $cproto)))))
         (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 8))))
-        (let $cns i32 (call $scope_new (local.get $gscope) (i32.add (local.get $cnp) (i32.const 4))))
+        (let $cns i32 (call $scope_new (call $vm_fn_parent (local.get $cfn) (local.get $gscope)) (i32.add (local.get $cnp) (i32.const 4))))
         (let $pi i32 (i32.const 0))
         (block $pe (loop $pl
           (br_if $pe (i32.ge_s (local.get $pi) (local.get $cnp)))
-          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 24)) (i32.mul (local.get $pi) (i32.const 4))))
+          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 28)) (i32.mul (local.get $pi) (i32.const 4))))
             (if i64 (i32.lt_s (local.get $pi) (local.get $argc))
               (then (i64.load (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.mul (i32.add (local.get $pi) (i32.const 1)) (i32.const 8))))))
               (else (call $v_undef))))
@@ -1527,6 +1537,22 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $mk_bool (i32.eqz (call $truthy (i64.load (i32.add (local.get $stack) (local.get $t)))))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 61))  ;; CLOSURE — operand: template fn ptr → push a fn capturing the current scope
+      (then
+        (let $tmpl i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $tsz i32 (i32.add (i32.const 28) (i32.mul (i32.load (i32.add (local.get $tmpl) (i32.const 8))) (i32.const 4))))  ;; 28 + np*4
+        (let $nf i32 (call $heap_alloc (local.get $tsz)))
+        (let $bi i32 (i32.const 0))
+        (block $cpe (loop $cpl
+          (br_if $cpe (i32.ge_s (local.get $bi) (local.get $tsz)))
+          (i32.store (i32.add (local.get $nf) (local.get $bi)) (i32.load (i32.add (local.get $tmpl) (local.get $bi))))
+          (set! $bi (i32.add (local.get $bi) (i32.const 4)))
+          (br $cpl)))
+        (i32.store (i32.add (local.get $nf) (i32.const 24)) (local.get $scope))  ;; capture defining scope
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $mk_fn (local.get $nf)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 58))  ;; TYPEOF (unary, in place)
       (then
@@ -1797,11 +1823,11 @@
 ;; `next` method. Calling gen() does NOT run the body; each gen.next() resumes.
 (func $vm_make_generator (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (result i64) (effects)
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
-  (let $ns i32 (call $scope_new (local.get $gscope) (i32.add (local.get $np) (i32.const 4))))
+  (let $ns i32 (call $scope_new (call $vm_fn_parent (local.get $fn) (local.get $gscope)) (i32.add (local.get $np) (i32.const 4))))
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
-    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 24)) (i32.mul (local.get $i) (i32.const 4))))
+    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $i) (i32.const 4))))
       (if i64 (i32.lt_s (local.get $i) (local.get $argc))
         (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
         (else (call $v_undef))))
@@ -1843,11 +1869,11 @@
 ;; built-ins to take VM functions as callbacks.
 (func $vm_call_fn (param $fn i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
-  (let $ns i32 (call $scope_new (i32.load (i32.const 204)) (i32.add (local.get $np) (i32.const 4))))
+  (let $ns i32 (call $scope_new (call $vm_fn_parent (local.get $fn) (i32.load (i32.const 204))) (i32.add (local.get $np) (i32.const 4))))
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
-    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 24)) (i32.mul (local.get $i) (i32.const 4))))
+    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $i) (i32.const 4))))
       (if i64 (i32.lt_s (local.get $i) (local.get $argc))
         (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
         (else (call $v_undef))))
@@ -1897,11 +1923,11 @@
 ;; value, and return a promise of the body's return value.
 (func $vm_make_async (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (result i64) (effects)
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
-  (let $ns i32 (call $scope_new (local.get $gscope) (i32.add (local.get $np) (i32.const 4))))
+  (let $ns i32 (call $scope_new (call $vm_fn_parent (local.get $fn) (local.get $gscope)) (i32.add (local.get $np) (i32.const 4))))
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
-    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 24)) (i32.mul (local.get $i) (i32.const 4))))
+    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $i) (i32.const 4))))
       (if i64 (i32.lt_s (local.get $i) (local.get $argc))
         (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
         (else (call $v_undef))))
