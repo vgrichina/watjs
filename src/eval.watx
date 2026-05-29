@@ -1519,6 +1519,61 @@
     (i32.store (i32.const 136) (i32.const 0))  ;; clear continue
     (br $cont))))
 
+;; decide for(;;) vs for-in / for-of by peeking after the loop variable
+(func $parse_for_dispatch (effects)
+  (let $fc i32 (call $cursor_save))  ;; at 'for'
+  (call $advance)  ;; 'for'
+  (drop (call $eat (i32.const 15)))  ;; '('
+  (if (i32.eq (call $cur) (i32.const 3))
+    (then (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (call $advance)))))
+  (let $inof i32 (i32.const 0))
+  (if (i32.eq (call $cur) (i32.const 3))
+    (then (call $advance) (if (i32.or (call $tok_is_kw (cstring "in")) (call $tok_is_kw (cstring "of"))) (then (set! $inof (i32.const 1))))))
+  (call $cursor_restore (local.get $fc))
+  (if (local.get $inof) (then (call $parse_for_inof)) (else (call $parse_for))))
+
+;; for (var x in obj) / for (var x of arr|str)
+(func $parse_for_inof (effects)
+  (call $advance)  ;; 'for'
+  (call $expect (i32.const 15) (cstring "expected ("))
+  (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (call $advance)))
+  (let $vn i32 (call $ident_name))
+  (call $advance)
+  (let $isOf i32 (call $tok_is_kw (cstring "of")))
+  (call $advance)  ;; in / of
+  (let $coll i64 (call $parse_assign))
+  (call $expect (i32.const 16) (cstring "expected )"))
+  (let $bodycur i32 (call $cursor_save))
+  ;; determine count and source kind
+  (let $count i32 (i32.const 0))
+  (let $payload i32 (i32.const 0))
+  (if (call $is_array (local.get $coll)) (then (set! $payload (call $val_payload (local.get $coll))) (set! $count (call $arr_len (local.get $payload)))))
+  (if (call $is_string (local.get $coll)) (then (set! $payload (call $val_payload (local.get $coll))) (set! $count (call $str_len (local.get $payload)))))
+  (if (call $is_object (local.get $coll)) (then (set! $payload (call $val_payload (local.get $coll))) (set! $count (call $scope_count (local.get $payload)))))
+  (let $i i32 (i32.const 0))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ge_s (local.get $i) (local.get $count)))
+    (br_if $brk (call $suppress))
+    ;; compute the loop value/key
+    (let $item i64 (call $v_undef))
+    (if (local.get $isOf)
+      (then  ;; values
+        (if (call $is_array (local.get $coll)) (then (set! $item (call $arr_get (local.get $payload) (local.get $i)))))
+        (if (call $is_string (local.get $coll)) (then (set! $item (call $str_char_at (local.get $payload) (local.get $i))))))
+      (else  ;; keys (strings)
+        (if (call $is_object (local.get $coll)) (then (set! $item (call $mk_str (i32.load (call $scope_entry (local.get $payload) (local.get $i)))))))
+        (if (i32.or (call $is_array (local.get $coll)) (call $is_string (local.get $coll))) (then (set! $item (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $i)))))))))
+    (call $var_set (local.get $vn) (local.get $item))
+    (call $cursor_restore (local.get $bodycur))
+    (call $parse_statement)
+    (if (call $brkflag) (then (call $clear_loopflags) (br $brk)))
+    (i32.store (i32.const 136) (i32.const 0))  ;; clear continue
+    (br_if $brk (i32.or (call $err) (call $retflag)))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cont)))
+  ;; position cursor past the body
+  (call $skip_body (local.get $bodycur)))
+
 (func $parse_for (effects)
   (call $advance)  ;; 'for'
   (call $expect (i32.const 15) (cstring "expected ("))
@@ -1731,7 +1786,7 @@
       (if (call $tok_is_kw (cstring "if"))       (then (call $parse_if) (return)))
       (if (call $tok_is_kw (cstring "while"))    (then (call $parse_while) (return)))
       (if (call $tok_is_kw (cstring "do"))       (then (call $parse_do) (return)))
-      (if (call $tok_is_kw (cstring "for"))      (then (call $parse_for) (return)))
+      (if (call $tok_is_kw (cstring "for"))      (then (call $parse_for_dispatch) (return)))
       (if (call $tok_is_kw (cstring "function")) (then (drop (call $parse_function (i32.const 1))) (return)))
       (if (call $tok_is_kw (cstring "return"))   (then (call $parse_return) (return)))
       (if (call $tok_is_kw (cstring "throw"))    (then (call $parse_throw) (return)))

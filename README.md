@@ -78,6 +78,7 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
   toLowerCase/split/trim/repeat/toString/valueOf/constructor
 - `Array.prototype` (growable): push/pop/indexOf/join/slice/forEach/map/filter/
   reduce/concat/reverse/includes
+- `JSON.stringify`/`JSON.parse`; `**` exponentiation
 - ToPrimitive (`valueOf`/`toString`); comma operator
 
 ## Testing
