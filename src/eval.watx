@@ -520,6 +520,7 @@
       (let $itobj i32 (call $obj_new (i32.const 8)))
       (call $scope_define (local.get $itobj) (cstring "@@arr") (local.get $thisv))
       (call $scope_define (local.get $itobj) (cstring "@@i") (call $num (f64.const 0)))
+      (call $scope_define (local.get $itobj) (cstring "@@len") (call $num (f64.convert_i32_s (call $arr_len (call $val_payload (local.get $thisv))))))  ;; snapshot length
       (call $scope_define (local.get $itobj) (cstring "@@kind")
         (call $num (f64.convert_i32_s (if i32 (i32.eq (local.get $id) (i32.const 95)) (then (i32.const 2))
           (else (if i32 (i32.eq (local.get $id) (i32.const 96)) (then (i32.const 0)) (else (i32.const 1))))))))
@@ -532,7 +533,8 @@
       (let $itix i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
       (let $itkind i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@kind"))))))
       (let $itres i32 (call $obj_new (i32.const 2)))
-      (if (i32.ge_s (local.get $itix) (call $arr_len (local.get $itarr)))
+      (let $itlen i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@len"))))))  ;; snapshotted at creation
+      (if (i32.ge_s (local.get $itix) (local.get $itlen))
         (then
           (call $scope_define (local.get $itres) (cstring "value") (call $v_undef))
           (call $scope_define (local.get $itres) (cstring "done") (call $v_true)))
