@@ -1335,16 +1335,20 @@
         (call $advance)
         (let $key i64 (call $mk_str (call $ident_name)))
         (call $advance)
-        (i32.store (i32.const 104) (i32.const 1)) (i64.store (i32.const 112) (local.get $v)) (i64.store (i32.const 120) (local.get $key))
+        ;; get_prop may invoke a getter, whose body parse clears REF — so capture
+        ;; the container/key into the REF regs AFTER the read, not before.
+        (let $cont i64 (local.get $v))
         (set! $v (call $get_prop (local.get $v) (local.get $key)))
+        (i32.store (i32.const 104) (i32.const 1)) (i64.store (i32.const 112) (local.get $cont)) (i64.store (i32.const 120) (local.get $key))
         (br $c)))
     (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
       (then
         (call $advance)
         (let $key i64 (call $parse_assign))
         (call $expect (i32.const 20) (cstring "expected ]"))
-        (i32.store (i32.const 104) (i32.const 1)) (i64.store (i32.const 112) (local.get $v)) (i64.store (i32.const 120) (local.get $key))
+        (let $cont i64 (local.get $v))
         (set! $v (call $get_prop (local.get $v) (local.get $key)))
+        (i32.store (i32.const 104) (i32.const 1)) (i64.store (i32.const 112) (local.get $cont)) (i64.store (i32.const 120) (local.get $key))
         (br $c)))
     (br $e)))
   (local.get $v))
