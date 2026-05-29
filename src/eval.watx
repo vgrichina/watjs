@@ -795,16 +795,56 @@
   (let $savedLen i32 (call $src_len))     ;; buffer (prelude / eval) than the current one
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
   (let $ns i32 (call $scope_new (i32.load (i32.add (local.get $fn) (i32.const 4))) (i32.add (local.get $np) (i32.const 8))))
-  (let $i i32 (i32.const 0))
-  (block $be (loop $bc
-    (br_if $be (i32.ge_s (local.get $i) (local.get $np)))
-    (let $pname i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 48)) (i32.mul (local.get $i) (i32.const 4)))))
-    (let $av i64 (if i64 (i32.lt_s (local.get $i) (local.get $argc))
-                    (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
-                    (else (call $v_undef))))
-    (call $scope_define (local.get $ns) (local.get $pname) (local.get $av))
-    (set! $i (i32.add (local.get $i) (i32.const 1)))
-    (br $bc)))
+  (if (i32.eq (i32.load (i32.add (local.get $fn) (i32.const 48))) (i32.const 1))
+    (then
+      ;; paramKind 1: re-scan the parameter list, evaluating defaults in $ns and
+      ;; collecting ...rest. set scope/source first so defaults resolve correctly.
+      (call $set_cur_scope (local.get $ns))
+      (call $set_src (i32.load (i32.add (local.get $fn) (i32.const 40))) (i32.load (i32.add (local.get $fn) (i32.const 44))))
+      (call $cursor_restore (i32.add (local.get $fn) (i32.const 52)))
+      (let $pi i32 (i32.const 0))
+      (block $be (loop $bc
+        (br_if $be (i32.eq (call $cur) (i32.const 16)))  ;; ')'
+        (br_if $be (i32.eq (call $cur) (i32.const 0)))
+        (if (i32.eq (call $cur) (i32.const 54))  ;; ...rest (must be last)
+          (then
+            (call $advance)
+            (let $rn i32 (call $ident_name)) (call $advance)
+            (let $ra i32 (call $arr_new (i32.const 4)))
+            (let $rj i32 (local.get $pi))
+            (block $re (loop $rl
+              (br_if $re (i32.ge_s (local.get $rj) (local.get $argc)))
+              (call $arr_push (local.get $ra) (i64.load (i32.add (local.get $argv) (i32.mul (local.get $rj) (i32.const 8)))))
+              (set! $rj (i32.add (local.get $rj) (i32.const 1)))
+              (br $rl)))
+            (call $scope_define (local.get $ns) (local.get $rn) (call $mk_arr (local.get $ra)))
+            (br $be)))
+        (let $pn i32 (call $ident_name)) (call $advance)
+        (let $pv i64 (if i64 (i32.lt_s (local.get $pi) (local.get $argc))
+                        (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $pi) (i32.const 8)))))
+                        (else (call $v_undef))))
+        (if (i32.eq (call $cur) (i32.const 24))  ;; = default
+          (then
+            (call $advance)
+            (if (call $is_undefined (local.get $pv))
+              (then (set! $pv (call $parse_assign)))                                   ;; missing → evaluate default
+              (else (call $sup_inc) (drop (call $parse_assign)) (call $sup_dec)))))     ;; provided → skip default
+        (call $scope_define (local.get $ns) (local.get $pn) (local.get $pv))
+        (set! $pi (i32.add (local.get $pi) (i32.const 1)))
+        (br_if $be (i32.eqz (call $eat (i32.const 22))))
+        (br $bc))))
+    (else
+      ;; paramKind 0: simple positional names (arrows)
+      (let $i i32 (i32.const 0))
+      (block $be2 (loop $bc2
+        (br_if $be2 (i32.ge_s (local.get $i) (local.get $np)))
+        (let $pname i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 52)) (i32.mul (local.get $i) (i32.const 4)))))
+        (let $av i64 (if i64 (i32.lt_s (local.get $i) (local.get $argc))
+                        (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
+                        (else (call $v_undef))))
+        (call $scope_define (local.get $ns) (local.get $pname) (local.get $av))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $bc2)))))
   ;; bind `arguments` (array of all passed args)
   (let $argsArr i32 (call $arr_new (i32.add (local.get $argc) (i32.const 1))))
   (let $ai i32 (i32.const 0))
@@ -923,33 +963,36 @@
 
 ;; parse a function literal/declaration. as_decl=1 binds the name in scope.
 ;; parse a function from the '(' params ')' '{' body '}' (cursor at '('); returns fn value
+;; Fn struct: @0 nativeId, @4 closureScope, @8 nparam, @12 props, @16 bodyCursor(24),
+;; @40 srcPtr, @44 srcLen, @48 paramKind (1 = cursor at @52, supports default/rest;
+;; 0 = name array at @52, arrows), @52 params (cursor 24B or i32 names[]).
 (func $parse_fn_body (result i64) (effects)
   (call $expect (i32.const 15) (cstring "expected ("))
-  (let $params i32 (call $heap_alloc (i32.const 64)))
+  (let $pcur i32 (call $cursor_save))  ;; cursor at first param token (or ')')
+  ;; scan params to count them and reach ')'; skip ...rest and = default exprs
   (let $np i32 (i32.const 0))
   (block $pe (loop $pc
-    (br_if $pe (i32.ne (call $cur) (i32.const 3)))
-    (i32.store (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4))) (call $ident_name))
-    (set! $np (i32.add (local.get $np) (i32.const 1)))
-    (call $advance)
+    (br_if $pe (i32.eq (call $cur) (i32.const 16)))  ;; ')'
+    (br_if $pe (i32.eq (call $cur) (i32.const 0)))
+    (if (i32.eq (call $cur) (i32.const 54)) (then (call $advance)))  ;; ...rest
+    (if (i32.eq (call $cur) (i32.const 3)) (then (call $advance) (set! $np (i32.add (local.get $np) (i32.const 1)))))
+    (if (i32.eq (call $cur) (i32.const 24))  ;; = default value
+      (then (call $advance) (call $sup_inc) (drop (call $parse_assign)) (call $sup_dec)))
     (br_if $pe (i32.eqz (call $eat (i32.const 22))))
     (br $pc)))
   (call $expect (i32.const 16) (cstring "expected )"))
-  (let $fn i32 (call $heap_alloc (i32.add (i32.const 48) (i32.mul (local.get $np) (i32.const 4)))))
+  (let $fn i32 (call $heap_alloc (i32.const 76)))
   (i32.store (local.get $fn) (i32.const 0))                                   ;; native=0
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (call $cur_scope))       ;; closure scope
-  (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))         ;; param count
+  (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))         ;; param count (hint)
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))          ;; props (lazy)
   (call $cursor_store (i32.add (local.get $fn) (i32.const 16)))               ;; body cursor at '{'
   (i32.store (i32.add (local.get $fn) (i32.const 40)) (call $src))            ;; source buffer ptr
   (i32.store (i32.add (local.get $fn) (i32.const 44)) (call $src_len))        ;; source length
-  (let $i i32 (i32.const 0))
-  (block $ce (loop $cc
-    (br_if $ce (i32.ge_s (local.get $i) (local.get $np)))
-    (i32.store (i32.add (i32.add (local.get $fn) (i32.const 48)) (i32.mul (local.get $i) (i32.const 4)))
-               (i32.load (i32.add (local.get $params) (i32.mul (local.get $i) (i32.const 4)))))
-    (set! $i (i32.add (local.get $i) (i32.const 1)))
-    (br $cc)))
+  (i32.store (i32.add (local.get $fn) (i32.const 48)) (i32.const 1))          ;; paramKind = cursor
+  (i64.store (i32.add (local.get $fn) (i32.const 52)) (i64.load (local.get $pcur)))
+  (i64.store (i32.add (local.get $fn) (i32.const 60)) (i64.load (i32.add (local.get $pcur) (i32.const 8))))
+  (i64.store (i32.add (local.get $fn) (i32.const 68)) (i64.load (i32.add (local.get $pcur) (i32.const 16))))
   (call $sup_inc) (call $parse_block) (call $sup_dec)  ;; skip the body
   (call $mk_fn (local.get $fn)))
 
@@ -1672,7 +1715,7 @@
 
 ;; build an arrow function: cursor is at the body (expr or '{'); params given
 (func $make_arrow (param $params i32) (param $np i32) (result i64) (effects)
-  (let $fn i32 (call $heap_alloc (i32.add (i32.const 48) (i32.mul (local.get $np) (i32.const 4)))))
+  (let $fn i32 (call $heap_alloc (i32.add (i32.const 52) (i32.mul (local.get $np) (i32.const 4)))))
   (i32.store (local.get $fn) (i32.const 0))
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (call $cur_scope))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))
@@ -1680,10 +1723,11 @@
   (call $cursor_store (i32.add (local.get $fn) (i32.const 16)))
   (i32.store (i32.add (local.get $fn) (i32.const 40)) (call $src))
   (i32.store (i32.add (local.get $fn) (i32.const 44)) (call $src_len))
+  (i32.store (i32.add (local.get $fn) (i32.const 48)) (i32.const 0))  ;; paramKind = names[]
   (let $i i32 (i32.const 0))
   (block $ce (loop $cc
     (br_if $ce (i32.ge_s (local.get $i) (local.get $np)))
-    (i32.store (i32.add (i32.add (local.get $fn) (i32.const 48)) (i32.mul (local.get $i) (i32.const 4)))
+    (i32.store (i32.add (i32.add (local.get $fn) (i32.const 52)) (i32.mul (local.get $i) (i32.const 4)))
                (i32.load (i32.add (local.get $params) (i32.mul (local.get $i) (i32.const 4)))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $cc)))
