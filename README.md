@@ -77,11 +77,15 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
   `Math` (abs/floor/ceil/round/sqrt/max/min/pow/trunc/sign + PI/E); error
   constructors via a JS prelude
 - `String.prototype`: charAt/charCodeAt/indexOf/slice/substring/toUpperCase/
-  toLowerCase/split/trim/repeat/includes/startsWith/endsWith/toString/valueOf/
-  constructor
+  toLowerCase/split/trim/repeat/includes/startsWith/endsWith/padStart/padEnd/at/
+  toString/valueOf/constructor
 - `Array.prototype` (growable): push/pop/indexOf/join/slice/forEach/map/filter/
-  reduce/concat/reverse/includes/find/findIndex/some/every/sort
+  reduce/concat/reverse/includes/find/findIndex/some/every/sort/at/fill
 - `Object.prototype.hasOwnProperty`; `Object.values`/`Object.entries`
+- `Number.isSafeInteger` + `MIN/MAX_SAFE_INTEGER`/`EPSILON`/`MAX_VALUE`/
+  `POSITIVE/NEGATIVE_INFINITY`; `Math.hypot`
+- default (`b = expr`) and rest (`...args`) parameters; object spread (`{ ...o }`)
+- destructuring (`let [a,b] = …`, `let {x,y} = …`)
 - iterator protocol: `for-of` over iterables (objects with `next()` /
   `Symbol.iterator`), `Array.prototype.entries`/`keys`/`values`, array elision
 - `++`/`--` (prefix & postfix) and `+= -= *= /=` on identifiers *and*
@@ -137,13 +141,13 @@ Implemented this round: the iterator protocol — `for-of` over any object with 
 `Array.prototype.entries/keys/values`, `Symbol.iterator` (as a sentinel key),
 and array elision (holes).
 
-Not implemented: default/rest params, **generators**/**async** (need
-continuation capture — a bytecode-VM rewrite), tail-call optimization, regex
-groups/alternation/backrefs/flags, labelled statements, BigInt, modules,
-`Proxy`/`Reflect`, TypedArrays, full Unicode (identifiers, property escapes),
-strict-mode semantics, spec-exact (shortest round-trip) number-to-string and
-denormals, regex literals (`/.../`), named-function-expression name binding,
-mapped-`arguments` aliasing.
+Not implemented: **generators**/**async** (need continuation capture — a
+bytecode-VM rewrite), tail-call optimization, regex groups/alternation/
+backrefs/flags, labelled statements, BigInt, modules, `Proxy`/`Reflect`,
+TypedArrays, full Unicode (identifiers, property escapes), strict-mode
+semantics, spec-exact (shortest round-trip) number-to-string and denormals,
+regex literals (`/.../`), named-function-expression name binding,
+mapped-`arguments` aliasing, transcendental `Math` (sin/cos/log/exp).
 
 **Generators and `async`/`await`** need continuation capture (suspend/resume a
 call mid-execution). The re-scan/parse-and-evaluate interpreter cannot suspend a
