@@ -2005,10 +2005,11 @@
         (if (i32.eq (local.get $op) (i32.const 43)) (then (set! $wr (call $num (call $f64_pow (call $tonum_raw (local.get $wa)) (call $tonum_raw (local.get $wb)))))))
         (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (local.get $wr))
         (br $disp)))
-    ;; binary arithmetic (- * / %): pop b, then a — ToNumber both (bool/string/obj coercion)
+    ;; binary arithmetic (- * / %): pop b, then a — ToNumber both (bool/string/obj
+    ;; coercion). Left operand is coerced FIRST (its valueOf must run before the right's).
     (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
-    (let $b f64 (call $to_num (i64.load (i32.add (local.get $stack) (local.get $sp)))))
     (let $a f64 (call $to_num (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
+    (let $b f64 (call $to_num (i64.load (i32.add (local.get $stack) (local.get $sp)))))
     (let $r f64 (f64.const 0))
     (if (i32.eq (local.get $op) (i32.const 3)) (then (set! $r (f64.sub (local.get $a) (local.get $b)))))
     (if (i32.eq (local.get $op) (i32.const 4)) (then (set! $r (f64.mul (local.get $a) (local.get $b)))))
