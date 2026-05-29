@@ -357,7 +357,12 @@
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
         (let $centry i32 (i32.load (local.get $cfn)))
         (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 4))))
-        (let $cns i32 (call $scope_new (local.get $gscope) (i32.add (local.get $cnp) (i32.const 4))))
+        ;; TAILCALL reuses the current frame's scope (args are already evaluated on
+        ;; the operand stack), so tail recursion allocates nothing per call → O(1) space.
+        (let $cns i32 (if i32 (i32.eq (local.get $op) (i32.const 21))
+                        (then (local.get $scope))
+                        (else (call $scope_new (local.get $gscope) (i32.add (local.get $cnp) (i32.const 4))))))
+        (if (i32.eq (local.get $op) (i32.const 21)) (then (i32.store (i32.add (local.get $cns) (i32.const 4)) (i32.const 0))))  ;; clear before rebind
         (let $pi i32 (i32.const 0))
         (block $pe (loop $pl
           (br_if $pe (i32.ge_s (local.get $pi) (local.get $cnp)))
