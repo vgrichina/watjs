@@ -1526,9 +1526,13 @@
             (set! $sp (i32.add (local.get $sp) (i32.const 8)))
             (br $disp)))
         (let $newo i32 (call $obj_new (i32.const 8)))
-        ;; link the instance's prototype chain to the constructor's prototype (class methods)
+        ;; link the instance's prototype chain to the constructor's prototype.
+        ;; Lazily create .prototype if absent (plain constructor functions), so
+        ;; `this instanceof F` holds inside the body and methods added later resolve.
         (let $cproto i64 (i64.load (i32.add (local.get $cfn) (i32.const 16))))
-        (if (call $is_object (local.get $cproto)) (then (i32.store (local.get $newo) (call $val_payload (local.get $cproto)))))
+        (if (i32.eqz (call $is_object (local.get $cproto)))
+          (then (set! $cproto (call $mk_obj (call $obj_new (i32.const 8)))) (i64.store (i32.add (local.get $cfn) (i32.const 16)) (local.get $cproto))))
+        (i32.store (local.get $newo) (call $val_payload (local.get $cproto)))
         (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 8))))
         (let $cns i32 (call $scope_new (call $vm_fn_parent (local.get $cfn) (local.get $gscope)) (i32.add (local.get $cnp) (i32.const 4))))
         (let $pi i32 (i32.const 0))

@@ -290,7 +290,11 @@
       (if (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
         (then
           (let $vproto i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
-          (if (call $str_eq (local.get $ks) (cstring "prototype")) (then (return (local.get $vproto))))
+          (if (call $str_eq (local.get $ks) (cstring "prototype"))
+            (then
+              (if (i32.eqz (call $is_object (local.get $vproto)))  ;; lazily create .prototype (constructor functions)
+                (then (set! $vproto (call $mk_obj (call $obj_new (i32.const 8)))) (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vproto))))
+              (return (local.get $vproto))))
           (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
           (if (call $is_object (local.get $vproto))
             (then
