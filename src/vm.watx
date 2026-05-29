@@ -71,7 +71,7 @@
   (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ( expr )
     (then
       (call $next_token)
-      (call $vm_c_cmp (local.get $code))
+      (call $vm_c_expr (local.get $code))
       (call $next_token)                                       ;; consume ')'
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 3))  ;; identifier / true / false
@@ -90,7 +90,7 @@
         (let $argc i32 (i32.const 0))
         (if (i32.ne (call $tok_kind) (i32.const 16))  ;; non-empty arg list
           (then (block $ae (loop $al
-            (call $vm_c_cmp (local.get $code))
+            (call $vm_c_expr (local.get $code))
             (set! $argc (i32.add (local.get $argc) (i32.const 1)))
             (br_if $ae (i32.eqz (call $eat (i32.const 22))))  ;; ','
             (br $al)))))
@@ -143,6 +143,60 @@
       (else (if i32 (i32.eq (local.get $k) (i32.const 28)) (then (i32.const 24))
       (else (if i32 (i32.eq (local.get $k) (i32.const 25)) (then (i32.const 25)) (else (i32.const 26))))))))))))))))
     (br $l))))
+
+;; logical AND (&&, kind 34): short-circuit via JMPF_PEEK (keep falsy operand)
+(func $vm_c_and (param $code i32) (effects)
+  (call $vm_c_cmp (local.get $code))
+  (let $patches i32 (call $heap_alloc (i32.const 256)))
+  (let $np i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ne (call $tok_kind) (i32.const 34)))
+    (call $next_token)
+    (i32.store (i32.add (local.get $patches) (i32.mul (local.get $np) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 27)))  ;; JMPF_PEEK
+    (set! $np (i32.add (local.get $np) (i32.const 1)))
+    (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP (discard truthy left)
+    (call $vm_c_cmp (local.get $code))
+    (br $l)))
+  (let $i i32 (i32.const 0))
+  (block $pe (loop $pl
+    (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
+    (call $vm_patch (local.get $code) (i32.load (i32.add (local.get $patches) (i32.mul (local.get $i) (i32.const 4)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $pl))))
+
+;; logical OR (||, kind 35): short-circuit via JMPT_PEEK (keep truthy operand)
+(func $vm_c_or (param $code i32) (effects)
+  (call $vm_c_and (local.get $code))
+  (let $patches i32 (call $heap_alloc (i32.const 256)))
+  (let $np i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ne (call $tok_kind) (i32.const 35)))
+    (call $next_token)
+    (i32.store (i32.add (local.get $patches) (i32.mul (local.get $np) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 28)))  ;; JMPT_PEEK
+    (set! $np (i32.add (local.get $np) (i32.const 1)))
+    (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP (discard falsy left)
+    (call $vm_c_and (local.get $code))
+    (br $l)))
+  (let $i i32 (i32.const 0))
+  (block $pe (loop $pl
+    (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
+    (call $vm_patch (local.get $code) (i32.load (i32.add (local.get $patches) (i32.mul (local.get $i) (i32.const 4)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $pl))))
+
+;; conditional  c ? t : e  (lowest precedence, right-assoc)
+(func $vm_c_expr (param $code i32) (effects)
+  (call $vm_c_or (local.get $code))
+  (if (i32.eq (call $tok_kind) (i32.const 36))  ;; '?'
+    (then
+      (call $next_token)
+      (let $p1 i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → else
+      (call $vm_c_expr (local.get $code))                                   ;; then branch
+      (let $p2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
+      (call $vm_patch (local.get $code) (local.get $p1))
+      (call $next_token)  ;; ':'
+      (call $vm_c_expr (local.get $code))                                   ;; else branch
+      (call $vm_patch (local.get $code) (local.get $p2)))))
 
 ;; statement compiler — emits bytecode (control flow via jumps, not re-scanning)
 (func $vm_c_stmt (param $code i32) (effects)
@@ -205,7 +259,7 @@
               (call $vm_emit_op (local.get $code) (i32.const 20))
               (drop (call $eat (i32.const 21)))
               (return)))
-          (call $vm_c_cmp (local.get $code))
+          (call $vm_c_expr (local.get $code))
           (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 19))  ;; ends in CALL?
             (then (i32.store (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8))) (i32.const 21)))  ;; → TAILCALL
             (else (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET
@@ -217,7 +271,7 @@
           (call $next_token)
           (let $nm i32 (call $ident_name)) (call $next_token)
           (call $next_token)  ;; '='
-          (call $vm_c_cmp (local.get $code))
+          (call $vm_c_expr (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nm))  ;; STOREVAR
           (drop (call $eat (i32.const 21)))
           (return)))
@@ -226,7 +280,7 @@
           (call $next_token)
           (let $paren i32 (i32.eq (call $tok_kind) (i32.const 15)))
           (if (local.get $paren) (then (call $next_token)))
-          (call $vm_c_cmp (local.get $code))
+          (call $vm_c_expr (local.get $code))
           (if (local.get $paren) (then (call $next_token)))  ;; ')'
           (call $vm_emit_op (local.get $code) (i32.const 10))  ;; PRINT
           (drop (call $eat (i32.const 21)))
@@ -234,7 +288,7 @@
       (if (call $tok_is_kw (cstring "if"))
         (then
           (call $next_token) (call $next_token)  ;; 'if' '('
-          (call $vm_c_cmp (local.get $code))
+          (call $vm_c_expr (local.get $code))
           (call $next_token)  ;; ')'
           (let $p1 i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → else/end
           (call $vm_c_stmt (local.get $code))
@@ -251,7 +305,7 @@
         (then
           (call $next_token) (call $next_token)  ;; 'while' '('
           (let $top i32 (call $vm_emit_cursor))
-          (call $vm_c_cmp (local.get $code))
+          (call $vm_c_expr (local.get $code))
           (call $next_token)  ;; ')'
           (let $pw i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end
           (call $vm_c_stmt (local.get $code))
@@ -264,13 +318,13 @@
       (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '='
         (then
           (call $next_token)
-          (call $vm_c_cmp (local.get $code))
+          (call $vm_c_expr (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR
           (drop (call $eat (i32.const 21)))
           (return)))
       (call $look_restore)))
   ;; expression statement
-  (call $vm_c_cmp (local.get $code))
+  (call $vm_c_expr (local.get $code))
   (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
   (drop (call $eat (i32.const 21))))
 
@@ -472,12 +526,24 @@
       (then (set! $sp (i32.sub (local.get $sp) (i32.const 8))) (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 12))  ;; JMP (operand: target)
       (then (set! $ip (i32.load (i32.add (local.get $code) (local.get $ip)))) (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 13))  ;; JMPF (operand: target)
+    (if (i32.eq (local.get $op) (i32.const 13))  ;; JMPF (operand: target) — pops
       (then
         (let $tgt i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (if (i32.eqz (call $truthy (i64.load (i32.add (local.get $stack) (local.get $sp))))) (then (set! $ip (local.get $tgt))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 27))  ;; JMPF_PEEK — jump if top falsy, keep it (for &&)
+      (then
+        (let $tgt i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (if (i32.eqz (call $truthy (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))) (then (set! $ip (local.get $tgt))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 28))  ;; JMPT_PEEK — jump if top truthy, keep it (for ||)
+      (then
+        (let $tgt i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (if (call $truthy (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))) (then (set! $ip (local.get $tgt))))
         (br $disp)))
     (if (i32.or (i32.and (i32.ge_s (local.get $op) (i32.const 14)) (i32.le_s (local.get $op) (i32.const 18)))
                 (i32.and (i32.ge_s (local.get $op) (i32.const 24)) (i32.le_s (local.get $op) (i32.const 26))))  ;; comparisons + eq/neq
