@@ -692,10 +692,8 @@
     (else (call $call_user (local.get $fn) (local.get $argc) (local.get $argv) (local.get $thisv)))))
 
 ;; parse a function literal/declaration. as_decl=1 binds the name in scope.
-(func $parse_function (param $as_decl i32) (result i64) (effects)
-  (call $advance)  ;; 'function'
-  (let $name i32 (i32.const 0))
-  (if (i32.eq (call $cur) (i32.const 3)) (then (set! $name (call $ident_name)) (call $advance)))
+;; parse a function from the '(' params ')' '{' body '}' (cursor at '('); returns fn value
+(func $parse_fn_body (result i64) (effects)
   (call $expect (i32.const 15) (cstring "expected ("))
   (let $params i32 (call $heap_alloc (i32.const 64)))
   (let $np i32 (i32.const 0))
@@ -707,7 +705,6 @@
     (br_if $pe (i32.eqz (call $eat (i32.const 22))))
     (br $pc)))
   (call $expect (i32.const 16) (cstring "expected )"))
-  ;; cur now at '{' — build Fn struct (40 + np*4 bytes)
   (let $fn i32 (call $heap_alloc (i32.add (i32.const 40) (i32.mul (local.get $np) (i32.const 4)))))
   (i32.store (local.get $fn) (i32.const 0))                                   ;; native=0
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (call $cur_scope))       ;; closure scope
@@ -721,11 +718,15 @@
                (i32.load (i32.add (local.get $params) (i32.mul (local.get $i) (i32.const 4)))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $cc)))
-  ;; skip the body
-  (call $sup_inc) (call $parse_block) (call $sup_dec)
-  (let $fv i64 (call $mk_fn (local.get $fn)))
-  ;; store .name (function name, or "")
-  (call $scope_define (call $fn_props (local.get $fn)) (cstring "name")
+  (call $sup_inc) (call $parse_block) (call $sup_dec)  ;; skip the body
+  (call $mk_fn (local.get $fn)))
+
+(func $parse_function (param $as_decl i32) (result i64) (effects)
+  (call $advance)  ;; 'function'
+  (let $name i32 (i32.const 0))
+  (if (i32.eq (call $cur) (i32.const 3)) (then (set! $name (call $ident_name)) (call $advance)))
+  (let $fv i64 (call $parse_fn_body))
+  (call $scope_define (call $fn_props (call $val_payload (local.get $fv))) (cstring "name")
     (call $mk_str (if i32 (i32.ne (local.get $name) (i32.const 0)) (then (local.get $name)) (else (cstring "")))))
   (if (i32.and (local.get $as_decl) (i32.and (i32.ne (local.get $name) (i32.const 0)) (i32.eqz (call $suppress))))
     (then (call $scope_define (call $cur_scope) (local.get $name) (local.get $fv))))
@@ -803,13 +804,31 @@
         (br_if $brk (i32.eq (call $cur) (i32.const 18)))  ;; '}'
         (br_if $brk (i32.eq (call $cur) (i32.const 0)))
         (br_if $brk (call $err))
+        ;; getter/setter: get/set <name>() {...}
+        (if (i32.and (i32.eq (call $cur) (i32.const 3)) (i32.or (call $tok_is_kw (cstring "get")) (call $tok_is_kw (cstring "set"))))
+          (then
+            (let $isget i32 (call $tok_is_kw (cstring "get")))
+            (call $look_save)
+            (call $advance)
+            ;; only an accessor if followed by a property name (not ':' or ',' or '}')
+            (if (i32.or (i32.eq (call $cur) (i32.const 3)) (i32.eq (call $cur) (i32.const 2)))
+              (then
+                (let $akey i32 (if i32 (i32.eq (call $cur) (i32.const 2)) (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))) (else (call $ident_name))))
+                (call $advance)
+                (let $afn i64 (call $parse_fn_body))
+                (call $scope_set_accessor (local.get $o) (local.get $akey) (local.get $isget) (local.get $afn))
+                (br_if $brk (i32.eqz (call $eat (i32.const 22))))
+                (br $cont))
+              (else (call $look_restore)))))
         ;; key: identifier or string literal
         (let $key i32 (i32.const 0))
         (if (i32.eq (call $cur) (i32.const 3))
           (then (set! $key (call $ident_name)) (call $advance))
           (else (if (i32.eq (call $cur) (i32.const 2))
             (then (set! $key (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))) (call $advance))
-            (else (call $throw (cstring "bad object key")) (br $brk)))))
+            (else (if (i32.eq (call $cur) (i32.const 1))  ;; numeric key
+              (then (set! $key (call $to_str (call $num (call $tok_num)))) (call $advance))
+              (else (call $throw (cstring "bad object key")) (br $brk)))))))
         (call $expect (i32.const 37) (cstring "expected :"))
         (call $scope_define (local.get $o) (local.get $key) (call $parse_assign))
         (br_if $brk (i32.eqz (call $eat (i32.const 22))))
