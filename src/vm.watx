@@ -50,11 +50,23 @@
       (call $vm_emit_val (local.get $code) (call $num (call $tok_num)))
       (call $next_token)
       (return)))
+  (if (i32.eq (call $tok_kind) (i32.const 2))  ;; string literal
+    (then
+      (call $vm_emit_op (local.get $code) (i32.const 1))      ;; PUSH
+      (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
+      (call $next_token)
+      (return)))
   (if (i32.eq (call $tok_kind) (i32.const 11))  ;; unary -
     (then
       (call $next_token)
       (call $vm_c_primary (local.get $code))
       (call $vm_emit_op (local.get $code) (i32.const 6))      ;; NEG
+      (return)))
+  (if (i32.eq (call $tok_kind) (i32.const 33))  ;; unary !
+    (then
+      (call $next_token)
+      (call $vm_c_primary (local.get $code))
+      (call $vm_emit_op (local.get $code) (i32.const 23))     ;; NOT
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ( expr )
     (then
@@ -92,10 +104,12 @@
   (call $vm_c_primary (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
-    (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 12)) (i32.eq (local.get $k) (i32.const 13)))))
+    (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 12)) (i32.or (i32.eq (local.get $k) (i32.const 13)) (i32.eq (local.get $k) (i32.const 14))))))
     (call $next_token)
     (call $vm_c_primary (local.get $code))
-    (call $vm_emit_op (local.get $code) (if i32 (i32.eq (local.get $k) (i32.const 12)) (then (i32.const 4)) (else (i32.const 5))))
+    (call $vm_emit_op (local.get $code)
+      (if i32 (i32.eq (local.get $k) (i32.const 12)) (then (i32.const 4))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 13)) (then (i32.const 5)) (else (i32.const 22))))))  ;; * / %
     (br $l))))
 
 (func $vm_c_add (param $code i32) (effects)
@@ -113,15 +127,21 @@
   (call $vm_c_add (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
+    ;; < 29 > 30 <= 31 >= 32 === 26 !== 28 == 25 != 27
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 29)) (i32.or (i32.eq (local.get $k) (i32.const 30))
-      (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.or (i32.eq (local.get $k) (i32.const 32)) (i32.eq (local.get $k) (i32.const 26))))))))
+      (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.or (i32.eq (local.get $k) (i32.const 32))
+      (i32.or (i32.eq (local.get $k) (i32.const 26)) (i32.or (i32.eq (local.get $k) (i32.const 28))
+      (i32.or (i32.eq (local.get $k) (i32.const 25)) (i32.eq (local.get $k) (i32.const 27)))))))))))
     (call $next_token)
     (call $vm_c_add (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 29)) (then (i32.const 14))
       (else (if i32 (i32.eq (local.get $k) (i32.const 30)) (then (i32.const 15))
       (else (if i32 (i32.eq (local.get $k) (i32.const 31)) (then (i32.const 16))
-      (else (if i32 (i32.eq (local.get $k) (i32.const 32)) (then (i32.const 17)) (else (i32.const 18))))))))))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 32)) (then (i32.const 17))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 26)) (then (i32.const 18))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 28)) (then (i32.const 24))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 25)) (then (i32.const 25)) (else (i32.const 26))))))))))))))))
     (br $l))))
 
 ;; statement compiler — emits bytecode (control flow via jumps, not re-scanning)
@@ -413,6 +433,19 @@
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $num (f64.neg (call $tonum_raw (i64.load (i32.add (local.get $stack) (local.get $t)))))))
         (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 23))  ;; NOT (unary, in place)
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (local.get $t))
+                   (call $mk_bool (i32.eqz (call $truthy (i64.load (i32.add (local.get $stack) (local.get $t)))))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 2))  ;; ADD — js_add (string concat + numeric)
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
+                   (call $js_add (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))
+                                 (i64.load (i32.add (local.get $stack) (local.get $sp)))))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 8))  ;; LOADVAR (operand: name ptr)
       (then
         (let $nm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
@@ -446,7 +479,8 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (if (i32.eqz (call $truthy (i64.load (i32.add (local.get $stack) (local.get $sp))))) (then (set! $ip (local.get $tgt))))
         (br $disp)))
-    (if (i32.and (i32.ge_s (local.get $op) (i32.const 14)) (i32.le_s (local.get $op) (i32.const 18)))  ;; comparisons
+    (if (i32.or (i32.and (i32.ge_s (local.get $op) (i32.const 14)) (i32.le_s (local.get $op) (i32.const 18)))
+                (i32.and (i32.ge_s (local.get $op) (i32.const 24)) (i32.le_s (local.get $op) (i32.const 26))))  ;; comparisons + eq/neq
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $cb i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
@@ -457,6 +491,9 @@
         (if (i32.eq (local.get $op) (i32.const 16)) (then (set! $cr (f64.le (call $tonum_raw (local.get $ca)) (call $tonum_raw (local.get $cb))))))
         (if (i32.eq (local.get $op) (i32.const 17)) (then (set! $cr (f64.ge (call $tonum_raw (local.get $ca)) (call $tonum_raw (local.get $cb))))))
         (if (i32.eq (local.get $op) (i32.const 18)) (then (set! $cr (call $strict_eq (local.get $ca) (local.get $cb)))))
+        (if (i32.eq (local.get $op) (i32.const 24)) (then (set! $cr (i32.eqz (call $strict_eq (local.get $ca) (local.get $cb))))))  ;; !==
+        (if (i32.eq (local.get $op) (i32.const 25)) (then (set! $cr (call $loose_eq (local.get $ca) (local.get $cb)))))           ;; ==
+        (if (i32.eq (local.get $op) (i32.const 26)) (then (set! $cr (i32.eqz (call $loose_eq (local.get $ca) (local.get $cb))))))  ;; !=
         (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (call $mk_bool (local.get $cr)))
         (br $disp)))
     ;; binary: pop b, then a
@@ -464,10 +501,10 @@
     (let $b f64 (call $tonum_raw (i64.load (i32.add (local.get $stack) (local.get $sp)))))
     (let $a f64 (call $tonum_raw (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
     (let $r f64 (f64.const 0))
-    (if (i32.eq (local.get $op) (i32.const 2)) (then (set! $r (f64.add (local.get $a) (local.get $b)))))
     (if (i32.eq (local.get $op) (i32.const 3)) (then (set! $r (f64.sub (local.get $a) (local.get $b)))))
     (if (i32.eq (local.get $op) (i32.const 4)) (then (set! $r (f64.mul (local.get $a) (local.get $b)))))
     (if (i32.eq (local.get $op) (i32.const 5)) (then (set! $r (f64.div (local.get $a) (local.get $b)))))
+    (if (i32.eq (local.get $op) (i32.const 22)) (then (set! $r (call $fmod (local.get $a) (local.get $b)))))  ;; %
     (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (call $num (local.get $r)))
     (br $disp))
   (call $v_undef))  ;; unreachable (loop always returns)
