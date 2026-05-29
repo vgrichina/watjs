@@ -306,7 +306,7 @@
   (i32.or (call $tok_is_kw (cstring "if")) (i32.or (call $tok_is_kw (cstring "while")) (i32.or (call $tok_is_kw (cstring "do"))
   (i32.or (call $tok_is_kw (cstring "for")) (i32.or (call $tok_is_kw (cstring "function")) (i32.or (call $tok_is_kw (cstring "return"))
   (i32.or (call $tok_is_kw (cstring "throw")) (i32.or (call $tok_is_kw (cstring "try")) (i32.or (call $tok_is_kw (cstring "break"))
-          (call $tok_is_kw (cstring "continue")))))))))))))))
+  (i32.or (call $tok_is_kw (cstring "continue")) (call $tok_is_kw (cstring "switch"))))))))))))))))
 ;; `this` binding (reg 144, i64)
 (func $get_this (result i64) (effects) (i64.load (i32.const 144)))
 (func $set_this (param $v i64) (effects) (i64.store (i32.const 144) (local.get $v)))
@@ -940,6 +940,63 @@
     (if (i32.or (local.get $broke) (i32.or (call $suppress) (i32.eqz (call $truthy (local.get $cond))))) (then (br $brk)))
     (br $cont))))
 
+;; switch (disc) { case e: ...; default: ...; }
+(func $parse_switch (effects)
+  (call $advance)  ;; 'switch'
+  (call $expect (i32.const 15) (cstring "expected ("))
+  (let $disc i64 (call $parse_assign))
+  (call $expect (i32.const 16) (cstring "expected )"))
+  (call $expect (i32.const 17) (cstring "expected {"))
+  (let $matchcur i32 (i32.const 0))
+  (let $defaultcur i32 (i32.const 0))
+  (let $matched i32 (i32.const 0))
+  ;; Phase 1: find the matching case (or default) body position
+  (block $s1 (loop $c1
+    (br_if $s1 (i32.eq (call $cur) (i32.const 18)))  ;; '}'
+    (br_if $s1 (i32.eq (call $cur) (i32.const 0)))
+    (br_if $s1 (call $err))
+    (if (call $tok_is_kw (cstring "case"))
+      (then
+        (call $advance)
+        (let $ce i64 (call $parse_assign))
+        (call $expect (i32.const 37) (cstring "expected :"))
+        (if (i32.and (i32.eqz (local.get $matched)) (call $strict_eq (local.get $disc) (local.get $ce)))
+          (then (set! $matchcur (call $cursor_save)) (set! $matched (i32.const 1)))))
+      (else
+        (if (call $tok_is_kw (cstring "default"))
+          (then (call $advance) (call $expect (i32.const 37) (cstring "expected :")) (set! $defaultcur (call $cursor_save)))
+          (else (call $sup_inc) (call $parse_statement) (call $sup_dec)))))  ;; skip a body statement
+    (br $c1)))
+  ;; cursor at '}' — remember end, then execute from the chosen label
+  (let $target i32 (if i32 (local.get $matched) (then (local.get $matchcur)) (else (local.get $defaultcur))))
+  (if (i32.and (i32.ne (local.get $target) (i32.const 0)) (i32.eqz (call $err)))
+    (then
+      (call $cursor_restore (local.get $target))
+      (block $s2 (loop $c2
+        (br_if $s2 (i32.eq (call $cur) (i32.const 18)))  ;; '}'
+        (br_if $s2 (i32.eq (call $cur) (i32.const 0)))
+        ;; fall-through past case/default labels
+        (if (call $tok_is_kw (cstring "case"))
+          (then (call $advance) (call $sup_inc) (drop (call $parse_assign)) (call $sup_dec)
+                (call $expect (i32.const 37) (cstring "expected :")) (br $c2)))
+        (if (call $tok_is_kw (cstring "default"))
+          (then (call $advance) (call $expect (i32.const 37) (cstring "expected :")) (br $c2)))
+        (call $parse_statement)
+        (if (call $brkflag) (then (call $clear_loopflags) (br $s2)))  ;; break exits the switch
+        (br_if $s2 (i32.or (call $err) (i32.or (call $retflag) (call $contflag))))  ;; propagate
+        (br $c2)))))
+  ;; reposition to the switch's closing '}' by brace-depth token scan (must work
+  ;; even while unwinding — parse_statement is a no-op then and wouldn't advance).
+  (let $d i32 (i32.const 0))
+  (block $skip (loop $cs
+    (br_if $skip (i32.eq (call $cur) (i32.const 0)))
+    (if (i32.eq (call $cur) (i32.const 17)) (then (set! $d (i32.add (local.get $d) (i32.const 1)))))
+    (if (i32.eq (call $cur) (i32.const 18))
+      (then (br_if $skip (i32.eqz (local.get $d))) (set! $d (i32.sub (local.get $d) (i32.const 1)))))
+    (call $advance)
+    (br $cs)))
+  (drop (call $eat (i32.const 18))))  ;; consume '}'
+
 (func $parse_statement (effects)
   (if (call $unwind) (then (return)))
   (let $k i32 (call $cur))
@@ -959,7 +1016,8 @@
       (if (call $tok_is_kw (cstring "throw"))    (then (call $parse_throw) (return)))
       (if (call $tok_is_kw (cstring "try"))      (then (call $parse_try) (return)))
       (if (call $tok_is_kw (cstring "break"))    (then (call $parse_break) (return)))
-      (if (call $tok_is_kw (cstring "continue")) (then (call $parse_continue) (return)))))
+      (if (call $tok_is_kw (cstring "continue")) (then (call $parse_continue) (return)))
+      (if (call $tok_is_kw (cstring "switch"))   (then (call $parse_switch) (return)))))
   ;; expression statement
   (drop (call $parse_assign))
   (drop (call $eat (i32.const 21))))
