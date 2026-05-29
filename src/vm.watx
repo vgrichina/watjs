@@ -995,25 +995,42 @@
           (return)))
       (if (call $tok_is_kw (cstring "try"))
         (then
-          (call $next_token)
-          ;; PUSHHANDLER catchIp(placeholder) varname(placeholder, patched after we see catch(e))
-          (call $vm_emit_op (local.get $code) (i32.const 48))
-          (let $hloc i32 (call $vm_emit_cursor))
-          (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catch ip placeholder
-          (let $vloc i32 (call $vm_emit_cursor))
-          (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catch var name placeholder
+          (call $next_token)  ;; 'try'
+          (call $vm_emit_op (local.get $code) (i32.const 48))  ;; PUSHHANDLER catchIp, varname (placeholders)
+          (let $hloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catchIp
+          (let $vloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catch var name
           (call $vm_c_stmt (local.get $code))                 ;; try block
           (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER (normal completion)
-          (let $jend i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over catch
-          ;; catch (e) { ... }
+          (let $jnorm i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → Lnormal
+          ;; exception entry: the unwind bound the thrown value to the handler's varname
           (i32.store (i32.add (local.get $code) (local.get $hloc)) (call $vm_emit_cursor))  ;; catchIp = here
-          (call $next_token)  ;; 'catch'
-          (call $next_token)  ;; '('
-          (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; catch var name
-          (call $next_token)  ;; var
-          (call $next_token)  ;; ')'
-          (call $vm_c_stmt (local.get $code))  ;; catch block
-          (call $vm_patch (local.get $code) (local.get $jend))
+          (let $hascatch i32 (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "catch"))))
+          (let $jcatch i32 (i32.const 0))
+          (let $fincur i32 (i32.const 0))
+          (if (local.get $hascatch)
+            (then
+              (call $next_token)  ;; 'catch'
+              (call $next_token)  ;; '('
+              (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; bind name
+              (call $next_token) (call $next_token)  ;; var ')'
+              (call $vm_c_stmt (local.get $code))  ;; catch block
+              (set! $jcatch (call $vm_emit_jump (local.get $code) (i32.const 12))))  ;; JMP → Lnormal (run finally)
+            (else
+              ;; try/finally with no catch: bind exc to @@exc, run finally, then re-throw
+              (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@exc"))
+              (call $next_token)  ;; 'finally'
+              (set! $fincur (call $cursor_save))  ;; finally block '{'
+              (call $vm_c_stmt (local.get $code))  ;; finally (exception copy)
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@exc"))  ;; LOADVAR @@exc
+              (call $vm_emit_op (local.get $code) (i32.const 47))))  ;; THROW (re-raise)
+          ;; Lnormal: normal + catch paths converge here
+          (call $vm_patch (local.get $code) (local.get $jnorm))
+          (if (local.get $hascatch) (then (call $vm_patch (local.get $code) (local.get $jcatch))))
+          ;; finally on the normal path
+          (if (local.get $hascatch)
+            (then (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "finally")))
+              (then (call $next_token) (call $vm_c_stmt (local.get $code)))))  ;; finally (single copy: all paths reach here)
+            (else (call $cursor_restore (local.get $fincur)) (call $vm_c_stmt (local.get $code))))  ;; finally (normal copy)
           (return)))
       (if (call $tok_is_kw (cstring "print"))
         (then
