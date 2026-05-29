@@ -113,6 +113,16 @@
 (func $lex_number (effects)
   (let $start i32 (call $pos))
   (let $val f64 (f64.const 0))
+  ;; hex / binary / octal literals: 0x.. 0b.. 0o..
+  (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 48))  ;; leading '0'
+    (then
+      (let $p1 i32 (call $ch_at (i32.const 1)))
+      (if (i32.or (i32.eq (local.get $p1) (i32.const 120)) (i32.eq (local.get $p1) (i32.const 88)))  ;; x/X
+        (then (call $lex_radix (i32.const 16)) (return)))
+      (if (i32.or (i32.eq (local.get $p1) (i32.const 98)) (i32.eq (local.get $p1) (i32.const 66)))   ;; b/B
+        (then (call $lex_radix (i32.const 2)) (return)))
+      (if (i32.or (i32.eq (local.get $p1) (i32.const 111)) (i32.eq (local.get $p1) (i32.const 79)))  ;; o/O
+        (then (call $lex_radix (i32.const 8)) (return)))))
   ;; integer part
   (block $ie (loop $il
     (let $c i32 (call $ch_at (i32.const 0)))
@@ -152,6 +162,28 @@
         (call $set_pos (i32.add (call $pos) (i32.const 1)))
         (br $el)))
       (set! $val (f64.mul (local.get $val) (call $pow10 (f64.mul (local.get $esign) (local.get $exp)))))))
+  (f64.store (i32.const 32) (local.get $val))
+  (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start))))
+
+;; Lex a radix literal (16/8/2). Assumes cursor at the leading '0'; consumes
+;; the prefix and digits, sets TOK_KIND=1, TOK_NUM.
+(func $lex_radix (param $radix i32) (effects)
+  (let $start i32 (call $pos))
+  (call $set_pos (i32.add (call $pos) (i32.const 2)))  ;; skip 0x/0b/0o
+  (let $val f64 (f64.const 0))
+  (block $de (loop $dl
+    (let $c i32 (call $ch_at (i32.const 0)))
+    (let $d i32 (i32.const -1))
+    (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57)))
+      (then (set! $d (i32.sub (local.get $c) (i32.const 48)))))                       ;; 0-9
+    (if (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 102)))
+      (then (set! $d (i32.add (i32.sub (local.get $c) (i32.const 97)) (i32.const 10)))))  ;; a-f
+    (if (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 70)))
+      (then (set! $d (i32.add (i32.sub (local.get $c) (i32.const 65)) (i32.const 10)))))  ;; A-F
+    (br_if $de (i32.or (i32.lt_s (local.get $d) (i32.const 0)) (i32.ge_s (local.get $d) (local.get $radix))))
+    (set! $val (f64.add (f64.mul (local.get $val) (f64.convert_i32_s (local.get $radix))) (f64.convert_i32_s (local.get $d))))
+    (call $set_pos (i32.add (call $pos) (i32.const 1)))
+    (br $dl)))
   (f64.store (i32.const 32) (local.get $val))
   (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start))))
 
@@ -212,11 +244,13 @@
   (if (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const 39)))
     (then (call $lex_string (local.get $c)) (return)))  ;; " or '
 
-  ;; 3-char: === !==
+  ;; 3-char: === !== >>>
   (if (i32.and (i32.eq (local.get $c) (i32.const 61)) (i32.and (i32.eq (local.get $c1) (i32.const 61)) (i32.eq (local.get $c2) (i32.const 61))))
     (then (call $op_tok (i32.const 26) (i32.const 3)) (return)))
   (if (i32.and (i32.eq (local.get $c) (i32.const 33)) (i32.and (i32.eq (local.get $c1) (i32.const 61)) (i32.eq (local.get $c2) (i32.const 61))))
     (then (call $op_tok (i32.const 28) (i32.const 3)) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 62)) (i32.and (i32.eq (local.get $c1) (i32.const 62)) (i32.eq (local.get $c2) (i32.const 62))))
+    (then (call $op_tok (i32.const 50) (i32.const 3)) (return)))  ;; >>>
 
   ;; 2-char: ++ -- += -= *= /= == != <= >= && ||
   (if (i32.and (i32.eq (local.get $c) (i32.const 43)) (i32.eq (local.get $c1) (i32.const 43)))
@@ -243,8 +277,16 @@
     (then (call $op_tok (i32.const 34) (i32.const 2)) (return)))
   (if (i32.and (i32.eq (local.get $c) (i32.const 124)) (i32.eq (local.get $c1) (i32.const 124)))
     (then (call $op_tok (i32.const 35) (i32.const 2)) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 60)) (i32.eq (local.get $c1) (i32.const 60)))
+    (then (call $op_tok (i32.const 48) (i32.const 2)) (return)))  ;; <<
+  (if (i32.and (i32.eq (local.get $c) (i32.const 62)) (i32.eq (local.get $c1) (i32.const 62)))
+    (then (call $op_tok (i32.const 49) (i32.const 2)) (return)))  ;; >>
 
   ;; 1-char punctuation/operators
+  (if (i32.eq (local.get $c) (i32.const 38)) (then (call $op_tok (i32.const 44) (i32.const 1)) (return)))   ;; &
+  (if (i32.eq (local.get $c) (i32.const 124)) (then (call $op_tok (i32.const 45) (i32.const 1)) (return)))  ;; |
+  (if (i32.eq (local.get $c) (i32.const 94)) (then (call $op_tok (i32.const 46) (i32.const 1)) (return)))   ;; ^
+  (if (i32.eq (local.get $c) (i32.const 126)) (then (call $op_tok (i32.const 47) (i32.const 1)) (return)))  ;; ~
   (if (i32.eq (local.get $c) (i32.const 43)) (then (call $op_tok (i32.const 10) (i32.const 1)) (return)))
   (if (i32.eq (local.get $c) (i32.const 45)) (then (call $op_tok (i32.const 11) (i32.const 1)) (return)))
   (if (i32.eq (local.get $c) (i32.const 42)) (then (call $op_tok (i32.const 12) (i32.const 1)) (return)))

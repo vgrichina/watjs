@@ -69,6 +69,18 @@
     (else (if i32 (i32.lt_s (local.get $la) (local.get $lb)) (then (i32.const -1))
           (else (if i32 (i32.gt_s (local.get $la) (local.get $lb)) (then (i32.const 1)) (else (i32.const 0))))))))
 
+;; ToInt32 (spec §7.1.5): NaN/Inf -> 0; else truncate toward zero mod 2^32, signed.
+(func $to_int32 (param $v i64) (result i32) (effects)
+  (let $d f64 (call $to_num (local.get $v)))
+  (if (f64.ne (local.get $d) (local.get $d)) (then (return (i32.const 0))))  ;; NaN
+  (if (i32.or (f64.eq (local.get $d) (f64.div (f64.const 1) (f64.const 0)))
+                  (f64.eq (local.get $d) (f64.div (f64.const -1) (f64.const 0)))) (then (return (i32.const 0))))
+  (set! $d (f64.trunc (local.get $d)))
+  ;; reduce into [0, 2^32)
+  (let $m f64 (f64.sub (local.get $d) (f64.mul (f64.floor (f64.div (local.get $d) (f64.const 4294967296))) (f64.const 4294967296))))
+  (if (f64.ge (local.get $m) (f64.const 2147483648)) (then (set! $m (f64.sub (local.get $m) (f64.const 4294967296)))))
+  (i32.trunc_f64_s (local.get $m)))
+
 (func $js_add (param $a i64) (param $b i64) (result i64) (effects)
   (if i64 (i32.or (call $is_string (local.get $a)) (call $is_string (local.get $b)))
     (then (call $mk_str (call $str_concat (call $to_str (local.get $a)) (call $to_str (local.get $b)))))
@@ -525,6 +537,8 @@
     (then (call $advance) (return (call $num (call $to_num (call $parse_unary))))))
   (if (i32.eq (local.get $k) (i32.const 33))  ;; !
     (then (call $advance) (return (call $mk_bool (i32.eqz (call $truthy (call $parse_unary)))))))
+  (if (i32.eq (local.get $k) (i32.const 47))  ;; ~ bitwise not
+    (then (call $advance) (return (call $num (f64.convert_i32_s (i32.xor (call $to_int32 (call $parse_unary)) (i32.const -1)))))))
   (if (i32.or (i32.eq (local.get $k) (i32.const 38)) (i32.eq (local.get $k) (i32.const 39)))  ;; prefix ++/--
     (then
       (call $advance)
@@ -578,16 +592,16 @@
 
 ;; ── relational: < > <= >= ──
 (func $parse_rel (result i64) (effects)
-  (let $left i64 (call $parse_add))
+  (let $left i64 (call $parse_shift))
   (block $brk (loop $cont
     (let $k i32 (call $cur))
     ;; instanceof (keyword operator)
     (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "instanceof")))
-      (then (call $advance) (set! $left (call $js_instanceof (local.get $left) (call $parse_add))) (br $cont)))
+      (then (call $advance) (set! $left (call $js_instanceof (local.get $left) (call $parse_shift))) (br $cont)))
     (br_if $brk (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 29)) (i32.or (i32.eq (local.get $k) (i32.const 30))
                           (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.eq (local.get $k) (i32.const 32)))))))
     (call $advance)
-    (let $r i64 (call $parse_add))
+    (let $r i64 (call $parse_shift))
     (set! $left (call $relate (local.get $left) (local.get $r) (local.get $k)))
     (br $cont)))
   (local.get $left))
@@ -609,9 +623,49 @@
     (br $cont)))
   (local.get $left))
 
+;; ── bitwise OR / XOR / AND, shifts (between && and equality / between rel and add) ──
+(func $parse_bitor (result i64) (effects)
+  (let $left i64 (call $parse_bitxor))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ne (call $cur) (i32.const 45)))  ;; |
+    (call $advance)
+    (set! $left (call $num (f64.convert_i32_s (i32.or (call $to_int32 (local.get $left)) (call $to_int32 (call $parse_bitxor))))))
+    (br $cont)))
+  (local.get $left))
+(func $parse_bitxor (result i64) (effects)
+  (let $left i64 (call $parse_bitand))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ne (call $cur) (i32.const 46)))  ;; ^
+    (call $advance)
+    (set! $left (call $num (f64.convert_i32_s (i32.xor (call $to_int32 (local.get $left)) (call $to_int32 (call $parse_bitand))))))
+    (br $cont)))
+  (local.get $left))
+(func $parse_bitand (result i64) (effects)
+  (let $left i64 (call $parse_eq))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ne (call $cur) (i32.const 44)))  ;; &
+    (call $advance)
+    (set! $left (call $num (f64.convert_i32_s (i32.and (call $to_int32 (local.get $left)) (call $to_int32 (call $parse_eq))))))
+    (br $cont)))
+  (local.get $left))
+(func $parse_shift (result i64) (effects)
+  (let $left i64 (call $parse_add))
+  (block $brk (loop $cont
+    (let $k i32 (call $cur))
+    (br_if $brk (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 48)) (i32.or (i32.eq (local.get $k) (i32.const 49)) (i32.eq (local.get $k) (i32.const 50))))))
+    (call $advance)
+    (let $l i32 (call $to_int32 (local.get $left)))
+    (let $r i32 (i32.and (call $to_int32 (call $parse_add)) (i32.const 31)))
+    (set! $left (call $num
+      (if f64 (i32.eq (local.get $k) (i32.const 48)) (then (f64.convert_i32_s (i32.shl (local.get $l) (local.get $r))))
+      (else (if f64 (i32.eq (local.get $k) (i32.const 49)) (then (f64.convert_i32_s (i32.shr_s (local.get $l) (local.get $r))))
+      (else (f64.convert_i32_u (i32.shr_u (local.get $l) (local.get $r)))))))))
+    (br $cont)))
+  (local.get $left))
+
 ;; ── logical AND (&&) with short-circuit ──
 (func $parse_and (result i64) (effects)
-  (let $left i64 (call $parse_eq))
+  (let $left i64 (call $parse_bitor))
   (block $brk (loop $cont
     (br_if $brk (i32.ne (call $cur) (i32.const 34)))
     (call $advance)

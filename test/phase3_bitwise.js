@@ -1,0 +1,10 @@
+print(5 & 3);
+print(5 | 2);
+print(5 ^ 1);
+print(~5);
+print(1 << 4);
+print(256 >> 2);
+print(-1 >>> 28);
+print(0xFF & 0x0F);
+print((1 << 30) + (1 << 30));
+print(7 & 3 | 8);
