@@ -68,7 +68,10 @@ async function runSource(src) {
   try {
     const ptr = inst.exports.alloc_input(bytes.length);
     new Uint8Array(mem.buffer, ptr, bytes.length).set(bytes);
-    rc = inst.exports.eval(ptr, bytes.length);
+    // WATJS_ENGINE=vm exercises the Phase-2 bytecode VM (eval_prog) instead of
+    // the production re-scan engine (eval).
+    const fn = process.env.WATJS_ENGINE === 'vm' ? inst.exports.eval_prog : inst.exports.eval;
+    rc = fn(ptr, bytes.length);
   } catch (e) { return { threw: true, reason: 'trap: ' + e.message }; }
   if (panic !== null) return { threw: true, reason: 'PANIC: ' + panic };
   return { threw: rc !== 0, reason: thrown };
