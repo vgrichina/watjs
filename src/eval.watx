@@ -348,6 +348,27 @@
           (return (local.get $racc))))
       (return (call $v_undef))))
   ;; --- static object/array/number/string methods (ids 80-87) ---
+  (if (i32.eq (local.get $id) (i32.const 90))  ;; Object.defineProperty(obj, key, desc)
+    (then
+      (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $ky i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $de i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      (if (i32.and (call $is_object (local.get $ob)) (call $is_object (local.get $de)))
+        (then
+          (let $os i32 (call $val_payload (local.get $ob)))
+          (let $ds i32 (call $val_payload (local.get $de)))
+          (let $ks i32 (call $to_str (local.get $ky)))
+          (let $gs i32 (call $scope_find_local (local.get $ds) (cstring "get")))
+          (let $ss i32 (call $scope_find_local (local.get $ds) (cstring "set")))
+          (if (i32.or (local.get $gs) (local.get $ss))
+            (then (call $scope_define_accessor (local.get $os) (local.get $ks)
+                    (if i64 (local.get $gs) (then (i64.load (local.get $gs))) (else (call $v_undef)))
+                    (if i64 (local.get $ss) (then (i64.load (local.get $ss))) (else (call $v_undef)))))
+            (else
+              (let $vs i32 (call $scope_find_local (local.get $ds) (cstring "value")))
+              (call $scope_define (local.get $os) (local.get $ks)
+                (if i64 (local.get $vs) (then (i64.load (local.get $vs))) (else (call $v_undef))))))))
+      (return (local.get $ob))))
   (if (i32.eq (local.get $id) (i32.const 88))  ;; Array(...): Array(n)->len n, else from args
     (then
       (if (i32.and (i32.eq (local.get $argc) (i32.const 1)) (call $is_number (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -1655,6 +1676,7 @@
   (call $set_prop (local.get $objf) (call $mk_str (cstring "assign")) (call $mk_native (i32.const 80) (cstring "assign")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "create")) (call $mk_native (i32.const 81) (cstring "create")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getPrototypeOf")) (call $mk_native (i32.const 82) (cstring "getPrototypeOf")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "defineProperty")) (call $mk_native (i32.const 90) (cstring "defineProperty")))
   ;; global NaN / Infinity / undefined
   (call $scope_define (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))

@@ -246,7 +246,14 @@
       (let $o i32 (call $val_payload (local.get $cont)))
       ;; scope_find walks the parent chain = prototype chain
       (let $slot i32 (call $scope_find (local.get $o) (call $to_str (local.get $key))))
-      (if (local.get $slot) (then (return (i64.load (local.get $slot)))))
+      (if (local.get $slot)
+        (then
+          (if (i32.eq (call $entry_kind (local.get $slot)) (i32.const 1))  ;; accessor → call getter
+            (then
+              (let $get i64 (i64.load (call $val_payload (i64.load (local.get $slot)))))
+              (if (call $is_function (local.get $get)) (then (return (call $call_fn0 (local.get $get) (local.get $cont)))))
+              (return (call $v_undef))))
+          (return (i64.load (local.get $slot)))))
       (return (call $v_undef))))
   (if (call $is_function (local.get $cont))
     (then
@@ -335,7 +342,21 @@
       (return)))
   (if (call $is_object (local.get $cont))
     (then
-      (call $scope_define (call $val_payload (local.get $cont)) (call $to_str (local.get $key)) (local.get $val))
+      (let $o i32 (call $val_payload (local.get $cont)))
+      (let $ks i32 (call $to_str (local.get $key)))
+      (let $slot i32 (call $scope_find (local.get $o) (local.get $ks)))
+      (if (local.get $slot)  ;; guard before entry_kind (i32.and would deref slot-4 even when 0)
+        (then
+          (if (i32.eq (call $entry_kind (local.get $slot)) (i32.const 1))
+            (then  ;; accessor → call setter
+              (let $set i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $slot))) (i32.const 8))))
+              (if (call $is_function (local.get $set))
+                (then
+                  (let $av i32 (call $heap_alloc (i32.const 8)))
+                  (i64.store (local.get $av) (local.get $val))
+                  (drop (call $call_val (local.get $set) (i32.const 1) (local.get $av) (local.get $cont)))))
+              (return)))))
+      (call $scope_define (local.get $o) (local.get $ks) (local.get $val))
       (return)))
   (if (call $is_function (local.get $cont))
     (then
