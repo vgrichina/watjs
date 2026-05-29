@@ -92,7 +92,7 @@ The full tc39 harness (`sta.js` + `assert.js`) loads and runs, and real test262
 cases pass at a solid rate:
 
 - **39/39** on a targeted batch (expressions/typeof/logical/conditional/types).
-- **~85% (56/66)** across *fresh, untargeted* samples spanning for/while/do/switch/
+- **~88% (58/66)** across *fresh, untargeted* samples spanning for/while/do/switch/
   block/comma/postfix/multiplication/modulus/number/logical-and/undefined — i.e.
   cases not used while developing.
 
