@@ -1,0 +1,11 @@
+var name = "world";
+assert(`hello ${name}!` === "hello world!", "interp");
+var a = 3, b = 4;
+assert(`${a} + ${b} = ${a + b}` === "3 + 4 = 7", "expr interp");
+assert(`plain text` === "plain text", "no interp");
+assert(`${[1, 2, 3].map(x => x * 2).join(",")}` === "2,4,6", "nested");
+assert(`line1\nline2` === "line1\nline2", "escape");
+var obj = { x: 5 };
+assert(`x is ${obj.x}` === "x is 5", "member interp");
+assert(`${1 > 0 ? "yes" : "no"}` === "yes", "ternary interp");
+print("template tests passed");

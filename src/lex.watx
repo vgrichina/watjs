@@ -313,6 +313,21 @@
   (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 2)) (i32.or (i32.const 128) (i32.and (local.get $cp) (i32.const 63))))
   (i32.add (local.get $o) (i32.const 3)))
 
+;; Lex a template literal `...${..}...`. TOK_KIND=53, TOK_START/TOK_LEN = raw
+;; content between backticks (including the ${...} parts; parsed later).
+(func $lex_template (effects)
+  (call $set_pos (i32.add (call $pos) (i32.const 1)))  ;; skip opening `
+  (let $start i32 (call $pos))
+  (block $se (loop $sl
+    (let $c i32 (call $ch_at (i32.const 0)))
+    (br_if $se (i32.eq (local.get $c) (i32.const -1)))
+    (br_if $se (i32.eq (local.get $c) (i32.const 96)))  ;; closing `
+    (if (i32.eq (local.get $c) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))  ;; skip escaped
+    (call $set_pos (i32.add (call $pos) (i32.const 1)))
+    (br $sl)))
+  (call $set_tok (i32.const 53) (local.get $start) (i32.sub (call $pos) (local.get $start)))
+  (call $set_pos (i32.add (call $pos) (i32.const 1))))  ;; skip closing `
+
 ;; helper: emit a single/double-char operator token of kind $k spanning $n chars
 (func $op_tok (param $k i32) (param $n i32) (effects)
   (call $set_tok (local.get $k) (call $pos) (local.get $n))
@@ -331,6 +346,7 @@
   (if (call $is_alpha (local.get $c)) (then (call $lex_ident) (return)))
   (if (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const 39)))
     (then (call $lex_string (local.get $c)) (return)))  ;; " or '
+  (if (i32.eq (local.get $c) (i32.const 96)) (then (call $lex_template) (return)))  ;; `template`
 
   ;; 3-char: === !== >>>
   (if (i32.and (i32.eq (local.get $c) (i32.const 61)) (i32.and (i32.eq (local.get $c1) (i32.const 61)) (i32.eq (local.get $c2) (i32.const 61))))
