@@ -201,18 +201,23 @@
       (call $vm_emit_op (local.get $code) (i32.const 8))        ;; LOADVAR
       (call $vm_emit_op (local.get $code) (local.get $vn))
       (return)))
-  (if (i32.eq (call $tok_kind) (i32.const 19))  ;; array literal [ ... ]
+  (if (i32.eq (call $tok_kind) (i32.const 19))  ;; array literal [ ... ]  (supports ...spread)
     (then
       (call $next_token)
-      (let $n i32 (i32.const 0))
+      (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0 → []
       (if (i32.ne (call $tok_kind) (i32.const 20))
         (then (block $ae (loop $al
-          (call $vm_c_expr (local.get $code))
-          (set! $n (i32.add (local.get $n) (i32.const 1)))
+          (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...spread
+            (then
+              (call $next_token)
+              (call $vm_c_expr (local.get $code))
+              (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD into array
+            (else
+              (call $vm_c_expr (local.get $code))
+              (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
           (br_if $ae (i32.eqz (call $eat (i32.const 22))))
           (br $al)))))
       (call $next_token)  ;; ']'
-      (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (local.get $n))  ;; NEWARRAY n
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 17))  ;; object literal { k: v, ... }
     (then
@@ -1175,6 +1180,27 @@
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 11))  ;; POP
       (then (set! $sp (i32.sub (local.get $sp) (i32.const 8))) (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 52))  ;; APPEND — [arr, v] → arr.push(v), leaves [arr]
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (call $arr_push (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+                        (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 53))  ;; SPREAD — [arr, src] → append src's elements, leaves [arr]
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $srcv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $dst i32 (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
+        (if (call $is_array (local.get $srcv))
+          (then
+            (let $sa i32 (call $val_payload (local.get $srcv)))
+            (let $si i32 (i32.const 0))
+            (block $spe (loop $spl
+              (br_if $spe (i32.ge_s (local.get $si) (call $arr_len (local.get $sa))))
+              (call $arr_push (local.get $dst) (call $arr_get (local.get $sa) (local.get $si)))
+              (set! $si (i32.add (local.get $si) (i32.const 1)))
+              (br $spl)))))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 29))  ;; NEWARRAY n (operand) — n values on top
       (then
         (let $an i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
