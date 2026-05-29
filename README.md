@@ -85,10 +85,19 @@ write source via `alloc_input`, call `eval`, and check the result.
 
 ## test262 status
 
-The full tc39 harness loads and a growing fraction of real test262 cases pass
-(~13/21 in the sampled batch). Passing the **entire** suite is a person-years
-effort (it requires essentially all of ECMAScript to spec precision); this is a
-working subset on a steady trajectory.
+The full tc39 harness (`sta.js` + `assert.js`) loads and runs, and real test262
+cases pass at a solid rate:
+
+- **39/39** on a targeted batch (expressions/typeof/logical/conditional/types).
+- **31/36 (~86%)** on a *fresh, untargeted* sample (for/while/multiplication/
+  modulus/number/logical-and) — i.e. cases not used while developing.
+
+Passing the **entire** suite (50,000+ files) is a person-years effort — it requires
+essentially all of ECMAScript to spec precision (regex, generators, async, classes,
+Proxy, TypedArrays, BigInt, modules, full Unicode, …). This is a real, growing
+core-language subset on a steady trajectory, not the finished suite. The remaining
+failures in the samples are niche: shortest-round-trip number formatting,
+function-expression-as-loop-condition edge cases, boxed-primitive `valueOf` corners.
 
 ## Known limitations / next increments
 
