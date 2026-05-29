@@ -49,35 +49,53 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
 
 - Numbers (f64), strings, booleans, null, undefined, NaN, Infinity
 - Operators: `+ - * / %`, comparisons, `=== !== == !=`, `&& || !`, ternary,
-  unary `- + !`, `++ -- += -= *= /=`
-- `var`/`let`/`const`, assignment, lexical scope, blocks
-- `if`/`else`, `while`, `for`
-- functions, parameters, `return`, recursion, closures, function expressions
-- `throw`, `try`/`catch`
-- objects (literals, `.`/`[]` get/set, nested), arrays (literals, indexing,
-  `.length`, push idiom), string `.length` and char indexing
-- builtins: `print` (console.log style), `assert(cond[, msg])`
+  unary `- + ! ~ typeof void`, `++ -- += -= *= /=`, bitwise `& | ^ << >> >>>`,
+  `instanceof`
+- Number literals: decimal, exponent, `0x`/`0b`/`0o`
+- `var` (with hoisting)/`let`/`const`, assignment, lexical scope, blocks
+- `if`/`else`, `while`, `do`/`while`, `for`, `switch` (fall-through), `break`,
+  `continue`
+- functions, parameters, `return`, recursion, closures, function expressions,
+  `.name`/`.length`
+- `this`, method calls, `new`, prototypes (chain lookup), `.prototype`,
+  `.constructor`, `instanceof`
+- `throw`, `try`/`catch`; typed errors (engine throws `ReferenceError`/`TypeError`)
+- objects (literals, `.`/`[]` get/set, nested, prototype chain), arrays (literals,
+  indexing, `.length`, push idiom), string `.length` and char indexing
+- builtins: `print`, `assert`, `eval`, `Number` (+`NaN`/`Infinity` constants),
+  `String`, `Boolean`, `isNaN`, `isFinite`; error constructors (`Error`,
+  `TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`, `EvalError`,
+  `URIError`) via a JS prelude
 
 ## Testing
 
-Two layers, mirroring QuickJS's own approach:
+Three layers:
 
 1. **Unit probes** (`test/*.watx`): exported `t_*` functions return 1; exercise the
-   value/heap/lexer layers directly.
-2. **End-to-end** (`test/*.js`): run real JS. A test passes when `eval` reports no
-   uncaught throw and (if a sibling `*.expected` exists) stdout matches it.
-   `test/assertions.js` is the QuickJS-style format — self-checking via `assert()`,
-   pass = no throw.
+   value/heap/lexer layers directly. (`tools/run-units.js`)
+2. **End-to-end** (`test/*.js`): real JS; pass = no uncaught throw and (if a sibling
+   `*.expected` exists) stdout matches. `test/assertions.js` is the QuickJS-style
+   format. (`tools/run-tests.js`; both via `tools/test.js`)
+3. **test262** (`tools/test262.js`): runs real tc39/test262 cases. The official
+   harness (`sta.js` + `assert.js`) loads and runs; `assert.sameValue` /
+   `assert.throws` work. Frontmatter (`flags`/`includes`/`negative`) is honored.
 
-The runner (`tools/run-tests.js`) instantiates `watjs.wasm` with
-`{print, host_throw, host_panic, now_ms}`, writes source via `alloc_input`, calls
-`eval`, and checks the result.
+The runners instantiate `watjs.wasm` with `{print, host_throw, host_panic, now_ms}`,
+write source via `alloc_input`, call `eval`, and check the result.
 
-## Known limitations
+## test262 status
 
-Not yet implemented: prototypes/`this`/methods, `new`, array methods
-(`push`/`map`/…), `switch`, `do/while`, `break`/`continue`, labelled statements,
-`**`, bitwise operators, regex, BigInt, modules, `typeof`/`instanceof`, spec-exact
-number-to-string (fractions are approximate; integers exact), function-declaration
-hoisting, array growth beyond literal capacity (64). These are the natural next
-increments toward broader test262 coverage.
+The full tc39 harness loads and a growing fraction of real test262 cases pass
+(~13/21 in the sampled batch). Passing the **entire** suite is a person-years
+effort (it requires essentially all of ECMAScript to spec precision); this is a
+working subset on a steady trajectory.
+
+## Known limitations / next increments
+
+Boxed primitive wrappers (`new Number/String/Boolean` as objects), getters/setters,
+`Object`/`Array.prototype` methods (`keys`, `push`, `map`, `forEach`, `join`, …),
+labelled statements, `**`, `delete`/`in`, regex, BigInt, generators, `async`/`await`,
+classes, modules, `Proxy`/`Reflect`, TypedArrays, Unicode (escapes, non-ASCII
+whitespace, identifiers), strict mode, spec-exact (shortest round-trip)
+number-to-string, multi-declarator var hoisting, array growth beyond literal
+capacity (64). Each is an incremental step toward broader test262 coverage.
