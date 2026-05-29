@@ -552,6 +552,16 @@
           (call $scope_define (local.get $itres) (cstring "done") (call $v_false))
           (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@i") (call $num (f64.convert_i32_s (i32.add (local.get $itix) (i32.const 1)))))))
       (return (call $mk_obj (local.get $itres)))))
+  ;; --- number methods (this = the number) ---
+  (if (i32.or (i32.eq (local.get $id) (i32.const 145)) (i32.eq (local.get $id) (i32.const 146)))
+    (then
+      (let $nv f64 (call $to_num (local.get $thisv)))
+      (if (i32.eq (local.get $id) (i32.const 145))  ;; toString([radix])
+        (then
+          (let $radix i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 10))))
+          (if (i32.eq (local.get $radix) (i32.const 10)) (then (return (call $mk_str (call $num_to_str (local.get $nv))))))
+          (return (call $mk_str (call $num_to_radix (i32.trunc_f64_s (local.get $nv)) (local.get $radix))))))
+      (return (call $mk_str (call $num_to_fixed (local.get $nv) (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   ;; --- string methods (this = the string) ---
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
     (then
@@ -2865,6 +2875,10 @@
   (drop (call $def_native (local.get $g) (cstring "parseFloat") (i32.const 51)))
   (drop (call $def_native (local.get $g) (cstring "RegExp") (i32.const 100)))
   ;; Number with NaN / Infinity constants
+  (let $numproto i32 (call $scope_new (i32.const 0) (i32.const 8)))  ;; Number.prototype (reg 164)
+  (i32.store (i32.const 164) (local.get $numproto))
+  (call $scope_define (local.get $numproto) (cstring "toString") (call $mk_native (i32.const 145) (cstring "toString")))
+  (call $scope_define (local.get $numproto) (cstring "toFixed") (call $mk_native (i32.const 146) (cstring "toFixed")))
   (let $numf i64 (call $def_native (local.get $g) (cstring "Number") (i32.const 4)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
