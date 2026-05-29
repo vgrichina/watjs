@@ -9,6 +9,39 @@
 ;; re_search stores the match END byte offset in register 168 (RE_END).
 ;; ═══════════════════════════════════════════════════════════════
 
+;; ASCII lowercase; case-aware char equality (reg 272 = ignorecase 'i' flag)
+(func $re_lc (param $c i32) (result i32) (effects)
+  (if i32 (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 90)))
+    (then (i32.add (local.get $c) (i32.const 32))) (else (local.get $c))))
+(func $re_eqc (param $a i32) (param $b i32) (result i32) (effects)
+  (if i32 (i32.load (i32.const 272))
+    (then (i32.eq (call $re_lc (local.get $a)) (call $re_lc (local.get $b))))
+    (else (i32.eq (local.get $a) (local.get $b)))))
+
+;; does string `s` contain byte `ch`?
+(func $str_has_char (param $s i32) (param $ch i32) (result i32) (effects)
+  (let $n i32 (call $str_len (local.get $s)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (if (i32.eq (call $str_byte (local.get $s) (local.get $i)) (local.get $ch)) (then (return (i32.const 1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i32.const 0))
+
+;; set reg 272 (ignorecase 'i') and 276 (global 'g') from a regex value's flags
+(func $re_apply_flags (param $v i64) (effects)
+  (i32.store (i32.const 272) (i32.const 0)) (i32.store (i32.const 276) (i32.const 0))
+  (if (call $is_object (local.get $v))
+    (then
+      (let $sl i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__re_flags__")))
+      (if (local.get $sl)
+        (then
+          (let $fv i64 (i64.load (local.get $sl)))
+          (if (call $is_string (local.get $fv))
+            (then
+              (i32.store (i32.const 272) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 105)))
+              (i32.store (i32.const 276) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 103))))))))))
+
 ;; does escape letter `e` match char `ch`?  (ch = -1 means past end)
 (func $re_esc_match (param $e i32) (param $ch i32) (result i32) (effects)
   (if (i32.lt_s (local.get $ch) (i32.const 0)) (then (return (i32.const 0))))
@@ -29,7 +62,7 @@
   (if (i32.eq (local.get $e) (i32.const 110)) (then (set! $lit (i32.const 10))))
   (if (i32.eq (local.get $e) (i32.const 116)) (then (set! $lit (i32.const 9))))
   (if (i32.eq (local.get $e) (i32.const 114)) (then (set! $lit (i32.const 13))))
-  (i32.eq (local.get $ch) (local.get $lit)))
+  (call $re_eqc (local.get $ch) (local.get $lit)))
 
 (func $re_is_word (param $ch i32) (result i32) (effects)
   (i32.or (i32.and (i32.ge_s (local.get $ch) (i32.const 48)) (i32.le_s (local.get $ch) (i32.const 57)))
@@ -98,7 +131,7 @@
   (if (i32.eq (local.get $c) (i32.const 46)) (then (return (i32.ne (local.get $ch) (i32.const 10)))))  ;; .
   (if (i32.eq (local.get $c) (i32.const 92)) (then (return (call $re_esc_match (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $astart) (i32.const 1)))) (local.get $ch)))))  ;; \X
   (if (i32.eq (local.get $c) (i32.const 91)) (then (return (call $re_class_match (local.get $p) (i32.add (local.get $astart) (i32.const 1)) (i32.sub (local.get $aend) (i32.const 1)) (local.get $ch)))))  ;; [..]
-  (i32.eq (local.get $ch) (local.get $c)))
+  (call $re_eqc (local.get $ch) (local.get $c)))
 
 ;; match pattern[ppos..] against subject starting at spos; return END spos or -1
 (func $re_match (param $p i32) (param $plen i32) (param $ppos i32) (param $s i32) (param $slen i32) (param $spos i32) (result i32) (effects)

@@ -836,21 +836,28 @@
   (if (i32.eq (local.get $id) (i32.const 100))  ;; RegExp(pattern[,flags])
     (then
       (let $pat i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))) (else (cstring ""))))
+      (let $flg i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (cstring ""))))
       (let $ro i32 (call $obj_new (i32.const 8)))
       (call $scope_define (local.get $ro) (cstring "__re_src__") (call $mk_str (local.get $pat)))
+      (call $scope_define (local.get $ro) (cstring "__re_flags__") (call $mk_str (local.get $flg)))
       (call $scope_define (local.get $ro) (cstring "source") (call $mk_str (local.get $pat)))
+      (call $scope_define (local.get $ro) (cstring "flags") (call $mk_str (local.get $flg)))
+      (call $scope_define (local.get $ro) (cstring "global") (call $mk_bool (call $str_has_char (local.get $flg) (i32.const 103))))
+      (call $scope_define (local.get $ro) (cstring "ignoreCase") (call $mk_bool (call $str_has_char (local.get $flg) (i32.const 105))))
       (call $scope_define (local.get $ro) (cstring "test") (call $mk_native (i32.const 101) (cstring "test")))
       (return (call $mk_obj (local.get $ro)))))
   (if (i32.eq (local.get $id) (i32.const 101))  ;; regex.test(str)  (this = regex obj)
     (then
       (let $src i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "__re_src__"))))
       (if (i32.eqz (call $is_string (local.get $src))) (then (return (call $v_false))))
+      (call $re_apply_flags (local.get $thisv))
       (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (return (call $mk_bool (i32.ge_s (call $re_search_str (call $val_payload (local.get $src)) (local.get $sub)) (i32.const 0))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 102)) (i32.le_s (local.get $id) (i32.const 104)))  ;; match/replace/search (this=string)
     (then
       (let $sub i32 (call $to_str (local.get $thisv)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (call $re_apply_flags (local.get $a0))
       (let $pat i32 (call $re_pat_of (local.get $a0)))
       (let $start i32 (call $re_search_str (local.get $pat) (local.get $sub)))
       (if (i32.eq (local.get $id) (i32.const 104))  ;; search → index
@@ -862,14 +869,34 @@
           (let $r i32 (call $arr_new (i32.const 2)))
           (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))
           (return (call $mk_arr (local.get $r)))))
-      (if (i32.eq (local.get $id) (i32.const 103))  ;; replace(pat, repl) — first match
+      (if (i32.eq (local.get $id) (i32.const 103))  ;; replace(pat, repl)
         (then
-          (if (i32.lt_s (local.get $start) (i32.const 0)) (then (return (call $mk_str (local.get $sub)))))
-          (let $end i32 (i32.load (i32.const 168)))
           (let $repl i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-          (let $out i32 (call $str_concat (call $substr (local.get $sub) (i32.const 0) (local.get $start)) (local.get $repl)))
-          (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $end) (i32.sub (call $str_len (local.get $sub)) (local.get $end)))))
-          (return (call $mk_str (local.get $out)))))
+          (if (i32.eqz (i32.load (i32.const 276)))  ;; not global → first match only
+            (then
+              (if (i32.lt_s (local.get $start) (i32.const 0)) (then (return (call $mk_str (local.get $sub)))))
+              (let $end i32 (i32.load (i32.const 168)))
+              (let $out i32 (call $str_concat (call $substr (local.get $sub) (i32.const 0) (local.get $start)) (local.get $repl)))
+              (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $end) (i32.sub (call $str_len (local.get $sub)) (local.get $end)))))
+              (return (call $mk_str (local.get $out))))
+            (else  ;; global: replace every match
+              (let $out i32 (cstring ""))
+              (let $pos i32 (i32.const 0))
+              (let $sln i32 (call $str_len (local.get $sub)))
+              (block $ge (loop $gl
+                (let $rel i32 (call $re_search (i32.add (local.get $pat) (i32.const 4)) (call $str_len (local.get $pat)) (i32.add (i32.add (local.get $sub) (i32.const 4)) (local.get $pos)) (i32.sub (local.get $sln) (local.get $pos))))
+                (br_if $ge (i32.lt_s (local.get $rel) (i32.const 0)))
+                (let $ms i32 (i32.add (local.get $pos) (local.get $rel)))
+                (let $me i32 (i32.add (local.get $pos) (i32.load (i32.const 168))))
+                (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $pos) (i32.sub (local.get $ms) (local.get $pos)))))
+                (set! $out (call $str_concat (local.get $out) (local.get $repl)))
+                (if (i32.le_s (local.get $me) (local.get $ms))  ;; zero-width: emit one char, advance
+                  (then (if (i32.lt_s (local.get $ms) (local.get $sln)) (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $ms) (i32.const 1)))))) (set! $pos (i32.add (local.get $ms) (i32.const 1))))
+                  (else (set! $pos (local.get $me))))
+                (br_if $ge (i32.gt_s (local.get $pos) (local.get $sln)))
+                (br $gl)))
+              (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $pos) (i32.sub (local.get $sln) (local.get $pos)))))
+              (return (call $mk_str (local.get $out)))))))
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 90))  ;; Object.defineProperty(obj, key, desc)
     (then
