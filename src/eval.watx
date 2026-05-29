@@ -1380,16 +1380,33 @@
   (if (i32.or (i32.eq (local.get $k) (i32.const 38)) (i32.eq (local.get $k) (i32.const 39)))  ;; prefix ++/--
     (then
       (call $advance)
+      ;; simple variable: <ident> not followed by . [ ( (member/call → general path)
       (if (i32.eq (call $cur) (i32.const 3))
         (then
+          (call $look_save)
           (let $nm i32 (call $ident_name))
           (call $advance)
-          (let $newn f64 (if f64 (i32.eq (local.get $k) (i32.const 38))
-                            (then (f64.add (call $to_num (call $var_get_checked (local.get $nm))) (f64.const 1)))
-                            (else (f64.sub (call $to_num (call $var_get_checked (local.get $nm))) (f64.const 1)))))
-          (if (i32.eqz (call $suppress)) (then (call $var_set (local.get $nm) (call $num (local.get $newn)))))
-          (return (call $num (local.get $newn))))   ;; prefix yields the NEW value
-        (else (call $throw (cstring "invalid ++/-- target")) (return (call $v_undef))))))
+          (if (i32.eqz (i32.or (i32.eq (call $cur) (i32.const 23)) (i32.or (i32.eq (call $cur) (i32.const 19)) (i32.eq (call $cur) (i32.const 15)))))
+            (then
+              (let $newn f64 (if f64 (i32.eq (local.get $k) (i32.const 38))
+                                (then (f64.add (call $to_num (call $var_get_checked (local.get $nm))) (f64.const 1)))
+                                (else (f64.sub (call $to_num (call $var_get_checked (local.get $nm))) (f64.const 1)))))
+              (if (i32.eqz (call $suppress)) (then (call $var_set (local.get $nm) (call $num (local.get $newn)))))
+              (return (call $num (local.get $newn)))))   ;; prefix yields the NEW value
+          (call $look_restore)))
+      ;; member/index target: parse via postfix, write back through the REF regs
+      (i32.store (i32.const 104) (i32.const 0))
+      (let $v i64 (call $parse_postfix))
+      (if (i32.load (i32.const 104))
+        (then
+          (let $cont i64 (i64.load (i32.const 112)))
+          (let $key i64 (i64.load (i32.const 120)))
+          (let $newn2 f64 (if f64 (i32.eq (local.get $k) (i32.const 38))
+                            (then (f64.add (call $to_num (local.get $v)) (f64.const 1)))
+                            (else (f64.sub (call $to_num (local.get $v)) (f64.const 1)))))
+          (if (i32.eqz (call $suppress)) (then (call $set_prop (local.get $cont) (local.get $key) (call $num (local.get $newn2)))))
+          (return (call $num (local.get $newn2)))))
+      (call $throw (cstring "invalid ++/-- target")) (return (call $v_undef))))
   (call $parse_postfix))
 
 ;; exponentiation ** (right-associative, binds tighter than * / %)
@@ -1669,17 +1686,40 @@
   ;; general LHS — may be a member/index reference (obj.x = , arr[i] = )
   (i32.store (i32.const 104) (i32.const 0))  ;; clear assignment ref
   (let $v i64 (call $parse_ternary))
-  (if (i32.and (i32.eq (call $cur) (i32.const 24))   ;; '='
-        (i32.and (i32.load (i32.const 104)) (i32.eqz (call $err))))
+  (let $op2 i32 (call $cur))
+  (if (i32.and (i32.load (i32.const 104)) (i32.eqz (call $err)))   ;; member/index reference target
     (then
-      ;; capture the reference BEFORE parsing RHS (RHS parsing clobbers REF regs)
+      ;; capture the reference BEFORE parsing any RHS (RHS parsing clobbers REF regs)
       (let $rcont i64 (i64.load (i32.const 112)))
       (let $rkey i64 (i64.load (i32.const 120)))
-      (call $advance)
-      (let $rhs i64 (call $parse_assign))
-      (if (i32.eqz (call $suppress))
-        (then (call $set_prop (local.get $rcont) (local.get $rkey) (local.get $rhs))))
-      (return (local.get $rhs))))
+      ;; '=' assignment
+      (if (i32.eq (local.get $op2) (i32.const 24))
+        (then
+          (call $advance)
+          (let $rhs i64 (call $parse_assign))
+          (if (i32.eqz (call $suppress))
+            (then (call $set_prop (local.get $rcont) (local.get $rkey) (local.get $rhs))))
+          (return (local.get $rhs))))
+      ;; compound += -= *= /=
+      (if (i32.or (i32.eq (local.get $op2) (i32.const 40)) (i32.or (i32.eq (local.get $op2) (i32.const 41))
+            (i32.or (i32.eq (local.get $op2) (i32.const 42)) (i32.eq (local.get $op2) (i32.const 43)))))
+        (then
+          (call $advance)
+          (let $rhs2 i64 (call $parse_assign))
+          (let $nv i64 (call $compound (local.get $op2) (local.get $v) (local.get $rhs2)))
+          (if (i32.eqz (call $suppress))
+            (then (call $set_prop (local.get $rcont) (local.get $rkey) (local.get $nv))))
+          (return (local.get $nv))))
+      ;; postfix ++ / -- (yields the OLD value)
+      (if (i32.or (i32.eq (local.get $op2) (i32.const 38)) (i32.eq (local.get $op2) (i32.const 39)))
+        (then
+          (call $advance)
+          (let $oldn f64 (call $to_num (local.get $v)))
+          (let $newn f64 (if f64 (i32.eq (local.get $op2) (i32.const 38))
+                            (then (f64.add (local.get $oldn) (f64.const 1))) (else (f64.sub (local.get $oldn) (f64.const 1)))))
+          (if (i32.eqz (call $suppress))
+            (then (call $set_prop (local.get $rcont) (local.get $rkey) (call $num (local.get $newn)))))
+          (return (call $num (local.get $oldn)))))))
   (local.get $v))
 
 ;; comma operator (full Expression): evaluate left-to-right, yield the last.
