@@ -39,7 +39,9 @@
   (call $eval_program)
   (if i32 (call $err)
     (then
-      (let $s i32 (call $to_str (call $err_val)))
+      (let $ev i64 (call $err_val))
+      (call $set_err (i32.const 0))  ;; clear so a toString method can run for the message
+      (let $s i32 (call $to_str (local.get $ev)))
       (call $host_throw (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)))
       (i32.const 1))
     (else (i32.const 0))))

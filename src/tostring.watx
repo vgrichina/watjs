@@ -93,7 +93,36 @@
       (else (if i32 (call $is_null (local.get $v)) (then (cstring "null"))
       (else (if i32 (call $is_boolean (local.get $v))
                (then (if i32 (call $val_payload (local.get $v)) (then (cstring "true")) (else (cstring "false"))))
-      (else (cstring "[object Object]"))))))))))))
+      (else (call $obj_to_str (local.get $v)))))))))))))
+
+;; ToString for objects/arrays/functions: invoke a toString method if present.
+(func $obj_to_str (param $v i64) (result i32) (effects)
+  (if (call $is_array (local.get $v)) (then (return (call $arr_join (local.get $v)))))
+  (if (call $is_object (local.get $v))
+    (then
+      (let $ts i64 (call $get_prop (local.get $v) (call $mk_str (cstring "toString"))))
+      (if (call $is_function (local.get $ts))
+        (then
+          (let $r i64 (call $call_fn0 (local.get $ts) (local.get $v)))
+          (if (call $is_string (local.get $r)) (then (return (call $val_payload (local.get $r)))))))))
+  (if (call $is_function (local.get $v)) (then (return (cstring "function"))))
+  (cstring "[object Object]"))
+
+;; Array#toString: comma-joined element strings (undefined/null -> empty).
+(func $arr_join (param $v i64) (result i32) (effects)
+  (let $a i32 (call $val_payload (local.get $v)))
+  (let $n i32 (call $arr_len (local.get $a)))
+  (let $out i32 (cstring ""))
+  (let $i i32 (i32.const 0))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ge_s (local.get $i) (local.get $n)))
+    (if (i32.gt_s (local.get $i) (i32.const 0)) (then (set! $out (call $str_concat (local.get $out) (cstring ",")))))
+    (let $e i64 (call $arr_get (local.get $a) (local.get $i)))
+    (if (i32.eqz (i32.or (call $is_undefined (local.get $e)) (call $is_null (local.get $e))))
+      (then (set! $out (call $str_concat (local.get $out) (call $to_str (local.get $e))))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cont)))
+  (local.get $out))
 
 ;; ToNumber of any JSValue → f64.
 (func $to_num (param $v i64) (result f64) (effects)
