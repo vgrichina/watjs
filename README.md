@@ -56,7 +56,9 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
 - `if`/`else`, `while`, `do`/`while`, `for`, `for`-`in`, `for`-`of`, `switch`
   (fall-through), `break`, `continue`
 - functions, parameters, `return`, recursion, closures, function expressions,
-  `.name`/`.length`
+  `.name`/`.length`, `arguments` object
+- arrow functions (`x=>e`, `(a,b)=>e`, `()=>{...}`), template literals
+  `` `...${e}...` ``, spread (`[...a]`, `f(...args)`)
 - `this`, method calls, `new`, prototypes (chain lookup), `.prototype`,
   `.constructor`, `instanceof`, `in`, `delete`
 - getters/setters: object-literal `{ get x(){}, set x(v){} }` and
@@ -119,10 +121,11 @@ function-expression-as-loop-condition edge cases, boxed-primitive `valueOf` corn
 
 ## Known limitations / next increments
 
-Not implemented: regex groups/alternation/backrefs/flags, labelled statements,
-`**`, BigInt, modules, `Proxy`/`Reflect`, TypedArrays, full Unicode (identifiers,
-property escapes), strict-mode semantics, spec-exact (shortest round-trip)
-number-to-string, multi-declarator var hoisting, regex literals (`/.../`).
+Not implemented: destructuring, default/rest params, computed property names,
+Symbol + the iterator protocol, regex groups/alternation/backrefs/flags, labelled
+statements, BigInt, modules, `Proxy`/`Reflect`, TypedArrays, full Unicode
+(identifiers, property escapes), strict-mode semantics, spec-exact (shortest
+round-trip) number-to-string, regex literals (`/.../`).
 
 **Generators and `async`/`await`** need continuation capture (suspend/resume a
 call mid-execution). The re-scan/parse-and-evaluate interpreter cannot suspend a
