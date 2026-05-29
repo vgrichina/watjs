@@ -62,10 +62,13 @@ negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
 - `throw`, `try`/`catch`; typed errors (engine throws `ReferenceError`/`TypeError`)
 - objects (literals, `.`/`[]` get/set, nested, prototype chain), arrays (literals,
   indexing, `.length`, push idiom), string `.length` and char indexing
-- builtins: `print`, `assert`, `eval`, `Number` (+`NaN`/`Infinity` constants),
-  `String`, `Boolean`, `isNaN`, `isFinite`; error constructors (`Error`,
-  `TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`, `EvalError`,
-  `URIError`) via a JS prelude
+- builtins: `print`, `assert`, `eval`, `Number` (+`NaN`/`Infinity`), `String`,
+  `Boolean`, `Object`/`Object.keys`, `Math` (abs/floor/ceil/round/sqrt/max/min/
+  pow/trunc/sign + PI/E), `isNaN`, `isFinite`; error constructors via a JS prelude
+- `String.prototype`: charAt/charCodeAt/indexOf/slice/substring/toUpperCase/
+  toLowerCase/toString/valueOf/constructor
+- `Array.prototype`: push/pop/indexOf/join/slice/forEach/map/includes (growable)
+- ToPrimitive (`valueOf`/`toString`); comma operator
 
 ## Testing
 
@@ -89,8 +92,9 @@ The full tc39 harness (`sta.js` + `assert.js`) loads and runs, and real test262
 cases pass at a solid rate:
 
 - **39/39** on a targeted batch (expressions/typeof/logical/conditional/types).
-- **31/36 (~86%)** on a *fresh, untargeted* sample (for/while/multiplication/
-  modulus/number/logical-and) — i.e. cases not used while developing.
+- **~85% (56/66)** across *fresh, untargeted* samples spanning for/while/do/switch/
+  block/comma/postfix/multiplication/modulus/number/logical-and/undefined — i.e.
+  cases not used while developing.
 
 Passing the **entire** suite (50,000+ files) is a person-years effort — it requires
 essentially all of ECMAScript to spec precision (regex, generators, async, classes,
