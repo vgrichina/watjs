@@ -294,7 +294,8 @@
           (let $iop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
           (call $next_token)
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; LOADVAR
-          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP (old value)
+          (call $vm_emit_op (local.get $code) (i32.const 63))  ;; TONUM (postfix yields ToNumber(old))
+          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP (old numeric value)
           (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 1)))
           (call $vm_emit_op (local.get $code) (local.get $iop))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR → leaves old
@@ -408,7 +409,7 @@
     (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
       (then
         (call $next_token)
-        (call $vm_c_expr (local.get $code))
+        (call $vm_c_expr (local.get $code))  ;; [obj, key]
         (call $next_token)  ;; ']'
         (if (i32.eq (call $tok_kind) (i32.const 24))  ;; arr[i] = v
           (then
@@ -416,6 +417,24 @@
             (call $vm_c_expr (local.get $code))
             (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX
             (br $e)))
+        (if (i32.eq (call $tok_kind) (i32.const 15))  ;; obj[key](args) — computed method call (binds this=obj)
+          (then
+            (let $ik i32 (call $vm_tmpname))
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ik))  ;; STOREVAR @@k=key → [obj]
+            (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [obj, obj]
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ik))  ;; LOADVAR key → [obj, obj, key]
+            (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [obj, method]
+            (call $next_token)  ;; '('
+            (let $iargc i32 (i32.const 0))
+            (if (i32.ne (call $tok_kind) (i32.const 16))
+              (then (block $ie (loop $il
+                (call $vm_c_expr (local.get $code))
+                (set! $iargc (i32.add (local.get $iargc) (i32.const 1)))
+                (br_if $ie (i32.eqz (call $eat (i32.const 22))))
+                (br $il)))))
+            (call $next_token)  ;; ')'
+            (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $iargc))  ;; CALLM
+            (br $l)))
         (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX
         (br $l)))
     (if (i32.eq (local.get $k) (i32.const 23))  ;; '.' member
