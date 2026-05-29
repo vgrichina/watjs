@@ -1,0 +1,78 @@
+;; ═══════════════════════════════════════════════════════════════
+;; json.watx — JSON.stringify (recursive serializer).
+;; JSON.parse is implemented in eval.watx by re-evaluating "(" + text + ")".
+;; ═══════════════════════════════════════════════════════════════
+
+;; quote a string with JSON escaping → heap Str including the surrounding quotes
+(func $json_quote (param $s i32) (result i32) (effects)
+  (let $n i32 (call $str_len (local.get $s)))
+  (let $out i32 (cstring "\""))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
+    (let $esc i32 (i32.const 0))  ;; escape sequence Str, or 0 = none
+    (if (i32.eq (local.get $c) (i32.const 34)) (then (set! $esc (cstring "\\\""))))
+    (if (i32.eq (local.get $c) (i32.const 92)) (then (set! $esc (cstring "\\\\"))))
+    (if (i32.eq (local.get $c) (i32.const 10)) (then (set! $esc (cstring "\\n"))))
+    (if (i32.eq (local.get $c) (i32.const 9))  (then (set! $esc (cstring "\\t"))))
+    (if (i32.eq (local.get $c) (i32.const 13)) (then (set! $esc (cstring "\\r"))))
+    (if (local.get $esc)
+      (then (set! $out (call $str_concat (local.get $out) (local.get $esc))))
+      (else
+        (let $ch i32 (call $str_alloc (i32.const 1)))
+        (call $str_set_byte (local.get $ch) (i32.const 0) (local.get $c))
+        (set! $out (call $str_concat (local.get $out) (local.get $ch)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l)))
+  (call $str_concat (local.get $out) (cstring "\"")))
+
+;; serialize value → heap Str ptr, or 0 for undefined/function (skip / "null").
+(func $json_str (param $v i64) (result i32) (effects)
+  (if (call $is_number (local.get $v))
+    (then
+      (let $d f64 (call $tonum_raw (local.get $v)))
+      (if i32 (i32.and (f64.eq (local.get $d) (local.get $d)) (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0)))))
+        (then (return (call $num_to_str (local.get $d))))
+        (else (return (cstring "null"))))))
+  (if (call $is_boolean (local.get $v)) (then (return (if i32 (call $val_payload (local.get $v)) (then (cstring "true")) (else (cstring "false"))))))
+  (if (call $is_null (local.get $v)) (then (return (cstring "null"))))
+  (if (call $is_string (local.get $v)) (then (return (call $json_quote (call $val_payload (local.get $v))))))
+  (if (call $is_array (local.get $v))
+    (then
+      (let $a i32 (call $val_payload (local.get $v)))
+      (let $n i32 (call $arr_len (local.get $a)))
+      (let $out i32 (cstring "["))
+      (let $i i32 (i32.const 0))
+      (block $e (loop $l
+        (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+        (if (i32.gt_s (local.get $i) (i32.const 0)) (then (set! $out (call $str_concat (local.get $out) (cstring ",")))))
+        (let $es i32 (call $json_str (call $arr_get (local.get $a) (local.get $i))))
+        (if (i32.eqz (local.get $es)) (then (set! $es (cstring "null"))))
+        (set! $out (call $str_concat (local.get $out) (local.get $es)))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $l)))
+      (return (call $str_concat (local.get $out) (cstring "]")))))
+  (if (call $is_object (local.get $v))
+    (then
+      (let $o i32 (call $val_payload (local.get $v)))
+      (let $cnt i32 (call $scope_count (local.get $o)))
+      (let $out i32 (cstring "{"))
+      (let $i i32 (i32.const 0))
+      (let $first i32 (i32.const 1))
+      (block $e (loop $l
+        (br_if $e (i32.ge_s (local.get $i) (local.get $cnt)))
+        (let $en i32 (call $scope_entry (local.get $o) (local.get $i)))
+        (let $nm i32 (i32.load (local.get $en)))
+        (let $vs i32 (call $json_str (call $get_prop (local.get $v) (call $mk_str (local.get $nm)))))
+        (if (i32.ne (local.get $vs) (i32.const 0))
+          (then
+            (if (i32.eqz (local.get $first)) (then (set! $out (call $str_concat (local.get $out) (cstring ",")))))
+            (set! $first (i32.const 0))
+            (set! $out (call $str_concat (local.get $out) (call $json_quote (local.get $nm))))
+            (set! $out (call $str_concat (local.get $out) (cstring ":")))
+            (set! $out (call $str_concat (local.get $out) (local.get $vs)))))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $l)))
+      (return (call $str_concat (local.get $out) (cstring "}")))))
+  (i32.const 0))  ;; undefined / function

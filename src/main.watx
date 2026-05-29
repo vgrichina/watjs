@@ -16,6 +16,7 @@
 (include "tostring.watx")
 (include "obj.watx")
 (include "regex.watx")
+(include "json.watx")
 (include "eval.watx")
 
 ;; Output a heap string via the host, unless suppressed (short-circuit branch).

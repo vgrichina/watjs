@@ -348,6 +348,16 @@
           (return (local.get $racc))))
       (return (call $v_undef))))
   ;; --- static object/array/number/string methods (ids 80-87) ---
+  (if (i32.eq (local.get $id) (i32.const 105))  ;; JSON.stringify(v)
+    (then
+      (let $js i32 (call $json_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (i32.eqz (local.get $js)) (then (return (call $v_undef))))
+      (return (call $mk_str (local.get $js)))))
+  (if (i32.eq (local.get $id) (i32.const 106))  ;; JSON.parse(text)
+    (then
+      (let $jt i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (let $wrapped i32 (call $str_concat (call $str_concat (cstring "(") (local.get $jt)) (cstring ")")))
+      (return (call $eval_string (local.get $wrapped)))))
   ;; --- regex (100 RegExp, 101 test) and string regex methods (102 match,103 replace,104 search) ---
   (if (i32.eq (local.get $id) (i32.const 100))  ;; RegExp(pattern[,flags])
     (then
@@ -1183,15 +1193,24 @@
         (else (call $throw (cstring "invalid ++/-- target")) (return (call $v_undef))))))
   (call $parse_postfix))
 
+;; exponentiation ** (right-associative, binds tighter than * / %)
+(func $parse_pow (result i64) (effects)
+  (let $left i64 (call $parse_unary))
+  (if i64 (i32.eq (call $cur) (i32.const 51))  ;; **
+    (then
+      (call $advance)
+      (call $num (call $f64_pow (call $to_num (local.get $left)) (call $to_num (call $parse_pow)))))
+    (else (local.get $left))))
+
 ;; ── multiplicative: * / % ──
 (func $parse_mul (result i64) (effects)
-  (let $left i64 (call $parse_unary))
+  (let $left i64 (call $parse_pow))
   (block $brk (loop $cont
     (let $k i32 (call $cur))
     (br_if $brk (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 12))
                           (i32.or (i32.eq (local.get $k) (i32.const 13)) (i32.eq (local.get $k) (i32.const 14))))))
     (call $advance)
-    (let $r i64 (call $parse_unary))
+    (let $r i64 (call $parse_pow))
     (let $x f64 (call $to_num (local.get $left)))
     (let $y f64 (call $to_num (local.get $r)))
     (set! $left (call $num
@@ -1865,6 +1884,11 @@
   (call $scope_define (local.get $mo) (cstring "sign") (call $mk_native (i32.const 49) (cstring "sign")))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "PI")) (call $num (f64.const 3.141592653589793)))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "E")) (call $num (f64.const 2.718281828459045)))
+  ;; JSON object
+  (let $jo i32 (call $obj_new (i32.const 4)))
+  (call $scope_define (local.get $g) (cstring "JSON") (call $mk_obj (local.get $jo)))
+  (call $scope_define (local.get $jo) (cstring "stringify") (call $mk_native (i32.const 105) (cstring "stringify")))
+  (call $scope_define (local.get $jo) (cstring "parse") (call $mk_native (i32.const 106) (cstring "parse")))
   ;; Object with .keys
   (let $objf i64 (call $def_native (local.get $g) (cstring "Object") (i32.const 9)))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "keys")) (call $mk_native (i32.const 10) (cstring "keys")))

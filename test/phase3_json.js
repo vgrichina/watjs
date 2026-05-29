@@ -1,0 +1,12 @@
+assert(2 ** 10 === 1024, "pow");
+assert(2 ** 3 ** 2 === 512, "pow right-assoc");
+assert(JSON.stringify(42) === "42", "json num");
+assert(JSON.stringify("hi") === "\"hi\"", "json str");
+assert(JSON.stringify([1, 2, 3]) === "[1,2,3]", "json arr");
+assert(JSON.stringify({ a: 1, b: "x" }) === "{\"a\":1,\"b\":\"x\"}", "json obj");
+assert(JSON.stringify({ n: [true, null] }) === "{\"n\":[true,null]}", "json nested");
+var o = JSON.parse("{\"x\": 10, \"y\": [1, 2, 3]}");
+assert(o.x === 10 && o.y[2] === 3, "json parse");
+assert(JSON.parse("42") === 42, "json parse num");
+assert(JSON.parse("true") === true, "json parse bool");
+print("json/pow tests passed");
