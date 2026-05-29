@@ -833,6 +833,15 @@
         (call $vm_patch (local.get $code) (local.get $dsk))))
     (set! $dpi (i32.add (local.get $dpi) (i32.const 1)))
     (br $dpl)))
+  ;; rest parameter: restName = arguments.slice(restidx)
+  (if (i32.ge_s (local.get $restidx) (i32.const 0))
+    (then
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "arguments"))  ;; LOADVAR arguments
+      (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP
+      (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "slice"))  ;; GETPROP slice
+      (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (local.get $restidx))))
+      (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 1))  ;; CALLM 1
+      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $params) (i32.mul (local.get $restidx) (i32.const 4)))))))  ;; STOREVAR rest
   (call $cursor_restore (local.get $bodycur))  ;; back to the body
   (call $vm_c_stmt (local.get $code))  ;; body block
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
