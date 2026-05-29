@@ -1284,9 +1284,18 @@
 (func $get_this (result i64) (effects) (i64.load (i32.const 144)))
 (func $set_this (param $v i64) (effects) (i64.store (i32.const 144) (local.get $v)))
 ;; loop control flags: 132 = break, 136 = continue
+;; labelled statements: 188 = pending label for the next loop, 192 = break/continue target label (0 = unlabelled)
 (func $brkflag (result i32) (effects) (i32.load (i32.const 132)))
 (func $contflag (result i32) (effects) (i32.load (i32.const 136)))
-(func $clear_loopflags (effects) (i32.store (i32.const 132) (i32.const 0)) (i32.store (i32.const 136) (i32.const 0)))
+(func $clear_loopflags (effects) (i32.store (i32.const 132) (i32.const 0)) (i32.store (i32.const 136) (i32.const 0)) (i32.store (i32.const 192) (i32.const 0)))
+(func $label_pending (result i32) (effects) (i32.load (i32.const 188)))
+(func $set_label_pending (param $l i32) (effects) (i32.store (i32.const 188) (local.get $l)))
+(func $brk_target (result i32) (effects) (i32.load (i32.const 192)))
+;; does the current break/continue (target 192) apply to a loop labelled $mylabel?
+(func $label_matches (param $mylabel i32) (result i32) (effects)
+  (let $t i32 (call $brk_target))
+  (if i32 (i32.eqz (local.get $t)) (then (i32.const 1))   ;; unlabelled → innermost loop
+    (else (if i32 (local.get $mylabel) (then (call $str_eq (local.get $t) (local.get $mylabel))) (else (i32.const 0))))))
 ;; any non-local exit in progress (error / return / break / continue)
 (func $unwind (result i32) (effects)
   (i32.or (call $err) (i32.or (call $retflag) (i32.or (call $brkflag) (call $contflag)))))
@@ -2178,6 +2187,7 @@
   (call $sup_inc) (call $parse_statement) (call $sup_dec))
 
 (func $parse_while (effects)
+  (let $mylabel i32 (call $label_pending)) (call $set_label_pending (i32.const 0))
   (call $advance)  ;; 'while'
   (call $expect (i32.const 15) (cstring "expected ("))
   (let $condcur i32 (call $cursor_save))
@@ -2190,8 +2200,11 @@
       (then (call $skip_body (local.get $bodycur)) (br $brk)))  ;; skip body, exit
     (call $parse_statement)  ;; execute body
     (if (call $brkflag)
-      (then (call $clear_loopflags) (call $skip_body (local.get $bodycur)) (br $brk)))
-    (i32.store (i32.const 136) (i32.const 0))  ;; clear continue
+      (then (if (call $label_matches (local.get $mylabel)) (then (call $clear_loopflags))) (call $skip_body (local.get $bodycur)) (br $brk)))
+    (if (call $contflag)
+      (then (if (call $label_matches (local.get $mylabel))
+        (then (i32.store (i32.const 136) (i32.const 0)) (i32.store (i32.const 192) (i32.const 0)))
+        (else (call $skip_body (local.get $bodycur)) (br $brk)))))  ;; continue targets an outer loop
     (br $cont))))
 
 ;; decide for(;;) vs for-in / for-of by peeking after the loop variable
@@ -2209,6 +2222,7 @@
 
 ;; for (var x in obj) / for (var x of arr|str)
 (func $parse_for_inof (effects)
+  (let $mylabel i32 (call $label_pending)) (call $set_label_pending (i32.const 0))
   (call $advance)  ;; 'for'
   (call $expect (i32.const 15) (cstring "expected ("))
   (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (call $advance)))
@@ -2237,8 +2251,11 @@
             (call $var_set (local.get $vn) (call $get_prop (local.get $r) (call $mk_str (cstring "value"))))
             (call $cursor_restore (local.get $bodycur))
             (call $parse_statement)
-            (if (call $brkflag) (then (call $clear_loopflags) (br $ibrk)))
-            (i32.store (i32.const 136) (i32.const 0))  ;; clear continue
+            (if (call $brkflag) (then (if (call $label_matches (local.get $mylabel)) (then (call $clear_loopflags))) (br $ibrk)))
+            (if (call $contflag)
+              (then (if (call $label_matches (local.get $mylabel))
+                (then (i32.store (i32.const 136) (i32.const 0)) (i32.store (i32.const 192) (i32.const 0)))
+                (else (br $ibrk)))))
             (br_if $ibrk (i32.or (call $err) (call $retflag)))
             (br $icont)))
           (call $skip_body (local.get $bodycur))
@@ -2265,8 +2282,11 @@
     (call $var_set (local.get $vn) (local.get $item))
     (call $cursor_restore (local.get $bodycur))
     (call $parse_statement)
-    (if (call $brkflag) (then (call $clear_loopflags) (br $brk)))
-    (i32.store (i32.const 136) (i32.const 0))  ;; clear continue
+    (if (call $brkflag) (then (if (call $label_matches (local.get $mylabel)) (then (call $clear_loopflags))) (br $brk)))
+    (if (call $contflag)
+      (then (if (call $label_matches (local.get $mylabel))
+        (then (i32.store (i32.const 136) (i32.const 0)) (i32.store (i32.const 192) (i32.const 0)))
+        (else (br $brk)))))
     (br_if $brk (i32.or (call $err) (call $retflag)))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $cont)))
@@ -2274,6 +2294,7 @@
   (call $skip_body (local.get $bodycur)))
 
 (func $parse_for (effects)
+  (let $mylabel i32 (call $label_pending)) (call $set_label_pending (i32.const 0))
   (call $advance)  ;; 'for'
   (call $expect (i32.const 15) (cstring "expected ("))
   ;; init (var decl or expression or empty), consumes its ';'
@@ -2302,8 +2323,11 @@
       (then (call $skip_body (local.get $bodycur)) (br $brk)))
     (call $parse_statement)        ;; body
     (if (call $brkflag)
-      (then (call $clear_loopflags) (call $skip_body (local.get $bodycur)) (br $brk)))
-    (i32.store (i32.const 136) (i32.const 0))   ;; clear continue
+      (then (if (call $label_matches (local.get $mylabel)) (then (call $clear_loopflags))) (call $skip_body (local.get $bodycur)) (br $brk)))
+    (if (call $contflag)
+      (then (if (call $label_matches (local.get $mylabel))
+        (then (i32.store (i32.const 136) (i32.const 0)) (i32.store (i32.const 192) (i32.const 0)))
+        (else (call $skip_body (local.get $bodycur)) (br $brk)))))  ;; continue targets an outer loop
     (if (i32.eqz (i32.or (call $err) (call $retflag)))   ;; run update unless unwinding
       (then
         (call $cursor_restore (local.get $updcur))
@@ -2384,35 +2408,47 @@
 
 (func $parse_break (effects)
   (call $advance)
-  (if (i32.eqz (call $suppress)) (then (i32.store (i32.const 132) (i32.const 1))))
+  (let $lbl i32 (i32.const 0))  ;; optional label
+  (if (i32.eq (call $cur) (i32.const 3)) (then (set! $lbl (call $ident_name)) (call $advance)))
+  (if (i32.eqz (call $suppress)) (then (i32.store (i32.const 132) (i32.const 1)) (i32.store (i32.const 192) (local.get $lbl))))
   (drop (call $eat (i32.const 21))))
 (func $parse_continue (effects)
   (call $advance)
-  (if (i32.eqz (call $suppress)) (then (i32.store (i32.const 136) (i32.const 1))))
+  (let $lbl i32 (i32.const 0))
+  (if (i32.eq (call $cur) (i32.const 3)) (then (set! $lbl (call $ident_name)) (call $advance)))
+  (if (i32.eqz (call $suppress)) (then (i32.store (i32.const 136) (i32.const 1)) (i32.store (i32.const 192) (local.get $lbl))))
   (drop (call $eat (i32.const 21))))
 
 ;; do <stmt> while ( cond )
 (func $parse_do (effects)
+  (let $mylabel i32 (call $label_pending)) (call $set_label_pending (i32.const 0))
   (call $advance)  ;; 'do'
   (let $bodycur i32 (call $cursor_save))
   (block $brk (loop $cont
     (call $cursor_restore (local.get $bodycur))
     (call $parse_statement)             ;; body
-    (let $broke i32 (call $brkflag))
     (let $unwound i32 (i32.or (call $err) (call $retflag)))
     ;; if body exited early (break/continue/return/err), reposition cursor past it
-    (if (i32.or (local.get $broke) (i32.or (call $contflag) (local.get $unwound)))
+    (if (i32.or (call $brkflag) (i32.or (call $contflag) (local.get $unwound)))
       (then (call $skip_body (local.get $bodycur))))
-    (call $clear_loopflags)             ;; consume break/continue
     (if (local.get $unwound) (then (br $brk)))
-    ;; trailing while ( cond )
+    ;; decide whether this loop exits, consuming our own labelled/unlabelled break/continue
+    (let $exit i32 (i32.const 0))
+    (if (call $brkflag)
+      (then (if (call $label_matches (local.get $mylabel)) (then (call $clear_loopflags))) (set! $exit (i32.const 1))))
+    (if (call $contflag)
+      (then (if (call $label_matches (local.get $mylabel))
+        (then (i32.store (i32.const 136) (i32.const 0)) (i32.store (i32.const 192) (i32.const 0)))
+        (else (set! $exit (i32.const 1))))))
+    ;; trailing while ( cond ) — always consumed to position the cursor past the statement
     (if (i32.eqz (call $tok_is_kw (cstring "while"))) (then (call $throw (cstring "expected while")) (br $brk)))
     (call $advance)
     (call $expect (i32.const 15) (cstring "expected ("))
     (let $cond i64 (call $parse_comma))
     (call $expect (i32.const 16) (cstring "expected )"))
     (drop (call $eat (i32.const 21)))
-    (if (i32.or (local.get $broke) (i32.or (call $suppress) (i32.eqz (call $truthy (local.get $cond))))) (then (br $brk)))
+    (if (local.get $exit) (then (br $brk)))
+    (if (i32.or (call $suppress) (i32.eqz (call $truthy (local.get $cond)))) (then (br $brk)))
     (br $cont))))
 
 ;; switch (disc) { case e: ...; default: ...; }
@@ -2457,7 +2493,9 @@
         (if (call $tok_is_kw (cstring "default"))
           (then (call $advance) (call $expect (i32.const 37) (cstring "expected :")) (br $c2)))
         (call $parse_statement)
-        (if (call $brkflag) (then (call $clear_loopflags) (br $s2)))  ;; break exits the switch
+        (if (call $brkflag)
+          (then (if (i32.eqz (call $brk_target)) (then (call $clear_loopflags)))  ;; unlabelled break exits switch; labelled propagates
+                (br $s2)))
         (br_if $s2 (i32.or (call $err) (i32.or (call $retflag) (call $contflag))))  ;; propagate
         (br $c2)))))
   ;; reposition to the switch's closing '}' by brace-depth token scan (must work
@@ -2479,6 +2517,28 @@
   (if (i32.eq (local.get $k) (i32.const 21)) (then (call $advance) (return)))       ;; empty ';'
   (if (i32.eq (local.get $k) (i32.const 3))
     (then
+      ;; labelled statement:  IDENT : stmt   (label applies to the following loop)
+      (call $look_save)
+      (let $maybe i32 (call $ident_name))
+      (call $advance)
+      (if (i32.eq (call $cur) (i32.const 37))  ;; ':'
+        (then
+          (call $advance)
+          (call $set_label_pending (local.get $maybe))
+          (let $lblcur i32 (call $cursor_save))  ;; start of the labelled statement
+          (call $parse_statement)
+          (call $set_label_pending (i32.const 0))
+          ;; a labelled non-loop statement (e.g. a block) absorbs a break to its own
+          ;; label; re-scan it under suppress to reposition the cursor past its end.
+          (if (call $brkflag)
+            (then (if (call $brk_target)
+              (then (if (call $str_eq (call $brk_target) (local.get $maybe))
+                (then
+                  (i32.store (i32.const 132) (i32.const 0)) (i32.store (i32.const 192) (i32.const 0))
+                  (call $cursor_restore (local.get $lblcur))
+                  (call $sup_inc) (call $parse_statement) (call $sup_dec)))))))
+          (return)))
+      (call $look_restore)
       (if (call $tok_is_kw (cstring "var"))      (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
       (if (call $tok_is_kw (cstring "let"))      (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))
       (if (call $tok_is_kw (cstring "const"))    (then (call $parse_var) (drop (call $eat (i32.const 21))) (return)))

@@ -38,6 +38,8 @@
   (call $set_err (i32.const 0))
   (call $set_suppress (i32.const 0))
   (i32.store (i32.const 184) (i32.const 0))  ;; typeof-unresolvable guard
+  (i32.store (i32.const 188) (i32.const 0))  ;; pending loop label
+  (i32.store (i32.const 192) (i32.const 0))  ;; break/continue target label
   (call $lex_init)
   (call $eval_program)
   (if i32 (call $err)
