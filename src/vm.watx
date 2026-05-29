@@ -83,30 +83,61 @@
       (call $vm_emit_op (local.get $code) (i32.const 8))        ;; LOADVAR
       (call $vm_emit_op (local.get $code) (call $ident_name))
       (call $next_token)
-      ;; call suffix: f(args) [ (args) ]*  → push args, CALL argc
-      (block $cse (loop $csl
-        (br_if $cse (i32.ne (call $tok_kind) (i32.const 15)))  ;; '('
-        (call $next_token)
-        (let $argc i32 (i32.const 0))
-        (if (i32.ne (call $tok_kind) (i32.const 16))  ;; non-empty arg list
-          (then (block $ae (loop $al
-            (call $vm_c_expr (local.get $code))
-            (set! $argc (i32.add (local.get $argc) (i32.const 1)))
-            (br_if $ae (i32.eqz (call $eat (i32.const 22))))  ;; ','
-            (br $al)))))
-        (call $next_token)  ;; ')'
-        (call $vm_emit_op (local.get $code) (i32.const 19))      ;; CALL
-        (call $vm_emit_op (local.get $code) (local.get $argc))
-        (br $csl)))
+      (return)))
+  (if (i32.eq (call $tok_kind) (i32.const 19))  ;; array literal [ ... ]
+    (then
+      (call $next_token)
+      (let $n i32 (i32.const 0))
+      (if (i32.ne (call $tok_kind) (i32.const 20))
+        (then (block $ae (loop $al
+          (call $vm_c_expr (local.get $code))
+          (set! $n (i32.add (local.get $n) (i32.const 1)))
+          (br_if $ae (i32.eqz (call $eat (i32.const 22))))
+          (br $al)))))
+      (call $next_token)  ;; ']'
+      (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (local.get $n))  ;; NEWARRAY n
       (return))))
 
-(func $vm_c_mul (param $code i32) (effects)
+;; postfix: primary followed by  (args) | [index] | .member  (chainable)
+(func $vm_c_postfix (param $code i32) (effects)
   (call $vm_c_primary (local.get $code))
+  (block $e (loop $l
+    (let $k i32 (call $tok_kind))
+    (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' call
+      (then
+        (call $next_token)
+        (let $argc i32 (i32.const 0))
+        (if (i32.ne (call $tok_kind) (i32.const 16))
+          (then (block $ce (loop $cl
+            (call $vm_c_expr (local.get $code))
+            (set! $argc (i32.add (local.get $argc) (i32.const 1)))
+            (br_if $ce (i32.eqz (call $eat (i32.const 22))))
+            (br $cl)))))
+        (call $next_token)  ;; ')'
+        (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (local.get $argc))  ;; CALL
+        (br $l)))
+    (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
+      (then
+        (call $next_token)
+        (call $vm_c_expr (local.get $code))
+        (call $next_token)  ;; ']'
+        (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX
+        (br $l)))
+    (if (i32.eq (local.get $k) (i32.const 23))  ;; '.' member
+      (then
+        (call $next_token)
+        (let $key i32 (call $ident_name)) (call $next_token)
+        (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP
+        (br $l)))
+    (br $e))))
+
+(func $vm_c_mul (param $code i32) (effects)
+  (call $vm_c_postfix (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 12)) (i32.or (i32.eq (local.get $k) (i32.const 13)) (i32.eq (local.get $k) (i32.const 14))))))
     (call $next_token)
-    (call $vm_c_primary (local.get $code))
+    (call $vm_c_postfix (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 12)) (then (i32.const 4))
       (else (if i32 (i32.eq (local.get $k) (i32.const 13)) (then (i32.const 5)) (else (i32.const 22))))))  ;; * / %
@@ -524,6 +555,38 @@
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 11))  ;; POP
       (then (set! $sp (i32.sub (local.get $sp) (i32.const 8))) (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 29))  ;; NEWARRAY n (operand) — n values on top
+      (then
+        (let $an i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $arr i32 (call $arr_new (i32.add (local.get $an) (i32.const 1))))
+        (let $base i32 (i32.sub (local.get $sp) (i32.mul (local.get $an) (i32.const 8))))
+        (let $ai i32 (i32.const 0))
+        (block $ne (loop $nl
+          (br_if $ne (i32.ge_s (local.get $ai) (local.get $an)))
+          (call $arr_push (local.get $arr) (i64.load (i32.add (local.get $stack) (i32.add (local.get $base) (i32.mul (local.get $ai) (i32.const 8))))))
+          (set! $ai (i32.add (local.get $ai) (i32.const 1)))
+          (br $nl)))
+        (set! $sp (local.get $base))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $mk_arr (local.get $arr)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 30))  ;; GETPROP (operand: name ptr)
+      (then
+        (let $nm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (local.get $t))
+                   (call $get_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (call $mk_str (local.get $nm))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 31))  ;; GETIDX — pop key, pop obj
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $key i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (local.get $t))
+                   (call $get_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (local.get $key)))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 12))  ;; JMP (operand: target)
       (then (set! $ip (i32.load (i32.add (local.get $code) (local.get $ip)))) (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 13))  ;; JMPF (operand: target) — pops
