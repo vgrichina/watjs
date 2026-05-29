@@ -348,6 +348,45 @@
           (return (local.get $racc))))
       (return (call $v_undef))))
   ;; --- static object/array/number/string methods (ids 80-87) ---
+  ;; --- regex (100 RegExp, 101 test) and string regex methods (102 match,103 replace,104 search) ---
+  (if (i32.eq (local.get $id) (i32.const 100))  ;; RegExp(pattern[,flags])
+    (then
+      (let $pat i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))) (else (cstring ""))))
+      (let $ro i32 (call $obj_new (i32.const 8)))
+      (call $scope_define (local.get $ro) (cstring "__re_src__") (call $mk_str (local.get $pat)))
+      (call $scope_define (local.get $ro) (cstring "source") (call $mk_str (local.get $pat)))
+      (call $scope_define (local.get $ro) (cstring "test") (call $mk_native (i32.const 101) (cstring "test")))
+      (return (call $mk_obj (local.get $ro)))))
+  (if (i32.eq (local.get $id) (i32.const 101))  ;; regex.test(str)  (this = regex obj)
+    (then
+      (let $src i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "__re_src__"))))
+      (if (i32.eqz (call $is_string (local.get $src))) (then (return (call $v_false))))
+      (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (return (call $mk_bool (i32.ge_s (call $re_search_str (call $val_payload (local.get $src)) (local.get $sub)) (i32.const 0))))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 102)) (i32.le_s (local.get $id) (i32.const 104)))  ;; match/replace/search (this=string)
+    (then
+      (let $sub i32 (call $to_str (local.get $thisv)))
+      (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $pat i32 (call $re_pat_of (local.get $a0)))
+      (let $start i32 (call $re_search_str (local.get $pat) (local.get $sub)))
+      (if (i32.eq (local.get $id) (i32.const 104))  ;; search → index
+        (then (return (call $num (f64.convert_i32_s (local.get $start))))))
+      (if (i32.eq (local.get $id) (i32.const 102))  ;; match → matched substring or null
+        (then
+          (if (i32.lt_s (local.get $start) (i32.const 0)) (then (return (call $v_null))))
+          (let $end i32 (i32.load (i32.const 168)))
+          (let $r i32 (call $arr_new (i32.const 2)))
+          (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))
+          (return (call $mk_arr (local.get $r)))))
+      (if (i32.eq (local.get $id) (i32.const 103))  ;; replace(pat, repl) — first match
+        (then
+          (if (i32.lt_s (local.get $start) (i32.const 0)) (then (return (call $mk_str (local.get $sub)))))
+          (let $end i32 (i32.load (i32.const 168)))
+          (let $repl i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (let $out i32 (call $str_concat (call $substr (local.get $sub) (i32.const 0) (local.get $start)) (local.get $repl)))
+          (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $end) (i32.sub (call $str_len (local.get $sub)) (local.get $end)))))
+          (return (call $mk_str (local.get $out)))))
+      (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 90))  ;; Object.defineProperty(obj, key, desc)
     (then
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -1761,6 +1800,7 @@
   (drop (call $def_native (local.get $g) (cstring "isFinite") (i32.const 8)))
   (drop (call $def_native (local.get $g) (cstring "parseInt") (i32.const 50)))
   (drop (call $def_native (local.get $g) (cstring "parseFloat") (i32.const 51)))
+  (drop (call $def_native (local.get $g) (cstring "RegExp") (i32.const 100)))
   ;; Number with NaN / Infinity constants
   (let $numf i64 (call $def_native (local.get $g) (cstring "Number") (i32.const 4)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
@@ -1788,6 +1828,9 @@
   (call $scope_define (local.get $sp) (cstring "trim") (call $mk_native (i32.const 61) (cstring "trim")))
   (call $scope_define (local.get $sp) (cstring "repeat") (call $mk_native (i32.const 62) (cstring "repeat")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCharCode")) (call $mk_native (i32.const 87) (cstring "fromCharCode")))
+  (call $scope_define (local.get $sp) (cstring "match") (call $mk_native (i32.const 102) (cstring "match")))
+  (call $scope_define (local.get $sp) (cstring "replace") (call $mk_native (i32.const 103) (cstring "replace")))
+  (call $scope_define (local.get $sp) (cstring "search") (call $mk_native (i32.const 104) (cstring "search")))
   ;; Array.prototype (reg 160) — methods dispatched on arrays
   (let $ap i32 (call $obj_new (i32.const 16)))
   (i32.store (i32.const 160) (local.get $ap))
