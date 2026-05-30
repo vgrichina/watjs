@@ -1,0 +1,3 @@
+exec=bc,c,idx=1,in=abcd
+match=bc,idx=2,in=xabcd
+nomatch=null

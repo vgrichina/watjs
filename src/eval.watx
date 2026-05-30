@@ -2138,6 +2138,9 @@
           (else (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $cs) (i32.sub (i32.load (i32.add (local.get $cb) (i32.const 4))) (local.get $cs)))))))
         (set! $gi (i32.add (local.get $gi) (i32.const 1)))
         (br $ecl)))
+      ;; spec exec result carries .index (match offset) and .input (subject)
+      (call $scope_define (call $arr_props (local.get $r)) (cstring "index") (call $num (f64.convert_i32_s (local.get $start))))
+      (call $scope_define (call $arr_props (local.get $r)) (cstring "input") (call $mk_str (local.get $sub)))
       (return (call $mk_arr (local.get $r)))))
   (if (i32.eq (local.get $id) (i32.const 173))  ;; str.matchAll(re) (this = string) → iterator
     (then
@@ -2211,6 +2214,9 @@
                   (else (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $cs) (i32.sub (i32.load (i32.add (local.get $cb) (i32.const 4))) (local.get $cs)))))))
                 (set! $gi (i32.add (local.get $gi) (i32.const 1)))
                 (br $gcl)))
+              ;; non-global match result carries .index and .input (like exec)
+              (call $scope_define (call $arr_props (local.get $r)) (cstring "index") (call $num (f64.convert_i32_s (local.get $start))))
+              (call $scope_define (call $arr_props (local.get $r)) (cstring "input") (call $mk_str (local.get $sub)))
               (return (call $mk_arr (local.get $r))))
             (else  ;; global → every match
               (let $r i32 (call $arr_new (i32.const 4)))
