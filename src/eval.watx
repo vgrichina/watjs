@@ -1440,6 +1440,51 @@
           (return (call $mk_str (call $str_concat (local.get $iso) (cstring "Z"))))))
       ;; getFullYear(183,f0) Month(184,f1) Date(185,f2) Day(186,f3) Hours(187,f4) Minutes(188,f5) Seconds(189,f6) Ms(190,f7)
       (return (call $num (f64.convert_i32_s (call $date_field (local.get $dtm) (i32.sub (local.get $id) (i32.const 183))))))))
+  (if (i32.eq (local.get $id) (i32.const 249))  ;; setTime(ms)
+    (then
+      (let $stv f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $stv)))
+      (return (call $num (local.get $stv)))))
+  (if (i32.eq (local.get $id) (i32.const 257))  ;; getTimezoneOffset() — always UTC
+    (then (return (call $num (f64.const 0)))))
+  (if (i32.eq (local.get $id) (i32.const 259))  ;; Date.UTC(y,mo[,d,h,mi,s,ms]) → ms number
+    (then
+      (if (i32.lt_s (local.get $argc) (i32.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+      (let $uy f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (let $umo f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (f64.const 0))))
+      (let $ud f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 3)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))) (else (f64.const 1))))
+      (let $uh f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 4)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 3)))) (else (f64.const 0))))
+      (let $umi f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 5)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 4)))) (else (f64.const 0))))
+      (let $us f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 6)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 5)))) (else (f64.const 0))))
+      (let $ums f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 7)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 6)))) (else (f64.const 0))))
+      (if (i32.eqz (i32.and (call $f64_safe_i64 (local.get $uy)) (i32.and (call $f64_safe_i64 (local.get $umo)) (i32.and (call $f64_safe_i64 (local.get $ud)) (i32.and (call $f64_safe_i64 (local.get $uh)) (i32.and (call $f64_safe_i64 (local.get $umi)) (i32.and (call $f64_safe_i64 (local.get $us)) (call $f64_safe_i64 (local.get $ums)))))))))
+        (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+      (return (call $num (call $date_make (i64.trunc_f64_s (local.get $uy)) (i64.trunc_f64_s (local.get $umo)) (i64.trunc_f64_s (local.get $ud)) (i64.trunc_f64_s (local.get $uh)) (i64.trunc_f64_s (local.get $umi)) (i64.trunc_f64_s (local.get $us)) (i64.trunc_f64_s (local.get $ums)))))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 250)) (i32.le_s (local.get $id) (i32.const 256)))  ;; setFullYear/Month/Date/Hours/Minutes/Seconds/Milliseconds (single field)
+    (then
+      (let $dcur f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
+      (if (f64.ne (local.get $dcur) (local.get $dcur)) (then (set! $dcur (f64.const 0))))  ;; Invalid Date → base +0
+      (let $dnvf f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (i32.eqz (call $f64_safe_i64 (local.get $dnvf)))  ;; non-finite field → Invalid Date
+        (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+      (let $dsy i64 (i64.extend_i32_s (call $date_field (local.get $dcur) (i32.const 0))))
+      (let $dsmo i64 (i64.extend_i32_s (call $date_field (local.get $dcur) (i32.const 1))))
+      (let $dsd i64 (i64.extend_i32_s (call $date_field (local.get $dcur) (i32.const 2))))
+      (let $dsh i64 (i64.extend_i32_s (call $date_field (local.get $dcur) (i32.const 4))))
+      (let $dsmi i64 (i64.extend_i32_s (call $date_field (local.get $dcur) (i32.const 5))))
+      (let $dss i64 (i64.extend_i32_s (call $date_field (local.get $dcur) (i32.const 6))))
+      (let $dsms i64 (i64.extend_i32_s (call $date_field (local.get $dcur) (i32.const 7))))
+      (let $dnv i64 (i64.trunc_f64_s (local.get $dnvf)))
+      (if (i32.eq (local.get $id) (i32.const 250)) (then (set! $dsy (local.get $dnv))))
+      (if (i32.eq (local.get $id) (i32.const 251)) (then (set! $dsmo (local.get $dnv))))
+      (if (i32.eq (local.get $id) (i32.const 252)) (then (set! $dsd (local.get $dnv))))
+      (if (i32.eq (local.get $id) (i32.const 253)) (then (set! $dsh (local.get $dnv))))
+      (if (i32.eq (local.get $id) (i32.const 254)) (then (set! $dsmi (local.get $dnv))))
+      (if (i32.eq (local.get $id) (i32.const 255)) (then (set! $dss (local.get $dnv))))
+      (if (i32.eq (local.get $id) (i32.const 256)) (then (set! $dsms (local.get $dnv))))
+      (let $dnt f64 (call $date_make (local.get $dsy) (local.get $dsmo) (local.get $dsd) (local.get $dsh) (local.get $dsmi) (local.get $dss) (local.get $dsms)))
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $dnt)))
+      (return (call $num (local.get $dnt)))))
   (if (i32.eq (local.get $id) (i32.const 143))  ;; arguments[@@iterator]() → iterator (this = arguments obj)
     (then
       (let $it i32 (call $obj_new (i32.const 4)))
@@ -2740,6 +2785,13 @@
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 241))) (then (return (i32.const 1))))  ;; transcendental Math (1-arg)
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 244)) (i32.le_s (local.get $id) (i32.const 246))) (then (return (i32.const 1))))  ;; asinh/acosh/atanh
+  ;; Date setters/UTC arities
+  (if (i32.eq (local.get $id) (i32.const 250)) (then (return (i32.const 3))))  ;; setFullYear
+  (if (i32.eq (local.get $id) (i32.const 253)) (then (return (i32.const 4))))  ;; setHours
+  (if (i32.or (i32.eq (local.get $id) (i32.const 251)) (i32.eq (local.get $id) (i32.const 255))) (then (return (i32.const 2))))  ;; setMonth, setSeconds
+  (if (i32.eq (local.get $id) (i32.const 254)) (then (return (i32.const 3))))  ;; setMinutes
+  (if (i32.or (i32.eq (local.get $id) (i32.const 249)) (i32.or (i32.eq (local.get $id) (i32.const 252)) (i32.eq (local.get $id) (i32.const 256)))) (then (return (i32.const 1))))  ;; setTime, setDate, setMilliseconds
+  (if (i32.eq (local.get $id) (i32.const 259)) (then (return (i32.const 7))))  ;; Date.UTC
   (if (i32.or (i32.eq (local.get $id) (i32.const 11)) (i32.or (i32.eq (local.get $id) (i32.const 12)) (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.or (i32.eq (local.get $id) (i32.const 67)) (i32.eq (local.get $id) (i32.const 153))))))
     (then (return (i32.const 1))))  ;; charAt, charCodeAt, padStart, padEnd, bind
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
@@ -3192,6 +3244,23 @@
   (call $scope_define (local.get $dproto) (cstring "getMilliseconds") (call $mk_native (i32.const 190) (cstring "getMilliseconds")))
   (call $scope_define (local.get $dproto) (cstring "toISOString") (call $mk_native (i32.const 191) (cstring "toISOString")))
   (call $scope_define (local.get $dproto) (cstring "toJSON") (call $mk_native (i32.const 191) (cstring "toJSON")))
+  (call $scope_define (local.get $dproto) (cstring "setTime") (call $mk_native (i32.const 249) (cstring "setTime")))
+  (call $scope_define (local.get $dproto) (cstring "setFullYear") (call $mk_native (i32.const 250) (cstring "setFullYear")))
+  (call $scope_define (local.get $dproto) (cstring "setUTCFullYear") (call $mk_native (i32.const 250) (cstring "setUTCFullYear")))
+  (call $scope_define (local.get $dproto) (cstring "setMonth") (call $mk_native (i32.const 251) (cstring "setMonth")))
+  (call $scope_define (local.get $dproto) (cstring "setUTCMonth") (call $mk_native (i32.const 251) (cstring "setUTCMonth")))
+  (call $scope_define (local.get $dproto) (cstring "setDate") (call $mk_native (i32.const 252) (cstring "setDate")))
+  (call $scope_define (local.get $dproto) (cstring "setUTCDate") (call $mk_native (i32.const 252) (cstring "setUTCDate")))
+  (call $scope_define (local.get $dproto) (cstring "setHours") (call $mk_native (i32.const 253) (cstring "setHours")))
+  (call $scope_define (local.get $dproto) (cstring "setUTCHours") (call $mk_native (i32.const 253) (cstring "setUTCHours")))
+  (call $scope_define (local.get $dproto) (cstring "setMinutes") (call $mk_native (i32.const 254) (cstring "setMinutes")))
+  (call $scope_define (local.get $dproto) (cstring "setUTCMinutes") (call $mk_native (i32.const 254) (cstring "setUTCMinutes")))
+  (call $scope_define (local.get $dproto) (cstring "setSeconds") (call $mk_native (i32.const 255) (cstring "setSeconds")))
+  (call $scope_define (local.get $dproto) (cstring "setUTCSeconds") (call $mk_native (i32.const 255) (cstring "setUTCSeconds")))
+  (call $scope_define (local.get $dproto) (cstring "setMilliseconds") (call $mk_native (i32.const 256) (cstring "setMilliseconds")))
+  (call $scope_define (local.get $dproto) (cstring "setUTCMilliseconds") (call $mk_native (i32.const 256) (cstring "setUTCMilliseconds")))
+  (call $scope_define (local.get $dproto) (cstring "getTimezoneOffset") (call $mk_native (i32.const 257) (cstring "getTimezoneOffset")))
+  (call $set_prop (local.get $datef) (call $mk_str (cstring "UTC")) (call $mk_native (i32.const 259) (cstring "UTC")))
   ;; Promise constructor (synchronous resolved-value model; see vm.watx)
   (let $promf i64 (call $def_native (local.get $g) (cstring "Promise") (i32.const 192)))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "resolve")) (call $mk_native (i32.const 151) (cstring "resolve")))
