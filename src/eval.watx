@@ -178,6 +178,36 @@
         (br $c)))
       (call $print_str (cstring "\n"))
       (return (call $v_undef))))
+  ;; Function.prototype.call(thisArg, ...args) — this = the function
+  (if (i32.eq (local.get $id) (i32.const 151))
+    (then
+      (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $n i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
+      (let $buf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $n) (i32.const 0)) (then (local.get $n)) (else (i32.const 1))) (i32.const 8))))
+      (let $i i32 (i32.const 0))
+      (block $cae (loop $cal
+        (br_if $cae (i32.ge_s (local.get $i) (local.get $n)))
+        (i64.store (i32.add (local.get $buf) (i32.mul (local.get $i) (i32.const 8))) (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $i) (i32.const 1))))
+        (set! $i (i32.add (local.get $i) (i32.const 1))) (br $cal)))
+      (return (call $call_val (local.get $thisv) (local.get $n) (local.get $buf) (local.get $ta)))))
+  ;; Function.prototype.apply(thisArg, argArray) — this = the function
+  (if (i32.eq (local.get $id) (i32.const 152))
+    (then
+      (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $aa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $n i32 (i32.const 0))
+      (let $buf i32 (call $heap_alloc (i32.const 8)))
+      (if (call $is_array (local.get $aa))
+        (then
+          (let $arr i32 (call $val_payload (local.get $aa)))
+          (set! $n (call $arr_len (local.get $arr)))
+          (set! $buf (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $n) (i32.const 0)) (then (local.get $n)) (else (i32.const 1))) (i32.const 8))))
+          (let $i i32 (i32.const 0))
+          (block $aae (loop $aal
+            (br_if $aae (i32.ge_s (local.get $i) (local.get $n)))
+            (i64.store (i32.add (local.get $buf) (i32.mul (local.get $i) (i32.const 8))) (call $arr_get (local.get $arr) (local.get $i)))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $aal)))))
+      (return (call $call_val (local.get $thisv) (local.get $n) (local.get $buf) (local.get $ta)))))
   (if (i32.eq (local.get $id) (i32.const 2))  ;; assert(cond[, message])
     (then
       (let $cond i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -1135,9 +1165,21 @@
           (block $me (loop $ml
             (br_if $me (i32.ge_s (local.get $k) (local.get $argc)))
             (let $y f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (local.get $k))))
-            (if (i32.eq (local.get $id) (i32.const 45))
-              (then (if (f64.gt (local.get $y) (local.get $acc)) (then (set! $acc (local.get $y)))))
-              (else (if (f64.lt (local.get $y) (local.get $acc)) (then (set! $acc (local.get $y))))))
+            (if (f64.ne (local.get $y) (local.get $y))
+              (then (set! $acc (f64.div (f64.const 0) (f64.const 0))))   ;; any NaN arg → NaN
+              (else (if (f64.eq (local.get $acc) (local.get $acc))       ;; skip once acc is NaN
+                (then
+                  (if (i32.eq (local.get $id) (i32.const 45))            ;; max
+                    (then (if (f64.gt (local.get $y) (local.get $acc))
+                            (then (set! $acc (local.get $y)))
+                            ;; +0 beats -0
+                            (else (if (i32.and (f64.eq (local.get $y) (f64.const 0)) (i32.and (f64.eq (local.get $acc) (f64.const 0)) (f64.gt (f64.div (f64.const 1) (local.get $y)) (f64.const 0))))
+                                    (then (set! $acc (local.get $y)))))))
+                    (else (if (f64.lt (local.get $y) (local.get $acc))   ;; min
+                            (then (set! $acc (local.get $y)))
+                            ;; -0 beats +0
+                            (else (if (i32.and (f64.eq (local.get $y) (f64.const 0)) (i32.and (f64.eq (local.get $acc) (f64.const 0)) (f64.lt (f64.div (f64.const 1) (local.get $y)) (f64.const 0))))
+                                    (then (set! $acc (local.get $y))))))))))))
             (set! $k (i32.add (local.get $k) (i32.const 1)))
             (br $ml)))
           (return (call $num (local.get $acc)))))

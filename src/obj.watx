@@ -305,6 +305,10 @@
     (then
       (let $fn i32 (call $val_payload (local.get $cont)))
       (let $ks i32 (call $to_str (local.get $key)))
+      ;; Function.prototype methods (shared by both engine fn reprs)
+      (if (call $str_eq (local.get $ks) (cstring "call")) (then (return (call $mk_native (i32.const 151) (cstring "call")))))
+      (if (call $str_eq (local.get $ks) (cstring "apply")) (then (return (call $mk_native (i32.const 152) (cstring "apply")))))
+      (if (call $str_eq (local.get $ks) (cstring "bind")) (then (return (call $mk_native (i32.const 153) (cstring "bind")))))
       ;; VM functions (magic 1448232526..528) store .prototype at @16; static
       ;; methods and other own props live in that prototype scope (see note in
       ;; the class compiler — static is not yet isolated from instance members).
