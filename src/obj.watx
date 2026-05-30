@@ -353,6 +353,8 @@
             (then
               (let $vslot i32 (call $scope_find (call $val_payload (local.get $vproto)) (local.get $ks)))
               (if (local.get $vslot) (then (return (i64.load (local.get $vslot)))))))
+          (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
+          (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
           (return (call $v_undef))))
       (if (call $str_eq (local.get $ks) (cstring "prototype")) (then (return (call $fn_get_prototype (local.get $fn)))))
       (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
@@ -361,6 +363,8 @@
         (then
           (let $slot i32 (call $scope_find (local.get $props) (local.get $ks)))
           (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
+      (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
+      (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
       (return (call $v_undef))))
   ;; symbol: .description / .toString / .valueOf
   (if (call $is_symbol (local.get $cont))
@@ -382,6 +386,21 @@
       (let $np i32 (call $scope_new (i32.const 0) (i32.const 16)))
       (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $np))
       (local.get $np))))
+
+;; 1 if function $fn has own property $ks (length, or a slot in its property
+;; store — @12 for native fns, the @16 prototype scope for VM fns).
+(func $fn_own (param $fn i32) (param $ks i32) (result i32) (effects)
+  (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (i32.const 1))))
+  (if (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
+    (then
+      (let $vp i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
+      (if (call $is_object (local.get $vp))
+        (then (if (call $scope_find_local (call $val_payload (local.get $vp)) (local.get $ks)) (then (return (i32.const 1))))))
+      (return (i32.const 0))))
+  (let $p i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
+  (if (local.get $p)
+    (then (if (call $scope_find_local (local.get $p) (local.get $ks)) (then (return (i32.const 1))))))
+  (i32.const 0))
 
 ;; get-or-create a function's .prototype object value
 (func $fn_get_prototype (param $fn i32) (result i64) (effects)
@@ -422,6 +441,8 @@
           (let $i i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
           (return (call $mk_bool (i32.and (i32.ge_s (local.get $i) (i32.const 0)) (i32.lt_s (local.get $i) (call $arr_len (call $val_payload (local.get $obj)))))))))
       (return (call $v_false))))
+  (if (call $is_function (local.get $obj))
+    (then (return (call $mk_bool (call $fn_own (call $val_payload (local.get $obj)) (call $to_prop_key (local.get $key)))))))
   (call $throw_type (cstring "TypeError") (cstring "cannot use 'in' on non-object"))
   (call $v_false))
 

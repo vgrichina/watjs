@@ -860,10 +860,12 @@
     (then (return (call $vm_promise_then (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 93))  ;; obj.hasOwnProperty(key)
     (then
-      (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
-      (let $o i32 (call $val_payload (local.get $thisv)))
-      (let $ks i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-      (return (call $mk_bool (i32.ne (call $scope_find_local (local.get $o) (local.get $ks)) (i32.const 0))))))
+      (let $ks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $is_function (local.get $thisv))
+        (then (return (call $mk_bool (call $fn_own (call $val_payload (local.get $thisv)) (local.get $ks))))))
+      (if (call $is_object (local.get $thisv))
+        (then (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (local.get $ks)) (i32.const 0))))))
+      (return (call $v_false))))
   ;; array iterator constructors: entries(95)->kind 2, keys(96)->0, values(97)->1
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 95)) (i32.le_s (local.get $id) (i32.const 97)))
     (then
