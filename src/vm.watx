@@ -436,10 +436,10 @@
       (if (i32.ne (call $tok_kind) (i32.const 20))
         (then (block $ae (loop $al
           (br_if $ae (i32.eq (call $tok_kind) (i32.const 20)))  ;; ']' (trailing comma)
-          (if (i32.eq (call $tok_kind) (i32.const 22))  ;; elision: ,, → undefined hole
+          (if (i32.eq (call $tok_kind) (i32.const 22))  ;; elision: ,, → a real hole
             (then
-              (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
-              (call $vm_emit_op (local.get $code) (i32.const 52)))  ;; APPEND undefined
+              (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_hole))
+              (call $vm_emit_op (local.get $code) (i32.const 52)))  ;; APPEND hole
             (else (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...spread
               (then
                 (call $next_token)
@@ -2527,6 +2527,16 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $dobj i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $dres i64 (call $v_true))
+        (if (call $is_array (local.get $dobj))
+          (then
+            (let $dap i32 (call $val_payload (local.get $dobj)))
+            (let $dks2 i32 (call $to_str (local.get $dkey)))
+            (let $didx i32 (call $str_array_index (local.get $dks2)))
+            (if (i32.and (i32.ge_s (local.get $didx) (i32.const 0)) (i32.lt_s (local.get $didx) (call $arr_len (local.get $dap))))
+              (then (i64.store (call $arr_slot (local.get $dap) (local.get $didx)) (call $v_hole)))  ;; element → hole
+              (else
+                (let $dap12 i32 (i32.load (i32.add (local.get $dap) (i32.const 12))))
+                (if (local.get $dap12) (then (drop (call $scope_delete (local.get $dap12) (local.get $dks2)))))))))
         (if (call $is_object (local.get $dobj))
           (then
             (let $dsc i32 (call $val_payload (local.get $dobj)))

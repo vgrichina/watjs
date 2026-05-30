@@ -57,6 +57,10 @@
 ;; --- singletons & constructors ---
 
 (func $v_undef (result i64) (effects) (call $box (i32.const 0) (i32.const 0)))
+;; array "hole" sentinel: undefined-tagged but payload 1 (real undefined is 0),
+;; so it reads as undefined yet is distinguishable for HasProperty/enumeration.
+(func $v_hole  (result i64) (effects) (call $box (i32.const 0) (i32.const 1)))
+(func $is_hole (param $v i64) (result i32) (effects) (i64.eq (local.get $v) (call $v_hole)))
 (func $v_null  (result i64) (effects) (call $box (i32.const 1) (i32.const 0)))
 (func $v_false (result i64) (effects) (call $box (i32.const 2) (i32.const 0)))
 (func $v_true  (result i64) (effects) (call $box (i32.const 2) (i32.const 1)))

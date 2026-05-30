@@ -75,12 +75,25 @@
   (i32.store (i32.add (local.get $a) (i32.const 4)) (local.get $nc))
   (i32.store (i32.add (local.get $a) (i32.const 8)) (local.get $nd)))
 (func $arr_get (param $a i32) (param $i i32) (result i64) (effects)
-  (if i64 (i32.and (i32.ge_s (local.get $i) (i32.const 0)) (i32.lt_s (local.get $i) (call $arr_len (local.get $a))))
-    (then (i64.load (call $arr_slot (local.get $a) (local.get $i))))
-    (else (call $v_undef))))
+  (if (i32.or (i32.lt_s (local.get $i) (i32.const 0)) (i32.ge_s (local.get $i) (call $arr_len (local.get $a)))) (then (return (call $v_undef))))
+  (let $e i64 (i64.load (call $arr_slot (local.get $a) (local.get $i))))
+  (if (call $is_hole (local.get $e)) (then (return (call $v_undef))))  ;; a hole reads as undefined
+  (local.get $e))
+;; 1 if index $i is a present (non-hole, in-bounds) element
+(func $arr_has (param $a i32) (param $i i32) (result i32) (effects)
+  (if (i32.or (i32.lt_s (local.get $i) (i32.const 0)) (i32.ge_s (local.get $i) (call $arr_len (local.get $a)))) (then (return (i32.const 0))))
+  (i32.eqz (call $is_hole (i64.load (call $arr_slot (local.get $a) (local.get $i))))))
 (func $arr_set (param $a i32) (param $i i32) (param $v i64) (effects)
   (if (i32.lt_s (local.get $i) (i32.const 0)) (then (return)))
   (if (i32.ge_s (local.get $i) (call $arr_cap (local.get $a))) (then (call $arr_grow (local.get $a) (i32.add (local.get $i) (i32.const 1)))))
+  ;; writing past the end leaves a gap → fill it with holes (sparse), not garbage
+  (if (i32.gt_s (local.get $i) (call $arr_len (local.get $a)))
+    (then
+      (let $g i32 (call $arr_len (local.get $a)))
+      (block $ge (loop $gl
+        (br_if $ge (i32.ge_s (local.get $g) (local.get $i)))
+        (i64.store (call $arr_slot (local.get $a) (local.get $g)) (call $v_hole))
+        (set! $g (i32.add (local.get $g) (i32.const 1))) (br $gl)))))
   (i64.store (call $arr_slot (local.get $a) (local.get $i)) (local.get $v))
   (if (i32.ge_s (local.get $i) (call $arr_len (local.get $a)))
     (then (i32.store (local.get $a) (i32.add (local.get $i) (i32.const 1))))))
@@ -509,10 +522,13 @@
   (if (call $is_array (local.get $obj))
     (then
       (if (call $key_is_length (local.get $key)) (then (return (call $v_true))))
-      (if (call $is_number (local.get $key))
-        (then
-          (let $i i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
-          (return (call $mk_bool (i32.and (i32.ge_s (local.get $i) (i32.const 0)) (i32.lt_s (local.get $i) (call $arr_len (call $val_payload (local.get $obj)))))))))
+      (let $aip i32 (call $val_payload (local.get $obj)))
+      ;; element index present (non-hole)?
+      (let $aidx i32 (call $str_array_index (call $to_prop_key (local.get $key))))
+      (if (i32.ge_s (local.get $aidx) (i32.const 0)) (then (return (call $mk_bool (call $arr_has (local.get $aip) (local.get $aidx))))))
+      ;; named property in the @12 scope?
+      (let $anp i32 (i32.load (i32.add (local.get $aip) (i32.const 12))))
+      (if (local.get $anp) (then (if (call $scope_find_local (local.get $anp) (call $to_prop_key (local.get $key))) (then (return (call $v_true))))))
       (return (call $v_false))))
   (if (call $is_function (local.get $obj))
     (then (return (call $mk_bool (call $fn_own (call $val_payload (local.get $obj)) (call $to_prop_key (local.get $key)))))))
