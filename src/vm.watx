@@ -467,6 +467,8 @@
       (if (i32.ne (call $tok_kind) (i32.const 18))
         (then (block $oe (loop $ol
           (br_if $oe (i32.eq (call $tok_kind) (i32.const 18)))  ;; trailing comma → '}' ends the literal
+          (let $ogen i32 (i32.eq (call $tok_kind) (i32.const 12)))  ;; *gen(){} generator method
+          (if (local.get $ogen) (then (call $next_token)))  ;; consume '*'
           (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...spread → copy source's own props
             (then
               (call $next_token)
@@ -476,7 +478,7 @@
             (then
               (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']' → [obj, key]
               (if (i32.eq (call $tok_kind) (i32.const 15))  ;; computed method
-                (then (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [obj, key, fn]
+                (then (i32.store (i32.const 236) (local.get $ogen)) (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [obj, key, fn]
                 (else (call $next_token) (call $vm_c_expr (local.get $code))))  ;; ': value'
               (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
             (else (if (i32.eq (call $tok_kind) (i32.const 2))  ;; "string": value
@@ -497,6 +499,7 @@
                   (else (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method NAME(){}
                     (then
                       (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $oki)))
+                      (i32.store (i32.const 236) (local.get $ogen))  ;; *gen(){} → generator method
                       (call $vm_c_fnbody (local.get $code) (i32.const 0))
                       (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))  ;; method .name = key
                       (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
