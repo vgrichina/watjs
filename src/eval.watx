@@ -211,6 +211,30 @@
   (if (f64.le (local.get $v) (f64.const -2147483648)) (then (return (i32.const -2147483648))))
   (i32.trunc_f64_s (local.get $v)))
 
+;; ToLength of an array-like's `length` (0 if absent/negative), clamped to i32.
+(func $alike_len (param $thisv i64) (result i32) (effects)
+  (if (call $is_array (local.get $thisv)) (then (return (call $arr_len (call $val_payload (local.get $thisv))))))
+  (let $l i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
+  (if i32 (i32.lt_s (local.get $l) (i32.const 0)) (then (i32.const 0)) (else (local.get $l))))
+
+;; View any value as a real array for the generic Array.prototype methods: a
+;; real array is returned as-is (so mutators still mutate it); an array-like
+;; object is materialized into a fresh array by reading length + indexed props
+;; (capped to avoid OOM on huge lengths). Callbacks still receive the original
+;; `this`, so e.g. Array.prototype.filter.call(Math, cb) sees Math as the 3rd arg.
+(func $alike_arr (param $thisv i64) (result i32) (effects)
+  (if (call $is_array (local.get $thisv)) (then (return (call $val_payload (local.get $thisv)))))
+  (let $len i32 (call $alike_len (local.get $thisv)))
+  (if (i32.gt_s (local.get $len) (i32.const 1048576)) (then (set! $len (i32.const 1048576))))
+  (let $tmp i32 (call $arr_new (i32.add (local.get $len) (i32.const 1))))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $len)))
+    (call $arr_set (local.get $tmp) (local.get $i) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))
+    (br_if $e (call $err))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (local.get $tmp))
+
 ;; safe to i64.trunc_f64_s? (finite and within i64 range — trunc traps otherwise)
 (func $f64_safe_i64 (param $v f64) (result i32) (effects)
   (i32.and (f64.eq (local.get $v) (local.get $v))
@@ -1458,9 +1482,10 @@
           (return (call $str_char_at (local.get $s) (local.get $atix)))))
       (return (call $v_undef))))
   ;; --- array3 methods (this = array): 74 find, 75 findIndex, 76 some, 77 every, 78 sort ---
-  (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 74)) (i32.le_s (local.get $id) (i32.const 78))) (call $is_array (local.get $thisv)))
+  (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 74)) (i32.le_s (local.get $id) (i32.const 78)))
+        (i32.or (call $is_array (local.get $thisv)) (call $is_object (local.get $thisv))))  ;; generic on array-likes
     (then
-      (let $arr i32 (call $val_payload (local.get $thisv)))
+      (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eq (local.get $id) (i32.const 78))  ;; sort([cmp]) — insertion sort, in place
@@ -1504,9 +1529,10 @@
       (if (i32.eq (local.get $id) (i32.const 76)) (then (return (call $v_false))))
       (return (call $v_true))))  ;; every (none failed)
   ;; --- array2 methods (this = array): 70 concat, 71 reverse, 72 filter, 73 reduce ---
-  (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 70)) (i32.le_s (local.get $id) (i32.const 73))) (call $is_array (local.get $thisv)))
+  (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 70)) (i32.le_s (local.get $id) (i32.const 73)))
+        (i32.or (call $is_array (local.get $thisv)) (call $is_object (local.get $thisv))))  ;; generic on array-likes
     (then
-      (let $arr i32 (call $val_payload (local.get $thisv)))
+      (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eq (local.get $id) (i32.const 70))  ;; concat(...arrays/values)
@@ -1572,9 +1598,9 @@
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl)))
           (return (local.get $racc))))
       (return (call $v_undef))))
-  (if (i32.and (i32.eq (local.get $id) (i32.const 137)) (call $is_array (local.get $thisv)))  ;; reduceRight(fn[, init])
+  (if (i32.and (i32.eq (local.get $id) (i32.const 137)) (i32.or (call $is_array (local.get $thisv)) (call $is_object (local.get $thisv))))  ;; reduceRight(fn[, init]) — generic
     (then
-      (let $rarr i32 (call $val_payload (local.get $thisv)))
+      (let $rarr i32 (call $alike_arr (local.get $thisv)))
       (let $rfn i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $racc2 i64 (call $v_undef))
       (let $ri i32 (i32.sub (call $arr_len (local.get $rarr)) (i32.const 1)))
@@ -1985,10 +2011,13 @@
             (br $ml)))
           (return (call $num (local.get $acc)))))
       (return (call $v_undef))))
-  ;; --- array methods (this = the array) ---
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 20)) (call $is_array (local.get $thisv)))
+  ;; --- array methods (this = the array, or a generic array-like object) ---
+  ;; object case is bounded to ids 20-36 (the array-method range) so unrelated
+  ;; object-receiver natives (Date getters 182+, Reflect 200+, …) don't land here.
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 20))
+        (i32.or (call $is_array (local.get $thisv)) (i32.and (call $is_object (local.get $thisv)) (i32.le_s (local.get $id) (i32.const 36)))))
     (then
-      (let $arr i32 (call $val_payload (local.get $thisv)))
+      (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eq (local.get $id) (i32.const 20))  ;; push(...args)
