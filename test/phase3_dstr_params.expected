@@ -10,3 +10,6 @@ nested-obj=6
 arrow=7
 arrow-obj=42
 mix=ab
+var-nested=12
+var-nested-obj=4
+var-rest=1,2

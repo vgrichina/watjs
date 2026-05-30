@@ -29,3 +29,11 @@ print("arrow-obj=" + (({ w }) => w)({ w: 42 }));
 // mixed with a plain param
 function mix(first, { s }) { return first + s; }
 print("mix=" + mix("a", { s: "b" }));
+
+// var/let destructuring, including nested (now shares the param emitter)
+var [[g], h] = [[1], 2];
+print("var-nested=" + g + h);
+var { o: { q: qq } } = { o: { q: 4 } };
+print("var-nested-obj=" + qq);
+let [i1, ...rest] = [1, 2, 3];
+print("var-rest=" + i1 + "," + rest.length);
