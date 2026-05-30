@@ -1677,6 +1677,22 @@
           (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (call $next_token)))
           (let $ofvar i32 (i32.const 0))
           (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $ofvar (call $ident_name)) (call $next_token)))
+          ;; array destructuring pattern as the loop variable: for (var [a,b] of E)
+          (let $ofnames i32 (i32.const 0))
+          (let $ofncnt i32 (i32.const 0))
+          (if (i32.and (i32.eqz (local.get $ofvar)) (i32.eq (call $tok_kind) (i32.const 19)))
+            (then
+              (set! $ofnames (call $heap_alloc (i32.const 256)))
+              (call $next_token)
+              (block $pne (loop $pnl
+                (br_if $pne (i32.eq (call $tok_kind) (i32.const 20)))
+                (i32.store (i32.add (local.get $ofnames) (i32.mul (local.get $ofncnt) (i32.const 4))) (call $ident_name))
+                (set! $ofncnt (i32.add (local.get $ofncnt) (i32.const 1)))
+                (call $next_token)
+                (br_if $pne (i32.eqz (call $eat (i32.const 22))))
+                (br $pnl)))
+              (call $next_token)  ;; ']'
+              (set! $ofvar (i32.const -1))))  ;; pattern-mode sentinel
           (let $isof i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of")))))
           (let $isin i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "in")))))
           (if (i32.or (local.get $isof) (local.get $isin))
@@ -1702,10 +1718,23 @@
               (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "done"))  ;; GETPROP done
               (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
               (let $ofpend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end (pops)
-              ;; x = r.value
+              ;; x = r.value  (or destructure r.value into the array pattern)
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $rn))  ;; LOADVAR r
-              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "value"))  ;; GETPROP value
-              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))  ;; STOREVAR x
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "value"))  ;; GETPROP value → [val]
+              (if (i32.gt_s (local.get $ofncnt) (i32.const 0))
+                (then
+                  (let $ofpt i32 (call $vm_tmpname))
+                  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofpt))  ;; STOREVAR tmp
+                  (let $ofpi i32 (i32.const 0))
+                  (block $ofbe (loop $ofbl
+                    (br_if $ofbe (i32.ge_s (local.get $ofpi) (local.get $ofncnt)))
+                    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ofpt))  ;; LOADVAR tmp
+                    (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (local.get $ofpi))))
+                    (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX
+                    (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $ofnames) (i32.mul (local.get $ofpi) (i32.const 4)))))  ;; STOREVAR name
+                    (set! $ofpi (i32.add (local.get $ofpi) (i32.const 1)))
+                    (br $ofbl))))
+                (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))  ;; STOREVAR x
               (call $vm_c_stmt (local.get $code))  ;; body
               (call $vm_patch_conts (local.get $code) (local.get $oftop))  ;; continue → next iteration
               (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $oftop))  ;; JMP top
