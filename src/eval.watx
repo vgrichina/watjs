@@ -2109,6 +2109,67 @@
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eq (local.get $id) (i32.const 35))  ;; splice(start, deleteCount, ...items)
+        (then
+          (let $ss i32 (call $to_int_idx (call $to_num (local.get $a0))))
+          (if (i32.lt_s (local.get $ss) (i32.const 0)) (then (set! $ss (i32.add (local.get $n) (local.get $ss))) (if (i32.lt_s (local.get $ss) (i32.const 0)) (then (set! $ss (i32.const 0))))))
+          (if (i32.gt_s (local.get $ss) (local.get $n)) (then (set! $ss (local.get $n))))
+          (let $sdc i32 (i32.sub (local.get $n) (local.get $ss)))
+          (if (i32.eqz (local.get $argc)) (then (set! $sdc (i32.const 0))))
+          (if (i32.ge_s (local.get $argc) (i32.const 2))
+            (then
+              (set! $sdc (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+              (if (i32.lt_s (local.get $sdc) (i32.const 0)) (then (set! $sdc (i32.const 0))))
+              (if (i32.gt_s (local.get $sdc) (i32.sub (local.get $n) (local.get $ss))) (then (set! $sdc (i32.sub (local.get $n) (local.get $ss)))))))
+          (let $srem i32 (call $arr_new (i32.const 8)))
+          (let $si i32 (i32.const 0))
+          (block $sre (loop $srl
+            (br_if $sre (i32.ge_s (local.get $si) (local.get $sdc)))
+            (call $arr_push (local.get $srem) (call $arr_get (local.get $arr) (i32.add (local.get $ss) (local.get $si))))
+            (set! $si (i32.add (local.get $si) (i32.const 1))) (br $srl)))
+          (let $stmp i32 (call $arr_new (i32.const 8)))
+          (set! $si (i32.const 0))
+          (block $s0e (loop $s0l (br_if $s0e (i32.ge_s (local.get $si) (local.get $ss)))
+            (call $arr_push (local.get $stmp) (call $arr_get (local.get $arr) (local.get $si)))
+            (set! $si (i32.add (local.get $si) (i32.const 1))) (br $s0l)))
+          (set! $si (i32.const 2))
+          (block $sie (loop $sil (br_if $sie (i32.ge_s (local.get $si) (local.get $argc)))
+            (call $arr_push (local.get $stmp) (call $argn (local.get $argv) (local.get $argc) (local.get $si)))
+            (set! $si (i32.add (local.get $si) (i32.const 1))) (br $sil)))
+          (set! $si (i32.add (local.get $ss) (local.get $sdc)))
+          (block $s2e (loop $s2l (br_if $s2e (i32.ge_s (local.get $si) (local.get $n)))
+            (call $arr_push (local.get $stmp) (call $arr_get (local.get $arr) (local.get $si)))
+            (set! $si (i32.add (local.get $si) (i32.const 1))) (br $s2l)))
+          (let $sm i32 (call $arr_len (local.get $stmp)))
+          (set! $si (i32.const 0))
+          (block $sce (loop $scl (br_if $sce (i32.ge_s (local.get $si) (local.get $sm)))
+            (call $arr_set (local.get $arr) (local.get $si) (call $arr_get (local.get $stmp) (local.get $si)))
+            (set! $si (i32.add (local.get $si) (i32.const 1))) (br $scl)))
+          (i32.store (local.get $arr) (local.get $sm))
+          (return (call $mk_arr (local.get $srem)))))
+      (if (i32.eq (local.get $id) (i32.const 36))  ;; shift()
+        (then
+          (if (i32.eqz (local.get $n)) (then (return (call $v_undef))))
+          (let $sh0 i64 (call $arr_get (local.get $arr) (i32.const 0)))
+          (let $shi i32 (i32.const 1))
+          (block $she (loop $shl (br_if $she (i32.ge_s (local.get $shi) (local.get $n)))
+            (call $arr_set (local.get $arr) (i32.sub (local.get $shi) (i32.const 1)) (call $arr_get (local.get $arr) (local.get $shi)))
+            (set! $shi (i32.add (local.get $shi) (i32.const 1))) (br $shl)))
+          (i32.store (local.get $arr) (i32.sub (local.get $n) (i32.const 1)))
+          (return (local.get $sh0))))
+      (if (i32.eq (local.get $id) (i32.const 225))  ;; unshift(...items)
+        (then
+          (if (i32.gt_s (local.get $argc) (i32.const 0))
+            (then
+              (let $ui i32 (i32.sub (local.get $n) (i32.const 1)))
+              (block $uue (loop $uul (br_if $uue (i32.lt_s (local.get $ui) (i32.const 0)))
+                (call $arr_set (local.get $arr) (i32.add (local.get $ui) (local.get $argc)) (call $arr_get (local.get $arr) (local.get $ui)))
+                (set! $ui (i32.sub (local.get $ui) (i32.const 1))) (br $uul)))
+              (set! $ui (i32.const 0))
+              (block $upe (loop $upl (br_if $upe (i32.ge_s (local.get $ui) (local.get $argc)))
+                (call $arr_set (local.get $arr) (local.get $ui) (call $argn (local.get $argv) (local.get $argc) (local.get $ui)))
+                (set! $ui (i32.add (local.get $ui) (i32.const 1))) (br $upl)))))
+          (return (call $num (f64.convert_i32_s (i32.add (local.get $n) (local.get $argc)))))))
       (if (i32.eq (local.get $id) (i32.const 20))  ;; push(...args)
         (then
           (let $k i32 (i32.const 0))
@@ -2340,7 +2401,8 @@
     (then (return (i32.const 1))))  ;; Math.abs/floor/ceil/round/sqrt/trunc/sign
   (if (i32.or (i32.eq (local.get $id) (i32.const 170)) (i32.or (i32.eq (local.get $id) (i32.const 4)) (i32.or (i32.eq (local.get $id) (i32.const 5)) (i32.or (i32.eq (local.get $id) (i32.const 6)) (i32.or (i32.eq (local.get $id) (i32.const 7)) (i32.or (i32.eq (local.get $id) (i32.const 8)) (i32.eq (local.get $id) (i32.const 51))))))))
     (then (return (i32.const 1))))  ;; Math.clz32, Number/String/Boolean/isNaN/isFinite/parseFloat
-  (if (i32.eq (local.get $id) (i32.const 223)) (then (return (i32.const 1))))  ;; Math.fround
+  (if (i32.or (i32.eq (local.get $id) (i32.const 223)) (i32.eq (local.get $id) (i32.const 225))) (then (return (i32.const 1))))  ;; Math.fround, Array unshift
+  (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
   (if (i32.or (i32.eq (local.get $id) (i32.const 11)) (i32.or (i32.eq (local.get $id) (i32.const 12)) (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.or (i32.eq (local.get $id) (i32.const 67)) (i32.eq (local.get $id) (i32.const 153))))))
     (then (return (i32.const 1))))  ;; charAt, charCodeAt, padStart, padEnd, bind
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
@@ -2683,6 +2745,9 @@
   (let $ap i32 (call $obj_new (i32.const 48)))
   (i32.store (i32.const 160) (local.get $ap))
   (call $scope_define (local.get $ap) (cstring "push") (call $mk_native (i32.const 20) (cstring "push")))
+  (call $scope_define (local.get $ap) (cstring "splice") (call $mk_native (i32.const 35) (cstring "splice")))
+  (call $scope_define (local.get $ap) (cstring "shift") (call $mk_native (i32.const 36) (cstring "shift")))
+  (call $scope_define (local.get $ap) (cstring "unshift") (call $mk_native (i32.const 225) (cstring "unshift")))
   (call $scope_define (local.get $ap) (cstring "pop") (call $mk_native (i32.const 21) (cstring "pop")))
   (call $scope_define (local.get $ap) (cstring "indexOf") (call $mk_native (i32.const 22) (cstring "indexOf")))
   (call $scope_define (local.get $ap) (cstring "join") (call $mk_native (i32.const 23) (cstring "join")))
