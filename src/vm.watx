@@ -2573,6 +2573,10 @@
           (then
             (let $dfn i32 (call $val_payload (local.get $dobj)))
             (let $dfk i32 (call $to_str (local.get $dkey)))
+            ;; computed `length` is configurable: park a "@@dellen" marker in @12
+            ;; so fn_own/getOwnPropertyDescriptor report it absent thereafter.
+            (if (call $str_eq (local.get $dfk) (cstring "length"))
+              (then (call $scope_define (call $fn_props (local.get $dfn)) (cstring "@@dellen") (call $v_true))))
             (if (i32.and (i32.ge_s (i32.load (local.get $dfn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $dfn)) (i32.const 1448232528)))
               (then
                 (let $dvp i64 (i64.load (i32.add (local.get $dfn) (i32.const 16))))

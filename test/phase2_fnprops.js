@@ -23,3 +23,10 @@ print("hasOwn-after=" + parseInt.hasOwnProperty("name"));
 var fn = Math.max;
 fn.length = 99;
 print("length-after-assign=" + fn.length);
+
+// length is configurable: deletable, then absent
+var lenDesc = Object.getOwnPropertyDescriptor(Math.min, "length");
+print("length-desc-config=" + lenDesc.configurable);
+print("length-hasOwn-before=" + Math.min.hasOwnProperty("length"));
+delete Math.min.length;
+print("length-hasOwn-after=" + Math.min.hasOwnProperty("length"));

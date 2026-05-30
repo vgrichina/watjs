@@ -476,7 +476,13 @@
 ;; 1 if function $fn has own property $ks (length, or a slot in its property
 ;; store — @12 for native fns, the @16 prototype scope for VM fns).
 (func $fn_own (param $fn i32) (param $ks i32) (result i32) (effects)
-  (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (i32.const 1))))
+  ;; `length` is a computed own property unless it was deleted (a "@@dellen"
+  ;; marker is parked in the @12 store by the DELETE op — length is configurable).
+  (if (call $str_eq (local.get $ks) (cstring "length"))
+    (then
+      (let $lp i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
+      (if (local.get $lp) (then (if (call $scope_find_local (local.get $lp) (cstring "@@dellen")) (then (return (i32.const 0))))))
+      (return (i32.const 1))))
   (if (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
     (then
       (let $vp i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
