@@ -1,0 +1,6 @@
+inst=true,true,true
+name=TypeError msg=m str=TypeError: m
+range=true
+ref=true
+proto-chain=true
+caught=true,true
