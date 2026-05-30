@@ -498,17 +498,22 @@
             (br $frsl)))))
       (if (call $is_object (local.get $frs))
         (then
-          (let $frnx i64 (call $get_prop (local.get $frs) (call $mk_str (cstring "next"))))
+          ;; resolve an iterator: @@iterator() if present, else the object itself
+          (let $frit i64 (local.get $frs))
+          (let $frifn i64 (call $get_prop (local.get $frs) (call $mk_str (cstring "@@iterator"))))
+          (if (call $is_function (local.get $frifn)) (then (set! $frit (call $call_fn0 (local.get $frifn) (local.get $frs)))))
+          (let $frnx i64 (call $get_prop (local.get $frit) (call $mk_str (cstring "next"))))
           (if (call $is_function (local.get $frnx))
-            (then  ;; iterator
+            (then  ;; iterator protocol
               (block $frie (loop $fril
-                (let $frr i64 (call $call_fn0 (local.get $frnx) (local.get $frs)))
+                (let $frr i64 (call $call_fn0 (local.get $frnx) (local.get $frit)))
                 (br_if $frie (call $err))
                 (br_if $frie (call $truthy (call $get_prop (local.get $frr) (call $mk_str (cstring "done")))))
                 (call $arr_push (local.get $fra) (call $get_prop (local.get $frr) (call $mk_str (cstring "value"))))
                 (br $fril))))
-            (else  ;; array-like: indices 0..length-1
-              (let $frln i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $frs) (call $mk_str (cstring "length"))))))
+            (else  ;; array-like: indices 0..length-1 (NaN/negative length → 0)
+              (let $frlnf f64 (call $to_num (call $get_prop (local.get $frs) (call $mk_str (cstring "length")))))
+              (let $frln i32 (if i32 (i32.and (f64.eq (local.get $frlnf) (local.get $frlnf)) (i32.and (f64.ge (local.get $frlnf) (f64.const 0)) (f64.lt (local.get $frlnf) (f64.const 2147483647)))) (then (i32.trunc_f64_s (local.get $frlnf))) (else (i32.const 0))))
               (let $frk i32 (i32.const 0))
               (block $frle (loop $frll
                 (br_if $frle (i32.ge_s (local.get $frk) (local.get $frln)))
@@ -1760,8 +1765,13 @@
         (then
           (let $fsrc i32 (local.get $arr))
           (let $fdepth i32 (i32.const 1))
-          (if (i32.eq (local.get $id) (i32.const 31))  ;; flat: optional depth arg
-            (then (if (i32.ge_s (local.get $argc) (i32.const 1)) (then (set! $fdepth (i32.trunc_f64_s (call $to_num (local.get $a0))))))))
+          (if (i32.eq (local.get $id) (i32.const 31))  ;; flat: optional depth arg (Infinity → full)
+            (then (if (i32.ge_s (local.get $argc) (i32.const 1))
+              (then
+                (let $fdf f64 (call $to_num (local.get $a0)))
+                (set! $fdepth (if i32 (f64.ne (local.get $fdf) (local.get $fdf)) (then (i32.const 0))   ;; NaN → 0
+                  (else (if i32 (f64.ge (local.get $fdf) (f64.const 2147483647)) (then (i32.const 2147483646))  ;; Infinity/huge → full
+                  (else (if i32 (f64.lt (local.get $fdf) (f64.const 0)) (then (i32.const 0)) (else (i32.trunc_f64_s (local.get $fdf)))))))))))))
           (if (i32.eq (local.get $id) (i32.const 32))  ;; flatMap: map first, then flatten depth 1
             (then
               (let $fm i32 (call $arr_new (i32.const 4)))
