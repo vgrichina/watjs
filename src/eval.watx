@@ -845,6 +845,12 @@
     (then
       (let $frs i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $frm i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      ;; items = null/undefined → ToObject throws TypeError
+      (if (i32.or (call $is_null (local.get $frs)) (call $is_undefined (local.get $frs)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      ;; a supplied mapfn must be callable
+      (if (i32.and (i32.gt_s (local.get $argc) (i32.const 1)) (i32.and (i32.eqz (call $is_undefined (local.get $frm))) (i32.eqz (call $is_function (local.get $frm)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Array.from: mapping function is not callable")) (return (call $v_undef))))
       (let $fra i32 (call $arr_new (i32.const 4)))
       (if (call $is_array (local.get $frs))
         (then
