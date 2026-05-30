@@ -1,0 +1,5 @@
+global=true ignoreCase=true multiline=false
+source=ab flags=gi sticky=false
+own-global=false
+proto-get=x
+test=true exec=c

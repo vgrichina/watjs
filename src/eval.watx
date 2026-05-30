@@ -2119,15 +2119,51 @@
         (set! $fi (i32.add (local.get $fi) (i32.const 1)))
         (br $fvl)))
       (let $ro i32 (call $obj_new (i32.const 8)))
+      (i32.store (local.get $ro) (i32.load (i32.const 324)))  ;; scope parent = RegExp.prototype (source/flags/… getters, test, exec)
       (call $scope_define (local.get $ro) (cstring "__re_src__") (call $mk_str (local.get $pat)))
       (call $scope_define (local.get $ro) (cstring "__re_flags__") (call $mk_str (local.get $flg)))
-      (call $scope_define (local.get $ro) (cstring "source") (call $mk_str (local.get $pat)))
-      (call $scope_define (local.get $ro) (cstring "flags") (call $mk_str (local.get $flg)))
-      (call $scope_define (local.get $ro) (cstring "global") (call $mk_bool (call $str_has_char (local.get $flg) (i32.const 103))))
-      (call $scope_define (local.get $ro) (cstring "ignoreCase") (call $mk_bool (call $str_has_char (local.get $flg) (i32.const 105))))
-      (call $scope_define (local.get $ro) (cstring "test") (call $mk_native (i32.const 101) (cstring "test")))
-      (call $scope_define (local.get $ro) (cstring "exec") (call $mk_native (i32.const 167) (cstring "exec")))
+      (call $scope_define (local.get $ro) (cstring "lastIndex") (call $num (f64.const 0)))
       (return (call $mk_obj (local.get $ro)))))
+  ;; RegExp.prototype accessor getters (this = regex). 290 source, 291 flags,
+  ;; 292-298 global/ignoreCase/multiline/sticky/unicode/dotAll/hasIndices.
+  (if (i32.eq (local.get $id) (i32.const 290))  ;; get source
+    (then
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $rsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__re_src__")))
+          (if (local.get $rsl)
+            (then
+              (let $rsv i64 (i64.load (local.get $rsl)))
+              (if (call $is_string (local.get $rsv))
+                (then (if (i32.gt_s (call $str_len (call $val_payload (local.get $rsv))) (i32.const 0)) (then (return (local.get $rsv))))))))))
+      (return (call $mk_str (cstring "(?:)")))))
+  (if (i32.eq (local.get $id) (i32.const 291))  ;; get flags
+    (then
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $rfl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__re_flags__")))
+          (if (local.get $rfl)
+            (then
+              (let $rfv i64 (i64.load (local.get $rfl)))
+              (if (call $is_string (local.get $rfv)) (then (return (local.get $rfv))))))))
+      (return (call $mk_str (cstring "")))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 292)) (i32.le_s (local.get $id) (i32.const 298)))
+    (then
+      (let $rbf i32 (i32.const 0))  ;; flags string ptr (0 if none/non-regex)
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $bsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__re_flags__")))
+          (if (local.get $bsl)
+            (then (let $bfv i64 (i64.load (local.get $bsl))) (if (call $is_string (local.get $bfv)) (then (set! $rbf (call $val_payload (local.get $bfv)))))))))
+      (let $bch i32 (i32.const 100))  ;; hasIndices 'd' (id 298)
+      (if (i32.eq (local.get $id) (i32.const 292)) (then (set! $bch (i32.const 103))))  ;; global g
+      (if (i32.eq (local.get $id) (i32.const 293)) (then (set! $bch (i32.const 105))))  ;; ignoreCase i
+      (if (i32.eq (local.get $id) (i32.const 294)) (then (set! $bch (i32.const 109))))  ;; multiline m
+      (if (i32.eq (local.get $id) (i32.const 295)) (then (set! $bch (i32.const 121))))  ;; sticky y
+      (if (i32.eq (local.get $id) (i32.const 296)) (then (set! $bch (i32.const 117))))  ;; unicode u
+      (if (i32.eq (local.get $id) (i32.const 297)) (then (set! $bch (i32.const 115))))  ;; dotAll s
+      (return (if i64 (i32.eqz (local.get $rbf)) (then (call $mk_bool (i32.const 0)))
+        (else (call $mk_bool (call $str_has_char (local.get $rbf) (local.get $bch))))))))
   (if (i32.eq (local.get $id) (i32.const 101))  ;; regex.test(str)  (this = regex obj)
     (then
       (let $src i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "__re_src__"))))
@@ -3487,7 +3523,23 @@
   (drop (call $def_native (local.get $g) (cstring "isFinite") (i32.const 8)))
   (drop (call $def_native (local.get $g) (cstring "parseInt") (i32.const 50)))
   (drop (call $def_native (local.get $g) (cstring "parseFloat") (i32.const 51)))
-  (drop (call $def_native (local.get $g) (cstring "RegExp") (i32.const 100)))
+  (let $ref i64 (call $def_native (local.get $g) (cstring "RegExp") (i32.const 100)))
+  ;; RegExp.prototype with accessor getters (source/flags/global/…) — reg 324 holds
+  ;; its scope so the constructor & literals can link instances as the parent.
+  (let $reproto i32 (call $obj_new (i32.const 16)))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "source") (call $mk_native (i32.const 290) (cstring "get source")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "flags") (call $mk_native (i32.const 291) (cstring "get flags")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "global") (call $mk_native (i32.const 292) (cstring "get global")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "ignoreCase") (call $mk_native (i32.const 293) (cstring "get ignoreCase")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "multiline") (call $mk_native (i32.const 294) (cstring "get multiline")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "sticky") (call $mk_native (i32.const 295) (cstring "get sticky")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "unicode") (call $mk_native (i32.const 296) (cstring "get unicode")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "dotAll") (call $mk_native (i32.const 297) (cstring "get dotAll")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "hasIndices") (call $mk_native (i32.const 298) (cstring "get hasIndices")) (call $v_undef) (i32.const 5))
+  (call $scope_define (local.get $reproto) (cstring "test") (call $mk_native (i32.const 101) (cstring "test")))
+  (call $scope_define (local.get $reproto) (cstring "exec") (call $mk_native (i32.const 167) (cstring "exec")))
+  (i32.store (i32.const 324) (local.get $reproto))
+  (call $set_prop (local.get $ref) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $reproto)))
   ;; Number with NaN / Infinity constants
   (let $numproto i32 (call $scope_new (i32.const 0) (i32.const 8)))  ;; Number.prototype (reg 164)
   (i32.store (i32.const 164) (local.get $numproto))
