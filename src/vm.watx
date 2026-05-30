@@ -1785,9 +1785,10 @@
           (drop (call $eat (i32.const 21)))
           (return)))
       (call $look_restore)))
-  ;; expression statement
+  ;; expression statement → store value to the completion register (op 71), so
+  ;; eval()/JSON.parse can read the last expression value. Same stack effect as POP.
   (call $vm_c_commaexpr (local.get $code))
-  (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
+  (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (pops TOS → mem 288)
   (drop (call $eat (i32.const 21))))
 
 ;; compile a whole program (statement list) → HALT-terminated bytecode
@@ -2315,6 +2316,11 @@
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $dres))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 71))  ;; SETCOMPLETION — pop TOS → completion register (mem 288)
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.const 288) (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 2))  ;; ADD — js_add (string concat + numeric)
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
@@ -2760,6 +2766,32 @@
       (call $host_throw (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)))
       (i32.const 1))
     (else (i32.const 0))))
+
+;; native eval(string): compile the source and run it on the VM in the CURRENT
+;; scope (direct eval), returning the completion value. Compile-time clobbering of
+;; lexer/emit registers is safe — the calling VM is executing bytecode, not lexing.
+(func $vm_eval_str (param $s i32) (result i64) (effects)
+  (let $scope i32 (call $cur_scope))
+  (i64.store (i32.const 288) (call $v_undef))  ;; reset completion register
+  (let $code i32 (call $vm_compile_prog (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s))))
+  (if (call $err) (then (return (call $v_undef))))  ;; SyntaxError → propagates
+  (let $ctx i32 (call $heap_alloc (i32.const 40)))
+  (i32.store (local.get $ctx) (local.get $code))
+  (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.const 0))
+  (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 1048576)))
+  (i32.store (i32.add (local.get $ctx) (i32.const 12)) (i32.const 0))
+  (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 0))
+  (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $scope))   ;; run in caller's scope
+  (i32.store (i32.add (local.get $ctx) (i32.const 24)) (i32.const 0))
+  (i32.store (i32.add (local.get $ctx) (i32.const 28)) (local.get $scope))
+  (i32.store (i32.add (local.get $ctx) (i32.const 32)) (i32.const 0))
+  (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 0))
+  (block $e (loop $l
+    (drop (call $vm_step (local.get $ctx) (call $v_undef)))
+    (br_if $e (call $vm_done (local.get $ctx)))
+    (br $l)))
+  (call $set_cur_scope (local.get $scope))  ;; vm_step may have left a nested scope active
+  (i64.load (i32.const 288)))  ;; completion value
 
 ;; generator demo: start a ';'-separated yield-list; gen_next pulls each value
 (func $vm_gen_start (param $ptr i32) (param $len i32) (result i32) (effects)
