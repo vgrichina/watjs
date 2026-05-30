@@ -185,8 +185,8 @@
   (let $oldAcc i32 (if i32 (i32.ne (local.get $old) (i32.const 0)) (then (call $entry_is_accessor (local.get $old))) (else (i32.const 0))))
   (if (i32.eqz (local.get $old))
     (then
-      ;; new property: forbidden on a non-extensible (frozen) object
-      (if (call $scope_find_local (local.get $os) (cstring "@@frozen"))
+      ;; new property: forbidden on a non-extensible object
+      (if (call $scope_find_local (local.get $os) (cstring "@@noext"))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot define property, object is not extensible")) (return))))
     (else
       ;; redefining: if the existing prop is non-configurable, enforce the limits
@@ -766,8 +766,52 @@
             (i32.store (local.get $fe) (i32.and (i32.load (local.get $fe)) (i32.const -13)))  ;; clear C(4)+W(8)
             (set! $fi (i32.add (local.get $fi) (i32.const 1)))
             (br $fzl)))
-          (call $scope_define (local.get $fsc) (cstring "@@frozen") (call $v_true))))
+          (call $scope_define_attr (local.get $fsc) (cstring "@@frozen") (call $v_true) (i32.const 0))
+          (call $scope_define_attr (local.get $fsc) (cstring "@@noext") (call $v_true) (i32.const 0))))
       (return (local.get $fo))))
+  ;; Object.preventExtensions(o) (162) / seal(o) (164)
+  (if (i32.or (i32.eq (local.get $id) (i32.const 162)) (i32.eq (local.get $id) (i32.const 164)))
+    (then
+      (let $xo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_object (local.get $xo))
+        (then
+          (let $xsc i32 (call $val_payload (local.get $xo)))
+          (if (i32.eq (local.get $id) (i32.const 164))  ;; seal → also clear configurable on every own prop
+            (then
+              (let $xcnt i32 (call $scope_count (local.get $xsc)))
+              (let $xi i32 (i32.const 0))
+              (block $sze (loop $szl
+                (br_if $sze (i32.ge_s (local.get $xi) (local.get $xcnt)))
+                (let $xe i32 (i32.add (call $scope_entry (local.get $xsc) (local.get $xi)) (i32.const 4)))
+                (i32.store (local.get $xe) (i32.and (i32.load (local.get $xe)) (i32.const -5)))  ;; clear C(4)
+                (set! $xi (i32.add (local.get $xi) (i32.const 1)))
+                (br $szl)))
+              (call $scope_define_attr (local.get $xsc) (cstring "@@sealed") (call $v_true) (i32.const 0))))
+          (call $scope_define_attr (local.get $xsc) (cstring "@@noext") (call $v_true) (i32.const 0))))
+      (return (local.get $xo))))
+  ;; Object.isExtensible(o) (163)
+  (if (i32.eq (local.get $id) (i32.const 163))
+    (then
+      (let $xo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_object (local.get $xo))) (then (return (call $v_false))))
+      (return (call $mk_bool (i32.eqz (call $scope_find_local (call $val_payload (local.get $xo)) (cstring "@@noext")))))))
+  ;; Object.isSealed(o) (165): non-extensible and every own prop non-configurable.
+  ;; Internal @@ markers are stored non-configurable so they don't trip this.
+  (if (i32.eq (local.get $id) (i32.const 165))
+    (then
+      (let $xo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_object (local.get $xo))) (then (return (call $v_true))))
+      (let $xsc i32 (call $val_payload (local.get $xo)))
+      (if (i32.eqz (call $scope_find_local (local.get $xsc) (cstring "@@noext"))) (then (return (call $v_false))))
+      (let $xcnt i32 (call $scope_count (local.get $xsc)))
+      (let $xi i32 (i32.const 0))
+      (block $ise (loop $isl
+        (br_if $ise (i32.ge_s (local.get $xi) (local.get $xcnt)))
+        (if (call $entry_configurable (i32.add (call $scope_entry (local.get $xsc) (local.get $xi)) (i32.const 8)))
+          (then (return (call $v_false))))
+        (set! $xi (i32.add (local.get $xi) (i32.const 1)))
+        (br $isl)))
+      (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 140))  ;; Object.isFrozen(o)
     (then
       (let $io i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -1265,6 +1309,23 @@
       (let $crp i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $cro i32 (call $obj_new (i32.const 8)))
       (if (call $is_object (local.get $crp)) (then (i32.store (local.get $cro) (call $val_payload (local.get $crp)))))
+      ;; optional 2nd arg: property descriptors (like defineProperties)
+      (let $crd i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (call $is_object (local.get $crd))
+        (then
+          (let $cps i32 (call $val_payload (local.get $crd)))
+          (let $ccnt i32 (call $scope_count (local.get $cps)))
+          (let $ci i32 (i32.const 0))
+          (block $cce (loop $ccl
+            (br_if $cce (i32.ge_s (local.get $ci) (local.get $ccnt)))
+            (let $ce i32 (call $scope_entry (local.get $cps) (local.get $ci)))
+            (if (call $entry_enumerable (i32.add (local.get $ce) (i32.const 8)))
+              (then
+                (let $cdv i64 (i64.load (i32.add (local.get $ce) (i32.const 8))))
+                (if (call $is_object (local.get $cdv))
+                  (then (call $apply_descriptor (local.get $cro) (i32.load (local.get $ce)) (call $val_payload (local.get $cdv)))))))
+            (set! $ci (i32.add (local.get $ci) (i32.const 1)))
+            (br $ccl)))))
       (return (call $mk_obj (local.get $cro)))))
   (if (i32.eq (local.get $id) (i32.const 82))  ;; Object.getPrototypeOf(o)
     (then
@@ -3437,6 +3498,10 @@
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getOwnPropertyDescriptor")) (call $mk_native (i32.const 156) (cstring "getOwnPropertyDescriptor")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "defineProperties")) (call $mk_native (i32.const 160) (cstring "defineProperties")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getOwnPropertyDescriptors")) (call $mk_native (i32.const 161) (cstring "getOwnPropertyDescriptors")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "preventExtensions")) (call $mk_native (i32.const 162) (cstring "preventExtensions")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "isExtensible")) (call $mk_native (i32.const 163) (cstring "isExtensible")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "seal")) (call $mk_native (i32.const 164) (cstring "seal")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "isSealed")) (call $mk_native (i32.const 165) (cstring "isSealed")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "values")) (call $mk_native (i32.const 91) (cstring "values")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "entries")) (call $mk_native (i32.const 92) (cstring "entries")))
   ;; Object.prototype — real backing object holding the brand-check toString etc.
