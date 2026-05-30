@@ -33,24 +33,12 @@
 
 ;; Evaluate source at [ptr,len). Returns 0 on normal completion, 1 if an
 ;; uncaught exception propagated (its message is sent to host_throw).
+;; This is the single engine: the Phase-2 bytecode VM (eval_prog). The earlier
+;; tree-walk re-scan evaluator has been retired (see DESIGN.md — one engine).
 (func $eval (param $ptr i32) (param $len i32) (result i32)
   (effects)
-  (call $set_src (local.get $ptr) (local.get $len))
-  (call $set_err (i32.const 0))
   (call $set_suppress (i32.const 0))
-  (i32.store (i32.const 184) (i32.const 0))  ;; typeof-unresolvable guard
-  (i32.store (i32.const 188) (i32.const 0))  ;; pending loop label
-  (i32.store (i32.const 192) (i32.const 0))  ;; break/continue target label
-  (call $lex_init)
-  (call $eval_program)
-  (if i32 (call $err)
-    (then
-      (let $ev i64 (call $err_val))
-      (call $set_err (i32.const 0))  ;; clear so a toString method can run for the message
-      (let $s i32 (call $to_str (local.get $ev)))
-      (call $host_throw (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)))
-      (i32.const 1))
-    (else (i32.const 0))))
+  (call $eval_prog (local.get $ptr) (local.get $len)))
 
 (wasm-export "alloc_input" $alloc_input)
 (wasm-export "eval" $eval)
