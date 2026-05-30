@@ -534,77 +534,144 @@
 ;; Accumulates up to 17 significant digits into a u64 mantissa + decimal
 ;; exponent, then combines. Fast path (<=15 sig digits, |exp|<=22) uses a
 ;; single exact multiply/divide → correctly rounded. Empty→0, bad→NaN.
+;; True if s[pos..] begins with the literal string `lit`.
+(func $str_match_at (param $s i32) (param $pos i32) (param $lit i32) (result i32) (effects)
+  (let $n i32 (call $str_len (local.get $lit)))
+  (if (i32.gt_s (i32.add (local.get $pos) (local.get $n)) (call $str_len (local.get $s))) (then (return (i32.const 0))))
+  (let $k i32 (i32.const 0))
+  (block $b (loop $l
+    (br_if $b (i32.ge_s (local.get $k) (local.get $n)))
+    (if (i32.ne (call $str_byte (local.get $s) (i32.add (local.get $pos) (local.get $k))) (call $str_byte (local.get $lit) (local.get $k)))
+      (then (return (i32.const 0))))
+    (set! $k (i32.add (local.get $k) (i32.const 1))) (br $l)))
+  (i32.const 1))
+
+;; True if every byte from pos to len is ASCII whitespace (or pos>=len).
+(func $str_rest_ws (param $s i32) (param $pos i32) (param $len i32) (result i32) (effects)
+  (block $b (loop $l
+    (br_if $b (i32.ge_s (local.get $pos) (local.get $len)))
+    (let $w i32 (call $str_byte (local.get $s) (local.get $pos)))
+    (if (i32.eqz (i32.or (i32.eq (local.get $w) (i32.const 32)) (i32.and (i32.ge_s (local.get $w) (i32.const 9)) (i32.le_s (local.get $w) (i32.const 13)))))
+      (then (return (i32.const 0))))
+    (set! $pos (i32.add (local.get $pos) (i32.const 1))) (br $l)))
+  (i32.const 1))
+
+;; Parse a base-`base` (2/8/16) integer at s[pos..]; trailing whitespace OK.
+;; Empty or any invalid digit → NaN. Accumulates in f64.
+(func $str_radix (param $s i32) (param $pos i32) (param $len i32) (param $base i32) (result f64) (effects)
+  (let $val f64 (f64.const 0))
+  (let $any i32 (i32.const 0))
+  (let $bf f64 (f64.convert_i32_s (local.get $base)))
+  (block $b (loop $l
+    (br_if $b (i32.ge_s (local.get $pos) (local.get $len)))
+    (let $c i32 (call $str_byte (local.get $s) (local.get $pos)))
+    (let $dv i32 (i32.const -1))
+    (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))) (then (set! $dv (i32.sub (local.get $c) (i32.const 48)))))
+    (if (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 102))) (then (set! $dv (i32.add (i32.sub (local.get $c) (i32.const 97)) (i32.const 10)))))
+    (if (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 70))) (then (set! $dv (i32.add (i32.sub (local.get $c) (i32.const 65)) (i32.const 10)))))
+    (if (i32.or (i32.lt_s (local.get $dv) (i32.const 0)) (i32.ge_s (local.get $dv) (local.get $base))) (then (br $b)))
+    (set! $val (f64.add (f64.mul (local.get $val) (local.get $bf)) (f64.convert_i32_s (local.get $dv))))
+    (set! $any (i32.const 1))
+    (set! $pos (i32.add (local.get $pos) (i32.const 1))) (br $l)))
+  (if (i32.eqz (local.get $any)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (if (i32.eqz (call $str_rest_ws (local.get $s) (local.get $pos) (local.get $len))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (local.get $val))
+
 (func $str_to_num (param $s i32) (result f64) (effects)
   (let $len i32 (call $str_len (local.get $s)))
   (let $i i32 (i32.const 0))
-  ;; skip leading spaces
+  ;; skip leading ASCII whitespace (tab/LF/VT/FF/CR/space)
   (block $sl1 (loop $ll1
     (br_if $sl1 (i32.ge_s (local.get $i) (local.get $len)))
-    (br_if $sl1 (i32.ne (call $str_byte (local.get $s) (local.get $i)) (i32.const 32)))
+    (let $w i32 (call $str_byte (local.get $s) (local.get $i)))
+    (br_if $sl1 (i32.eqz (i32.or (i32.eq (local.get $w) (i32.const 32)) (i32.and (i32.ge_s (local.get $w) (i32.const 9)) (i32.le_s (local.get $w) (i32.const 13))))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ll1)))
-  (if f64 (i32.ge_s (local.get $i) (local.get $len)) (then (f64.const 0)) ;; all spaces → 0
-  (else
-    (let $sign f64 (f64.const 1))
-    (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
-    (if (i32.eq (local.get $c) (i32.const 43)) (then (set! $i (i32.add (local.get $i) (i32.const 1)))))
-    (if (i32.eq (local.get $c) (i32.const 45)) (then (set! $sign (f64.const -1)) (set! $i (i32.add (local.get $i) (i32.const 1)))))
-    (let $mant i64 (i64.const 0))
-    (let $nd i32 (i32.const 0))     ;; significant digits accumulated
-    (let $exp i32 (i32.const 0))    ;; power-of-ten to apply to mant
-    (let $any i32 (i32.const 0))
-    (let $dot i32 (i32.const 0))
-    (block $ie (loop $il
-      (br_if $ie (i32.ge_s (local.get $i) (local.get $len)))
-      (let $d i32 (call $str_byte (local.get $s) (local.get $i)))
-      (if (i32.eq (local.get $d) (i32.const 46))           ;; '.'
+  (if (i32.ge_s (local.get $i) (local.get $len)) (then (return (f64.const 0))))  ;; empty / all whitespace → 0
+  (let $sign f64 (f64.const 1))
+  (let $signSeen i32 (i32.const 0))
+  (let $c0 i32 (call $str_byte (local.get $s) (local.get $i)))
+  (if (i32.eq (local.get $c0) (i32.const 43)) (then (set! $i (i32.add (local.get $i) (i32.const 1))) (set! $signSeen (i32.const 1))))
+  (if (i32.eq (local.get $c0) (i32.const 45)) (then (set! $sign (f64.const -1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (set! $signSeen (i32.const 1))))
+  ;; Infinity (a sign is allowed)
+  (if (call $str_match_at (local.get $s) (local.get $i) (cstring "Infinity"))
+    (then
+      (set! $i (i32.add (local.get $i) (i32.const 8)))
+      (if (call $str_rest_ws (local.get $s) (local.get $i) (local.get $len))
+        (then (return (f64.mul (local.get $sign) (f64.div (f64.const 1) (f64.const 0)))))
+        (else (return (f64.div (f64.const 0) (f64.const 0)))))))
+  ;; 0x / 0o / 0b radix integer — only without a sign
+  (if (i32.and (i32.eqz (local.get $signSeen)) (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $len)))
+    (then
+      (if (i32.eq (call $str_byte (local.get $s) (local.get $i)) (i32.const 48))
         (then
-          (if (local.get $dot) (then (br $ie)))            ;; a second dot ends the number
-          (set! $dot (i32.const 1))
-          (set! $i (i32.add (local.get $i) (i32.const 1)))
-          (br $il)))
-      (br_if $ie (i32.eqz (i32.and (i32.ge_s (local.get $d) (i32.const 48)) (i32.le_s (local.get $d) (i32.const 57)))))
-      (set! $any (i32.const 1))
-      (if (i32.lt_s (local.get $nd) (i32.const 17))
-        (then
-          (set! $mant (i64.add (i64.mul (local.get $mant) (i64.const 10)) (i64.extend_i32_s (i32.sub (local.get $d) (i32.const 48)))))
-          (set! $nd (i32.add (local.get $nd) (i32.const 1)))
-          (if (local.get $dot) (then (set! $exp (i32.sub (local.get $exp) (i32.const 1))))))
-        (else
-          (if (i32.eqz (local.get $dot)) (then (set! $exp (i32.add (local.get $exp) (i32.const 1)))))))
-      (set! $i (i32.add (local.get $i) (i32.const 1)))
-      (br $il)))
-    ;; e/E exponent
-    (if (i32.lt_s (local.get $i) (local.get $len))
+          (let $px i32 (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))))
+          (if (i32.or (i32.eq (local.get $px) (i32.const 120)) (i32.eq (local.get $px) (i32.const 88))) (then (return (call $str_radix (local.get $s) (i32.add (local.get $i) (i32.const 2)) (local.get $len) (i32.const 16)))))
+          (if (i32.or (i32.eq (local.get $px) (i32.const 111)) (i32.eq (local.get $px) (i32.const 79))) (then (return (call $str_radix (local.get $s) (i32.add (local.get $i) (i32.const 2)) (local.get $len) (i32.const 8)))))
+          (if (i32.or (i32.eq (local.get $px) (i32.const 98)) (i32.eq (local.get $px) (i32.const 66))) (then (return (call $str_radix (local.get $s) (i32.add (local.get $i) (i32.const 2)) (local.get $len) (i32.const 2)))))))))
+  ;; decimal: integer digits, fraction, optional e/E exponent
+  (let $mant i64 (i64.const 0))
+  (let $nd i32 (i32.const 0))     ;; significant digits accumulated
+  (let $exp i32 (i32.const 0))    ;; power-of-ten to apply to mant
+  (let $any i32 (i32.const 0))
+  (let $dot i32 (i32.const 0))
+  (block $ie (loop $il
+    (br_if $ie (i32.ge_s (local.get $i) (local.get $len)))
+    (let $d i32 (call $str_byte (local.get $s) (local.get $i)))
+    (if (i32.eq (local.get $d) (i32.const 46))           ;; '.'
       (then
-        (let $ec i32 (call $str_byte (local.get $s) (local.get $i)))
-        (if (i32.or (i32.eq (local.get $ec) (i32.const 101)) (i32.eq (local.get $ec) (i32.const 69)))
-          (then
-            (set! $i (i32.add (local.get $i) (i32.const 1)))
-            (let $es i32 (i32.const 1))
-            (if (i32.lt_s (local.get $i) (local.get $len))
-              (then
-                (let $sc i32 (call $str_byte (local.get $s) (local.get $i)))
-                (if (i32.eq (local.get $sc) (i32.const 43)) (then (set! $i (i32.add (local.get $i) (i32.const 1)))))
-                (if (i32.eq (local.get $sc) (i32.const 45)) (then (set! $es (i32.const -1)) (set! $i (i32.add (local.get $i) (i32.const 1)))))))
-            (let $en i32 (i32.const 0))
-            (block $ee (loop $el
-              (br_if $ee (i32.ge_s (local.get $i) (local.get $len)))
-              (let $ed i32 (call $str_byte (local.get $s) (local.get $i)))
-              (br_if $ee (i32.eqz (i32.and (i32.ge_s (local.get $ed) (i32.const 48)) (i32.le_s (local.get $ed) (i32.const 57)))))
-              (set! $en (i32.add (i32.mul (local.get $en) (i32.const 10)) (i32.sub (local.get $ed) (i32.const 48))))
-              (set! $i (i32.add (local.get $i) (i32.const 1))) (br $el)))
-            (set! $exp (i32.add (local.get $exp) (i32.mul (local.get $es) (local.get $en))))))))
-    (if f64 (i32.eqz (local.get $any)) (then (f64.div (f64.const 0) (f64.const 0)))
-    (else
-      (let $r f64 (f64.convert_i64_s (local.get $mant)))
-      (let $res f64 (f64.const 0))
-      (if (i32.eqz (local.get $exp))
-        (then (set! $res (local.get $r)))
-        (else
-          (if (i32.and (i32.le_s (local.get $nd) (i32.const 15)) (i32.and (i32.ge_s (local.get $exp) (i32.const -22)) (i32.le_s (local.get $exp) (i32.const 22))))
+        (if (local.get $dot) (then (br $ie)))            ;; a second dot ends the number
+        (set! $dot (i32.const 1))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $il)))
+    (br_if $ie (i32.eqz (i32.and (i32.ge_s (local.get $d) (i32.const 48)) (i32.le_s (local.get $d) (i32.const 57)))))
+    (set! $any (i32.const 1))
+    (if (i32.lt_s (local.get $nd) (i32.const 17))
+      (then
+        (set! $mant (i64.add (i64.mul (local.get $mant) (i64.const 10)) (i64.extend_i32_s (i32.sub (local.get $d) (i32.const 48)))))
+        (set! $nd (i32.add (local.get $nd) (i32.const 1)))
+        (if (local.get $dot) (then (set! $exp (i32.sub (local.get $exp) (i32.const 1))))))
+      (else
+        (if (i32.eqz (local.get $dot)) (then (set! $exp (i32.add (local.get $exp) (i32.const 1)))))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $il)))
+  ;; e/E exponent
+  (let $sawE i32 (i32.const 0))
+  (let $edig i32 (i32.const 0))
+  (if (i32.lt_s (local.get $i) (local.get $len))
+    (then
+      (let $ec i32 (call $str_byte (local.get $s) (local.get $i)))
+      (if (i32.or (i32.eq (local.get $ec) (i32.const 101)) (i32.eq (local.get $ec) (i32.const 69)))
+        (then
+          (set! $sawE (i32.const 1))
+          (set! $i (i32.add (local.get $i) (i32.const 1)))
+          (let $es i32 (i32.const 1))
+          (if (i32.lt_s (local.get $i) (local.get $len))
             (then
-              (if (i32.gt_s (local.get $exp) (i32.const 0))
-                (then (set! $res (f64.mul (local.get $r) (call $pow10 (f64.convert_i32_s (local.get $exp))))))
-                (else (set! $res (f64.div (local.get $r) (call $pow10 (f64.convert_i32_s (i32.sub (i32.const 0) (local.get $exp)))))))))
-            (else (set! $res (f64.mul (local.get $r) (call $pow10 (f64.convert_i32_s (local.get $exp)))))))))
-      (f64.mul (local.get $sign) (local.get $res)))))))
+              (let $sc i32 (call $str_byte (local.get $s) (local.get $i)))
+              (if (i32.eq (local.get $sc) (i32.const 43)) (then (set! $i (i32.add (local.get $i) (i32.const 1)))))
+              (if (i32.eq (local.get $sc) (i32.const 45)) (then (set! $es (i32.const -1)) (set! $i (i32.add (local.get $i) (i32.const 1)))))))
+          (let $en i32 (i32.const 0))
+          (block $ee (loop $el
+            (br_if $ee (i32.ge_s (local.get $i) (local.get $len)))
+            (let $ed i32 (call $str_byte (local.get $s) (local.get $i)))
+            (br_if $ee (i32.eqz (i32.and (i32.ge_s (local.get $ed) (i32.const 48)) (i32.le_s (local.get $ed) (i32.const 57)))))
+            (set! $en (i32.add (i32.mul (local.get $en) (i32.const 10)) (i32.sub (local.get $ed) (i32.const 48))))
+            (set! $edig (i32.add (local.get $edig) (i32.const 1)))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $el)))
+          (set! $exp (i32.add (local.get $exp) (i32.mul (local.get $es) (local.get $en))))))))
+  ;; 'e' with no exponent digits, leftover non-whitespace, or no mantissa → NaN
+  (if (i32.and (local.get $sawE) (i32.eqz (local.get $edig))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (if (i32.eqz (call $str_rest_ws (local.get $s) (local.get $i) (local.get $len))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (if (i32.eqz (local.get $any)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (let $r f64 (f64.convert_i64_s (local.get $mant)))
+  (let $res f64 (f64.const 0))
+  (if (i32.eqz (local.get $exp))
+    (then (set! $res (local.get $r)))
+    (else
+      (if (i32.and (i32.le_s (local.get $nd) (i32.const 15)) (i32.and (i32.ge_s (local.get $exp) (i32.const -22)) (i32.le_s (local.get $exp) (i32.const 22))))
+        (then
+          (if (i32.gt_s (local.get $exp) (i32.const 0))
+            (then (set! $res (f64.mul (local.get $r) (call $pow10 (f64.convert_i32_s (local.get $exp))))))
+            (else (set! $res (f64.div (local.get $r) (call $pow10 (f64.convert_i32_s (i32.sub (i32.const 0) (local.get $exp)))))))))
+        (else (set! $res (f64.mul (local.get $r) (call $pow10 (f64.convert_i32_s (local.get $exp)))))))))
+  (f64.mul (local.get $sign) (local.get $res)))
