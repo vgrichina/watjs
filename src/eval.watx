@@ -93,7 +93,12 @@
   (let $pb i64 (call $to_primitive (local.get $b)))
   (if (call $err) (then (return (call $v_undef))))
   (if i64 (i32.or (call $is_string (local.get $pa)) (call $is_string (local.get $pb)))
-    (then (call $mk_str (call $str_concat (call $to_str (local.get $pa)) (call $to_str (local.get $pb)))))
+    (then
+      ;; string concatenation uses abstract ToString, which throws on a Symbol
+      ;; (unlike the explicit String(sym) builtin, which stays lenient).
+      (if (i32.or (call $is_symbol (local.get $pa)) (call $is_symbol (local.get $pb)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
+      (call $mk_str (call $str_concat (call $to_str (local.get $pa)) (call $to_str (local.get $pb)))))
     (else
       (if i64 (i32.or (call $is_bigint (local.get $pa)) (call $is_bigint (local.get $pb)))
         (then
