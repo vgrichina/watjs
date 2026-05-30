@@ -1188,6 +1188,37 @@
         (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
                 (i32.and (i32.ge_s (local.get $id) (i32.const 60)) (i32.le_s (local.get $id) (i32.const 68)))))
     (then (call $throw_type (cstring "TypeError") (cstring "String.prototype method called on null or undefined")) (return (call $v_undef))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 270)) (i32.le_s (local.get $id) (i32.const 272)))  ;; String concat/lastIndexOf/normalize
+    (then
+      (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "String.prototype method called on null or undefined")) (return (call $v_undef))))
+      (let $scs i32 (call $to_str (local.get $thisv)))
+      (if (i32.eq (local.get $id) (i32.const 272)) (then (return (call $mk_str (local.get $scs)))))  ;; normalize → unchanged (byte-string)
+      (if (i32.eq (local.get $id) (i32.const 270))  ;; concat(...args)
+        (then
+          (let $cck i32 (i32.const 0))
+          (block $cce (loop $ccl
+            (br_if $cce (i32.ge_s (local.get $cck) (local.get $argc)))
+            (set! $scs (call $str_concat (local.get $scs) (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $cck)))))
+            (set! $cck (i32.add (local.get $cck) (i32.const 1))) (br $ccl)))
+          (return (call $mk_str (local.get $scs)))))
+      ;; lastIndexOf(needle) — scan for the highest match position
+      (let $cln i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (let $clhl i32 (call $str_len (local.get $scs)))
+      (let $clnl i32 (call $str_len (local.get $cln)))
+      (let $clres i32 (i32.const -1))
+      (let $clp i32 (i32.const 0))
+      (block $cle (loop $cll
+        (br_if $cle (i32.gt_s (local.get $clp) (i32.sub (local.get $clhl) (local.get $clnl))))
+        (let $clj i32 (i32.const 0))
+        (let $clok i32 (i32.const 1))
+        (block $cme (loop $cml
+          (br_if $cme (i32.ge_s (local.get $clj) (local.get $clnl)))
+          (if (i32.ne (call $str_byte (local.get $scs) (i32.add (local.get $clp) (local.get $clj))) (call $str_byte (local.get $cln) (local.get $clj))) (then (set! $clok (i32.const 0)) (br $cme)))
+          (set! $clj (i32.add (local.get $clj) (i32.const 1))) (br $cml)))
+        (if (local.get $clok) (then (set! $clres (local.get $clp))))
+        (set! $clp (i32.add (local.get $clp) (i32.const 1))) (br $cll)))
+      (return (call $num (f64.convert_i32_s (local.get $clres))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
     (then
       ;; unwrap a String wrapper's boxed primitive directly — to_str(wrapper)
@@ -2977,6 +3008,7 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 72)) (i32.or (i32.eq (local.get $id) (i32.const 73)) (i32.or (i32.eq (local.get $id) (i32.const 74)) (i32.or (i32.eq (local.get $id) (i32.const 75)) (i32.or (i32.eq (local.get $id) (i32.const 76)) (i32.or (i32.eq (local.get $id) (i32.const 77)) (i32.or (i32.eq (local.get $id) (i32.const 78)) (i32.eq (local.get $id) (i32.const 137)))))))))
     (then (return (i32.const 1))))
   (if (i32.eq (local.get $id) (i32.const 168)) (then (return (i32.const 2))))  ;; copyWithin
+  (if (i32.or (i32.eq (local.get $id) (i32.const 270)) (i32.eq (local.get $id) (i32.const 271))) (then (return (i32.const 1))))  ;; String concat, lastIndexOf
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
   ;; Date.now(179), Symbol.toString(199), Number/Boolean valueOf(220), Boolean.toString(221)
   (if (i32.or (i32.eq (local.get $id) (i32.const 18)) (i32.or (i32.eq (local.get $id) (i32.const 155)) (i32.or (i32.eq (local.get $id) (i32.const 179)) (i32.or (i32.eq (local.get $id) (i32.const 199)) (i32.or (i32.eq (local.get $id) (i32.const 220)) (i32.eq (local.get $id) (i32.const 221)))))))
@@ -3309,6 +3341,9 @@
   (call $scope_define (local.get $sp) (cstring "trimRight") (call $mk_native (i32.const 114) (cstring "trimRight")))
   (call $scope_define (local.get $sp) (cstring "toLocaleLowerCase") (call $mk_native (i32.const 17) (cstring "toLocaleLowerCase")))
   (call $scope_define (local.get $sp) (cstring "toLocaleUpperCase") (call $mk_native (i32.const 16) (cstring "toLocaleUpperCase")))
+  (call $scope_define (local.get $sp) (cstring "concat") (call $mk_native (i32.const 270) (cstring "concat")))
+  (call $scope_define (local.get $sp) (cstring "lastIndexOf") (call $mk_native (i32.const 271) (cstring "lastIndexOf")))
+  (call $scope_define (local.get $sp) (cstring "normalize") (call $mk_native (i32.const 272) (cstring "normalize")))
   (call $scope_define (local.get $sp) (cstring "padStart") (call $mk_native (i32.const 66) (cstring "padStart")))
   (call $scope_define (local.get $sp) (cstring "padEnd") (call $mk_native (i32.const 67) (cstring "padEnd")))
   (call $scope_define (local.get $sp) (cstring "at") (call $mk_native (i32.const 68) (cstring "at")))
