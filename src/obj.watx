@@ -247,7 +247,7 @@
       (let $ap i32 (i32.load (i32.const 160)))
       (if (local.get $ap)
         (then
-          (let $slot i32 (call $scope_find_local (local.get $ap) (call $to_str (local.get $key))))
+          (let $slot i32 (call $scope_find_local (local.get $ap) (call $to_prop_key (local.get $key))))
           (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
       (return (call $v_undef))))
   (if (call $is_number (local.get $cont))  ;; number methods via Number.prototype (reg 164)
@@ -255,7 +255,7 @@
       (let $np i32 (i32.load (i32.const 164)))
       (if (local.get $np)
         (then
-          (let $nslot i32 (call $scope_find_local (local.get $np) (call $to_str (local.get $key))))
+          (let $nslot i32 (call $scope_find_local (local.get $np) (call $to_prop_key (local.get $key))))
           (if (local.get $nslot) (then (return (i64.load (local.get $nslot)))))))
       (return (call $v_undef))))
   (if (call $is_string (local.get $cont))
@@ -268,7 +268,7 @@
       (let $sp i32 (i32.load (i32.const 156)))
       (if (local.get $sp)
         (then
-          (let $slot i32 (call $scope_find_local (local.get $sp) (call $to_str (local.get $key))))
+          (let $slot i32 (call $scope_find_local (local.get $sp) (call $to_prop_key (local.get $key))))
           (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
       (return (call $v_undef))))
   (if (call $is_object (local.get $cont))
@@ -288,7 +288,7 @@
                   (let $aps i32 (call $scope_find (local.get $asc) (i32.load (i32.add (i32.add (local.get $afn) (i32.const 28)) (i32.mul (local.get $idx) (i32.const 4))))))
                   (return (if i64 (local.get $aps) (then (i64.load (local.get $aps))) (else (call $v_undef))))))))))
       ;; scope_find walks the parent chain = prototype chain
-      (let $slot i32 (call $scope_find (local.get $o) (call $to_str (local.get $key))))
+      (let $slot i32 (call $scope_find (local.get $o) (call $to_prop_key (local.get $key))))
       (if (local.get $slot)
         (then
           (if (call $entry_is_accessor (local.get $slot))  ;; accessor → call getter
@@ -298,15 +298,15 @@
               (return (call $v_undef))))
           (return (i64.load (local.get $slot)))))
       ;; Object.prototype fallback methods (objects have no real proto object yet)
-      (if (call $str_eq (call $to_str (local.get $key)) (cstring "hasOwnProperty"))
+      (if (call $str_eq (call $to_prop_key (local.get $key)) (cstring "hasOwnProperty"))
         (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
-      (if (call $str_eq (call $to_str (local.get $key)) (cstring "propertyIsEnumerable"))
+      (if (call $str_eq (call $to_prop_key (local.get $key)) (cstring "propertyIsEnumerable"))
         (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
       (return (call $v_undef))))
   (if (call $is_function (local.get $cont))
     (then
       (let $fn i32 (call $val_payload (local.get $cont)))
-      (let $ks i32 (call $to_str (local.get $key)))
+      (let $ks i32 (call $to_prop_key (local.get $key)))
       ;; Function.prototype methods (shared by both engine fn reprs)
       (if (call $str_eq (local.get $ks) (cstring "call")) (then (return (call $mk_native (i32.const 194) (cstring "call")))))
       (if (call $str_eq (local.get $ks) (cstring "apply")) (then (return (call $mk_native (i32.const 195) (cstring "apply")))))
@@ -338,6 +338,14 @@
         (then
           (let $slot i32 (call $scope_find (local.get $props) (local.get $ks)))
           (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
+      (return (call $v_undef))))
+  ;; symbol: .description / .toString / .valueOf
+  (if (call $is_symbol (local.get $cont))
+    (then
+      (let $sks i32 (call $to_str (local.get $key)))
+      (if (call $str_eq (local.get $sks) (cstring "description")) (then (return (call $mk_str (call $sym_desc (local.get $cont))))))
+      (if (call $str_eq (local.get $sks) (cstring "toString")) (then (return (call $mk_native (i32.const 199) (cstring "toString")))))
+      (if (call $str_eq (local.get $sks) (cstring "valueOf")) (then (return (local.get $cont))))
       (return (call $v_undef))))
   ;; undefined / null → TypeError
   (call $throw_type (cstring "TypeError") (cstring "cannot read property of null or undefined"))
@@ -382,7 +390,7 @@
 ;; key in obj  (property existence, including prototype chain for objects)
 (func $js_in (param $key i64) (param $obj i64) (result i64) (effects)
   (if (call $is_object (local.get $obj))
-    (then (return (call $mk_bool (i32.ne (call $scope_find (call $val_payload (local.get $obj)) (call $to_str (local.get $key))) (i32.const 0))))))
+    (then (return (call $mk_bool (i32.ne (call $scope_find (call $val_payload (local.get $obj)) (call $to_prop_key (local.get $key))) (i32.const 0))))))
   (if (call $is_array (local.get $obj))
     (then
       (if (call $key_is_length (local.get $key)) (then (return (call $v_true))))
@@ -419,7 +427,7 @@
                   (let $afn i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@af"))))))
                   (call $scope_define (local.get $asc) (i32.load (i32.add (i32.add (local.get $afn) (i32.const 28)) (i32.mul (local.get $idx) (i32.const 4)))) (local.get $val))
                   (return)))))))
-      (let $ks i32 (call $to_str (local.get $key)))
+      (let $ks i32 (call $to_prop_key (local.get $key)))
       (let $slot i32 (call $scope_find (local.get $o) (local.get $ks)))
       (if (local.get $slot)  ;; guard before entry_kind (i32.and would deref slot-4 even when 0)
         (then
@@ -445,8 +453,8 @@
           (let $sproto i64 (i64.load (i32.add (local.get $sfn) (i32.const 16))))
           (if (i32.eqz (call $is_object (local.get $sproto)))
             (then (set! $sproto (call $mk_obj (call $obj_new (i32.const 8)))) (i64.store (i32.add (local.get $sfn) (i32.const 16)) (local.get $sproto))))
-          (call $scope_define (call $val_payload (local.get $sproto)) (call $to_str (local.get $key)) (local.get $val))
+          (call $scope_define (call $val_payload (local.get $sproto)) (call $to_prop_key (local.get $key)) (local.get $val))
           (return)))
-      (call $scope_define (call $fn_props (local.get $sfn)) (call $to_str (local.get $key)) (local.get $val))
+      (call $scope_define (call $fn_props (local.get $sfn)) (call $to_prop_key (local.get $key)) (local.get $val))
       (return)))
   (call $throw_type (cstring "TypeError") (cstring "cannot set property of non-object")))

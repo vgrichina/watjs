@@ -81,6 +81,16 @@
   (i32.and (i32.eqz (call $is_number (local.get $v)))
            (i32.eq (call $val_tag (local.get $v)) (i32.const 6))))
 
+;; Symbol: tag 7, payload = a Str holding the symbol's unique internal key
+;; (well-known symbols use sentinel keys like "@@iterator"; user symbols
+;; "@@sym:<n>:<desc>"). The key doubles as the property name when a symbol is
+;; used as a computed object key.
+(func $mk_symbol (param $ptr i32) (result i64) (effects)
+  (call $box (i32.const 3) (local.get $ptr)))
+(func $is_symbol (param $v i64) (result i32) (effects)
+  (i32.and (i32.eqz (call $is_number (local.get $v)))
+           (i32.eq (call $val_tag (local.get $v)) (i32.const 3))))
+
 ;; --- type predicates ---
 
 (func $is_undefined (param $v i64) (result i32) (effects)

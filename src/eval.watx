@@ -186,6 +186,13 @@
   (if (i32.eq (local.get $field) (i32.const 1)) (then (return (i32.wrap_i64 (i64.sub (local.get $mm) (i64.const 1))))))
   (return (i32.wrap_i64 (local.get $dd))))
 
+;; build a symbol value from an internal key string and a description string.
+(func $make_symbol (param $key i32) (param $desc i32) (result i64) (effects)
+  (let $rec i32 (call $heap_alloc (i32.const 8)))
+  (i32.store (local.get $rec) (local.get $key))
+  (i32.store (i32.add (local.get $rec) (i32.const 4)) (local.get $desc))
+  (call $mk_symbol (local.get $rec)))
+
 ;; integer → zero-padded decimal string of at least `w` chars (for toISOString).
 (func $date_pad (param $v i32) (param $w i32) (result i32) (effects)
   (let $s i32 (call $num_to_str (f64.convert_i32_s (local.get $v))))
@@ -981,6 +988,32 @@
     (then
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@pval")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 196))  ;; Symbol([desc]) → fresh unique symbol
+    (then
+      (let $sdesc i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))) (else (cstring ""))))
+      (let $scnt i32 (i32.load (i32.const 292)))
+      (i32.store (i32.const 292) (i32.add (local.get $scnt) (i32.const 1)))
+      (let $symbkey i32 (call $str_concat (call $str_concat (call $str_concat (cstring "@@sym:") (call $num_to_str (f64.convert_i32_s (local.get $scnt)))) (cstring ":")) (local.get $sdesc)))
+      (return (call $make_symbol (local.get $symbkey) (local.get $sdesc)))))
+  (if (i32.eq (local.get $id) (i32.const 197))  ;; Symbol.for(key) → registered (shared) symbol
+    (then
+      (let $sfk i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (let $sreg i32 (i32.load (i32.const 296)))
+      (let $sfslot i32 (call $scope_find_local (local.get $sreg) (local.get $sfk)))
+      (if (local.get $sfslot) (then (return (i64.load (local.get $sfslot)))))
+      (let $sfsym i64 (call $make_symbol (call $str_concat (cstring "@@symfor:") (local.get $sfk)) (local.get $sfk)))
+      (call $scope_define (local.get $sreg) (local.get $sfk) (local.get $sfsym))
+      (return (local.get $sfsym))))
+  (if (i32.eq (local.get $id) (i32.const 198))  ;; Symbol.keyFor(sym) → registered key or undefined
+    (then
+      (let $kfs i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_symbol (local.get $kfs))) (then (return (call $v_undef))))
+      (let $kfkey i32 (call $sym_key (local.get $kfs)))
+      ;; registered symbols have an "@@symfor:" prefixed key → strip it
+      (if (i32.ne (call $str_indexof (local.get $kfkey) (cstring "@@symfor:")) (i32.const 0)) (then (return (call $v_undef))))
+      (return (call $mk_str (call $substr (local.get $kfkey) (i32.const 9) (i32.sub (call $str_len (local.get $kfkey)) (i32.const 9)))))))
+  (if (i32.eq (local.get $id) (i32.const 199))  ;; Symbol.prototype.toString (this = symbol)
+    (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (call $sym_desc (local.get $thisv))) (cstring ")"))))))
   (if (i32.eq (local.get $id) (i32.const 179))  ;; Date.now()
     (then (return (call $num (call $now_ms)))))
   (if (i32.eq (local.get $id) (i32.const 180))  ;; new Date(...) → date object (UTC)
@@ -2034,6 +2067,7 @@
   (if (call $is_boolean (local.get $v)) (then (return (call $mk_str (cstring "boolean")))))
   (if (call $is_undefined (local.get $v)) (then (return (call $mk_str (cstring "undefined")))))
   (if (call $is_function (local.get $v)) (then (return (call $mk_str (cstring "function")))))
+  (if (call $is_symbol (local.get $v)) (then (return (call $mk_str (cstring "symbol")))))
   (call $mk_str (cstring "object")))  ;; null, object, array
 
 ;; ── primary ──
@@ -2266,10 +2300,26 @@
   (call $scope_define (local.get $ap) (cstring "keys") (call $mk_native (i32.const 96) (cstring "keys")))
   (call $scope_define (local.get $ap) (cstring "values") (call $mk_native (i32.const 97) (cstring "values")))
   (call $scope_define (local.get $ap) (cstring "@@iterator") (call $mk_native (i32.const 97) (cstring "values")))
-  ;; Symbol.iterator is modelled as the sentinel property key "@@iterator"
-  (let $symo i32 (call $obj_new (i32.const 4)))
-  (call $scope_define (local.get $symo) (cstring "iterator") (call $mk_str (cstring "@@iterator")))
-  (call $scope_define (local.get $g) (cstring "Symbol") (call $mk_obj (local.get $symo)))
+  ;; Symbol: real symbol primitives (tag 3). Well-known symbols use sentinel
+  ;; internal keys ("@@iterator" etc.) so they double as the property names the
+  ;; iteration machinery already looks up.
+  (i32.store (i32.const 292) (i32.const 0))                       ;; user-symbol counter
+  (i32.store (i32.const 296) (call $scope_new (i32.const 0) (i32.const 8)))  ;; Symbol.for registry
+  (let $symf i64 (call $def_native (local.get $g) (cstring "Symbol") (i32.const 196)))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "iterator")) (call $make_symbol (cstring "@@iterator") (cstring "Symbol.iterator")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "asyncIterator")) (call $make_symbol (cstring "@@asyncIterator") (cstring "Symbol.asyncIterator")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "hasInstance")) (call $make_symbol (cstring "@@hasInstance") (cstring "Symbol.hasInstance")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "toPrimitive")) (call $make_symbol (cstring "@@toPrimitive") (cstring "Symbol.toPrimitive")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "toStringTag")) (call $make_symbol (cstring "@@toStringTag") (cstring "Symbol.toStringTag")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "isConcatSpreadable")) (call $make_symbol (cstring "@@isConcatSpreadable") (cstring "Symbol.isConcatSpreadable")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "species")) (call $make_symbol (cstring "@@species") (cstring "Symbol.species")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "match")) (call $make_symbol (cstring "@@match") (cstring "Symbol.match")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "replace")) (call $make_symbol (cstring "@@replace") (cstring "Symbol.replace")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "search")) (call $make_symbol (cstring "@@search") (cstring "Symbol.search")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "split")) (call $make_symbol (cstring "@@split") (cstring "Symbol.split")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "unscopables")) (call $make_symbol (cstring "@@unscopables") (cstring "Symbol.unscopables")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "for")) (call $mk_native (i32.const 197) (cstring "for")))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "keyFor")) (call $mk_native (i32.const 198) (cstring "keyFor")))
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
