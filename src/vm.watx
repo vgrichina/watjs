@@ -423,6 +423,7 @@
       (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWOBJ 0 → empty obj on stack
       (if (i32.ne (call $tok_kind) (i32.const 18))
         (then (block $oe (loop $ol
+          (br_if $oe (i32.eq (call $tok_kind) (i32.const 18)))  ;; trailing comma → '}' ends the literal
           (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...spread → copy source's own props
             (then
               (call $next_token)
@@ -508,6 +509,7 @@
         (let $argc i32 (i32.const 0))
         (if (i32.ne (call $tok_kind) (i32.const 16))
           (then (block $ce (loop $cl
+            (br_if $ce (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')'
             (call $vm_c_expr (local.get $code))
             (set! $argc (i32.add (local.get $argc) (i32.const 1)))
             (br_if $ce (i32.eqz (call $eat (i32.const 22))))
@@ -651,6 +653,7 @@
             (let $margc i32 (i32.const 0))
             (if (i32.ne (call $tok_kind) (i32.const 16))
               (then (block $me (loop $ml
+                (br_if $me (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')'
                 (call $vm_c_expr (local.get $code))
                 (set! $margc (i32.add (local.get $margc) (i32.const 1)))
                 (br_if $me (i32.eqz (call $eat (i32.const 22))))
