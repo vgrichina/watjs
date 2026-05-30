@@ -744,7 +744,40 @@
     (then (call $next_token) (call $vm_c_unary (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP operand
           (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (return)))
+  (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "delete")))  ;; delete obj.prop / obj[k]
+    (then (call $next_token) (call $vm_c_delete_operand (local.get $code)) (return)))
   (call $vm_c_pow (local.get $code)))
+
+;; compile a `delete` operand: evaluate the base, and turn the FINAL member
+;; access into a DELETE (op 70). Non-final accesses compile as normal GETs.
+(func $vm_c_delete_operand (param $code i32) (effects)
+  (call $vm_c_primary (local.get $code))
+  (block $e (loop $l
+    (let $k i32 (call $tok_kind))
+    (if (i32.eq (local.get $k) (i32.const 23))  ;; '.' member
+      (then
+        (call $next_token)
+        (let $key i32 (call $ident_name)) (call $next_token)
+        (let $nk i32 (call $tok_kind))
+        (if (i32.or (i32.eq (local.get $nk) (i32.const 23)) (i32.eq (local.get $nk) (i32.const 19)))
+          (then (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key)) (br $l))  ;; GETPROP
+          (else
+            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $key)))
+            (call $vm_emit_op (local.get $code) (i32.const 70))  ;; DELETE
+            (br $e)))))
+    (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
+      (then
+        (call $next_token)
+        (call $vm_c_expr (local.get $code))
+        (call $next_token)  ;; ']'
+        (let $nk2 i32 (call $tok_kind))
+        (if (i32.or (i32.eq (local.get $nk2) (i32.const 23)) (i32.eq (local.get $nk2) (i32.const 19)))
+          (then (call $vm_emit_op (local.get $code) (i32.const 31)) (br $l))  ;; GETIDX
+          (else (call $vm_emit_op (local.get $code) (i32.const 70)) (br $e)))))  ;; DELETE
+    ;; not a member access → bare delete: discard value, result is true
+    (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
+    (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1)))
+    (br $e))))
 
 (func $vm_c_mul (param $code i32) (effects)
   (call $vm_c_unary (local.get $code))
@@ -2258,6 +2291,26 @@
               (call $set_prop (local.get $oobj) (local.get $okv) (call $get_prop (local.get $osrc) (local.get $okv)))
               (set! $oi (i32.add (local.get $oi) (i32.const 1)))
               (br $osl)))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 70))  ;; DELETE — [obj, key] → bool
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $dkey i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $dobj i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $dres i64 (call $v_true))
+        (if (call $is_object (local.get $dobj))
+          (then
+            (let $dsc i32 (call $val_payload (local.get $dobj)))
+            (let $dks i32 (call $to_str (local.get $dkey)))
+            (let $dslot i32 (call $scope_find_local (local.get $dsc) (local.get $dks)))
+            (if (local.get $dslot)
+              (then
+                (if (call $entry_configurable (local.get $dslot))
+                  (then (drop (call $scope_delete (local.get $dsc) (local.get $dks))))
+                  (else (set! $dres (call $v_false))))))))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $dres))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 2))  ;; ADD — js_add (string concat + numeric)
       (then
