@@ -64,6 +64,9 @@
         (br_if $e (i32.ge_s (local.get $i) (local.get $cnt)))
         (let $en i32 (call $scope_entry (local.get $o) (local.get $i)))
         (let $nm i32 (i32.load (local.get $en)))
+        ;; skip non-enumerable properties (incl. internal @@ markers)
+        (if (call $entry_enumerable (i32.add (local.get $en) (i32.const 8)))
+          (then
         (let $vs i32 (call $json_str (call $get_prop (local.get $v) (call $mk_str (local.get $nm)))))
         (if (i32.ne (local.get $vs) (i32.const 0))
           (then
@@ -71,7 +74,7 @@
             (set! $first (i32.const 0))
             (set! $out (call $str_concat (local.get $out) (call $json_quote (local.get $nm))))
             (set! $out (call $str_concat (local.get $out) (cstring ":")))
-            (set! $out (call $str_concat (local.get $out) (local.get $vs)))))
+            (set! $out (call $str_concat (local.get $out) (local.get $vs)))))))
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (br $l)))
       (return (call $str_concat (local.get $out) (cstring "}")))))
