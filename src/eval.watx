@@ -133,12 +133,23 @@
     (if i32 (i32.or (local.get $an) (local.get $bn))
       (then (i32.and (local.get $an) (local.get $bn)))
       (else
-        ;; number/string/bool primitives → compare as numbers
-        (let $ap i32 (i32.or (call $is_number (local.get $a)) (i32.or (call $is_string (local.get $a)) (call $is_boolean (local.get $a)))))
-        (let $bp i32 (i32.or (call $is_number (local.get $b)) (i32.or (call $is_string (local.get $b)) (call $is_boolean (local.get $b)))))
-        (if i32 (i32.and (local.get $ap) (local.get $bp))
-          (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
-          (else (i32.const 0))))))))
+        ;; object vs primitive: ToPrimitive(object) then re-compare (spec 7.2.15
+        ;; steps 10-11). Two objects already failed strict_eq → not equal.
+        (let $aobj i32 (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a)))))
+        (let $bobj i32 (i32.or (call $is_object (local.get $b)) (i32.or (call $is_array (local.get $b)) (call $is_function (local.get $b)))))
+        (if i32 (i32.and (local.get $aobj) (i32.eqz (local.get $bobj)))
+          (then (call $loose_eq (call $to_primitive (local.get $a)) (local.get $b)))
+          (else (if i32 (i32.and (local.get $bobj) (i32.eqz (local.get $aobj)))
+            (then (call $loose_eq (local.get $a) (call $to_primitive (local.get $b))))
+            (else (if i32 (i32.or (local.get $aobj) (local.get $bobj))
+              (then (i32.const 0))  ;; two objects, not the same reference
+              (else
+                ;; number/string/bool primitives → compare as numbers
+                (let $ap i32 (i32.or (call $is_number (local.get $a)) (i32.or (call $is_string (local.get $a)) (call $is_boolean (local.get $a)))))
+                (let $bp i32 (i32.or (call $is_number (local.get $b)) (i32.or (call $is_string (local.get $b)) (call $is_boolean (local.get $b)))))
+                (if i32 (i32.and (local.get $ap) (local.get $bp))
+                  (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
+                  (else (i32.const 0))))))))))))))
 
 ;; relational compare: kind 29 < , 30 > , 31 <= , 32 >=
 
