@@ -475,6 +475,20 @@
   (let $wo i32 (call $obj_new (i32.const 8)))
   (if (local.get $proto) (then (i32.store (local.get $wo) (local.get $proto))))  ;; scope parent = prototype
   (call $scope_define (local.get $wo) (cstring "__prim__") (local.get $prim))
+  ;; String exotic object: own `length` {W:false,E:false,C:false} and indexed
+  ;; char props 0..len-1 {W:false,E:true,C:false} (so Array.prototype.filter.call(
+  ;; new String("abc"), …), for-in, spread, etc. see the characters).
+  (if (call $is_string (local.get $prim))
+    (then
+      (let $wsp i32 (call $val_payload (local.get $prim)))
+      (let $wsln i32 (call $str_len (local.get $wsp)))
+      (call $scope_define_attr (local.get $wo) (cstring "length") (call $num (f64.convert_i32_s (local.get $wsln))) (i32.const 0))
+      (let $wsi i32 (i32.const 0))
+      (block $wse (loop $wsl
+        (br_if $wse (i32.ge_s (local.get $wsi) (local.get $wsln)))
+        (call $scope_define_attr (local.get $wo) (call $num_to_str (f64.convert_i32_s (local.get $wsi))) (call $str_char_at (local.get $wsp) (local.get $wsi)) (i32.const 2))
+        (set! $wsi (i32.add (local.get $wsi) (i32.const 1)))
+        (br $wsl)))))
   (call $mk_obj (local.get $wo)))
 
 ;; 1 if function $fn has own property $ks (length, or a slot in its property
