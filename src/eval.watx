@@ -3986,7 +3986,9 @@
   ;; Function.prototype.call / .apply / .bind resolve (used heavily by the
   ;; test262 propertyHelper harness).
   (let $funcf i64 (call $def_native (local.get $g) (cstring "Function") (i32.const 157)))
-  (call $set_prop (local.get $funcf) (call $mk_str (cstring "prototype")) (call $mk_native (i32.const 158) (cstring "")))
+  (let $funcproto i64 (call $mk_native (i32.const 158) (cstring "")))
+  (call $set_prop (local.get $funcf) (call $mk_str (cstring "prototype")) (local.get $funcproto))
+  (i64.store (i32.const 336) (local.get $funcproto))  ;; Function.prototype value — for `fn instanceof Function`
   ;; link each constructor's .prototype to the real prototype scope holding its
   ;; methods, so generic access works (String.prototype.slice,
   ;; Array.prototype.slice.call(...), etc.) — not just primitive dispatch.
