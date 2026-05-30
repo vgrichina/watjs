@@ -1692,6 +1692,11 @@
       (return (call $num (call $date_make (i64.trunc_f64_s (local.get $uy)) (i64.trunc_f64_s (local.get $umo)) (i64.trunc_f64_s (local.get $ud)) (i64.trunc_f64_s (local.get $uh)) (i64.trunc_f64_s (local.get $umi)) (i64.trunc_f64_s (local.get $us)) (i64.trunc_f64_s (local.get $ums)))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 250)) (i32.le_s (local.get $id) (i32.const 256)))  ;; setFullYear/Month/Date/Hours/Minutes/Seconds/Milliseconds (single field)
     (then
+      (let $std i32 (i32.const 0))  ;; this must be a Date
+      (if (call $is_object (local.get $thisv))
+        (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time")) (then (set! $std (i32.const 1))))))
+      (if (i32.eqz (local.get $std))
+        (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
       (let $dcur f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
       (if (f64.ne (local.get $dcur) (local.get $dcur)) (then (set! $dcur (f64.const 0))))  ;; Invalid Date → base +0
       (let $dnvf f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -1717,6 +1722,11 @@
       (return (call $num (local.get $dnt)))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 258)) (i32.or (i32.eq (local.get $id) (i32.const 262)) (i32.or (i32.eq (local.get $id) (i32.const 263)) (i32.or (i32.eq (local.get $id) (i32.const 264)) (i32.or (i32.eq (local.get $id) (i32.const 265)) (i32.or (i32.eq (local.get $id) (i32.const 266)) (i32.eq (local.get $id) (i32.const 267))))))))  ;; Date toString family
     (then
+      (let $ftd i32 (i32.const 0))  ;; this must be a Date
+      (if (call $is_object (local.get $thisv))
+        (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time")) (then (set! $ftd (i32.const 1))))))
+      (if (i32.eqz (local.get $ftd))
+        (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
       (let $ftm f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
       (let $fmode i32 (i32.const 0))
       (if (i32.or (i32.eq (local.get $id) (i32.const 262)) (i32.eq (local.get $id) (i32.const 266))) (then (set! $fmode (i32.const 1))))  ;; date
