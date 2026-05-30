@@ -370,15 +370,17 @@
             (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; GETPROP
             (call $next_token)
             (br $nml)))
-          (call $next_token)  ;; '('
           (let $nargc i32 (i32.const 0))
-          (if (i32.ne (call $tok_kind) (i32.const 16))
-            (then (block $nae (loop $nal
-              (call $vm_c_expr (local.get $code))
-              (set! $nargc (i32.add (local.get $nargc) (i32.const 1)))
-              (br_if $nae (i32.eqz (call $eat (i32.const 22))))
-              (br $nal)))))
-          (call $next_token)  ;; ')'
+          (if (i32.eq (call $tok_kind) (i32.const 15))  ;; '(' present → argument list (else `new F` with no args)
+            (then
+              (call $next_token)  ;; '('
+              (if (i32.ne (call $tok_kind) (i32.const 16))
+                (then (block $nae (loop $nal
+                  (call $vm_c_expr (local.get $code))
+                  (set! $nargc (i32.add (local.get $nargc) (i32.const 1)))
+                  (br_if $nae (i32.eqz (call $eat (i32.const 22))))
+                  (br $nal)))))
+              (call $next_token)))  ;; ')'
           (call $vm_emit_op (local.get $code) (i32.const 46)) (call $vm_emit_op (local.get $code) (local.get $nargc))  ;; NEW
           (return)))
       (if (call $tok_is_kw (cstring "true"))
