@@ -186,6 +186,97 @@
   (if (i32.eq (local.get $field) (i32.const 1)) (then (return (i32.wrap_i64 (i64.sub (local.get $mm) (i64.const 1))))))
   (return (i32.wrap_i64 (local.get $dd))))
 
+;; TypedArray element types: 0 int8,1 uint8,2 uint8clamped,3 int16,4 uint16,
+;; 5 int32,6 uint32,7 float32,8 float64.
+(func $ta_bpe (param $elem i32) (result i32) (effects)
+  (if i32 (i32.le_s (local.get $elem) (i32.const 2)) (then (i32.const 1))
+    (else (if i32 (i32.le_s (local.get $elem) (i32.const 4)) (then (i32.const 2))
+    (else (if i32 (i32.eq (local.get $elem) (i32.const 8)) (then (i32.const 8)) (else (i32.const 4))))))))
+
+;; read element idx (as f64) from a typed-array byte buffer.
+(func $ta_read (param $buf i32) (param $idx i32) (param $elem i32) (result f64) (effects)
+  (let $a i32 (i32.add (local.get $buf) (i32.mul (local.get $idx) (call $ta_bpe (local.get $elem)))))
+  (if f64 (i32.eq (local.get $elem) (i32.const 0)) (then (f64.convert_i32_s (i32.load8_s (local.get $a))))
+  (else (if f64 (i32.or (i32.eq (local.get $elem) (i32.const 1)) (i32.eq (local.get $elem) (i32.const 2))) (then (f64.convert_i32_u (i32.load8_u (local.get $a))))
+  (else (if f64 (i32.eq (local.get $elem) (i32.const 3)) (then (f64.convert_i32_s (i32.load16_s (local.get $a))))
+  (else (if f64 (i32.eq (local.get $elem) (i32.const 4)) (then (f64.convert_i32_u (i32.load16_u (local.get $a))))
+  (else (if f64 (i32.eq (local.get $elem) (i32.const 5)) (then (f64.convert_i32_s (i32.load (local.get $a))))
+  (else (if f64 (i32.eq (local.get $elem) (i32.const 6)) (then (f64.convert_i32_u (i32.load (local.get $a))))
+  (else (if f64 (i32.eq (local.get $elem) (i32.const 7)) (then (f64.promote_f32 (f32.load (local.get $a))))
+  (else (f64.load (local.get $a)))))))))))))))))
+
+;; write f64 value to element idx of a typed-array byte buffer (ToInt for int types).
+(func $ta_write (param $buf i32) (param $idx i32) (param $elem i32) (param $val f64) (effects)
+  (let $a i32 (i32.add (local.get $buf) (i32.mul (local.get $idx) (call $ta_bpe (local.get $elem)))))
+  (if (i32.eq (local.get $elem) (i32.const 8)) (then (f64.store (local.get $a) (local.get $val)) (return)))
+  (if (i32.eq (local.get $elem) (i32.const 7)) (then (f32.store (local.get $a) (f32.demote_f64 (local.get $val))) (return)))
+  (if (i32.eq (local.get $elem) (i32.const 2))  ;; uint8clamped: clamp 0..255
+    (then
+      (let $cv f64 (local.get $val))
+      (if (f64.ne (local.get $cv) (local.get $cv)) (then (set! $cv (f64.const 0))))
+      (if (f64.lt (local.get $cv) (f64.const 0)) (then (set! $cv (f64.const 0))))
+      (if (f64.gt (local.get $cv) (f64.const 255)) (then (set! $cv (f64.const 255))))
+      (i32.store8 (local.get $a) (i32.trunc_f64_s (f64.nearest (local.get $cv)))) (return)))
+  (let $iv i32 (call $to_int32 (call $num (local.get $val))))  ;; ToInt32 (handles NaN/Inf/wrap)
+  (if (i32.le_s (local.get $elem) (i32.const 1)) (then (i32.store8 (local.get $a) (local.get $iv)) (return)))
+  (if (i32.le_s (local.get $elem) (i32.const 4)) (then (i32.store16 (local.get $a) (local.get $iv)) (return)))
+  (i32.store (local.get $a) (local.get $iv)))
+
+;; zero `n` bytes at `p`.
+(func $ta_zero (param $p i32) (param $n i32) (effects)
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (i32.store8 (i32.add (local.get $p) (local.get $i)) (i32.const 0))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
+
+;; construct a TypedArray of element type `elem` from the constructor arguments.
+(func $ta_make (param $elem i32) (param $argc i32) (param $argv i32) (result i64) (effects)
+  (let $bpe i32 (call $ta_bpe (local.get $elem)))
+  (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+  (let $len i32 (i32.const 0))
+  (let $buf i32 (i32.const 0))
+  (if (call $is_number (local.get $a0))
+    (then
+      (set! $len (i32.trunc_f64_s (call $tonum_raw (local.get $a0))))
+      (set! $buf (call $heap_alloc (i32.add (i32.mul (local.get $len) (local.get $bpe)) (i32.const 8))))
+      (call $ta_zero (local.get $buf) (i32.mul (local.get $len) (local.get $bpe))))
+    (else (if (call $is_array (local.get $a0))
+      (then
+        (let $ap i32 (call $val_payload (local.get $a0)))
+        (set! $len (call $arr_len (local.get $ap)))
+        (set! $buf (call $heap_alloc (i32.add (i32.mul (local.get $len) (local.get $bpe)) (i32.const 8))))
+        (call $ta_zero (local.get $buf) (i32.mul (local.get $len) (local.get $bpe)))
+        (let $ti i32 (i32.const 0))
+        (block $te (loop $tl (br_if $te (i32.ge_s (local.get $ti) (local.get $len)))
+          (call $ta_write (local.get $buf) (local.get $ti) (local.get $elem) (call $to_num (call $arr_get (local.get $ap) (local.get $ti))))
+          (set! $ti (i32.add (local.get $ti) (i32.const 1))) (br $tl))))
+      (else (if (call $is_object (local.get $a0))
+        (then
+          (let $absl i32 (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@abdata")))
+          (if (local.get $absl)
+            (then  ;; view over an ArrayBuffer
+              (let $boff i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+              (set! $buf (i32.add (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $absl)))) (local.get $boff)))
+              (let $ablen i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "byteLength"))))))
+              (set! $len (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe))))))
+            (else  ;; array-like / iterable with a length
+              (set! $len (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "length"))))))
+              (set! $buf (call $heap_alloc (i32.add (i32.mul (local.get $len) (local.get $bpe)) (i32.const 8))))
+              (call $ta_zero (local.get $buf) (i32.mul (local.get $len) (local.get $bpe)))
+              (let $ti2 i32 (i32.const 0))
+              (block $te2 (loop $tl2 (br_if $te2 (i32.ge_s (local.get $ti2) (local.get $len)))
+                (call $ta_write (local.get $buf) (local.get $ti2) (local.get $elem) (call $to_num (call $get_prop (local.get $a0) (call $num (f64.convert_i32_s (local.get $ti2))))))
+                (set! $ti2 (i32.add (local.get $ti2) (i32.const 1))) (br $tl2))))))
+        (else (set! $buf (call $heap_alloc (i32.const 8)))))))))
+  (let $to i32 (call $obj_new (i32.const 8)))
+  (call $scope_define (local.get $to) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $elem))))
+  (call $scope_define (local.get $to) (cstring "@@tabuf") (call $num (f64.convert_i32_s (local.get $buf))))
+  (call $scope_define (local.get $to) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $len))))
+  (call $scope_define (local.get $to) (cstring "length") (call $num (f64.convert_i32_s (local.get $len))))
+  (call $scope_define (local.get $to) (cstring "byteLength") (call $num (f64.convert_i32_s (i32.mul (local.get $len) (local.get $bpe)))))
+  (call $scope_define (local.get $to) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $bpe))))
+  (call $mk_obj (local.get $to)))
+
 ;; build a symbol value from an internal key string and a description string.
 (func $make_symbol (param $key i32) (param $desc i32) (result i64) (effects)
   (let $rec i32 (call $heap_alloc (i32.const 8)))
@@ -1014,6 +1105,17 @@
       (return (call $mk_str (call $substr (local.get $kfkey) (i32.const 9) (i32.sub (call $str_len (local.get $kfkey)) (i32.const 9)))))))
   (if (i32.eq (local.get $id) (i32.const 199))  ;; Symbol.prototype.toString (this = symbol)
     (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (call $sym_desc (local.get $thisv))) (cstring ")"))))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 210)) (i32.le_s (local.get $id) (i32.const 218)))  ;; TypedArray constructors
+    (then (return (call $ta_make (i32.sub (local.get $id) (i32.const 210)) (local.get $argc) (local.get $argv)))))
+  (if (i32.eq (local.get $id) (i32.const 219))  ;; new ArrayBuffer(byteLength)
+    (then
+      (let $abn i32 (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (let $abd i32 (call $heap_alloc (i32.add (local.get $abn) (i32.const 8))))
+      (call $ta_zero (local.get $abd) (local.get $abn))
+      (let $abo i32 (call $obj_new (i32.const 4)))
+      (call $scope_define (local.get $abo) (cstring "@@abdata") (call $num (f64.convert_i32_s (local.get $abd))))
+      (call $scope_define (local.get $abo) (cstring "byteLength") (call $num (f64.convert_i32_s (local.get $abn))))
+      (return (call $mk_obj (local.get $abo)))))
   (if (i32.eq (local.get $id) (i32.const 209))  ;; new Proxy(target, handler)
     (then
       (let $pxo i32 (call $obj_new (i32.const 4)))
@@ -2396,6 +2498,17 @@
   (call $scope_define (local.get $refo) (cstring "apply") (call $mk_native (i32.const 208) (cstring "apply")))
   (call $scope_define (local.get $g) (cstring "Reflect") (call $mk_obj (local.get $refo)))
   (drop (call $def_native (local.get $g) (cstring "Proxy") (i32.const 209)))
+  ;; TypedArrays + ArrayBuffer (elem type = id-210)
+  (drop (call $def_native (local.get $g) (cstring "Int8Array") (i32.const 210)))
+  (drop (call $def_native (local.get $g) (cstring "Uint8Array") (i32.const 211)))
+  (drop (call $def_native (local.get $g) (cstring "Uint8ClampedArray") (i32.const 212)))
+  (drop (call $def_native (local.get $g) (cstring "Int16Array") (i32.const 213)))
+  (drop (call $def_native (local.get $g) (cstring "Uint16Array") (i32.const 214)))
+  (drop (call $def_native (local.get $g) (cstring "Int32Array") (i32.const 215)))
+  (drop (call $def_native (local.get $g) (cstring "Uint32Array") (i32.const 216)))
+  (drop (call $def_native (local.get $g) (cstring "Float32Array") (i32.const 217)))
+  (drop (call $def_native (local.get $g) (cstring "Float64Array") (i32.const 218)))
+  (drop (call $def_native (local.get $g) (cstring "ArrayBuffer") (i32.const 219)))
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))

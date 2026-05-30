@@ -288,6 +288,15 @@
               (i64.store (i32.add (local.get $gbuf) (i32.const 16)) (local.get $cont))
               (return (call $call_val (local.get $gtrap) (i32.const 3) (local.get $gbuf) (call $v_undef)))))
           (return (call $get_prop (local.get $ptgt) (local.get $key)))))
+      ;; TypedArray: numeric index → read from the byte buffer
+      (let $tael i32 (call $scope_find_local (local.get $o) (cstring "@@taelem")))
+      (if (i32.and (i32.ne (local.get $tael) (i32.const 0)) (call $is_number (local.get $key)))
+        (then
+          (let $tidx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
+          (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
+          (if (i32.and (i32.ge_s (local.get $tidx) (i32.const 0)) (i32.lt_s (local.get $tidx) (local.get $tln)))
+            (then (return (call $num (call $ta_read (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))))))))
+          (return (call $v_undef))))
       ;; mapped arguments: a numeric index < @@anp aliases a parameter slot
       (if (call $is_number (local.get $key))
         (then
@@ -443,6 +452,15 @@
               (drop (call $call_val (local.get $strap) (i32.const 4) (local.get $sbuf) (call $v_undef)))
               (return)))
           (call $set_prop (local.get $ptgt) (local.get $key) (local.get $val))
+          (return)))
+      ;; TypedArray: numeric index → write to the byte buffer
+      (let $tael i32 (call $scope_find_local (local.get $o) (cstring "@@taelem")))
+      (if (i32.and (i32.ne (local.get $tael) (i32.const 0)) (call $is_number (local.get $key)))
+        (then
+          (let $tidx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
+          (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
+          (if (i32.and (i32.ge_s (local.get $tidx) (i32.const 0)) (i32.lt_s (local.get $tidx) (local.get $tln)))
+            (then (call $ta_write (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))) (call $to_num (local.get $val)))))
           (return)))
       (if (call $scope_find_local (local.get $o) (cstring "@@frozen")) (then (return)))  ;; Object.freeze: ignore writes
       ;; mapped arguments: writing a numeric index < @@anp writes the parameter slot
