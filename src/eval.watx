@@ -2153,10 +2153,23 @@
       ;; descriptor must be an object; else TypeError
       (if (i32.eqz (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
-      ;; (arrays are accepted as valid targets but have no per-element descriptor
-      ;; storage yet → no-op rather than a spurious TypeError)
       (if (call $is_object (local.get $ob))
         (then (call $apply_descriptor (call $val_payload (local.get $ob)) (call $to_str (local.get $ky)) (local.get $de))))
+      ;; arrays: a data descriptor at a canonical index writes the element (accessor
+      ;; descriptors at indices aren't supported by the dense store — left as-is);
+      ;; named props go to the @12 scope via apply_descriptor.
+      (if (call $is_array (local.get $ob))
+        (then
+          (let $dpk i32 (call $to_str (local.get $ky)))
+          (let $dpa i32 (call $val_payload (local.get $ob)))
+          (let $dpidx i32 (call $str_array_index (local.get $dpk)))
+          (if (i32.ge_s (local.get $dpidx) (i32.const 0))
+            (then
+              (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
+                (then (call $arr_set (local.get $dpa) (local.get $dpidx) (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
+                (else (call $arr_set (local.get $dpa) (local.get $dpidx) (call $v_undef)))))
+            (else (if (i32.eqz (call $str_eq (local.get $dpk) (cstring "length")))  ;; length redefinition not supported
+              (then (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de))))))))
       (return (local.get $ob))))
   ;; Object.defineProperties(obj, descs)
   (if (i32.eq (local.get $id) (i32.const 248))  ;; Object.getOwnPropertySymbols(o)
