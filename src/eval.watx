@@ -506,6 +506,21 @@
       (return (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
   (if (i32.eq (local.get $id) (i32.const 6))  ;; Boolean(x)
     (then (return (call $mk_bool (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+  (if (i32.eq (local.get $id) (i32.const 220))  ;; Number/Boolean.prototype.valueOf — unwrap a wrapper to its primitive
+    (then
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $vo220 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $vo220) (then (return (i64.load (local.get $vo220)))))))
+      (return (local.get $thisv))))
+  (if (i32.eq (local.get $id) (i32.const 221))  ;; Boolean.prototype.toString → "true"/"false"
+    (then
+      (let $bv221 i64 (local.get $thisv))
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $bo221 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $bo221) (then (set! $bv221 (i64.load (local.get $bo221)))))))
+      (return (call $mk_str (if i32 (call $truthy (local.get $bv221)) (then (cstring "true")) (else (cstring "false")))))))
   (if (i32.eq (local.get $id) (i32.const 7))  ;; isNaN(x)
     (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
           (return (call $mk_bool (f64.ne (local.get $d) (local.get $d))))))
@@ -513,12 +528,16 @@
     (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
           (return (call $mk_bool (i32.and (f64.eq (local.get $d) (local.get $d))
             (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0)))))))))
-  (if (i32.eq (local.get $id) (i32.const 9))  ;; Object(x)
+  (if (i32.eq (local.get $id) (i32.const 9))  ;; Object(x) → ToObject(x)
     (then
       (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.and (i32.eqz (call $is_number (local.get $a)))
-            (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a)))))
+      ;; already an object/array/function → returned unchanged
+      (if (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a))))
         (then (return (local.get $a))))
+      ;; primitive → boxed wrapper linked to the matching prototype
+      (if (call $is_number (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 164))))))
+      (if (call $is_string (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 156))))))
+      (if (call $is_boolean (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 184))))))
       (return (call $mk_obj (call $obj_new (i32.const 8))))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 10)) (i32.eq (local.get $id) (i32.const 112)))  ;; Object.keys / getOwnPropertyNames
     (then
@@ -923,7 +942,14 @@
   ;; --- string methods (this = the string) ---
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
     (then
-      (let $s i32 (call $to_str (local.get $thisv)))
+      ;; unwrap a String wrapper's boxed primitive directly — to_str(wrapper)
+      ;; would re-enter this very toString (native 18) and recurse forever.
+      (let $self11 i64 (local.get $thisv))
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $pp11 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $pp11) (then (set! $self11 (i64.load (local.get $pp11)))))))
+      (let $s i32 (call $to_str (local.get $self11)))
       (let $slen i32 (call $str_len (local.get $s)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eq (local.get $id) (i32.const 11))  ;; charAt(i)
@@ -2384,7 +2410,14 @@
   (drop (call $def_native (local.get $g) (cstring "print") (i32.const 1)))
   (drop (call $def_native (local.get $g) (cstring "assert") (i32.const 2)))
   (drop (call $def_native (local.get $g) (cstring "eval") (i32.const 3)))
-  (drop (call $def_native (local.get $g) (cstring "Boolean") (i32.const 6)))
+  (let $boolf i64 (call $def_native (local.get $g) (cstring "Boolean") (i32.const 6)))
+  ;; Boolean.prototype (reg 184) — carries constructor + valueOf/toString for wrappers
+  (let $boolproto i32 (call $obj_new (i32.const 8)))
+  (i32.store (i32.const 184) (local.get $boolproto))
+  (call $scope_define (local.get $boolproto) (cstring "constructor") (local.get $boolf))
+  (call $scope_define (local.get $boolproto) (cstring "valueOf") (call $mk_native (i32.const 220) (cstring "valueOf")))
+  (call $scope_define (local.get $boolproto) (cstring "toString") (call $mk_native (i32.const 221) (cstring "toString")))
+  (call $set_prop (local.get $boolf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $boolproto)))
   (drop (call $def_native (local.get $g) (cstring "isNaN") (i32.const 7)))
   (drop (call $def_native (local.get $g) (cstring "isFinite") (i32.const 8)))
   (drop (call $def_native (local.get $g) (cstring "parseInt") (i32.const 50)))
@@ -2397,7 +2430,9 @@
   (call $scope_define (local.get $numproto) (cstring "toFixed") (call $mk_native (i32.const 146) (cstring "toFixed")))
   (call $scope_define (local.get $numproto) (cstring "toPrecision") (call $mk_native (i32.const 166) (cstring "toPrecision")))
   (call $scope_define (local.get $numproto) (cstring "toExponential") (call $mk_native (i32.const 171) (cstring "toExponential")))
+  (call $scope_define (local.get $numproto) (cstring "valueOf") (call $mk_native (i32.const 220) (cstring "valueOf")))
   (let $numf i64 (call $def_native (local.get $g) (cstring "Number") (i32.const 4)))
+  (call $scope_define (local.get $numproto) (cstring "constructor") (local.get $numf))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NEGATIVE_INFINITY")) (call $num (f64.div (f64.const -1) (f64.const 0))))
