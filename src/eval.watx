@@ -1421,6 +1421,13 @@
     (then
       (let $dtm f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
       (if (i32.eq (local.get $id) (i32.const 182)) (then (return (call $num (local.get $dtm)))))  ;; getTime/valueOf
+      ;; Invalid Date (NaN time): getters → NaN, toISOString/toJSON → RangeError
+      ;; (date_field's i64.trunc would trap on NaN)
+      (if (f64.ne (local.get $dtm) (local.get $dtm))
+        (then
+          (if (i32.eq (local.get $id) (i32.const 191))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid time value")) (return (call $v_undef))))
+          (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
       (if (i32.eq (local.get $id) (i32.const 191))  ;; toISOString
         (then
           (let $iso i32 (call $date_pad (call $date_field (local.get $dtm) (i32.const 0)) (i32.const 4)))
