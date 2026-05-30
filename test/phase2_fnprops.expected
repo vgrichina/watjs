@@ -7,6 +7,7 @@ for-in-name=false
 hasOwn-before=true
 hasOwn-after=false
 length-after-assign=2
+user-len-desc=2,false,true
 length-desc-config=true
 length-hasOwn-before=true
 length-hasOwn-after=false

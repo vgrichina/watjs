@@ -24,6 +24,11 @@ var fn = Math.max;
 fn.length = 99;
 print("length-after-assign=" + fn.length);
 
+// getOwnPropertyDescriptor on a *user* (VM) function's length must not crash
+function userFn(a, b) { return a + b; }
+var ud = Object.getOwnPropertyDescriptor(userFn, "length");
+print("user-len-desc=" + ud.value + "," + ud.writable + "," + ud.configurable);
+
 // length is configurable: deletable, then absent
 var lenDesc = Object.getOwnPropertyDescriptor(Math.min, "length");
 print("length-desc-config=" + lenDesc.configurable);
