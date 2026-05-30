@@ -394,16 +394,6 @@
   (call $throw_type (cstring "TypeError") (cstring "cannot use 'in' on non-object"))
   (call $v_false))
 
-;; delete container[key]
-(func $delete_prop (param $cont i64) (param $key i64) (effects)
-  (if (call $is_object (local.get $cont))
-    (then (drop (call $scope_delete (call $val_payload (local.get $cont)) (call $to_str (local.get $key)))) (return)))
-  (if (call $is_array (local.get $cont))
-    (then
-      (if (call $is_number (local.get $key))
-        (then (call $arr_set (call $val_payload (local.get $cont)) (i32.trunc_f64_s (call $tonum_raw (local.get $key))) (call $v_undef))))
-      (return))))
-
 ;; set_prop(container, key, val)
 (func $set_prop (param $cont i64) (param $key i64) (param $val i64) (effects)
   (if (call $is_array (local.get $cont))
