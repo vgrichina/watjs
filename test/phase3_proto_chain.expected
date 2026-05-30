@@ -6,3 +6,7 @@ getproto-arr=true
 inherit-toString=function,function
 setproto=1
 cycle=TypeError
+isProto-ctor=true
+isProto-objroot=true
+isProto-arr=true
+isProto-prim=false

@@ -715,6 +715,21 @@
       (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.eqz (local.get $pslot)) (then (return (call $v_false))))
       (return (call $mk_bool (call $entry_enumerable (local.get $pslot))))))
+  ;; Object.prototype.isPrototypeOf(v) — is `this` anywhere in v's prototype chain?
+  (if (i32.eq (local.get $id) (i32.const 300))
+    (then
+      (let $ipv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (call $is_array (local.get $thisv)))) (then (return (call $v_false))))
+      (let $ipthis i32 (call $val_payload (local.get $thisv)))
+      (let $ipp i32 (i32.const 0))
+      (if (call $is_array (local.get $ipv)) (then (set! $ipp (i32.load (i32.const 160))))
+        (else (if (call $is_object (local.get $ipv)) (then (set! $ipp (call $scope_parent (call $val_payload (local.get $ipv))))))))
+      (block $ipe (loop $ipl
+        (br_if $ipe (i32.eqz (local.get $ipp)))
+        (if (i32.eq (local.get $ipp) (local.get $ipthis)) (then (return (call $v_true))))
+        (set! $ipp (call $scope_parent (local.get $ipp)))
+        (br $ipl)))
+      (return (call $v_false))))
   ;; Function constructor (157) and Function.prototype empty fn (158): no-ops
   (if (i32.or (i32.eq (local.get $id) (i32.const 157)) (i32.eq (local.get $id) (i32.const 158)))
     (then (return (call $v_undef))))
@@ -3950,6 +3965,7 @@
   (call $scope_define (local.get $objproto) (cstring "valueOf") (call $mk_native (i32.const 18) (cstring "valueOf")))
   (call $scope_define (local.get $objproto) (cstring "hasOwnProperty") (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))
   (call $scope_define (local.get $objproto) (cstring "propertyIsEnumerable") (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))
+  (call $scope_define (local.get $objproto) (cstring "isPrototypeOf") (call $mk_native (i32.const 300) (cstring "isPrototypeOf")))
   (call $scope_define (local.get $objproto) (cstring "constructor") (local.get $objf))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $objproto)))
   ;; register Object.prototype as the [[Prototype]] root (obj_new links new
