@@ -447,6 +447,52 @@
   ;; ToString ("[object Object]") → ToNumber → NaN (not a TypeError).
   (call $str_to_num (call $obj_to_str (local.get $v))))
 
+;; ToPrimitive with the "default" hint (used by `+` and `==`). Ordinary objects
+;; use number order (valueOf, then toString); Date uses string order
+;; (toString, then valueOf). Primitives pass through unchanged. Throws TypeError
+;; if a present valueOf/toString both return objects.
+(func $to_primitive (param $v i64) (result i64) (effects)
+  ;; already a primitive
+  (if (i32.eqz (i32.or (call $is_object (local.get $v)) (i32.or (call $is_array (local.get $v)) (call $is_function (local.get $v)))))
+    (then (return (local.get $v))))
+  ;; arrays stringify via join
+  (if (call $is_array (local.get $v)) (then (return (call $mk_str (call $arr_join (local.get $v))))))
+  ;; Date (own @@time) takes the string hint
+  (let $strFirst i32 (i32.const 0))
+  (if (call $is_object (local.get $v))
+    (then (if (call $scope_find_local (call $val_payload (local.get $v)) (cstring "@@time"))
+            (then (set! $strFirst (i32.const 1))))))
+  (let $had i32 (i32.const 0))
+  (let $m1 i32 (cstring "valueOf"))
+  (let $m2 i32 (cstring "toString"))
+  (if (local.get $strFirst) (then (set! $m1 (cstring "toString")) (set! $m2 (cstring "valueOf"))))
+  (let $f1 i64 (call $get_prop (local.get $v) (call $mk_str (local.get $m1))))
+  (if (call $is_function (local.get $f1))
+    (then
+      (let $r1 i64 (call $call_fn0 (local.get $f1) (local.get $v)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $r1)) (i32.or (call $is_array (local.get $r1)) (call $is_function (local.get $r1)))))
+        (then (return (local.get $r1))))
+      (set! $had (i32.const 1))))
+  (let $f2 i64 (call $get_prop (local.get $v) (call $mk_str (local.get $m2))))
+  (if (call $is_function (local.get $f2))
+    (then
+      (let $r2 i64 (call $call_fn0 (local.get $f2) (local.get $v)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $r2)) (i32.or (call $is_array (local.get $r2)) (call $is_function (local.get $r2)))))
+        (then (return (local.get $r2))))
+      (set! $had (i32.const 1))))
+  ;; wrapper objects (new String/Number/Boolean) carry the boxed primitive
+  (if (call $is_object (local.get $v))
+    (then
+      (let $slot i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__prim__")))
+      (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
+  ;; user method(s) present but returned objects → TypeError
+  (if (local.get $had)
+    (then
+      (call $throw_type (cstring "TypeError") (cstring "Cannot convert object to primitive value"))
+      (return (call $v_undef))))
+  ;; ordinary object / function: default ToString brand
+  (call $mk_str (call $obj_to_str (local.get $v))))
+
 ;; Parse a string as a number: sign, digits, fraction, and e/E exponent.
 ;; Accumulates up to 17 significant digits into a u64 mantissa + decimal
 ;; exponent, then combines. Fast path (<=15 sig digits, |exp|<=22) uses a

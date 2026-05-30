@@ -86,9 +86,15 @@
   (i32.trunc_f64_s (local.get $m)))
 
 (func $js_add (param $a i64) (param $b i64) (result i64) (effects)
-  (if i64 (i32.or (call $is_string (local.get $a)) (call $is_string (local.get $b)))
-    (then (call $mk_str (call $str_concat (call $to_str (local.get $a)) (call $to_str (local.get $b)))))
-    (else (call $num (f64.add (call $to_num (local.get $a)) (call $to_num (local.get $b)))))))
+  ;; ToPrimitive(default) both operands first (spec 13.15.3): an object/wrapper/
+  ;; Date operand may resolve to a string, which then forces string concatenation.
+  (let $pa i64 (call $to_primitive (local.get $a)))
+  (if (call $err) (then (return (call $v_undef))))
+  (let $pb i64 (call $to_primitive (local.get $b)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if i64 (i32.or (call $is_string (local.get $pa)) (call $is_string (local.get $pb)))
+    (then (call $mk_str (call $str_concat (call $to_str (local.get $pa)) (call $to_str (local.get $pb)))))
+    (else (call $num (f64.add (call $to_num (local.get $pa)) (call $to_num (local.get $pb)))))))
 
 (func $strict_eq (param $a i64) (param $b i64) (result i32) (effects)
   (if i32 (call $is_number (local.get $a))
