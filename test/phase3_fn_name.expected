@@ -1,0 +1,16 @@
+decl=decl
+named-expr=foo
+anon-expr=[]
+anon-arrow=[]
+var=a
+let=b
+assign=c
+ref=decl
+named-keep=keep
+prop=p
+prop-arrow=q
+method=m
+prop-ref=decl
+dstr-default=x
+dstr-obj-default=y
+name-desc=decl,false,false,true
