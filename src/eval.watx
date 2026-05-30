@@ -507,6 +507,10 @@
       (call $scope_define (local.get $mo) (cstring "forEach") (call $mk_native (i32.const 125) (cstring "forEach")))
       (call $scope_define (local.get $mo) (cstring "clear") (call $mk_native (i32.const 127) (cstring "clear")))
       (call $scope_define_accessor (local.get $mo) (cstring "size") (call $mk_native (i32.const 126) (cstring "size")) (call $v_undef))
+      (call $scope_define (local.get $mo) (cstring "keys") (call $mk_native (i32.const 176) (cstring "keys")))
+      (call $scope_define (local.get $mo) (cstring "values") (call $mk_native (i32.const 177) (cstring "values")))
+      (call $scope_define (local.get $mo) (cstring "entries") (call $mk_native (i32.const 178) (cstring "entries")))
+      (call $scope_define (local.get $mo) (cstring "@@iterator") (call $mk_native (i32.const 178) (cstring "entries")))
       ;; new Map(iterable of [k,v]): set each pair
       (let $mov i64 (call $mk_obj (local.get $mo)))
       (let $marg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -582,6 +586,9 @@
       (call $scope_define (local.get $so) (cstring "forEach") (call $mk_native (i32.const 134) (cstring "forEach")))
       (call $scope_define (local.get $so) (cstring "clear") (call $mk_native (i32.const 136) (cstring "clear")))
       (call $scope_define_accessor (local.get $so) (cstring "size") (call $mk_native (i32.const 135) (cstring "size")) (call $v_undef))
+      (call $scope_define (local.get $so) (cstring "values") (call $mk_native (i32.const 175) (cstring "values")))
+      (call $scope_define (local.get $so) (cstring "keys") (call $mk_native (i32.const 175) (cstring "keys")))
+      (call $scope_define (local.get $so) (cstring "@@iterator") (call $mk_native (i32.const 175) (cstring "values")))
       ;; new Set(iterable): add each element
       (let $sov i64 (call $mk_obj (local.get $so)))
       (let $sarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -865,6 +872,27 @@
       (return (call $mk_bool (call $strict_eq (local.get $isa) (local.get $isb))))))
   (if (i32.eq (local.get $id) (i32.const 170))  ;; Math.clz32(x)
     (then (return (call $num (f64.convert_i32_u (i32.clz (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+  (if (i32.eq (local.get $id) (i32.const 175))  ;; Set @@iterator/values (this = set) → array iterator over @@sk
+    (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@sk")))))))
+  (if (i32.eq (local.get $id) (i32.const 176))  ;; Map.keys (this = map) → array iterator over @@mk
+    (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mk")))))))
+  (if (i32.eq (local.get $id) (i32.const 177))  ;; Map.values (this = map) → array iterator over @@mv
+    (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mv")))))))
+  (if (i32.eq (local.get $id) (i32.const 178))  ;; Map.entries/@@iterator (this = map) → iterator over [k,v] pairs
+    (then
+      (let $emk i32 (call $coll_arr (local.get $thisv) (cstring "@@mk")))
+      (let $emv i32 (call $coll_arr (local.get $thisv) (cstring "@@mv")))
+      (let $epairs i32 (call $arr_new (i32.const 4)))
+      (let $ei i32 (i32.const 0))
+      (block $epe (loop $epl
+        (br_if $epe (i32.ge_s (local.get $ei) (call $arr_len (local.get $emk))))
+        (let $epair i32 (call $arr_new (i32.const 2)))
+        (call $arr_push (local.get $epair) (call $arr_get (local.get $emk) (local.get $ei)))
+        (call $arr_push (local.get $epair) (call $arr_get (local.get $emv) (local.get $ei)))
+        (call $arr_push (local.get $epairs) (call $mk_arr (local.get $epair)))
+        (set! $ei (i32.add (local.get $ei) (i32.const 1)))
+        (br $epl)))
+      (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $epairs))))))
   (if (i32.eq (local.get $id) (i32.const 171))  ;; Number.prototype.toExponential(d)
     (then (return (call $mk_str (call $num_to_exponential (call $to_num (local.get $thisv))
             (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 6))))))))
