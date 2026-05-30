@@ -615,6 +615,39 @@
       (let $io i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eqz (call $is_object (local.get $io))) (then (return (call $v_true))))  ;; non-objects are "frozen"
       (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $io)) (cstring "@@frozen")) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 143))  ;; arguments[@@iterator]() → iterator (this = arguments obj)
+    (then
+      (let $it i32 (call $obj_new (i32.const 4)))
+      (call $scope_define (local.get $it) (cstring "@@aobj") (local.get $thisv))
+      (call $scope_define (local.get $it) (cstring "@@ai") (call $num (f64.const 0)))
+      (call $scope_define (local.get $it) (cstring "next") (call $mk_native (i32.const 144) (cstring "next")))
+      (return (call $mk_obj (local.get $it)))))
+  (if (i32.eq (local.get $id) (i32.const 144))  ;; arguments-iterator .next() (this = iterator)
+    (then
+      (let $margao i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@aobj"))))
+      (let $margix i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ai"))))))
+      (let $marglen i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $margao) (call $mk_str (cstring "length"))))))
+      (let $margres i32 (call $obj_new (i32.const 2)))
+      (if (i32.ge_s (local.get $margix) (local.get $marglen))
+        (then (call $scope_define (local.get $margres) (cstring "value") (call $v_undef)) (call $scope_define (local.get $margres) (cstring "done") (call $v_true)))
+        (else
+          (call $scope_define (local.get $margres) (cstring "value") (call $get_prop (local.get $margao) (call $num (f64.convert_i32_s (local.get $margix)))))
+          (call $scope_define (local.get $margres) (cstring "done") (call $v_false))
+          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@ai") (call $num (f64.convert_i32_s (i32.add (local.get $margix) (i32.const 1)))))))
+      (return (call $mk_obj (local.get $margres)))))
+  (if (i32.eq (local.get $id) (i32.const 142))  ;; arguments.slice(start) (this = arguments obj)
+    (then
+      (let $margl i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
+      (let $margst i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 0))))
+      (if (i32.lt_s (local.get $margst) (i32.const 0)) (then (set! $margst (i32.add (local.get $margl) (local.get $margst))) (if (i32.lt_s (local.get $margst) (i32.const 0)) (then (set! $margst (i32.const 0))))))
+      (let $margr i32 (call $arr_new (i32.const 4)))
+      (let $margi i32 (local.get $margst))
+      (block $ase (loop $asl
+        (br_if $ase (i32.ge_s (local.get $margi) (local.get $margl)))
+        (call $arr_push (local.get $margr) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $margi)))))
+        (set! $margi (i32.add (local.get $margi) (i32.const 1)))
+        (br $asl)))
+      (return (call $mk_arr (local.get $margr)))))
   (if (i32.eq (local.get $id) (i32.const 138))  ;; substr(start, length) — legacy
     (then
       (let $s2 i32 (call $to_str (local.get $thisv)))
