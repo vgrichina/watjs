@@ -202,6 +202,15 @@
   (let $doe i64 (i64.add (i64.sub (i64.add (i64.mul (local.get $yoe) (i64.const 365)) (i64.div_s (local.get $yoe) (i64.const 4))) (i64.div_s (local.get $yoe) (i64.const 100))) (local.get $doy)))
   (i64.sub (i64.add (i64.mul (local.get $era) (i64.const 146097)) (local.get $doe)) (i64.const 719468)))
 
+;; ToInteger → i32 without trapping: NaN→0, ±Infinity/huge clamp to the i32
+;; range, otherwise truncate toward zero. Used for length/index/count arguments
+;; (i32.trunc_f64_s traps on NaN or out-of-i32-range floats).
+(func $to_int_idx (param $v f64) (result i32) (effects)
+  (if (f64.ne (local.get $v) (local.get $v)) (then (return (i32.const 0))))
+  (if (f64.ge (local.get $v) (f64.const 2147483647)) (then (return (i32.const 2147483647))))
+  (if (f64.le (local.get $v) (f64.const -2147483648)) (then (return (i32.const -2147483648))))
+  (i32.trunc_f64_s (local.get $v)))
+
 ;; safe to i64.trunc_f64_s? (finite and within i64 range — trunc traps otherwise)
 (func $f64_safe_i64 (param $v f64) (result i32) (effects)
   (i32.and (f64.eq (local.get $v) (local.get $v))
@@ -309,12 +318,12 @@
           (let $absl i32 (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@abdata")))
           (if (local.get $absl)
             (then  ;; view over an ArrayBuffer
-              (let $boff i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+              (let $boff i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
               (set! $buf (i32.add (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $absl)))) (local.get $boff)))
-              (let $ablen i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "byteLength"))))))
-              (set! $len (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe))))))
+              (let $ablen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "byteLength"))))))
+              (set! $len (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe))))))
             (else  ;; array-like / iterable with a length
-              (set! $len (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "length"))))))
+              (set! $len (call $to_int_idx (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "length"))))))
               (set! $buf (call $heap_alloc (i32.add (i32.mul (local.get $len) (local.get $bpe)) (i32.const 8))))
               (call $ta_zero (local.get $buf) (i32.mul (local.get $len) (local.get $bpe)))
               (let $ti2 i32 (i32.const 0))
@@ -354,7 +363,7 @@
       (let $lv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (i32.eqz (call $is_undefined (local.get $lv)))
         (then
-          (let $lim i32 (i32.trunc_f64_s (call $to_num (local.get $lv))))
+          (let $lim i32 (call $to_int_idx (call $to_num (local.get $lv))))
           (if (i32.and (i32.ge_s (local.get $lim) (i32.const 0)) (i32.gt_s (call $arr_len (local.get $arr)) (local.get $lim))) (then (i32.store (local.get $arr) (local.get $lim)))))))))
 
 ;; apply a property descriptor (scope $ds) onto object scope $os at key $ks,
@@ -919,10 +928,10 @@
     (then
       (let $itarrv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@arr"))))
       (let $itarr i32 (call $val_payload (local.get $itarrv)))
-      (let $itix i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
-      (let $itkind i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@kind"))))))
+      (let $itix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
+      (let $itkind i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@kind"))))))
       (let $itres i32 (call $obj_new (i32.const 2)))
-      (let $itlen i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@len"))))))  ;; snapshotted at creation
+      (let $itlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@len"))))))  ;; snapshotted at creation
       (if (i32.ge_s (local.get $itix) (local.get $itlen))
         (then
           (call $scope_define (local.get $itres) (cstring "value") (call $v_undef))
@@ -947,16 +956,16 @@
       (let $nv f64 (call $to_num (local.get $thisv)))
       (if (i32.eq (local.get $id) (i32.const 145))  ;; toString([radix])
         (then
-          (let $radix i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 10))))
+          (let $radix i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 10))))
           (if (i32.eq (local.get $radix) (i32.const 10)) (then (return (call $mk_str (call $num_to_str (local.get $nv))))))
           (return (call $mk_str (call $num_to_radix (i32.trunc_f64_s (local.get $nv)) (local.get $radix))))))
-      (return (call $mk_str (call $num_to_fixed (local.get $nv) (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+      (return (call $mk_str (call $num_to_fixed (local.get $nv) (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 166))  ;; Number.prototype.toPrecision([p])
     (then
       (let $nv f64 (call $to_num (local.get $thisv)))
       (if (i32.eqz (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
         (then (return (call $mk_str (call $num_to_str (local.get $nv))))))  ;; no/undefined arg → ToString
-      (return (call $mk_str (call $num_to_precision (local.get $nv) (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+      (return (call $mk_str (call $num_to_precision (local.get $nv) (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   ;; --- string methods (this = the string) ---
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
     (then
@@ -972,13 +981,13 @@
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eq (local.get $id) (i32.const 11))  ;; charAt(i)
         (then
-          (let $i i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $i i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (if (i32.or (i32.lt_s (local.get $i) (i32.const 0)) (i32.ge_s (local.get $i) (local.get $slen)))
             (then (return (call $mk_str (cstring "")))))
           (return (call $mk_str (call $substr (local.get $s) (local.get $i) (i32.const 1))))))
       (if (i32.eq (local.get $id) (i32.const 12))  ;; charCodeAt(i)
         (then
-          (let $i i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $i i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (if (i32.or (i32.lt_s (local.get $i) (i32.const 0)) (i32.ge_s (local.get $i) (local.get $slen)))
             (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
           (return (call $num (f64.convert_i32_s (call $str_byte (local.get $s) (local.get $i)))))))
@@ -993,10 +1002,10 @@
       ;; slice(14) / substring(15)
       (if (i32.or (i32.eq (local.get $id) (i32.const 14)) (i32.eq (local.get $id) (i32.const 15)))
         (then
-          (let $start i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $start i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (let $end i32 (local.get $slen))
           (if (i32.ge_s (local.get $argc) (i32.const 2))
-            (then (set! $end (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+            (then (set! $end (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
           (if (i32.eq (local.get $id) (i32.const 14))  ;; slice: negatives from end
             (then
               (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.add (local.get $slen) (local.get $start)))))
@@ -1113,7 +1122,7 @@
       (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $epairs))))))
   (if (i32.eq (local.get $id) (i32.const 171))  ;; Number.prototype.toExponential(d)
     (then (return (call $mk_str (call $num_to_exponential (call $to_num (local.get $thisv))
-            (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 6))))))))
+            (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 6))))))))
   (if (i32.eq (local.get $id) (i32.const 172))  ;; String.prototype.localeCompare(o) — byte-order compare
     (then (return (call $num (f64.convert_i32_s (call $str_cmp (call $to_str (local.get $thisv)) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 192))  ;; new Promise(executor) — synchronous resolved-value model
@@ -1172,7 +1181,7 @@
     (then (return (call $ta_make (i32.sub (local.get $id) (i32.const 210)) (local.get $argc) (local.get $argv)))))
   (if (i32.eq (local.get $id) (i32.const 219))  ;; new ArrayBuffer(byteLength)
     (then
-      (let $abn i32 (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (let $abn i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (let $abd i32 (call $heap_alloc (i32.add (local.get $abn) (i32.const 8))))
       (call $ta_zero (local.get $abd) (local.get $abn))
       (let $abo i32 (call $obj_new (i32.const 4)))
@@ -1294,8 +1303,8 @@
   (if (i32.eq (local.get $id) (i32.const 144))  ;; arguments-iterator .next() (this = iterator)
     (then
       (let $margao i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@aobj"))))
-      (let $margix i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ai"))))))
-      (let $marglen i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $margao) (call $mk_str (cstring "length"))))))
+      (let $margix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ai"))))))
+      (let $marglen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $margao) (call $mk_str (cstring "length"))))))
       (let $margres i32 (call $obj_new (i32.const 2)))
       (if (i32.ge_s (local.get $margix) (local.get $marglen))
         (then (call $scope_define (local.get $margres) (cstring "value") (call $v_undef)) (call $scope_define (local.get $margres) (cstring "done") (call $v_true)))
@@ -1306,8 +1315,8 @@
       (return (call $mk_obj (local.get $margres)))))
   (if (i32.eq (local.get $id) (i32.const 142))  ;; arguments.slice(start) (this = arguments obj)
     (then
-      (let $margl i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
-      (let $margst i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 0))))
+      (let $margl i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
+      (let $margst i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 0))))
       (if (i32.lt_s (local.get $margst) (i32.const 0)) (then (set! $margst (i32.add (local.get $margl) (local.get $margst))) (if (i32.lt_s (local.get $margst) (i32.const 0)) (then (set! $margst (i32.const 0))))))
       (let $margr i32 (call $arr_new (i32.const 4)))
       (let $margi i32 (local.get $margst))
@@ -1321,13 +1330,13 @@
     (then
       (let $s2 i32 (call $to_str (local.get $thisv)))
       (let $sl2 i32 (call $str_len (local.get $s2)))
-      (let $st i32 (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (let $st i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.lt_s (local.get $st) (i32.const 0))
         (then (set! $st (i32.add (local.get $sl2) (local.get $st))) (if (i32.lt_s (local.get $st) (i32.const 0)) (then (set! $st (i32.const 0))))))
       (if (i32.gt_s (local.get $st) (local.get $sl2)) (then (set! $st (local.get $sl2))))
       (let $ln i32 (i32.sub (local.get $sl2) (local.get $st)))  ;; default → to end
       (if (i32.ge_s (local.get $argc) (i32.const 2))
-        (then (set! $ln (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+        (then (set! $ln (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
       (if (i32.lt_s (local.get $ln) (i32.const 0)) (then (set! $ln (i32.const 0))))
       (if (i32.gt_s (local.get $ln) (i32.sub (local.get $sl2) (local.get $st))) (then (set! $ln (i32.sub (local.get $sl2) (local.get $st)))))
       (return (call $mk_str (call $substr (local.get $s2) (local.get $st) (local.get $ln))))))
@@ -1339,14 +1348,14 @@
       (if (i32.eq (local.get $id) (i32.const 61)) (then (return (call $mk_str (call $str_trim (local.get $s))))))
       (if (i32.eq (local.get $id) (i32.const 63))  ;; includes(sub[, fromIndex])
         (then
-          (let $ipos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (let $ipos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (if (i32.lt_s (local.get $ipos) (i32.const 0)) (then (set! $ipos (i32.const 0))))
           (let $ihay i32 (if i32 (i32.gt_s (local.get $ipos) (i32.const 0)) (then (call $substr (local.get $s) (local.get $ipos) (i32.sub (call $str_len (local.get $s)) (local.get $ipos)))) (else (local.get $s))))
           (return (call $mk_bool (i32.ge_s (call $str_indexof (local.get $ihay) (call $to_str (local.get $a0))) (i32.const 0))))))
       (if (i32.eq (local.get $id) (i32.const 64))  ;; startsWith(p[, pos])
         (then
           (let $sp2 i32 (call $to_str (local.get $a0)))
-          (let $spos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (let $spos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (if (i32.lt_s (local.get $spos) (i32.const 0)) (then (set! $spos (i32.const 0))))
           (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (local.get $spos) (call $str_len (local.get $sp2))) (local.get $sp2))))))
       (if (i32.eq (local.get $id) (i32.const 65))  ;; endsWith(p)
@@ -1414,7 +1423,7 @@
           (return (call $mk_str (local.get $out)))))
       (if (i32.eq (local.get $id) (i32.const 62))  ;; repeat(n)
         (then
-          (let $cnt i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $cnt i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (let $out i32 (cstring ""))
           (let $k i32 (i32.const 0))
           (block $re (loop $rl
@@ -1425,7 +1434,7 @@
           (return (call $mk_str (local.get $out)))))
       (if (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.eq (local.get $id) (i32.const 67)))  ;; padStart/padEnd
         (then
-          (let $padt i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $padt i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (let $pads i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (cstring " "))))
           (let $padsl i32 (call $str_len (local.get $s)))
           (if (i32.or (i32.ge_s (local.get $padsl) (local.get $padt)) (i32.eqz (call $str_len (local.get $pads))))
@@ -1442,7 +1451,7 @@
             (else (return (call $mk_str (call $str_concat (local.get $s) (local.get $padb))))))))
       (if (i32.eq (local.get $id) (i32.const 68))  ;; at(i) — supports negative index
         (then
-          (let $atix i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $atix i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (let $atsl i32 (call $str_len (local.get $s)))
           (if (i32.lt_s (local.get $atix) (i32.const 0)) (then (set! $atix (i32.add (local.get $atix) (local.get $atsl)))))
           (if (i32.or (i32.lt_s (local.get $atix) (i32.const 0)) (i32.ge_s (local.get $atix) (local.get $atsl))) (then (return (call $v_undef))))
@@ -1652,7 +1661,7 @@
     (then
       (let $mams i32 (call $val_payload (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ms")))))
       (let $mapat i32 (call $val_payload (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mpat")))))
-      (let $mapos i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mpos"))))))
+      (let $mapos i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mpos"))))))
       (let $masln i32 (call $str_len (local.get $mams)))
       (let $mares i32 (call $obj_new (i32.const 2)))
       (let $marel i32 (if i32 (i32.gt_s (local.get $mapos) (local.get $masln)) (then (i32.const -1))
@@ -1926,7 +1935,7 @@
       (let $i i32 (i32.const 0))
       (block $fe (loop $fl
         (br_if $fe (i32.ge_s (local.get $i) (local.get $argc)))
-        (call $str_set_byte (local.get $fcp) (local.get $i) (i32.and (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (local.get $i)))) (i32.const 255)))
+        (call $str_set_byte (local.get $fcp) (local.get $i) (i32.and (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (local.get $i)))) (i32.const 255)))
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (br $fl)))
       (return (call $mk_str (local.get $fcp)))))
@@ -1999,14 +2008,14 @@
           (return (local.get $v))))
       (if (i32.eq (local.get $id) (i32.const 28))  ;; at(i) — supports negative index
         (then
-          (let $atx i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $atx i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (if (i32.lt_s (local.get $atx) (i32.const 0)) (then (set! $atx (i32.add (local.get $atx) (local.get $n)))))
           (if (i32.or (i32.lt_s (local.get $atx) (i32.const 0)) (i32.ge_s (local.get $atx) (local.get $n))) (then (return (call $v_undef))))
           (return (call $arr_get (local.get $arr) (local.get $atx)))))
       (if (i32.eq (local.get $id) (i32.const 29))  ;; fill(v[, start[, end]])
         (then
-          (let $fstart i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
-          (let $fend i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))
+          (let $fstart i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (let $fend i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))
           (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.add (local.get $n) (local.get $fstart))) (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.const 0))))))
           (if (i32.lt_s (local.get $fend) (i32.const 0)) (then (set! $fend (i32.add (local.get $n) (local.get $fend)))))
           (if (i32.gt_s (local.get $fend) (local.get $n)) (then (set! $fend (local.get $n))))
@@ -2019,9 +2028,9 @@
           (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 168))  ;; copyWithin(target, start[, end])
         (then
-          (let $ct i32 (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
-          (let $cs i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
-          (let $ce i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))
+          (let $ct i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+          (let $cs i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (let $ce i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))
           (if (i32.lt_s (local.get $ct) (i32.const 0)) (then (set! $ct (i32.add (local.get $n) (local.get $ct))) (if (i32.lt_s (local.get $ct) (i32.const 0)) (then (set! $ct (i32.const 0))))))
           (if (i32.lt_s (local.get $cs) (i32.const 0)) (then (set! $cs (i32.add (local.get $n) (local.get $cs))) (if (i32.lt_s (local.get $cs) (i32.const 0)) (then (set! $cs (i32.const 0))))))
           (if (i32.lt_s (local.get $ce) (i32.const 0)) (then (set! $ce (i32.add (local.get $n) (local.get $ce)))))
@@ -2120,7 +2129,7 @@
           (return (call $mk_str (local.get $out)))))
       (if (i32.eq (local.get $id) (i32.const 27))  ;; includes(x[, fromIndex]) — SameValueZero (matches NaN)
         (then
-          (let $i i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (let $i i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (if (i32.lt_s (local.get $i) (i32.const 0)) (then (set! $i (i32.add (local.get $n) (local.get $i))) (if (i32.lt_s (local.get $i) (i32.const 0)) (then (set! $i (i32.const 0))))))
           (let $a0nan i32 (i32.and (call $is_number (local.get $a0)) (f64.ne (call $tonum_raw (local.get $a0)) (call $tonum_raw (local.get $a0)))))
           (block $ie (loop $il
@@ -2135,9 +2144,9 @@
       ;; slice(start[,end]) (24)
       (if (i32.eq (local.get $id) (i32.const 24))
         (then
-          (let $start i32 (i32.trunc_f64_s (call $to_num (local.get $a0))))
+          (let $start i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (let $end i32 (local.get $n))
-          (if (i32.ge_s (local.get $argc) (i32.const 2)) (then (set! $end (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+          (if (i32.ge_s (local.get $argc) (i32.const 2)) (then (set! $end (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
           (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.add (local.get $n) (local.get $start)))))
           (if (i32.lt_s (local.get $end) (i32.const 0)) (then (set! $end (i32.add (local.get $n) (local.get $end)))))
           (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.const 0))))
