@@ -1832,6 +1832,59 @@
           (drop (call $eat (i32.const 21)))
           (return)))
       (call $look_restore)))
+  ;; array destructuring assignment statement:  [a, b, ...r] = expr
+  (if (i32.eq (call $tok_kind) (i32.const 19))  ;; '['
+    (then
+      (call $look_save)
+      (call $next_token)  ;; consume '['
+      (let $dadepth i32 (i32.const 1))
+      (block $dase (loop $dasl
+        (let $dak i32 (call $tok_kind))
+        (br_if $dase (i32.eq (local.get $dak) (i32.const 0)))
+        (if (i32.or (i32.eq (local.get $dak) (i32.const 19)) (i32.or (i32.eq (local.get $dak) (i32.const 17)) (i32.eq (local.get $dak) (i32.const 15)))) (then (set! $dadepth (i32.add (local.get $dadepth) (i32.const 1)))))
+        (if (i32.or (i32.eq (local.get $dak) (i32.const 20)) (i32.or (i32.eq (local.get $dak) (i32.const 18)) (i32.eq (local.get $dak) (i32.const 16))))
+          (then (set! $dadepth (i32.sub (local.get $dadepth) (i32.const 1))) (br_if $dase (i32.eqz (local.get $dadepth)))))
+        (call $next_token) (br $dasl)))
+      (call $next_token)  ;; consume matching ']'
+      (let $daisda i32 (i32.eq (call $tok_kind) (i32.const 24)))  ;; '=' follows → destructuring assignment
+      (call $look_restore)
+      (if (local.get $daisda)
+        (then
+          (call $next_token)  ;; '['
+          (let $danames i32 (call $heap_alloc (i32.const 256)))
+          (let $darest i32 (call $heap_alloc (i32.const 256)))
+          (let $dacnt i32 (i32.const 0))
+          (block $dpe (loop $dpl
+            (br_if $dpe (i32.eq (call $tok_kind) (i32.const 20)))
+            (i32.store (i32.add (local.get $darest) (i32.mul (local.get $dacnt) (i32.const 4))) (i32.const 0))
+            (if (i32.eq (call $tok_kind) (i32.const 54)) (then (i32.store (i32.add (local.get $darest) (i32.mul (local.get $dacnt) (i32.const 4))) (i32.const 1)) (call $next_token)))  ;; ...rest
+            (i32.store (i32.add (local.get $danames) (i32.mul (local.get $dacnt) (i32.const 4))) (call $ident_name))
+            (call $next_token)
+            (set! $dacnt (i32.add (local.get $dacnt) (i32.const 1)))
+            (br_if $dpe (i32.eqz (call $eat (i32.const 22))))
+            (br $dpl)))
+          (call $next_token) (call $next_token)  ;; ']' '='
+          (call $vm_c_expr (local.get $code))  ;; RHS → [val]
+          (let $datmp i32 (call $vm_tmpname))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $datmp))  ;; STOREVAR tmp
+          (let $dai i32 (i32.const 0))
+          (block $dbe (loop $dbl
+            (br_if $dbe (i32.ge_s (local.get $dai) (local.get $dacnt)))
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $datmp))  ;; LOADVAR tmp → [tmp]
+            (if (i32.load (i32.add (local.get $darest) (i32.mul (local.get $dai) (i32.const 4))))
+              (then  ;; ...rest = tmp.slice(i)
+                (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [tmp, tmp]
+                (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "slice"))  ;; [tmp, slicefn]
+                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (local.get $dai))))  ;; [tmp, slicefn, i]
+                (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 1)))  ;; CALLM 1 → [result]
+              (else
+                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (local.get $dai))))
+                (call $vm_emit_op (local.get $code) (i32.const 31))))  ;; GETIDX
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $danames) (i32.mul (local.get $dai) (i32.const 4)))))  ;; STOREVAR name
+            (set! $dai (i32.add (local.get $dai) (i32.const 1)))
+            (br $dbl)))
+          (drop (call $eat (i32.const 21)))
+          (return)))))
   ;; expression statement → store value to the completion register (op 71), so
   ;; eval()/JSON.parse can read the last expression value. Same stack effect as POP.
   (call $vm_c_commaexpr (local.get $code))
