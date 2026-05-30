@@ -153,6 +153,38 @@
 
 ;; relational compare: kind 29 < , 30 > , 31 <= , 32 >=
 
+;; push every own key string of a property scope into $out (enumerable only,
+;; unless $allNames); skips @@ internal/symbol keys.
+(func $push_scope_keys (param $out i32) (param $sc i32) (param $allNames i32) (effects)
+  (if (i32.eqz (local.get $sc)) (then (return)))
+  (let $cnt i32 (call $scope_count (local.get $sc)))
+  (let $i i32 (i32.const 0))
+  (block $ke (loop $kl
+    (br_if $ke (i32.ge_s (local.get $i) (local.get $cnt)))
+    (if (i32.and (i32.eqz (call $is_internal_key (i32.load (call $scope_entry (local.get $sc) (local.get $i)))))
+          (i32.or (local.get $allNames) (i32.ne (call $entry_enumerable (i32.add (call $scope_entry (local.get $sc) (local.get $i)) (i32.const 8))) (i32.const 0))))
+      (then (call $arr_push (local.get $out) (call $mk_str (i32.load (call $scope_entry (local.get $sc) (local.get $i)))))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $kl))))
+
+;; own enumerable (or all, if $allNames) key strings of any value → fresh array.
+;; Arrays yield "0".."len-1" then their @12 named-property keys.
+(func $own_enum_keys (param $a i64) (param $allNames i32) (result i32) (effects)
+  (let $out i32 (call $arr_new (i32.const 16)))
+  (if (call $is_array (local.get $a))
+    (then
+      (let $aa i32 (call $val_payload (local.get $a)))
+      (let $an i32 (call $arr_len (local.get $aa)))
+      (let $ai i32 (i32.const 0))
+      (block $ie (loop $il
+        (br_if $ie (i32.ge_s (local.get $ai) (local.get $an)))
+        (call $arr_push (local.get $out) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $ai)))))
+        (set! $ai (i32.add (local.get $ai) (i32.const 1))) (br $il)))
+      (call $push_scope_keys (local.get $out) (i32.load (i32.add (local.get $aa) (i32.const 12))) (local.get $allNames))
+      (return (local.get $out))))
+  (if (call $is_object (local.get $a))
+    (then (call $push_scope_keys (local.get $out) (call $val_payload (local.get $a)) (local.get $allNames))))
+  (local.get $out))
+
 ;; ── function calls & native builtins ──
 
 (func $argn (param $argv i32) (param $argc i32) (param $i i32) (result i64) (effects)
@@ -546,45 +578,26 @@
       (return (call $mk_obj (call $obj_new (i32.const 8))))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 10)) (i32.eq (local.get $id) (i32.const 112)))  ;; Object.keys / getOwnPropertyNames
     (then
-      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (let $arr i32 (call $arr_new (i32.const 16)))
-      (if (call $is_object (local.get $a))
-        (then
-          (let $sc i32 (call $val_payload (local.get $a)))
-          (let $cnt i32 (call $scope_count (local.get $sc)))
-          (let $i i32 (i32.const 0))
-          (block $ke (loop $kl
-            (br_if $ke (i32.ge_s (local.get $i) (local.get $cnt)))
-            ;; Object.keys → enumerable only; getOwnPropertyNames → all; both skip @@ symbol/internal keys
-            (if (i32.and (i32.eqz (call $is_internal_key (i32.load (call $scope_entry (local.get $sc) (local.get $i))))) (i32.or (i32.eq (local.get $id) (i32.const 112)) (i32.ne (call $entry_enumerable (i32.add (call $scope_entry (local.get $sc) (local.get $i)) (i32.const 8))) (i32.const 0))))
-              (then (call $arr_push (local.get $arr) (call $mk_str (i32.load (call $scope_entry (local.get $sc) (local.get $i)))))))
-            (set! $i (i32.add (local.get $i) (i32.const 1)))
-            (br $kl)))))
-      (return (call $mk_arr (local.get $arr)))))
+      (return (call $mk_arr (call $own_enum_keys (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (i32.eq (local.get $id) (i32.const 112)))))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 91)) (i32.eq (local.get $id) (i32.const 92)))  ;; Object.values/entries
     (then
       (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $keys i32 (call $own_enum_keys (local.get $a) (i32.const 0)))
       (let $arr i32 (call $arr_new (i32.const 16)))
-      (if (call $is_object (local.get $a))
-        (then
-          (let $sc i32 (call $val_payload (local.get $a)))
-          (let $cnt i32 (call $scope_count (local.get $sc)))
-          (let $i i32 (i32.const 0))
-          (block $ke (loop $kl
-            (br_if $ke (i32.ge_s (local.get $i) (local.get $cnt)))
-            (if (i32.and (i32.ne (call $entry_enumerable (i32.add (call $scope_entry (local.get $sc) (local.get $i)) (i32.const 8))) (i32.const 0)) (i32.eqz (call $is_internal_key (i32.load (call $scope_entry (local.get $sc) (local.get $i))))))
-              (then
-                (let $nm i32 (i32.load (call $scope_entry (local.get $sc) (local.get $i))))
-                (let $vv i64 (call $get_prop (local.get $a) (call $mk_str (local.get $nm))))
-                (if (i32.eq (local.get $id) (i32.const 91))
-                  (then (call $arr_push (local.get $arr) (local.get $vv)))
-                  (else  ;; entries → [key, value]
-                    (let $pair i32 (call $arr_new (i32.const 2)))
-                    (call $arr_push (local.get $pair) (call $mk_str (local.get $nm)))
-                    (call $arr_push (local.get $pair) (local.get $vv))
-                    (call $arr_push (local.get $arr) (call $mk_arr (local.get $pair)))))))
-            (set! $i (i32.add (local.get $i) (i32.const 1)))
-            (br $kl)))))
+      (let $i i32 (i32.const 0))
+      (block $ke (loop $kl
+        (br_if $ke (i32.ge_s (local.get $i) (call $arr_len (local.get $keys))))
+        (let $nm i64 (call $arr_get (local.get $keys) (local.get $i)))
+        (let $vv i64 (call $get_prop (local.get $a) (local.get $nm)))
+        (if (i32.eq (local.get $id) (i32.const 91))
+          (then (call $arr_push (local.get $arr) (local.get $vv)))
+          (else  ;; entries → [key, value]
+            (let $pair i32 (call $arr_new (i32.const 2)))
+            (call $arr_push (local.get $pair) (local.get $nm))
+            (call $arr_push (local.get $pair) (local.get $vv))
+            (call $arr_push (local.get $arr) (call $mk_arr (local.get $pair)))))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $kl)))
       (return (call $mk_arr (local.get $arr)))))
   (if (i32.eq (local.get $id) (i32.const 109))  ;; str.replaceAll(search, repl)
     (then

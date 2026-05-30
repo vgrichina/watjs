@@ -28,6 +28,24 @@
   (i32.store (i32.add (local.get $a) (i32.const 12)) (i32.const 0))  ;; @12 named-property scope (lazy, 0 = none)
   (local.get $a))
 
+;; Canonical array index encoded in a string ("0".."2147483647", no leading
+;; zeros, no sign/dot) → that index, else -1. (Indices >= 2^31 exceed our i32
+;; element addressing and are treated as named properties.)
+(func $str_array_index (param $ks i32) (result i32) (effects)
+  (let $n i32 (call $str_len (local.get $ks)))
+  (if (i32.eqz (local.get $n)) (then (return (i32.const -1))))
+  (if (i32.and (i32.gt_s (local.get $n) (i32.const 1)) (i32.eq (call $str_byte (local.get $ks) (i32.const 0)) (i32.const 48))) (then (return (i32.const -1))))  ;; leading zero
+  (let $i i32 (i32.const 0))
+  (block $b (loop $l
+    (br_if $b (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $ks) (local.get $i)))
+    (if (i32.or (i32.lt_s (local.get $c) (i32.const 48)) (i32.gt_s (local.get $c) (i32.const 57))) (then (return (i32.const -1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (if (i32.gt_s (local.get $n) (i32.const 10)) (then (return (i32.const -1))))  ;; > 10 digits can't be < 2^31
+  (let $v f64 (call $str_to_num (local.get $ks)))
+  (if (f64.ge (local.get $v) (f64.const 2147483648)) (then (return (i32.const -1))))
+  (i32.trunc_f64_s (local.get $v)))
+
 ;; get-or-create an array's named-property scope (for non-index keys like
 ;; a.foo or a[2**32-1]; element storage stays in the @8 data block)
 (func $arr_props (param $a i32) (result i32) (effects)
@@ -265,8 +283,11 @@
                   (i32.and (f64.lt (local.get $aget) (f64.const 2147483648))
                            (f64.eq (local.get $aget) (f64.floor (local.get $aget))))))
             (then (return (call $arr_get (local.get $a) (i32.trunc_f64_s (local.get $aget))))))))
-            ;; non-index numeric falls through to the named-property lookup below
+            ;; non-index numeric falls through to the lookups below
       (let $akey i32 (call $to_prop_key (local.get $key)))
+      ;; a string key that's a canonical index ("0", a["3"]) is an element
+      (let $asidx i32 (call $str_array_index (local.get $akey)))
+      (if (i32.ge_s (local.get $asidx) (i32.const 0)) (then (return (call $arr_get (local.get $a) (local.get $asidx)))))
       ;; named properties (a.foo, a[2**32-1], …) live in the @12 scope
       (let $aprops i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
       (if (local.get $aprops)
@@ -509,10 +530,13 @@
                   (i32.and (f64.lt (local.get $aset) (f64.const 2147483648))
                            (f64.eq (local.get $aset) (f64.floor (local.get $aset))))))
             (then (call $arr_set (local.get $a) (i32.trunc_f64_s (local.get $aset)) (local.get $val)) (return)))))
+      (let $askey i32 (call $to_prop_key (local.get $key)))
+      ;; a string key that's a canonical index (a["3"]=…) writes an element
+      (let $ssidx i32 (call $str_array_index (local.get $askey)))
+      (if (i32.ge_s (local.get $ssidx) (i32.const 0)) (then (call $arr_set (local.get $a) (local.get $ssidx) (local.get $val)) (return)))
       ;; named property on an array (a.foo, a[2**32-1], …) → @12 scope.
       ;; `length` assignment is a distinct operation (resize) — leave it alone so
       ;; the real length keeps being reported by key_is_length on read.
-      (let $askey i32 (call $to_prop_key (local.get $key)))
       (if (call $str_eq (local.get $askey) (cstring "length")) (then (return)))
       (call $scope_define (call $arr_props (local.get $a)) (local.get $askey) (local.get $val))
       (return)))
