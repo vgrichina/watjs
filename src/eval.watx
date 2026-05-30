@@ -3087,6 +3087,8 @@
   (call $set_prop (local.get $numf) (call $mk_str (cstring "MIN_SAFE_INTEGER")) (call $num (f64.const -9007199254740991)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "EPSILON")) (call $num (f64.const 2.220446049250313e-16)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "MAX_VALUE")) (call $num (f64.const 1.7976931348623157e308)))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "MIN_VALUE")) (call $num (f64.const 5e-324)))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NEGATIVE_INFINITY")) (call $num (f64.div (f64.const -1) (f64.const 0))))
   (let $strf i64 (call $def_native (local.get $g) (cstring "String") (i32.const 5)))

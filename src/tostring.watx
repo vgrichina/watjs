@@ -235,7 +235,12 @@
       (if (call $is_function (local.get $ts))
         (then
           (let $r i64 (call $call_fn0 (local.get $ts) (local.get $v)))
-          (if (call $is_string (local.get $r)) (then (return (call $val_payload (local.get $r)))))))))
+          (if (call $is_string (local.get $r)) (then (return (call $val_payload (local.get $r)))))
+          ;; toString returned a non-string primitive (e.g. Number wrapper) → ToString it
+          (if (i32.eqz (call $is_object (local.get $r))) (then (return (call $to_str (local.get $r)))))))
+      ;; wrapper object (new String/Number/Boolean): ToString of the boxed primitive
+      (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__prim__")))
+      (if (local.get $pslot) (then (return (call $to_str (i64.load (local.get $pslot))))))))
   (if (call $is_function (local.get $v)) (then (return (cstring "function"))))
   (cstring "[object Object]"))
 
