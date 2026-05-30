@@ -1218,12 +1218,14 @@
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $ky i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (let $de i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
-      ;; target must be an object (functions ok); else TypeError
-      (if (i32.and (i32.eqz (call $is_object (local.get $ob))) (i32.eqz (call $is_function (local.get $ob))))
+      ;; target must be an object/array/function; primitives → TypeError
+      (if (i32.eqz (i32.or (call $is_object (local.get $ob)) (i32.or (call $is_array (local.get $ob)) (call $is_function (local.get $ob)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object.defineProperty called on non-object")) (return (call $v_undef))))
       ;; descriptor must be an object; else TypeError
       (if (i32.eqz (call $is_object (local.get $de)))
         (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
+      ;; (arrays are accepted as valid targets but have no per-element descriptor
+      ;; storage yet → no-op rather than a spurious TypeError)
       (if (call $is_object (local.get $ob))
         (then (call $apply_descriptor (call $val_payload (local.get $ob)) (call $to_str (local.get $ky)) (call $val_payload (local.get $de)))))
       (return (local.get $ob))))
