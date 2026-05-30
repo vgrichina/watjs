@@ -448,7 +448,11 @@
                (then (call $str_to_num (call $val_payload (local.get $v))))
       (else (if f64 (call $is_object (local.get $v))
                (then (call $obj_to_num (local.get $v)))
-      (else (f64.div (f64.const 0) (f64.const 0)))))))))))))))  ;; undefined → NaN
+      (else (if f64 (call $is_symbol (local.get $v))
+               ;; ToNumber(Symbol) throws; loose_eq excludes symbols before this,
+               ;; so only genuine numeric coercion (+sym, sym*2, sym<1) reaches here
+               (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a number")) (f64.div (f64.const 0) (f64.const 0)))
+               (else (f64.div (f64.const 0) (f64.const 0)))))))))))))))))  ;; undefined → NaN
 
 ;; ToNumber for an object: prefer valueOf(), then __prim__ wrapper slot, else NaN.
 (func $obj_to_num (param $v i64) (result f64) (effects)

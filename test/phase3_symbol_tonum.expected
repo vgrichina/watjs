@@ -1,0 +1,7 @@
+unary-plus=TypeError
+multiply=TypeError
+Number=TypeError
+relational=TypeError
+array-fill=TypeError
+loose-eq=false
+typeof=symbol
