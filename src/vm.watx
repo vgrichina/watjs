@@ -2017,6 +2017,14 @@
             (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $av))
             (set! $sp (i32.add (local.get $sp) (i32.const 8)))
             (br $disp)))
+        (if (i32.eq (i32.load (local.get $cfn)) (i32.const 1448232540))  ;; bound function
+          (then
+            (call $set_cur_scope (local.get $scope))
+            (let $bres i64 (call $call_bound (local.get $cfn) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8)))))
+            (set! $sp (local.get $rbase))
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $bres))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
         (if (i32.ne (i32.load (local.get $cfn)) (i32.const 1448232526))  ;; not a VM-fn → native built-in
           (then
             (let $thisv i64 (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef))))

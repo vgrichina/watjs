@@ -208,6 +208,36 @@
             (i64.store (i32.add (local.get $buf) (i32.mul (local.get $i) (i32.const 8))) (call $arr_get (local.get $arr) (local.get $i)))
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $aal)))))
       (return (call $call_val (local.get $thisv) (local.get $n) (local.get $buf) (local.get $ta)))))
+  ;; Function.prototype.bind(thisArg, ...bound) — this = the function to bind
+  (if (i32.eq (local.get $id) (i32.const 153))
+    (then
+      (let $bthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $bargc i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
+      (let $bbuf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $bargc) (i32.const 0)) (then (local.get $bargc)) (else (i32.const 1))) (i32.const 8))))
+      (let $bi i32 (i32.const 0))
+      (block $bbe (loop $bbl
+        (br_if $bbe (i32.ge_s (local.get $bi) (local.get $bargc)))
+        (i64.store (i32.add (local.get $bbuf) (i32.mul (local.get $bi) (i32.const 8))) (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $bi) (i32.const 1))))
+        (set! $bi (i32.add (local.get $bi) (i32.const 1))) (br $bbl)))
+      (let $bf i32 (call $heap_alloc (i32.const 40)))
+      (i32.store (local.get $bf) (i32.const 1448232540))           ;; bound magic
+      (i32.store (i32.add (local.get $bf) (i32.const 8)) (i32.const 0))   ;; nparams
+      (i32.store (i32.add (local.get $bf) (i32.const 12)) (i32.const 0))  ;; props
+      (i64.store (i32.add (local.get $bf) (i32.const 16)) (local.get $bthis))
+      (i64.store (i32.add (local.get $bf) (i32.const 24)) (local.get $thisv))
+      (i32.store (i32.add (local.get $bf) (i32.const 32)) (local.get $bargc))
+      (i32.store (i32.add (local.get $bf) (i32.const 36)) (local.get $bbuf))
+      (return (call $mk_fn (local.get $bf)))))
+  ;; Object.prototype.propertyIsEnumerable(key) — this = the object
+  (if (i32.eq (local.get $id) (i32.const 159))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
+      (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (if (i32.eqz (local.get $pslot)) (then (return (call $v_false))))
+      (return (call $mk_bool (call $entry_enumerable (local.get $pslot))))))
+  ;; Function constructor (157) and Function.prototype empty fn (158): no-ops
+  (if (i32.or (i32.eq (local.get $id) (i32.const 157)) (i32.eq (local.get $id) (i32.const 158)))
+    (then (return (call $v_undef))))
   ;; Object.prototype.toString — the [[Class]] brand check (this = the value)
   (if (i32.eq (local.get $id) (i32.const 155))
     (then
@@ -1526,10 +1556,35 @@
         (else (if i32 (f64.gt (local.get $r) (f64.const 0)) (then (i32.const 1)) (else (i32.const 0))))))
     (else (call $str_cmp (call $to_str (local.get $a)) (call $to_str (local.get $b))))))
 
+;; invoke a bound function (created by Function.prototype.bind): prepend the
+;; bound args to the call args and call the target with the bound this.
+;; Bound struct: @0 magic, @8 nparams(0), @12 props, @16 boundThis(i64),
+;; @24 boundTarget(i64), @32 boundArgc(i32), @36 boundArgs ptr(i64[]).
+(func $call_bound (param $fn i32) (param $argc i32) (param $argv i32) (result i64) (effects)
+  (let $bthis i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
+  (let $target i64 (i64.load (i32.add (local.get $fn) (i32.const 24))))
+  (let $bargc i32 (i32.load (i32.add (local.get $fn) (i32.const 32))))
+  (let $bargs i32 (i32.load (i32.add (local.get $fn) (i32.const 36))))
+  (let $tot i32 (i32.add (local.get $bargc) (local.get $argc)))
+  (let $buf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $tot) (i32.const 0)) (then (local.get $tot)) (else (i32.const 1))) (i32.const 8))))
+  (let $i i32 (i32.const 0))
+  (block $be (loop $bl
+    (br_if $be (i32.ge_s (local.get $i) (local.get $bargc)))
+    (i64.store (i32.add (local.get $buf) (i32.mul (local.get $i) (i32.const 8))) (i64.load (i32.add (local.get $bargs) (i32.mul (local.get $i) (i32.const 8)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $bl)))
+  (let $j i32 (i32.const 0))
+  (block $ce (loop $cl
+    (br_if $ce (i32.ge_s (local.get $j) (local.get $argc)))
+    (i64.store (i32.add (local.get $buf) (i32.mul (i32.add (local.get $bargc) (local.get $j)) (i32.const 8))) (i64.load (i32.add (local.get $argv) (i32.mul (local.get $j) (i32.const 8)))))
+    (set! $j (i32.add (local.get $j) (i32.const 1))) (br $cl)))
+  (call $call_val (local.get $target) (local.get $tot) (local.get $buf) (local.get $bthis)))
+
 ;; call a function value with args + this
 (func $call_val (param $fnval i64) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   (if (i32.eqz (call $is_function (local.get $fnval))) (then (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $fnval)))
+  (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232540))  ;; bound function
+    (then (return (call $call_bound (local.get $fn) (local.get $argc) (local.get $argv)))))
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232526))  ;; VM-fn → run on the VM
     (then (return (call $vm_call_fn (local.get $fn) (local.get $argc) (local.get $argv) (local.get $thisv)))))
   (if i64 (i32.load (local.get $fn))
@@ -3297,8 +3352,14 @@
   (call $scope_define (local.get $objproto) (cstring "toString") (call $mk_native (i32.const 155) (cstring "toString")))
   (call $scope_define (local.get $objproto) (cstring "valueOf") (call $mk_native (i32.const 18) (cstring "valueOf")))
   (call $scope_define (local.get $objproto) (cstring "hasOwnProperty") (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))
+  (call $scope_define (local.get $objproto) (cstring "propertyIsEnumerable") (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))
   (call $scope_define (local.get $objproto) (cstring "constructor") (local.get $objf))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $objproto)))
+  ;; Function global — minimal; its .prototype is an empty callable so that
+  ;; Function.prototype.call / .apply / .bind resolve (used heavily by the
+  ;; test262 propertyHelper harness).
+  (let $funcf i64 (call $def_native (local.get $g) (cstring "Function") (i32.const 157)))
+  (call $set_prop (local.get $funcf) (call $mk_str (cstring "prototype")) (call $mk_native (i32.const 158) (cstring "")))
   ;; link each constructor's .prototype to the real prototype scope holding its
   ;; methods, so generic access works (String.prototype.slice,
   ;; Array.prototype.slice.call(...), etc.) — not just primitive dispatch.

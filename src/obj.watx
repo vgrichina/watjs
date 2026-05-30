@@ -300,6 +300,8 @@
       ;; Object.prototype fallback methods (objects have no real proto object yet)
       (if (call $str_eq (call $to_str (local.get $key)) (cstring "hasOwnProperty"))
         (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
+      (if (call $str_eq (call $to_str (local.get $key)) (cstring "propertyIsEnumerable"))
+        (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
       (return (call $v_undef))))
   (if (call $is_function (local.get $cont))
     (then
