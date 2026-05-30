@@ -132,6 +132,41 @@
 
 ;; coerce a value to an iterator: arrays → values-iterator; objects with
 ;; @@iterator → call it; objects with .next → themselves (generators included).
+;; append the elements of an iterable `srcv` onto array `dst` (for `...spread`):
+;; arrays/strings directly, any other object via the iterator protocol (next()).
+(func $spread_into (param $dst i32) (param $srcv i64) (effects)
+  (if (call $is_array (local.get $srcv))
+    (then
+      (let $sa i32 (call $val_payload (local.get $srcv)))
+      (let $si i32 (i32.const 0))
+      (block $ae (loop $al
+        (br_if $ae (i32.ge_s (local.get $si) (call $arr_len (local.get $sa))))
+        (call $arr_push (local.get $dst) (call $arr_get (local.get $sa) (local.get $si)))
+        (set! $si (i32.add (local.get $si) (i32.const 1))) (br $al)))
+      (return)))
+  (if (call $is_string (local.get $srcv))
+    (then
+      (let $ssp i32 (call $val_payload (local.get $srcv)))
+      (let $sn i32 (call $str_len (local.get $ssp)))
+      (let $sci i32 (i32.const 0))
+      (block $se (loop $sl
+        (br_if $se (i32.ge_s (local.get $sci) (local.get $sn)))
+        (call $arr_push (local.get $dst) (call $str_char_at (local.get $ssp) (local.get $sci)))
+        (set! $sci (i32.add (local.get $sci) (i32.const 1))) (br $sl)))
+      (return)))
+  (if (call $is_object (local.get $srcv))
+    (then
+      (let $it i64 (call $vm_get_iter (local.get $srcv)))
+      (let $nf i64 (call $get_prop (local.get $it) (call $mk_str (cstring "next"))))
+      (if (call $is_function (local.get $nf))
+        (then
+          (let $nbuf i32 (call $heap_alloc (i32.const 8)))
+          (block $ie (loop $il
+            (let $r i64 (call $call_val (local.get $nf) (i32.const 0) (local.get $nbuf) (local.get $it)))
+            (br_if $ie (call $truthy (call $get_prop (local.get $r) (call $mk_str (cstring "done")))))
+            (call $arr_push (local.get $dst) (call $get_prop (local.get $r) (call $mk_str (cstring "value"))))
+            (br $il))))))))
+
 (func $vm_get_iter (param $v i64) (result i64) (effects)
   (if (call $is_array (local.get $v))
     (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
@@ -2536,15 +2571,7 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $srcv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $dst i32 (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
-        (if (call $is_array (local.get $srcv))
-          (then
-            (let $sa i32 (call $val_payload (local.get $srcv)))
-            (let $si i32 (i32.const 0))
-            (block $spe (loop $spl
-              (br_if $spe (i32.ge_s (local.get $si) (call $arr_len (local.get $sa))))
-              (call $arr_push (local.get $dst) (call $arr_get (local.get $sa) (local.get $si)))
-              (set! $si (i32.add (local.get $si) (i32.const 1)))
-              (br $spl)))))
+        (call $spread_into (local.get $dst) (local.get $srcv))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 29))  ;; NEWARRAY n (operand) — n values on top
       (then
