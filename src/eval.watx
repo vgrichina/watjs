@@ -3388,10 +3388,27 @@
 ;; skip a nested function (cursor at 'function'): advance to its body '{' then
 ;; over the balanced braces, so its inner `var`s aren't hoisted to the outer scope.
 (func $hoist_skip_fn (effects)
+  ;; skip to the parameter-list '(' (skipping any name / function* '*')
+  (block $bp (loop $lp
+    (call $advance)
+    (let $pk i32 (call $tok_kind))
+    (br_if $bp (i32.eq (local.get $pk) (i32.const 15)))  ;; '('
+    (br_if $bp (i32.eq (local.get $pk) (i32.const 0)))
+    (br $lp)))
+  ;; skip the balanced (...) param list — its body may contain '{' (object-pattern
+  ;; params, default object literals) that must NOT be mistaken for the fn body.
+  (let $ppd i32 (i32.const 1))
+  (block $bpp (loop $lpp
+    (call $advance)
+    (let $pk i32 (call $tok_kind))
+    (br_if $bpp (i32.eq (local.get $pk) (i32.const 0)))
+    (if (i32.eq (local.get $pk) (i32.const 15)) (then (set! $ppd (i32.add (local.get $ppd) (i32.const 1)))))
+    (if (i32.eq (local.get $pk) (i32.const 16)) (then (set! $ppd (i32.sub (local.get $ppd) (i32.const 1))) (br_if $bpp (i32.eqz (local.get $ppd)))))
+    (br $lpp)))
   (block $b1 (loop $l1
     (call $advance)
     (let $k i32 (call $tok_kind))
-    (br_if $b1 (i32.eq (local.get $k) (i32.const 17)))  ;; '{'
+    (br_if $b1 (i32.eq (local.get $k) (i32.const 17)))  ;; '{' body
     (br_if $b1 (i32.eq (local.get $k) (i32.const 0)))
     (br $l1)))
   (let $bd i32 (i32.const 1))
