@@ -1014,6 +1014,50 @@
       (return (call $mk_str (call $substr (local.get $kfkey) (i32.const 9) (i32.sub (call $str_len (local.get $kfkey)) (i32.const 9)))))))
   (if (i32.eq (local.get $id) (i32.const 199))  ;; Symbol.prototype.toString (this = symbol)
     (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (call $sym_desc (local.get $thisv))) (cstring ")"))))))
+  (if (i32.eq (local.get $id) (i32.const 200))  ;; Reflect.get(target, key)
+    (then (return (call $get_prop (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
+  (if (i32.eq (local.get $id) (i32.const 201))  ;; Reflect.set(target, key, value) → true
+    (then
+      (call $set_prop (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      (return (call $v_true))))
+  (if (i32.eq (local.get $id) (i32.const 202))  ;; Reflect.has(target, key)
+    (then (return (call $js_in (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 203))  ;; Reflect.deleteProperty(target, key) → true
+    (then
+      (let $rdt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_object (local.get $rdt)) (then (drop (call $scope_delete (call $val_payload (local.get $rdt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+      (return (call $v_true))))
+  (if (i32.eq (local.get $id) (i32.const 204))  ;; Reflect.ownKeys(target) → getOwnPropertyNames
+    (then (return (call $call_native (i32.const 112) (local.get $argc) (local.get $argv) (call $v_undef)))))
+  (if (i32.eq (local.get $id) (i32.const 205))  ;; Reflect.getPrototypeOf(target)
+    (then (return (call $call_native (i32.const 82) (local.get $argc) (local.get $argv) (call $v_undef)))))
+  (if (i32.eq (local.get $id) (i32.const 206))  ;; Reflect.defineProperty(target, key, desc) → true
+    (then
+      (let $rpt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $rpd i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      (if (i32.and (call $is_object (local.get $rpt)) (call $is_object (local.get $rpd)))
+        (then (call $apply_descriptor (call $val_payload (local.get $rpt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (call $val_payload (local.get $rpd)))))
+      (return (call $v_true))))
+  (if (i32.eq (local.get $id) (i32.const 207))  ;; Reflect.getOwnPropertyDescriptor(target, key)
+    (then (return (call $call_native (i32.const 156) (local.get $argc) (local.get $argv) (call $v_undef)))))
+  (if (i32.eq (local.get $id) (i32.const 208))  ;; Reflect.apply(fn, thisArg, argsArray)
+    (then
+      (let $raf i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $rath i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $raa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      (let $ran i32 (i32.const 0))
+      (let $rab i32 (call $heap_alloc (i32.const 8)))
+      (if (call $is_array (local.get $raa))
+        (then
+          (let $rap i32 (call $val_payload (local.get $raa)))
+          (set! $ran (call $arr_len (local.get $rap)))
+          (set! $rab (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $ran) (i32.const 0)) (then (local.get $ran)) (else (i32.const 1))) (i32.const 8))))
+          (let $rai i32 (i32.const 0))
+          (block $rae (loop $ral
+            (br_if $rae (i32.ge_s (local.get $rai) (local.get $ran)))
+            (i64.store (i32.add (local.get $rab) (i32.mul (local.get $rai) (i32.const 8))) (call $arr_get (local.get $rap) (local.get $rai)))
+            (set! $rai (i32.add (local.get $rai) (i32.const 1))) (br $ral)))))
+      (return (call $call_val (local.get $raf) (local.get $ran) (local.get $rab) (local.get $rath)))))
   (if (i32.eq (local.get $id) (i32.const 179))  ;; Date.now()
     (then (return (call $num (call $now_ms)))))
   (if (i32.eq (local.get $id) (i32.const 180))  ;; new Date(...) → date object (UTC)
@@ -2320,6 +2364,18 @@
   (call $set_prop (local.get $symf) (call $mk_str (cstring "unscopables")) (call $make_symbol (cstring "@@unscopables") (cstring "Symbol.unscopables")))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "for")) (call $mk_native (i32.const 197) (cstring "for")))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "keyFor")) (call $mk_native (i32.const 198) (cstring "keyFor")))
+  ;; Reflect — static facade over the internal property operations
+  (let $refo i32 (call $obj_new (i32.const 12)))
+  (call $scope_define (local.get $refo) (cstring "get") (call $mk_native (i32.const 200) (cstring "get")))
+  (call $scope_define (local.get $refo) (cstring "set") (call $mk_native (i32.const 201) (cstring "set")))
+  (call $scope_define (local.get $refo) (cstring "has") (call $mk_native (i32.const 202) (cstring "has")))
+  (call $scope_define (local.get $refo) (cstring "deleteProperty") (call $mk_native (i32.const 203) (cstring "deleteProperty")))
+  (call $scope_define (local.get $refo) (cstring "ownKeys") (call $mk_native (i32.const 204) (cstring "ownKeys")))
+  (call $scope_define (local.get $refo) (cstring "getPrototypeOf") (call $mk_native (i32.const 205) (cstring "getPrototypeOf")))
+  (call $scope_define (local.get $refo) (cstring "defineProperty") (call $mk_native (i32.const 206) (cstring "defineProperty")))
+  (call $scope_define (local.get $refo) (cstring "getOwnPropertyDescriptor") (call $mk_native (i32.const 207) (cstring "getOwnPropertyDescriptor")))
+  (call $scope_define (local.get $refo) (cstring "apply") (call $mk_native (i32.const 208) (cstring "apply")))
+  (call $scope_define (local.get $g) (cstring "Reflect") (call $mk_obj (local.get $refo)))
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
