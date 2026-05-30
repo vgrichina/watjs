@@ -784,9 +784,14 @@
       (return (call $mk_obj (call $obj_new (i32.const 8))))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 10)) (i32.eq (local.get $id) (i32.const 112)))  ;; Object.keys / getOwnPropertyNames
     (then
-      (return (call $mk_arr (call $own_enum_keys (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (i32.eq (local.get $id) (i32.const 112)))))))
+      (let $kob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_null (local.get $kob)) (call $is_undefined (local.get $kob)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (return (call $mk_arr (call $own_enum_keys (local.get $kob) (i32.eq (local.get $id) (i32.const 112)))))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 91)) (i32.eq (local.get $id) (i32.const 92)))  ;; Object.values/entries
     (then
+      (if (i32.or (call $is_null (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $keys i32 (call $own_enum_keys (local.get $a) (i32.const 0)))
       (let $arr i32 (call $arr_new (i32.const 16)))
@@ -2365,6 +2370,8 @@
   (if (i32.eq (local.get $id) (i32.const 80))  ;; Object.assign(target, ...sources)
     (then
       (let $t i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_null (local.get $t)) (call $is_undefined (local.get $t)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (let $k i32 (i32.const 1))
       (block $ae (loop $al
         (br_if $ae (i32.ge_s (local.get $k) (local.get $argc)))
@@ -2424,6 +2431,8 @@
   (if (i32.eq (local.get $id) (i32.const 82))  ;; Object.getPrototypeOf(o)
     (then
       (let $ov i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_null (local.get $ov)) (call $is_undefined (local.get $ov)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (if (call $is_object (local.get $ov))
         (then
           (let $par i32 (call $scope_parent (call $val_payload (local.get $ov))))
