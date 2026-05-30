@@ -231,8 +231,11 @@
 
 ;; key is "length"?
 (func $key_is_length (param $key i64) (result i32) (effects)
-  (i32.and (call $is_string (local.get $key))
-           (call $str_eq (call $val_payload (local.get $key)) (cstring "length"))))
+  ;; must short-circuit: i32.and evaluates BOTH operands, so str_eq would deref
+  ;; val_payload(key) even for a number key (whose bits aren't a pointer) → OOB.
+  (if i32 (call $is_string (local.get $key))
+    (then (call $str_eq (call $val_payload (local.get $key)) (cstring "length")))
+    (else (i32.const 0))))
 
 ;; get_prop(container, key) -> value
 (func $get_prop (param $cont i64) (param $key i64) (result i64) (effects)
@@ -263,7 +266,16 @@
       (if (call $key_is_length (local.get $key))
         (then (return (call $num (f64.convert_i32_s (call $str_len (call $val_payload (local.get $cont))))))))
       (if (call $is_number (local.get $key))
-        (then (return (call $str_char_at (call $val_payload (local.get $cont)) (i32.trunc_f64_s (call $tonum_raw (local.get $key)))))))
+        (then
+          ;; only a finite in-range integer indexes a character; NaN / >=2^31 /
+          ;; fractional fall through to property lookup → undefined (and guard the
+          ;; trunc, which traps on NaN or out-of-i32-range floats)
+          (let $kidx f64 (call $tonum_raw (local.get $key)))
+          (if (i32.and (f64.eq (local.get $kidx) (local.get $kidx))
+                (i32.and (f64.ge (local.get $kidx) (f64.const -2147483648))
+                  (i32.and (f64.lt (local.get $kidx) (f64.const 2147483648))
+                           (f64.eq (local.get $kidx) (f64.floor (local.get $kidx))))))
+            (then (return (call $str_char_at (call $val_payload (local.get $cont)) (i32.trunc_f64_s (local.get $kidx))))))))
       ;; methods / constructor from String.prototype (reg 156)
       (let $sp i32 (i32.load (i32.const 156)))
       (if (local.get $sp)
