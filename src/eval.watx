@@ -545,8 +545,28 @@
     (then
       (if (call $is_undefined (local.get $thisv)) (then (return (call $mk_str (cstring "[object Undefined]")))))
       (if (call $is_null (local.get $thisv)) (then (return (call $mk_str (cstring "[object Null]")))))
+      ;; a string Symbol.toStringTag (@@toStringTag) overrides the builtin tag
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $tts i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@toStringTag")))
+          (if (local.get $tts)
+            (then
+              (let $ttv i64 (i64.load (local.get $tts)))
+              (if (call $is_string (local.get $ttv))
+                (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "[object ") (call $val_payload (local.get $ttv))) (cstring "]"))))))))))
       (if (call $is_array (local.get $thisv)) (then (return (call $mk_str (cstring "[object Array]")))))
       (if (call $is_function (local.get $thisv)) (then (return (call $mk_str (cstring "[object Function]")))))
+      ;; wrapper objects + Date get their builtin tags
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $tpr i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $tpr)
+            (then
+              (let $pv i64 (i64.load (local.get $tpr)))
+              (if (call $is_number (local.get $pv)) (then (return (call $mk_str (cstring "[object Number]")))))
+              (if (call $is_string (local.get $pv)) (then (return (call $mk_str (cstring "[object String]")))))
+              (if (call $is_boolean (local.get $pv)) (then (return (call $mk_str (cstring "[object Boolean]")))))))
+          (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time")) (then (return (call $mk_str (cstring "[object Date]")))))))
       (return (call $mk_str (cstring "[object Object]")))))
   (if (i32.eq (local.get $id) (i32.const 2))  ;; assert(cond[, message])
     (then
@@ -2663,6 +2683,7 @@
   (let $mo i32 (call $obj_new (i32.const 24)))
   (let $mv i64 (call $mk_obj (local.get $mo)))
   (call $scope_define (local.get $g) (cstring "Math") (local.get $mv))
+  (call $scope_define (local.get $mo) (cstring "@@toStringTag") (call $mk_str (cstring "Math")))
   (call $scope_define (local.get $mo) (cstring "abs") (call $mk_native (i32.const 40) (cstring "abs")))
   (call $scope_define (local.get $mo) (cstring "floor") (call $mk_native (i32.const 41) (cstring "floor")))
   (call $scope_define (local.get $mo) (cstring "ceil") (call $mk_native (i32.const 42) (cstring "ceil")))
@@ -2680,6 +2701,7 @@
   ;; JSON object
   (let $jo i32 (call $obj_new (i32.const 4)))
   (call $scope_define (local.get $g) (cstring "JSON") (call $mk_obj (local.get $jo)))
+  (call $scope_define (local.get $jo) (cstring "@@toStringTag") (call $mk_str (cstring "JSON")))
   (call $scope_define (local.get $jo) (cstring "stringify") (call $mk_native (i32.const 105) (cstring "stringify")))
   (call $scope_define (local.get $jo) (cstring "parse") (call $mk_native (i32.const 106) (cstring "parse")))
   ;; Object with .keys
