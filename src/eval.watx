@@ -1947,6 +1947,13 @@
     (then
       (call $throw_type (cstring "TypeError") (cstring "callback is not a function"))
       (return (call $v_undef))))
+  ;; sort(78)/toSorted(274): comparator is optional, but if supplied it must be
+  ;; callable (undefined is allowed) — else TypeError.
+  (if (i32.and (i32.or (i32.eq (local.get $id) (i32.const 78)) (i32.eq (local.get $id) (i32.const 274)))
+        (i32.and (i32.gt_s (local.get $argc) (i32.const 0))
+          (i32.and (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+                   (i32.eqz (call $is_function (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+    (then (call $throw_type (cstring "TypeError") (cstring "comparator is not a function")) (return (call $v_undef))))
   ;; --- array3 methods (this = array): 74 find, 75 findIndex, 76 some, 77 every, 78 sort ---
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 74)) (i32.le_s (local.get $id) (i32.const 78)))
         (i32.or (call $is_array (local.get $thisv)) (call $is_object (local.get $thisv))))  ;; generic on array-likes
