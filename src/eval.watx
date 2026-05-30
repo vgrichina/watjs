@@ -1178,13 +1178,25 @@
                 (i32.or (f64.ne (local.get $nv) (local.get $nv)) (f64.eq (f64.abs (local.get $nv)) (f64.div (f64.const 1) (f64.const 0)))))
             (then (return (call $mk_str (call $num_to_str (local.get $nv))))))
           (return (call $mk_str (call $num_to_radix (i32.trunc_f64_s (local.get $nv)) (local.get $radix))))))
-      (return (call $mk_str (call $num_to_fixed (local.get $nv) (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+      (let $fxd i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (if (i32.or (i32.lt_s (local.get $fxd) (i32.const 0)) (i32.gt_s (local.get $fxd) (i32.const 100)))
+        (then (call $throw_type (cstring "RangeError") (cstring "toFixed() digits argument must be between 0 and 100")) (return (call $v_undef))))
+      (if (i32.or (f64.ne (local.get $nv) (local.get $nv)) (f64.eq (f64.abs (local.get $nv)) (f64.div (f64.const 1) (f64.const 0))))
+        (then (return (call $mk_str (call $num_to_str (local.get $nv))))))  ;; NaN/Infinity → ToString
+      (return (call $mk_str (call $num_to_fixed (local.get $nv) (local.get $fxd))))))
   (if (i32.eq (local.get $id) (i32.const 166))  ;; Number.prototype.toPrecision([p])
     (then
       (let $nv f64 (call $num_this (local.get $thisv)))
       (if (i32.eqz (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
         (then (return (call $mk_str (call $num_to_str (local.get $nv))))))  ;; no/undefined arg → ToString
-      (return (call $mk_str (call $num_to_precision (local.get $nv) (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+      ;; non-finite → ToString (before the range check, per spec ordering it's after
+      ;; ToInteger but our num_to_precision would misbehave); precision 1..100
+      (let $prd i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (if (i32.or (f64.ne (local.get $nv) (local.get $nv)) (f64.eq (f64.abs (local.get $nv)) (f64.div (f64.const 1) (f64.const 0))))
+        (then (return (call $mk_str (call $num_to_str (local.get $nv))))))
+      (if (i32.or (i32.lt_s (local.get $prd) (i32.const 1)) (i32.gt_s (local.get $prd) (i32.const 100)))
+        (then (call $throw_type (cstring "RangeError") (cstring "toPrecision() argument must be between 1 and 100")) (return (call $v_undef))))
+      (return (call $mk_str (call $num_to_precision (local.get $nv) (local.get $prd))))))
   ;; --- string methods (this = the string) ---
   ;; String.prototype methods require an object-coercible `this`: null/undefined
   ;; → TypeError (the contiguous method-id ranges; ToString would otherwise coerce).
@@ -1378,8 +1390,14 @@
         (br $epl)))
       (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $epairs))))))
   (if (i32.eq (local.get $id) (i32.const 171))  ;; Number.prototype.toExponential(d)
-    (then (return (call $mk_str (call $num_to_exponential (call $to_num (local.get $thisv))
-            (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 6))))))))
+    (then
+      (let $exv f64 (call $num_this (local.get $thisv)))
+      (if (i32.or (f64.ne (local.get $exv) (local.get $exv)) (f64.eq (f64.abs (local.get $exv)) (f64.div (f64.const 1) (f64.const 0))))
+        (then (return (call $mk_str (call $num_to_str (local.get $exv))))))  ;; NaN/Infinity → ToString
+      (let $exd i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 6))))
+      (if (i32.or (i32.lt_s (local.get $exd) (i32.const 0)) (i32.gt_s (local.get $exd) (i32.const 100)))
+        (then (call $throw_type (cstring "RangeError") (cstring "toExponential() argument must be between 0 and 100")) (return (call $v_undef))))
+      (return (call $mk_str (call $num_to_exponential (local.get $exv) (local.get $exd))))))
   (if (i32.eq (local.get $id) (i32.const 172))  ;; String.prototype.localeCompare(o) — byte-order compare
     (then (return (call $num (f64.convert_i32_s (call $str_cmp (call $to_str (local.get $thisv)) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 192))  ;; new Promise(executor) — synchronous resolved-value model
