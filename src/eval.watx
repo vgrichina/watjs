@@ -103,6 +103,19 @@
           (return (call $v_undef)))
         (else (call $num (f64.add (call $to_num (local.get $pa)) (call $to_num (local.get $pb)))))))))
 
+;; the number value for a Number.prototype method `this`: a number, or a Number
+;; wrapper's __prim__. TypeError otherwise. Avoids to_num (which would recurse
+;; valueOf↔toString for the bare Number.prototype object).
+(func $num_this (param $v i64) (result f64) (effects)
+  (if (call $is_number (local.get $v)) (then (return (call $tonum_raw (local.get $v)))))
+  (if (call $is_object (local.get $v))
+    (then
+      (let $ps i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__prim__")))
+      (if (i32.and (i32.ne (local.get $ps) (i32.const 0)) (call $is_number (i64.load (local.get $ps))))
+        (then (return (call $tonum_raw (i64.load (local.get $ps))))))))
+  (call $throw_type (cstring "TypeError") (cstring "Number.prototype method called on a non-Number"))
+  (f64.const 0))
+
 (func $strict_eq (param $a i64) (param $b i64) (result i32) (effects)
   ;; BigInt: compare by value (distinct boxes for equal values), never === a non-bigint
   (if (call $is_bigint (local.get $a))
@@ -1041,7 +1054,7 @@
   ;; --- number methods (this = the number) ---
   (if (i32.or (i32.eq (local.get $id) (i32.const 145)) (i32.eq (local.get $id) (i32.const 146)))
     (then
-      (let $nv f64 (call $to_num (local.get $thisv)))
+      (let $nv f64 (call $num_this (local.get $thisv)))
       (if (i32.eq (local.get $id) (i32.const 145))  ;; toString([radix])
         (then
           (let $radix i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 10))))
@@ -1050,7 +1063,7 @@
       (return (call $mk_str (call $num_to_fixed (local.get $nv) (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 166))  ;; Number.prototype.toPrecision([p])
     (then
-      (let $nv f64 (call $to_num (local.get $thisv)))
+      (let $nv f64 (call $num_this (local.get $thisv)))
       (if (i32.eqz (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
         (then (return (call $mk_str (call $num_to_str (local.get $nv))))))  ;; no/undefined arg → ToString
       (return (call $mk_str (call $num_to_precision (local.get $nv) (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
@@ -2949,6 +2962,7 @@
   ;; Number with NaN / Infinity constants
   (let $numproto i32 (call $scope_new (i32.const 0) (i32.const 8)))  ;; Number.prototype (reg 164)
   (i32.store (i32.const 164) (local.get $numproto))
+  (call $scope_define (local.get $numproto) (cstring "__prim__") (call $num (f64.const 0)))  ;; Number.prototype is a Number object (+0)
   (call $scope_define (local.get $numproto) (cstring "toString") (call $mk_native (i32.const 145) (cstring "toString")))
   (call $scope_define (local.get $numproto) (cstring "toFixed") (call $mk_native (i32.const 146) (cstring "toFixed")))
   (call $scope_define (local.get $numproto) (cstring "toPrecision") (call $mk_native (i32.const 166) (cstring "toPrecision")))
