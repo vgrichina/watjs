@@ -2637,6 +2637,32 @@
             (call $arr_set (local.get $tsr) (i32.add (local.get $j) (i32.const 1)) (local.get $cur))
             (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $ol)))
           (return (call $mk_arr (local.get $tsr)))))
+      (if (i32.eq (local.get $id) (i32.const 276))  ;; toSpliced(start, deleteCount, ...items) → new spliced array
+        (then
+          (let $tss i32 (call $to_int_idx (call $to_num (local.get $a0))))
+          (if (i32.lt_s (local.get $tss) (i32.const 0)) (then (set! $tss (i32.add (local.get $n) (local.get $tss))) (if (i32.lt_s (local.get $tss) (i32.const 0)) (then (set! $tss (i32.const 0))))))
+          (if (i32.gt_s (local.get $tss) (local.get $n)) (then (set! $tss (local.get $n))))
+          (let $tsdc i32 (i32.sub (local.get $n) (local.get $tss)))
+          (if (i32.eqz (local.get $argc)) (then (set! $tsdc (i32.const 0))))
+          (if (i32.ge_s (local.get $argc) (i32.const 2))
+            (then
+              (set! $tsdc (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+              (if (i32.lt_s (local.get $tsdc) (i32.const 0)) (then (set! $tsdc (i32.const 0))))
+              (if (i32.gt_s (local.get $tsdc) (i32.sub (local.get $n) (local.get $tss))) (then (set! $tsdc (i32.sub (local.get $n) (local.get $tss)))))))
+          (let $tsout i32 (call $arr_new (i32.const 8)))
+          (let $tsi i32 (i32.const 0))
+          (block $ts0 (loop $ts0l (br_if $ts0 (i32.ge_s (local.get $tsi) (local.get $tss)))
+            (call $arr_push (local.get $tsout) (call $arr_get (local.get $arr) (local.get $tsi)))
+            (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $ts0l)))
+          (set! $tsi (i32.const 2))
+          (block $tsie (loop $tsil (br_if $tsie (i32.ge_s (local.get $tsi) (local.get $argc)))
+            (call $arr_push (local.get $tsout) (call $argn (local.get $argv) (local.get $argc) (local.get $tsi)))
+            (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $tsil)))
+          (set! $tsi (i32.add (local.get $tss) (local.get $tsdc)))
+          (block $ts2 (loop $ts2l (br_if $ts2 (i32.ge_s (local.get $tsi) (local.get $n)))
+            (call $arr_push (local.get $tsout) (call $arr_get (local.get $arr) (local.get $tsi)))
+            (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $ts2l)))
+          (return (call $mk_arr (local.get $tsout)))))
       (if (i32.eq (local.get $id) (i32.const 35))  ;; splice(start, deleteCount, ...items)
         (then
           (let $ss i32 (call $to_int_idx (call $to_num (local.get $a0))))
@@ -3083,7 +3109,7 @@
   (if (i32.eq (local.get $id) (i32.const 168)) (then (return (i32.const 2))))  ;; copyWithin
   (if (i32.or (i32.eq (local.get $id) (i32.const 270)) (i32.eq (local.get $id) (i32.const 271))) (then (return (i32.const 1))))  ;; String concat, lastIndexOf
   (if (i32.eq (local.get $id) (i32.const 274)) (then (return (i32.const 1))))  ;; Array toSorted
-  (if (i32.eq (local.get $id) (i32.const 275)) (then (return (i32.const 2))))  ;; Array with
+  (if (i32.or (i32.eq (local.get $id) (i32.const 275)) (i32.eq (local.get $id) (i32.const 276))) (then (return (i32.const 2))))  ;; Array with, toSpliced
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
   ;; Date.now(179), Symbol.toString(199), Number/Boolean valueOf(220), Boolean.toString(221)
   (if (i32.or (i32.eq (local.get $id) (i32.const 18)) (i32.or (i32.eq (local.get $id) (i32.const 155)) (i32.or (i32.eq (local.get $id) (i32.const 179)) (i32.or (i32.eq (local.get $id) (i32.const 199)) (i32.or (i32.eq (local.get $id) (i32.const 220)) (i32.eq (local.get $id) (i32.const 221)))))))
@@ -3440,6 +3466,7 @@
   (call $scope_define (local.get $ap) (cstring "toReversed") (call $mk_native (i32.const 273) (cstring "toReversed")))
   (call $scope_define (local.get $ap) (cstring "toSorted") (call $mk_native (i32.const 274) (cstring "toSorted")))
   (call $scope_define (local.get $ap) (cstring "with") (call $mk_native (i32.const 275) (cstring "with")))
+  (call $scope_define (local.get $ap) (cstring "toSpliced") (call $mk_native (i32.const 276) (cstring "toSpliced")))
   (call $scope_define (local.get $ap) (cstring "pop") (call $mk_native (i32.const 21) (cstring "pop")))
   (call $scope_define (local.get $ap) (cstring "indexOf") (call $mk_native (i32.const 22) (cstring "indexOf")))
   (call $scope_define (local.get $ap) (cstring "join") (call $mk_native (i32.const 23) (cstring "join")))
