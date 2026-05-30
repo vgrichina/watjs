@@ -1899,6 +1899,8 @@
     (then
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $de i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.eqz (call $is_object (local.get $ob)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Object.defineProperties called on non-object")) (return (call $v_undef))))
       (if (i32.and (call $is_object (local.get $ob)) (call $is_object (local.get $de)))
         (then
           (let $os i32 (call $val_payload (local.get $ob)))
@@ -2006,6 +2008,9 @@
   (if (i32.eq (local.get $id) (i32.const 81))  ;; Object.create(proto)
     (then
       (let $crp i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; proto must be an object or null
+      (if (i32.eqz (i32.or (call $is_object (local.get $crp)) (i32.or (call $is_null (local.get $crp)) (i32.or (call $is_array (local.get $crp)) (call $is_function (local.get $crp))))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
       (let $cro i32 (call $obj_new (i32.const 8)))
       (if (call $is_object (local.get $crp)) (then (i32.store (local.get $cro) (call $val_payload (local.get $crp)))))
       ;; optional 2nd arg: property descriptors (like defineProperties)
@@ -2026,6 +2031,18 @@
             (set! $ci (i32.add (local.get $ci) (i32.const 1)))
             (br $ccl)))))
       (return (call $mk_obj (local.get $cro)))))
+  (if (i32.eq (local.get $id) (i32.const 243))  ;; Object.setPrototypeOf(o, proto)
+    (then
+      (let $spo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $spp i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.or (call $is_null (local.get $spo)) (call $is_undefined (local.get $spo)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Object.setPrototypeOf called on null or undefined")) (return (call $v_undef))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $spp)) (call $is_null (local.get $spp))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
+      (if (call $is_object (local.get $spo))
+        (then (i32.store (call $val_payload (local.get $spo))
+                (if i32 (call $is_object (local.get $spp)) (then (call $val_payload (local.get $spp))) (else (i32.const 0))))))
+      (return (local.get $spo))))
   (if (i32.eq (local.get $id) (i32.const 82))  ;; Object.getPrototypeOf(o)
     (then
       (let $ov i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -3065,6 +3082,7 @@
   (call $set_prop (local.get $objf) (call $mk_str (cstring "isFrozen")) (call $mk_native (i32.const 140) (cstring "isFrozen")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "create")) (call $mk_native (i32.const 81) (cstring "create")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getPrototypeOf")) (call $mk_native (i32.const 82) (cstring "getPrototypeOf")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "setPrototypeOf")) (call $mk_native (i32.const 243) (cstring "setPrototypeOf")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "defineProperty")) (call $mk_native (i32.const 90) (cstring "defineProperty")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getOwnPropertyDescriptor")) (call $mk_native (i32.const 156) (cstring "getOwnPropertyDescriptor")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "defineProperties")) (call $mk_native (i32.const 160) (cstring "defineProperties")))
