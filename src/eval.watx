@@ -2573,6 +2573,52 @@
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eq (local.get $id) (i32.const 273))  ;; toReversed() → new reversed array
+        (then
+          (let $tr i32 (call $arr_new (i32.add (local.get $n) (i32.const 1))))
+          (let $tri i32 (i32.const 0))
+          (block $tre (loop $trl
+            (br_if $tre (i32.ge_s (local.get $tri) (local.get $n)))
+            (call $arr_push (local.get $tr) (call $arr_get (local.get $arr) (i32.sub (i32.sub (local.get $n) (i32.const 1)) (local.get $tri))))
+            (set! $tri (i32.add (local.get $tri) (i32.const 1))) (br $trl)))
+          (return (call $mk_arr (local.get $tr)))))
+      (if (i32.eq (local.get $id) (i32.const 275))  ;; with(index, value) → copy with one element replaced
+        (then
+          (let $wi i32 (call $to_int_idx (call $to_num (local.get $a0))))
+          (if (i32.lt_s (local.get $wi) (i32.const 0)) (then (set! $wi (i32.add (local.get $n) (local.get $wi)))))
+          (if (i32.or (i32.lt_s (local.get $wi) (i32.const 0)) (i32.ge_s (local.get $wi) (local.get $n)))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid index")) (return (call $v_undef))))
+          (let $wr i32 (call $arr_new (i32.add (local.get $n) (i32.const 1))))
+          (let $wj i32 (i32.const 0))
+          (block $we (loop $wl
+            (br_if $we (i32.ge_s (local.get $wj) (local.get $n)))
+            (if (i32.eq (local.get $wj) (local.get $wi))
+              (then (call $arr_push (local.get $wr) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+              (else (call $arr_push (local.get $wr) (call $arr_get (local.get $arr) (local.get $wj)))))
+            (set! $wj (i32.add (local.get $wj) (i32.const 1))) (br $wl)))
+          (return (call $mk_arr (local.get $wr)))))
+      (if (i32.eq (local.get $id) (i32.const 274))  ;; toSorted([cmp]) → sorted copy
+        (then
+          (let $tsr i32 (call $arr_new (i32.add (local.get $n) (i32.const 1))))
+          (let $tsi i32 (i32.const 0))
+          (block $tse (loop $tsl
+            (br_if $tse (i32.ge_s (local.get $tsi) (local.get $n)))
+            (call $arr_push (local.get $tsr) (call $arr_get (local.get $arr) (local.get $tsi)))
+            (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $tsl)))
+          ;; insertion sort the copy
+          (set! $tsi (i32.const 1))
+          (block $oe (loop $ol
+            (br_if $oe (i32.ge_s (local.get $tsi) (local.get $n)))
+            (let $cur i64 (call $arr_get (local.get $tsr) (local.get $tsi)))
+            (let $j i32 (i32.sub (local.get $tsi) (i32.const 1)))
+            (block $ie2 (loop $il2
+              (br_if $ie2 (i32.lt_s (local.get $j) (i32.const 0)))
+              (br_if $ie2 (i32.le_s (call $sort_cmp (local.get $a0) (call $arr_get (local.get $tsr) (local.get $j)) (local.get $cur)) (i32.const 0)))
+              (call $arr_set (local.get $tsr) (i32.add (local.get $j) (i32.const 1)) (call $arr_get (local.get $tsr) (local.get $j)))
+              (set! $j (i32.sub (local.get $j) (i32.const 1))) (br $il2)))
+            (call $arr_set (local.get $tsr) (i32.add (local.get $j) (i32.const 1)) (local.get $cur))
+            (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $ol)))
+          (return (call $mk_arr (local.get $tsr)))))
       (if (i32.eq (local.get $id) (i32.const 35))  ;; splice(start, deleteCount, ...items)
         (then
           (let $ss i32 (call $to_int_idx (call $to_num (local.get $a0))))
@@ -3018,6 +3064,8 @@
     (then (return (i32.const 1))))
   (if (i32.eq (local.get $id) (i32.const 168)) (then (return (i32.const 2))))  ;; copyWithin
   (if (i32.or (i32.eq (local.get $id) (i32.const 270)) (i32.eq (local.get $id) (i32.const 271))) (then (return (i32.const 1))))  ;; String concat, lastIndexOf
+  (if (i32.eq (local.get $id) (i32.const 274)) (then (return (i32.const 1))))  ;; Array toSorted
+  (if (i32.eq (local.get $id) (i32.const 275)) (then (return (i32.const 2))))  ;; Array with
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
   ;; Date.now(179), Symbol.toString(199), Number/Boolean valueOf(220), Boolean.toString(221)
   (if (i32.or (i32.eq (local.get $id) (i32.const 18)) (i32.or (i32.eq (local.get $id) (i32.const 155)) (i32.or (i32.eq (local.get $id) (i32.const 179)) (i32.or (i32.eq (local.get $id) (i32.const 199)) (i32.or (i32.eq (local.get $id) (i32.const 220)) (i32.eq (local.get $id) (i32.const 221)))))))
@@ -3371,6 +3419,9 @@
   (call $scope_define (local.get $ap) (cstring "splice") (call $mk_native (i32.const 35) (cstring "splice")))
   (call $scope_define (local.get $ap) (cstring "shift") (call $mk_native (i32.const 36) (cstring "shift")))
   (call $scope_define (local.get $ap) (cstring "unshift") (call $mk_native (i32.const 225) (cstring "unshift")))
+  (call $scope_define (local.get $ap) (cstring "toReversed") (call $mk_native (i32.const 273) (cstring "toReversed")))
+  (call $scope_define (local.get $ap) (cstring "toSorted") (call $mk_native (i32.const 274) (cstring "toSorted")))
+  (call $scope_define (local.get $ap) (cstring "with") (call $mk_native (i32.const 275) (cstring "with")))
   (call $scope_define (local.get $ap) (cstring "pop") (call $mk_native (i32.const 21) (cstring "pop")))
   (call $scope_define (local.get $ap) (cstring "indexOf") (call $mk_native (i32.const 22) (cstring "indexOf")))
   (call $scope_define (local.get $ap) (cstring "join") (call $mk_native (i32.const 23) (cstring "join")))
