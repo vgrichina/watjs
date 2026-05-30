@@ -1250,7 +1250,11 @@
   (if (i32.and
         (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
         (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
-                (i32.and (i32.ge_s (local.get $id) (i32.const 60)) (i32.le_s (local.get $id) (i32.const 68)))))
+        (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 60)) (i32.le_s (local.get $id) (i32.const 68)))
+        (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 102)) (i32.le_s (local.get $id) (i32.const 104)))  ;; match/replace/search
+        (i32.or (i32.eq (local.get $id) (i32.const 109)) (i32.or (i32.eq (local.get $id) (i32.const 141))  ;; replaceAll
+        (i32.or (i32.eq (local.get $id) (i32.const 113)) (i32.or (i32.eq (local.get $id) (i32.const 114))  ;; trimStart/trimEnd
+        (i32.or (i32.eq (local.get $id) (i32.const 138)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.eq (local.get $id) (i32.const 173)))))))))))) ;; substr/localeCompare/matchAll
     (then (call $throw_type (cstring "TypeError") (cstring "String.prototype method called on null or undefined")) (return (call $v_undef))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 270)) (i32.le_s (local.get $id) (i32.const 272)))  ;; String concat/lastIndexOf/normalize
     (then
