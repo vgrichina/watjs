@@ -412,6 +412,51 @@
     (br $l)))
   (local.get $s))
 
+;; weekday (0=Sun) and month (0=Jan) 3-letter names for Date toString-family
+(func $wday_name (param $w i32) (result i32) (effects)
+  (if (i32.eq (local.get $w) (i32.const 0)) (then (return (cstring "Sun"))))
+  (if (i32.eq (local.get $w) (i32.const 1)) (then (return (cstring "Mon"))))
+  (if (i32.eq (local.get $w) (i32.const 2)) (then (return (cstring "Tue"))))
+  (if (i32.eq (local.get $w) (i32.const 3)) (then (return (cstring "Wed"))))
+  (if (i32.eq (local.get $w) (i32.const 4)) (then (return (cstring "Thu"))))
+  (if (i32.eq (local.get $w) (i32.const 5)) (then (return (cstring "Fri"))))
+  (cstring "Sat"))
+(func $month_name (param $m i32) (result i32) (effects)
+  (if (i32.eq (local.get $m) (i32.const 0)) (then (return (cstring "Jan"))))
+  (if (i32.eq (local.get $m) (i32.const 1)) (then (return (cstring "Feb"))))
+  (if (i32.eq (local.get $m) (i32.const 2)) (then (return (cstring "Mar"))))
+  (if (i32.eq (local.get $m) (i32.const 3)) (then (return (cstring "Apr"))))
+  (if (i32.eq (local.get $m) (i32.const 4)) (then (return (cstring "May"))))
+  (if (i32.eq (local.get $m) (i32.const 5)) (then (return (cstring "Jun"))))
+  (if (i32.eq (local.get $m) (i32.const 6)) (then (return (cstring "Jul"))))
+  (if (i32.eq (local.get $m) (i32.const 7)) (then (return (cstring "Aug"))))
+  (if (i32.eq (local.get $m) (i32.const 8)) (then (return (cstring "Sep"))))
+  (if (i32.eq (local.get $m) (i32.const 9)) (then (return (cstring "Oct"))))
+  (if (i32.eq (local.get $m) (i32.const 10)) (then (return (cstring "Nov"))))
+  (cstring "Dec"))
+;; format a Date's time value: mode 0=full toString, 1=date, 2=time, 3=UTCString
+(func $date_fmt (param $dtm f64) (param $mode i32) (result i32) (effects)
+  (if (f64.ne (local.get $dtm) (local.get $dtm)) (then (return (cstring "Invalid Date"))))
+  (let $datep i32 (call $str_concat (call $str_concat (call $str_concat (call $str_concat (call $str_concat (call $str_concat
+    (call $wday_name (call $date_field (local.get $dtm) (i32.const 3))) (cstring " "))
+    (call $month_name (call $date_field (local.get $dtm) (i32.const 1)))) (cstring " "))
+    (call $date_pad (call $date_field (local.get $dtm) (i32.const 2)) (i32.const 2))) (cstring " "))
+    (call $date_pad (call $date_field (local.get $dtm) (i32.const 0)) (i32.const 4))))
+  (let $timep i32 (call $str_concat (call $str_concat (call $str_concat (call $str_concat
+    (call $date_pad (call $date_field (local.get $dtm) (i32.const 4)) (i32.const 2)) (cstring ":"))
+    (call $date_pad (call $date_field (local.get $dtm) (i32.const 5)) (i32.const 2))) (cstring ":"))
+    (call $date_pad (call $date_field (local.get $dtm) (i32.const 6)) (i32.const 2))))
+  (if (i32.eq (local.get $mode) (i32.const 1)) (then (return (local.get $datep))))
+  (if (i32.eq (local.get $mode) (i32.const 2)) (then (return (call $str_concat (local.get $timep) (cstring " GMT+0000 (Coordinated Universal Time)")))))
+  (if (i32.eq (local.get $mode) (i32.const 3))  ;; UTCString: "Thu, 01 Jan 1970 00:00:00 GMT"
+    (then (return (call $str_concat (call $str_concat (call $str_concat (call $str_concat (call $str_concat (call $str_concat (call $str_concat (call $str_concat (call $str_concat
+      (call $wday_name (call $date_field (local.get $dtm) (i32.const 3))) (cstring ", "))
+      (call $date_pad (call $date_field (local.get $dtm) (i32.const 2)) (i32.const 2))) (cstring " "))
+      (call $month_name (call $date_field (local.get $dtm) (i32.const 1)))) (cstring " "))
+      (call $date_pad (call $date_field (local.get $dtm) (i32.const 0)) (i32.const 4))) (cstring " "))
+      (local.get $timep)) (cstring " GMT")))))
+  (call $str_concat (call $str_concat (local.get $datep) (cstring " ")) (call $str_concat (local.get $timep) (cstring " GMT+0000 (Coordinated Universal Time)"))))
+
 ;; truncate a split() result array to the optional limit argument (arg index 1).
 (func $split_apply_limit (param $arr i32) (param $argv i32) (param $argc i32) (effects)
   (if (i32.ge_s (local.get $argc) (i32.const 2))
@@ -1485,6 +1530,31 @@
       (let $dnt f64 (call $date_make (local.get $dsy) (local.get $dsmo) (local.get $dsd) (local.get $dsh) (local.get $dsmi) (local.get $dss) (local.get $dsms)))
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $dnt)))
       (return (call $num (local.get $dnt)))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 258)) (i32.or (i32.eq (local.get $id) (i32.const 262)) (i32.or (i32.eq (local.get $id) (i32.const 263)) (i32.or (i32.eq (local.get $id) (i32.const 264)) (i32.or (i32.eq (local.get $id) (i32.const 265)) (i32.or (i32.eq (local.get $id) (i32.const 266)) (i32.eq (local.get $id) (i32.const 267))))))))  ;; Date toString family
+    (then
+      (let $ftm f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
+      (let $fmode i32 (i32.const 0))
+      (if (i32.or (i32.eq (local.get $id) (i32.const 262)) (i32.eq (local.get $id) (i32.const 266))) (then (set! $fmode (i32.const 1))))  ;; date
+      (if (i32.or (i32.eq (local.get $id) (i32.const 263)) (i32.eq (local.get $id) (i32.const 267))) (then (set! $fmode (i32.const 2))))  ;; time
+      (if (i32.eq (local.get $id) (i32.const 264)) (then (set! $fmode (i32.const 3))))  ;; UTCString
+      (return (call $mk_str (call $date_fmt (local.get $ftm) (local.get $fmode))))))
+  (if (i32.eq (local.get $id) (i32.const 260))  ;; getYear() → getFullYear - 1900
+    (then
+      (let $gytm f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
+      (if (f64.ne (local.get $gytm) (local.get $gytm)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+      (return (call $num (f64.convert_i32_s (i32.sub (call $date_field (local.get $gytm) (i32.const 0)) (i32.const 1900)))))))
+  (if (i32.eq (local.get $id) (i32.const 261))  ;; setYear(y): 0..99 → 1900+y
+    (then
+      (let $sytm f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
+      (if (f64.ne (local.get $sytm) (local.get $sytm)) (then (set! $sytm (f64.const 0))))
+      (let $syvf f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (i32.eqz (call $f64_safe_i64 (local.get $syvf)))
+        (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+      (let $syv i64 (i64.trunc_f64_s (local.get $syvf)))
+      (if (i32.and (i64.ge_s (local.get $syv) (i64.const 0)) (i64.le_s (local.get $syv) (i64.const 99))) (then (set! $syv (i64.add (local.get $syv) (i64.const 1900)))))
+      (let $synt f64 (call $date_make (local.get $syv) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 1))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 2))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 4))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 5))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 6))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 7)))))
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $synt)))
+      (return (call $num (local.get $synt)))))
   (if (i32.eq (local.get $id) (i32.const 143))  ;; arguments[@@iterator]() → iterator (this = arguments obj)
     (then
       (let $it i32 (call $obj_new (i32.const 4)))
@@ -2792,6 +2862,7 @@
   (if (i32.eq (local.get $id) (i32.const 254)) (then (return (i32.const 3))))  ;; setMinutes
   (if (i32.or (i32.eq (local.get $id) (i32.const 249)) (i32.or (i32.eq (local.get $id) (i32.const 252)) (i32.eq (local.get $id) (i32.const 256)))) (then (return (i32.const 1))))  ;; setTime, setDate, setMilliseconds
   (if (i32.eq (local.get $id) (i32.const 259)) (then (return (i32.const 7))))  ;; Date.UTC
+  (if (i32.eq (local.get $id) (i32.const 261)) (then (return (i32.const 1))))  ;; Date setYear
   (if (i32.or (i32.eq (local.get $id) (i32.const 11)) (i32.or (i32.eq (local.get $id) (i32.const 12)) (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.or (i32.eq (local.get $id) (i32.const 67)) (i32.eq (local.get $id) (i32.const 153))))))
     (then (return (i32.const 1))))  ;; charAt, charCodeAt, padStart, padEnd, bind
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
@@ -3261,6 +3332,16 @@
   (call $scope_define (local.get $dproto) (cstring "setUTCMilliseconds") (call $mk_native (i32.const 256) (cstring "setUTCMilliseconds")))
   (call $scope_define (local.get $dproto) (cstring "getTimezoneOffset") (call $mk_native (i32.const 257) (cstring "getTimezoneOffset")))
   (call $set_prop (local.get $datef) (call $mk_str (cstring "UTC")) (call $mk_native (i32.const 259) (cstring "UTC")))
+  (call $scope_define (local.get $dproto) (cstring "toString") (call $mk_native (i32.const 258) (cstring "toString")))
+  (call $scope_define (local.get $dproto) (cstring "toDateString") (call $mk_native (i32.const 262) (cstring "toDateString")))
+  (call $scope_define (local.get $dproto) (cstring "toTimeString") (call $mk_native (i32.const 263) (cstring "toTimeString")))
+  (call $scope_define (local.get $dproto) (cstring "toUTCString") (call $mk_native (i32.const 264) (cstring "toUTCString")))
+  (call $scope_define (local.get $dproto) (cstring "toGMTString") (call $mk_native (i32.const 264) (cstring "toGMTString")))
+  (call $scope_define (local.get $dproto) (cstring "toLocaleString") (call $mk_native (i32.const 265) (cstring "toLocaleString")))
+  (call $scope_define (local.get $dproto) (cstring "toLocaleDateString") (call $mk_native (i32.const 266) (cstring "toLocaleDateString")))
+  (call $scope_define (local.get $dproto) (cstring "toLocaleTimeString") (call $mk_native (i32.const 267) (cstring "toLocaleTimeString")))
+  (call $scope_define (local.get $dproto) (cstring "getYear") (call $mk_native (i32.const 260) (cstring "getYear")))
+  (call $scope_define (local.get $dproto) (cstring "setYear") (call $mk_native (i32.const 261) (cstring "setYear")))
   ;; Promise constructor (synchronous resolved-value model; see vm.watx)
   (let $promf i64 (call $def_native (local.get $g) (cstring "Promise") (i32.const 192)))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "resolve")) (call $mk_native (i32.const 151) (cstring "resolve")))
