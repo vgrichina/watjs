@@ -1983,14 +1983,35 @@
 ;; exists before its declaration line — `x; var x = 1;` sees undefined, not a
 ;; ReferenceError. Nested function bodies are skipped (their vars hoist to them).
 ;; Single-declarator form, mirroring the re-scan engine's hoist_vars.
+;; A statement-position `function name(){}` (paren-depth 0, after start/;/{/})
+;; is a DECLARATION → hoist it. Anything else (e.g. `while(function f(){})`,
+;; `x = function g(){}`) is a function EXPRESSION → its name must NOT leak, so
+;; just skip its body. $pd = paren/bracket depth, $prevk = previous token kind.
 (func $vm_hoist (param $code i32) (effects)
+  (let $pd i32 (i32.const 0))
+  (let $prevk i32 (i32.const 0))
+  (call $next_token)
   (block $done (loop $scan
-    (call $next_token)
     (let $k i32 (call $tok_kind))
     (br_if $done (i32.eq (local.get $k) (i32.const 0)))
+    (if (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.eq (local.get $k) (i32.const 19)))
+      (then (set! $pd (i32.add (local.get $pd) (i32.const 1)))))
+    (if (i32.and (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.eq (local.get $k) (i32.const 20))) (i32.gt_s (local.get $pd) (i32.const 0)))
+      (then (set! $pd (i32.sub (local.get $pd) (i32.const 1)))))
     (if (i32.eq (local.get $k) (i32.const 3))
       (then
-        (if (call $tok_is_kw (cstring "function")) (then (call $hoist_skip_fn)))
+        (if (call $tok_is_kw (cstring "function"))
+          (then
+            (if (i32.and (i32.eqz (local.get $pd))
+                  (i32.or (i32.eqz (local.get $prevk)) (i32.or (i32.eq (local.get $prevk) (i32.const 21)) (i32.or (i32.eq (local.get $prevk) (i32.const 17)) (i32.eq (local.get $prevk) (i32.const 18))))))
+              (then  ;; declaration → compile + bind here (cursor ends at next statement)
+                (let $hfnm i32 (call $vm_c_function (local.get $code)))
+                (if (local.get $hfnm)
+                  (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $hfnm)))
+                  (else (call $vm_emit_op (local.get $code) (i32.const 11))))
+                (set! $prevk (i32.const 18)))
+              (else (call $hoist_skip_fn)))  ;; expression → skip body (cursor at '}')
+            (br $scan)))
         (if (call $tok_is_kw (cstring "var"))
           (then
             (call $next_token)
@@ -1998,6 +2019,8 @@
               (then
                 (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
                 (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (call $ident_name))))))))
+    (set! $prevk (local.get $k))
+    (call $next_token)
     (br $scan))))
 
 (func $vm_compile_prog (param $ptr i32) (param $len i32) (result i32) (effects)
@@ -2035,7 +2058,10 @@
   (block $e (loop $l
     (br_if $e (i32.eq (call $tok_kind) (i32.const 0)))
     (br_if $e (call $err))
-    (call $vm_c_stmt (local.get $code))
+    ;; top-level `function name(){}` was already compiled+bound by vm_hoist — skip it
+    (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "function")))
+      (then (call $hoist_skip_fn) (call $next_token))
+      (else (call $vm_c_stmt (local.get $code))))
     (br $l)))
   (call $vm_emit_op (local.get $code) (i32.const 0))  ;; HALT
   (local.get $code))
