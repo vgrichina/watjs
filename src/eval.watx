@@ -1622,6 +1622,13 @@
       (return (call $mk_obj (local.get $dobj)))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 182)) (i32.le_s (local.get $id) (i32.const 191)))  ;; Date getters (this = date obj)
     (then
+      ;; `this` must be a Date (own @@time slot), else TypeError (guard the deref:
+      ;; val_payload of a non-object would be a bogus scope pointer)
+      (let $disdate i32 (i32.const 0))
+      (if (call $is_object (local.get $thisv))
+        (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time")) (then (set! $disdate (i32.const 1))))))
+      (if (i32.eqz (local.get $disdate))
+        (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
       (let $dtm f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
       (if (i32.eq (local.get $id) (i32.const 182)) (then (return (call $num (local.get $dtm)))))  ;; getTime/valueOf
       ;; Invalid Date (NaN time): getters → NaN, toISOString/toJSON → RangeError
