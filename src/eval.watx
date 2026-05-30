@@ -2959,6 +2959,24 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 261)) (i32.or (i32.eq (local.get $id) (i32.const 268)) (i32.eq (local.get $id) (i32.const 269)))) (then (return (i32.const 1))))  ;; Date setYear, Date.parse, String.raw
   (if (i32.or (i32.eq (local.get $id) (i32.const 11)) (i32.or (i32.eq (local.get $id) (i32.const 12)) (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.or (i32.eq (local.get $id) (i32.const 67)) (i32.eq (local.get $id) (i32.const 153))))))
     (then (return (i32.const 1))))  ;; charAt, charCodeAt, padStart, padEnd, bind
+  ;; String.prototype length-1 methods + String.fromCharCode/fromCodePoint
+  (if (i32.or (i32.eq (local.get $id) (i32.const 13)) (i32.or (i32.eq (local.get $id) (i32.const 62)) (i32.or (i32.eq (local.get $id) (i32.const 63)) (i32.or (i32.eq (local.get $id) (i32.const 64)) (i32.or (i32.eq (local.get $id) (i32.const 65)) (i32.eq (local.get $id) (i32.const 68)))))))
+    (then (return (i32.const 1))))  ;; indexOf, repeat, includes, startsWith, endsWith, at
+  (if (i32.or (i32.eq (local.get $id) (i32.const 87)) (i32.or (i32.eq (local.get $id) (i32.const 102)) (i32.or (i32.eq (local.get $id) (i32.const 104)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.eq (local.get $id) (i32.const 173))))))
+    (then (return (i32.const 1))))  ;; fromCharCode/fromCodePoint, match, search, localeCompare, matchAll
+  ;; String.prototype length-2 methods
+  (if (i32.or (i32.eq (local.get $id) (i32.const 60)) (i32.or (i32.eq (local.get $id) (i32.const 103)) (i32.or (i32.eq (local.get $id) (i32.const 138)) (i32.eq (local.get $id) (i32.const 141)))))
+    (then (return (i32.const 2))))  ;; split, replace, substr, replaceAll
+  ;; Array.prototype length-1 methods (push/indexOf/join/forEach/map/includes/at/
+  ;; fill/lastIndexOf/flatMap/findLast/findLastIndex/concat/filter/reduce/find/
+  ;; findIndex/some/every/sort/reduceRight)
+  (if (i32.or (i32.eq (local.get $id) (i32.const 20)) (i32.or (i32.eq (local.get $id) (i32.const 22)) (i32.or (i32.eq (local.get $id) (i32.const 23)) (i32.or (i32.eq (local.get $id) (i32.const 25)) (i32.or (i32.eq (local.get $id) (i32.const 26)) (i32.or (i32.eq (local.get $id) (i32.const 27)) (i32.eq (local.get $id) (i32.const 28))))))))
+    (then (return (i32.const 1))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 29)) (i32.or (i32.eq (local.get $id) (i32.const 30)) (i32.or (i32.eq (local.get $id) (i32.const 32)) (i32.or (i32.eq (local.get $id) (i32.const 33)) (i32.or (i32.eq (local.get $id) (i32.const 34)) (i32.eq (local.get $id) (i32.const 70)))))))
+    (then (return (i32.const 1))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 72)) (i32.or (i32.eq (local.get $id) (i32.const 73)) (i32.or (i32.eq (local.get $id) (i32.const 74)) (i32.or (i32.eq (local.get $id) (i32.const 75)) (i32.or (i32.eq (local.get $id) (i32.const 76)) (i32.or (i32.eq (local.get $id) (i32.const 77)) (i32.or (i32.eq (local.get $id) (i32.const 78)) (i32.eq (local.get $id) (i32.const 137)))))))))
+    (then (return (i32.const 1))))
+  (if (i32.eq (local.get $id) (i32.const 168)) (then (return (i32.const 2))))  ;; copyWithin
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
   ;; Date.now(179), Symbol.toString(199), Number/Boolean valueOf(220), Boolean.toString(221)
   (if (i32.or (i32.eq (local.get $id) (i32.const 18)) (i32.or (i32.eq (local.get $id) (i32.const 155)) (i32.or (i32.eq (local.get $id) (i32.const 179)) (i32.or (i32.eq (local.get $id) (i32.const 199)) (i32.or (i32.eq (local.get $id) (i32.const 220)) (i32.eq (local.get $id) (i32.const 221)))))))
