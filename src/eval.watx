@@ -596,7 +596,22 @@
   (if (i32.eq (local.get $id) (i32.const 4))  ;; Number(x)
     (then
       (if (i32.eqz (local.get $argc)) (then (return (call $num (f64.const 0)))))
-      (return (call $num (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+      (let $nbv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_bigint (local.get $nbv)) (then (return (call $num (f64.convert_i64_s (call $bigint_val (local.get $nbv)))))))  ;; Number(bigint)
+      (return (call $num (call $to_num (local.get $nbv))))))
+  (if (i32.eq (local.get $id) (i32.const 247))  ;; BigInt(x)
+    (then
+      (let $bgv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_bigint (local.get $bgv)) (then (return (local.get $bgv))))
+      (if (call $is_boolean (local.get $bgv)) (then (return (call $mk_bigint (i64.extend_i32_u (call $val_payload (local.get $bgv)))))))
+      (if (call $is_number (local.get $bgv))
+        (then
+          (let $bgf f64 (call $tonum_raw (local.get $bgv)))
+          (if (i32.or (f64.ne (local.get $bgf) (local.get $bgf)) (f64.ne (local.get $bgf) (f64.nearest (local.get $bgf))))
+            (then (call $throw_type (cstring "RangeError") (cstring "The number is not a safe integer")) (return (call $v_undef))))
+          (return (call $mk_bigint (i64.trunc_f64_s (local.get $bgf))))))
+      (if (call $is_string (local.get $bgv)) (then (return (call $mk_bigint (i64.trunc_f64_s (call $str_to_num (call $val_payload (local.get $bgv))))))))
+      (call $throw_type (cstring "TypeError") (cstring "Cannot convert to a BigInt")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 5))  ;; String(x)
     (then
       (if (i32.eqz (local.get $argc)) (then (return (call $mk_str (cstring "")))))
@@ -3069,6 +3084,7 @@
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $ap)))  ;; Array.prototype
   (call $scope_define (local.get $ap) (cstring "constructor") (local.get $arrf))  ;; Array.prototype.constructor === Array
+  (drop (call $def_native (local.get $g) (cstring "BigInt") (i32.const 247)))
   (drop (call $def_native (local.get $g) (cstring "Map") (i32.const 120)))
   (drop (call $def_native (local.get $g) (cstring "Set") (i32.const 130)))
   (let $datef i64 (call $def_native (local.get $g) (cstring "Date") (i32.const 180)))

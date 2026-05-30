@@ -195,6 +195,10 @@
             (set! $ei (i32.add (local.get $ei) (i32.const 1)))
             (br $xl)))))))
   (f64.store (i32.const 32) (local.get $val))
+  ;; trailing 'n' → BigInt literal (flag at mem 304, read by the number-literal compiler)
+  (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 110))
+    (then (i32.store (i32.const 304) (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))))
+    (else (i32.store (i32.const 304) (i32.const 0))))
   (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start))))
 
 ;; Lex a radix literal (16/8/2). Assumes cursor at the leading '0'; consumes
@@ -217,6 +221,9 @@
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $dl)))
   (f64.store (i32.const 32) (local.get $val))
+  (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 110))  ;; 0xFFn etc.
+    (then (i32.store (i32.const 304) (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))))
+    (else (i32.store (i32.const 304) (i32.const 0))))
   (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start))))
 
 ;; 10^e for integer-ish e (handles +/-), by repeated mult.

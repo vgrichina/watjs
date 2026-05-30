@@ -242,7 +242,9 @@
   (if (i32.eq (call $tok_kind) (i32.const 1))  ;; NUM literal
     (then
       (call $vm_emit_op (local.get $code) (i32.const 1))      ;; PUSH
-      (call $vm_emit_val (local.get $code) (call $num (call $tok_num)))
+      (if (i32.load (i32.const 304))  ;; BigInt literal (123n)
+        (then (call $vm_emit_val (local.get $code) (call $mk_bigint (i64.trunc_f64_s (call $tok_num)))))
+        (else (call $vm_emit_val (local.get $code) (call $num (call $tok_num)))))
       (call $next_token)
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 53))  ;; template literal
