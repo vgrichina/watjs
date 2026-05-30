@@ -3526,7 +3526,21 @@
   ;; global NaN / Infinity / undefined
   (call $scope_define (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))
-  (call $scope_define (local.get $g) (cstring "undefined") (call $v_undef)))
+  (call $scope_define (local.get $g) (cstring "undefined") (call $v_undef))
+  ;; built-ins are non-enumerable (spec: DontEnum) — clear enum on every builtin
+  ;; object/prototype and each constructor's static-method scope. Done last so it
+  ;; covers everything defined above.
+  (call $scope_clear_enum (local.get $g))
+  (call $scope_clear_enum (i32.load (i32.const 156)))   ;; String.prototype
+  (call $scope_clear_enum (i32.load (i32.const 160)))   ;; Array.prototype
+  (call $scope_clear_enum (i32.load (i32.const 164)))   ;; Number.prototype
+  (call $scope_clear_enum (local.get $objproto))
+  (call $scope_clear_enum (local.get $mo))
+  (call $scope_clear_enum (local.get $jo))
+  (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $strf))))
+  (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $numf))))
+  (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $arrf))))
+  (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $objf)))))
 
 (func $eval_program (effects)
   (let $g i32 (call $scope_new (i32.const 0) (i32.const 256)))  ;; global scope
