@@ -2659,8 +2659,17 @@
       (if (i32.eqz (i32.or (call $is_object (local.get $spp)) (call $is_null (local.get $spp))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
       (if (call $is_object (local.get $spo))
-        (then (i32.store (call $val_payload (local.get $spo))
-                (if i32 (call $is_object (local.get $spp)) (then (call $val_payload (local.get $spp))) (else (i32.const 0))))))
+        (then
+          (let $sposc i32 (call $val_payload (local.get $spo)))
+          (let $newp i32 (if i32 (call $is_object (local.get $spp)) (then (call $val_payload (local.get $spp))) (else (i32.const 0))))
+          ;; reject a cyclic prototype (would make scope_find loop forever)
+          (let $wc i32 (local.get $newp))
+          (block $cyc (loop $cycl
+            (br_if $cyc (i32.eqz (local.get $wc)))
+            (if (i32.eq (local.get $wc) (local.get $sposc)) (then (call $throw_type (cstring "TypeError") (cstring "Cyclic __proto__ value")) (return (call $v_undef))))
+            (set! $wc (call $scope_parent (local.get $wc)))
+            (br $cycl)))
+          (i32.store (local.get $sposc) (local.get $newp))))
       (return (local.get $spo))))
   (if (i32.eq (local.get $id) (i32.const 82))  ;; Object.getPrototypeOf(o)
     (then
@@ -3943,6 +3952,16 @@
   (call $scope_define (local.get $objproto) (cstring "propertyIsEnumerable") (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))
   (call $scope_define (local.get $objproto) (cstring "constructor") (local.get $objf))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $objproto)))
+  ;; register Object.prototype as the [[Prototype]] root (obj_new links new
+  ;; objects to it) and chain the builtin prototypes to it so `x instanceof
+  ;; Object` holds and Object.prototype methods are inherited everywhere.
+  (i32.store (i32.const 328) (local.get $objproto))
+  (if (i32.load (i32.const 160)) (then (i32.store (i32.load (i32.const 160)) (local.get $objproto))))  ;; Array.prototype
+  (if (i32.load (i32.const 156)) (then (i32.store (i32.load (i32.const 156)) (local.get $objproto))))  ;; String.prototype
+  (if (i32.load (i32.const 164)) (then (i32.store (i32.load (i32.const 164)) (local.get $objproto))))  ;; Number.prototype
+  (if (i32.load (i32.const 184)) (then (i32.store (i32.load (i32.const 184)) (local.get $objproto))))  ;; Boolean.prototype
+  (if (i32.load (i32.const 308)) (then (i32.store (i32.load (i32.const 308)) (local.get $objproto))))  ;; Date.prototype
+  (if (i32.load (i32.const 324)) (then (i32.store (i32.load (i32.const 324)) (local.get $objproto))))  ;; RegExp.prototype
   ;; Function global — minimal; its .prototype is an empty callable so that
   ;; Function.prototype.call / .apply / .bind resolve (used heavily by the
   ;; test262 propertyHelper harness).

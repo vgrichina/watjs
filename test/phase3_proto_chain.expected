@@ -1,0 +1,8 @@
+obj-Object=true
+arr-Object=true arr-Array=true
+strw-Object=true
+getproto-obj=true
+getproto-arr=true
+inherit-toString=function,function
+setproto=1
+cycle=TypeError

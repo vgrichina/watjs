@@ -16,7 +16,9 @@
 (func $mk_arr (param $ptr i32) (result i64) (effects) (call $box (i32.const 7) (local.get $ptr)))
 
 ;; --- objects ---
-(func $obj_new (param $cap i32) (result i32) (effects) (call $scope_new (i32.const 0) (local.get $cap)))
+;; new object — its [[Prototype]] is Object.prototype (reg 328; 0 during early
+;; setup before Object.prototype exists, and for Object.prototype itself).
+(func $obj_new (param $cap i32) (result i32) (effects) (call $scope_new (i32.load (i32.const 328)) (local.get $cap)))
 
 ;; --- arrays --- header [length:i32 @0][cap:i32 @4][data:i32 @8]; data block separate (growable)
 (func $arr_new (param $cap i32) (result i32) (effects)
