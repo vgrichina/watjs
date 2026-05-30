@@ -723,6 +723,12 @@
           (if (i32.eq (local.get $radix) (i32.const 10)) (then (return (call $mk_str (call $num_to_str (local.get $nv))))))
           (return (call $mk_str (call $num_to_radix (i32.trunc_f64_s (local.get $nv)) (local.get $radix))))))
       (return (call $mk_str (call $num_to_fixed (local.get $nv) (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+  (if (i32.eq (local.get $id) (i32.const 166))  ;; Number.prototype.toPrecision([p])
+    (then
+      (let $nv f64 (call $to_num (local.get $thisv)))
+      (if (i32.eqz (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+        (then (return (call $mk_str (call $num_to_str (local.get $nv))))))  ;; no/undefined arg → ToString
+      (return (call $mk_str (call $num_to_precision (local.get $nv) (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   ;; --- string methods (this = the string) ---
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
     (then
@@ -1861,6 +1867,7 @@
   (i32.store (i32.const 164) (local.get $numproto))
   (call $scope_define (local.get $numproto) (cstring "toString") (call $mk_native (i32.const 145) (cstring "toString")))
   (call $scope_define (local.get $numproto) (cstring "toFixed") (call $mk_native (i32.const 146) (cstring "toFixed")))
+  (call $scope_define (local.get $numproto) (cstring "toPrecision") (call $mk_native (i32.const 166) (cstring "toPrecision")))
   (let $numf i64 (call $def_native (local.get $g) (cstring "Number") (i32.const 4)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
