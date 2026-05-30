@@ -91,9 +91,25 @@
 ;; used as a computed object key.
 (func $mk_symbol (param $ptr i32) (result i64) (effects)
   (call $box (i32.const 3) (local.get $ptr)))
+;; BigInt shares tag 3 (symbol) but its record begins with a brand word
+;; (1112101681 = 'BIG1') that a symbol record (keyStr pointer) never holds.
+;; Stored 64-bit only (no arbitrary precision yet): [brand i32 @0][value i64 @8].
+(func $mk_bigint (param $v i64) (result i64) (effects)
+  (let $p i32 (call $heap_alloc (i32.const 16)))
+  (i32.store (local.get $p) (i32.const 1112101681))
+  (i64.store (i32.add (local.get $p) (i32.const 8)) (local.get $v))
+  (call $box (i32.const 3) (local.get $p)))
+(func $is_bigint (param $v i64) (result i32) (effects)
+  (if i32 (i32.and (i32.eqz (call $is_number (local.get $v))) (i32.eq (call $val_tag (local.get $v)) (i32.const 3)))
+    (then (i32.eq (i32.load (call $val_payload (local.get $v))) (i32.const 1112101681)))
+    (else (i32.const 0))))
+(func $bigint_val (param $v i64) (result i64) (effects)
+  (i64.load (i32.add (call $val_payload (local.get $v)) (i32.const 8))))
+;; symbol = tag 3 that is NOT a bigint
 (func $is_symbol (param $v i64) (result i32) (effects)
-  (i32.and (i32.eqz (call $is_number (local.get $v)))
-           (i32.eq (call $val_tag (local.get $v)) (i32.const 3))))
+  (if i32 (i32.and (i32.eqz (call $is_number (local.get $v))) (i32.eq (call $val_tag (local.get $v)) (i32.const 3)))
+    (then (i32.ne (i32.load (call $val_payload (local.get $v))) (i32.const 1112101681)))
+    (else (i32.const 0))))
 
 ;; --- type predicates ---
 
@@ -127,4 +143,6 @@
                (then (call $val_payload (local.get $v)))
       (else (if i32 (call $is_string (local.get $v))
                (then (i32.gt_s (call $str_len (call $val_payload (local.get $v))) (i32.const 0)))
-      (else (i32.const 1)))))))))))) ;; objects are truthy
+      (else (if i32 (call $is_bigint (local.get $v))
+               (then (i64.ne (call $bigint_val (local.get $v)) (i64.const 0)))  ;; 0n is falsy
+      (else (i32.const 1)))))))))))))) ;; objects/symbols are truthy

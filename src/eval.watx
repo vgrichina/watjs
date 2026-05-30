@@ -2774,6 +2774,7 @@
   (if (call $is_undefined (local.get $v)) (then (return (call $mk_str (cstring "undefined")))))
   (if (call $is_function (local.get $v)) (then (return (call $mk_str (cstring "function")))))
   (if (call $is_symbol (local.get $v)) (then (return (call $mk_str (cstring "symbol")))))
+  (if (call $is_bigint (local.get $v)) (then (return (call $mk_str (cstring "bigint")))))
   (call $mk_str (cstring "object")))  ;; null, object, array
 
 ;; ── primary ──
