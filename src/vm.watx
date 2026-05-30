@@ -1885,6 +1885,57 @@
             (br $dbl)))
           (drop (call $eat (i32.const 21)))
           (return)))))
+  ;; object destructuring assignment statement:  ({a, b: c} = expr)
+  (if (i32.eq (call $tok_kind) (i32.const 15))  ;; '('
+    (then
+      (call $look_save)
+      (call $next_token)  ;; '('
+      (if (i32.eq (call $tok_kind) (i32.const 17))  ;; '{'
+        (then
+          (call $next_token)  ;; '{'
+          (let $oddepth i32 (i32.const 1))
+          (block $odse (loop $odsl
+            (let $odk i32 (call $tok_kind))
+            (br_if $odse (i32.eq (local.get $odk) (i32.const 0)))
+            (if (i32.or (i32.eq (local.get $odk) (i32.const 17)) (i32.or (i32.eq (local.get $odk) (i32.const 19)) (i32.eq (local.get $odk) (i32.const 15)))) (then (set! $oddepth (i32.add (local.get $oddepth) (i32.const 1)))))
+            (if (i32.or (i32.eq (local.get $odk) (i32.const 18)) (i32.or (i32.eq (local.get $odk) (i32.const 20)) (i32.eq (local.get $odk) (i32.const 16))))
+              (then (set! $oddepth (i32.sub (local.get $oddepth) (i32.const 1))) (br_if $odse (i32.eqz (local.get $oddepth)))))
+            (call $next_token) (br $odsl)))
+          (call $next_token)  ;; '}'
+          (let $odisda i32 (i32.eq (call $tok_kind) (i32.const 24)))  ;; '=' → destructuring assignment
+          (call $look_restore)
+          (if (local.get $odisda)
+            (then
+              (call $next_token) (call $next_token)  ;; '(' '{'
+              (let $odsrc i32 (call $heap_alloc (i32.const 256)))
+              (let $odtgt i32 (call $heap_alloc (i32.const 256)))
+              (let $odcnt i32 (i32.const 0))
+              (block $odpe (loop $odpl
+                (br_if $odpe (i32.eq (call $tok_kind) (i32.const 18)))
+                (let $odkey i32 (call $ident_name)) (call $next_token)
+                (i32.store (i32.add (local.get $odsrc) (i32.mul (local.get $odcnt) (i32.const 4))) (local.get $odkey))
+                (if (i32.eq (call $tok_kind) (i32.const 37))  ;; 'key: target'
+                  (then (call $next_token) (i32.store (i32.add (local.get $odtgt) (i32.mul (local.get $odcnt) (i32.const 4))) (call $ident_name)) (call $next_token))
+                  (else (i32.store (i32.add (local.get $odtgt) (i32.mul (local.get $odcnt) (i32.const 4))) (local.get $odkey))))  ;; shorthand
+                (set! $odcnt (i32.add (local.get $odcnt) (i32.const 1)))
+                (br_if $odpe (i32.eqz (call $eat (i32.const 22))))
+                (br $odpl)))
+              (call $next_token) (call $next_token)  ;; '}' '='
+              (call $vm_c_expr (local.get $code))  ;; RHS
+              (call $next_token)  ;; ')'
+              (let $odtmp i32 (call $vm_tmpname))
+              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $odtmp))  ;; STOREVAR tmp
+              (let $odi i32 (i32.const 0))
+              (block $odbe (loop $odbl
+                (br_if $odbe (i32.ge_s (local.get $odi) (local.get $odcnt)))
+                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $odtmp))  ;; LOADVAR tmp
+                (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $odsrc) (i32.mul (local.get $odi) (i32.const 4)))))  ;; GETPROP key
+                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $odtgt) (i32.mul (local.get $odi) (i32.const 4)))))  ;; STOREVAR target
+                (set! $odi (i32.add (local.get $odi) (i32.const 1)))
+                (br $odbl)))
+              (drop (call $eat (i32.const 21)))
+              (return))))
+        (else (call $look_restore)))))
   ;; expression statement → store value to the completion register (op 71), so
   ;; eval()/JSON.parse can read the last expression value. Same stack effect as POP.
   (call $vm_c_commaexpr (local.get $code))
