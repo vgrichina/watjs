@@ -668,6 +668,11 @@
               (return)))
           ;; non-writable data property → ignore the assignment
           (if (i32.eqz (call $entry_writable (local.get $slot))) (then (return)))))
+      ;; adding a NEW own property to a non-extensible object (preventExtensions/
+      ;; seal/freeze) is refused (no own slot yet + @@noext marker present).
+      (if (i32.and (i32.eqz (call $scope_find_local (local.get $o) (local.get $ks)))
+                   (i32.ne (call $scope_find_local (local.get $o) (cstring "@@noext")) (i32.const 0)))
+        (then (return)))
       (call $scope_define (local.get $o) (local.get $ks) (local.get $val))
       (return)))
   (if (call $is_function (local.get $cont))
