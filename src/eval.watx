@@ -2064,6 +2064,45 @@
     (then (return (call $num (f64.promote_f32 (f32.demote_f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 224))  ;; Math.imul(a,b) — 32-bit integer multiply
     (then (return (call $num (f64.convert_i32_s (i32.mul (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 242)))  ;; transcendental Math
+    (then
+      (let $mx f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (i32.eq (local.get $id) (i32.const 226)) (then (return (call $num (call $m_exp (local.get $mx))))))
+      (if (i32.eq (local.get $id) (i32.const 227)) (then (return (call $num (call $m_log (local.get $mx))))))
+      (if (i32.eq (local.get $id) (i32.const 228)) (then (return (call $num (call $m_sin (local.get $mx))))))
+      (if (i32.eq (local.get $id) (i32.const 229)) (then (return (call $num (call $m_cos (local.get $mx))))))
+      (if (i32.eq (local.get $id) (i32.const 230)) (then (return (call $num (f64.div (call $m_sin (local.get $mx)) (call $m_cos (local.get $mx)))))))  ;; tan
+      (if (i32.eq (local.get $id) (i32.const 231))  ;; cbrt
+        (then (if (f64.eq (local.get $mx) (f64.const 0)) (then (return (call $num (local.get $mx)))))
+              (return (call $num (f64.copysign (call $m_exp (f64.div (call $m_log (f64.abs (local.get $mx))) (f64.const 3))) (local.get $mx))))))
+      (if (i32.eq (local.get $id) (i32.const 232)) (then (return (call $num (f64.div (call $m_log (local.get $mx)) (f64.const 0.6931471805599453))))))  ;; log2
+      (if (i32.eq (local.get $id) (i32.const 233)) (then (return (call $num (f64.div (call $m_log (local.get $mx)) (f64.const 2.302585092994046))))))   ;; log10
+      (if (i32.eq (local.get $id) (i32.const 234)) (then (return (call $num (f64.sub (call $m_exp (local.get $mx)) (f64.const 1))))))  ;; expm1
+      (if (i32.eq (local.get $id) (i32.const 235)) (then (return (call $num (call $m_log (f64.add (local.get $mx) (f64.const 1)))))))  ;; log1p
+      (if (i32.eq (local.get $id) (i32.const 236)) (then (return (call $num (f64.mul (f64.sub (call $m_exp (local.get $mx)) (call $m_exp (f64.neg (local.get $mx)))) (f64.const 0.5))))))  ;; sinh
+      (if (i32.eq (local.get $id) (i32.const 237)) (then (return (call $num (f64.mul (f64.add (call $m_exp (local.get $mx)) (call $m_exp (f64.neg (local.get $mx)))) (f64.const 0.5))))))  ;; cosh
+      (if (i32.eq (local.get $id) (i32.const 238))  ;; tanh
+        (then (if (f64.gt (local.get $mx) (f64.const 20)) (then (return (call $num (f64.const 1)))))
+              (if (f64.lt (local.get $mx) (f64.const -20)) (then (return (call $num (f64.const -1)))))
+              (let $e2 f64 (call $m_exp (f64.mul (local.get $mx) (f64.const 2))))
+              (return (call $num (f64.div (f64.sub (local.get $e2) (f64.const 1)) (f64.add (local.get $e2) (f64.const 1)))))))
+      (if (i32.eq (local.get $id) (i32.const 239))  ;; asin
+        (then (if (f64.gt (f64.abs (local.get $mx)) (f64.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+              (return (call $num (call $m_atan (f64.div (local.get $mx) (f64.sqrt (f64.sub (f64.const 1) (f64.mul (local.get $mx) (local.get $mx))))))))))
+      (if (i32.eq (local.get $id) (i32.const 240))  ;; acos
+        (then (if (f64.gt (f64.abs (local.get $mx)) (f64.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+              (return (call $num (f64.sub (f64.const 1.5707963267948966) (call $m_atan (f64.div (local.get $mx) (f64.sqrt (f64.sub (f64.const 1) (f64.mul (local.get $mx) (local.get $mx)))))))))))
+      (if (i32.eq (local.get $id) (i32.const 241)) (then (return (call $num (call $m_atan (local.get $mx))))))  ;; atan
+      ;; atan2(y, x)
+      (let $a2x f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (f64.gt (local.get $a2x) (f64.const 0)) (then (return (call $num (call $m_atan (f64.div (local.get $mx) (local.get $a2x)))))))
+      (if (f64.lt (local.get $a2x) (f64.const 0))
+        (then (if (f64.ge (local.get $mx) (f64.const 0))
+                (then (return (call $num (f64.add (call $m_atan (f64.div (local.get $mx) (local.get $a2x))) (f64.const 3.141592653589793)))))
+                (else (return (call $num (f64.sub (call $m_atan (f64.div (local.get $mx) (local.get $a2x))) (f64.const 3.141592653589793))))))))
+      (if (f64.gt (local.get $mx) (f64.const 0)) (then (return (call $num (f64.const 1.5707963267948966)))))
+      (if (f64.lt (local.get $mx) (f64.const 0)) (then (return (call $num (f64.const -1.5707963267948966)))))
+      (return (call $num (f64.const 0)))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 40)) (i32.le_s (local.get $id) (i32.const 49)))
     (then
       (let $x f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -2364,6 +2403,122 @@
   (call $v_undef))
 
 ;; x ** y for integer y (repeated multiply); fractional y -> NaN (no transcendentals)
+;; ── transcendental math (polynomial approximations + range reduction) ──
+;; Accurate enough for special-value/metadata tests and ordinary use; not
+;; guaranteed correctly-rounded to the last ULP.
+
+;; e^x. Range-reduce x = k*ln2 + r, e^x = 2^k * e^r, e^r via degree-8 Taylor.
+(func $m_exp (param $x f64) (result f64) (effects)
+  (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x))))            ;; NaN
+  (if (f64.gt (local.get $x) (f64.const 709.782712893384)) (then (return (f64.div (f64.const 1) (f64.const 0)))))   ;; +Inf
+  (if (f64.lt (local.get $x) (f64.const -745.1332191019412)) (then (return (f64.const 0))))                          ;; +0
+  (let $k f64 (f64.nearest (f64.div (local.get $x) (f64.const 0.6931471805599453))))
+  (let $r f64 (f64.sub (local.get $x) (f64.mul (local.get $k) (f64.const 0.6931471805599453))))
+  (let $p f64 (f64.const 2.48015873015873e-05))
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 1.984126984126984e-04)))
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 1.388888888888889e-03)))
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 8.333333333333333e-03)))
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 4.1666666666666664e-02)))
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 0.16666666666666666)))
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 0.5)))
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 1)))
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 1)))
+  (f64.mul (local.get $p) (call $f64_pow (f64.const 2) (local.get $k))))
+
+;; ln(x). x = m*2^e with m in [1,2); ln(x) = e*ln2 + ln(m) via atanh series.
+(func $m_log (param $x f64) (result f64) (effects)
+  (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x))))            ;; NaN
+  (if (f64.lt (local.get $x) (f64.const 0)) (then (return (f64.div (f64.const 0) (f64.const 0)))))  ;; <0 → NaN
+  (if (f64.eq (local.get $x) (f64.const 0)) (then (return (f64.div (f64.const -1) (f64.const 0)))))  ;; ±0 → -Inf
+  (if (f64.eq (local.get $x) (f64.div (f64.const 1) (f64.const 0))) (then (return (local.get $x))))  ;; +Inf
+  (let $e f64 (f64.const 0))
+  (let $m f64 (local.get $x))
+  (block $d1 (loop $l1 (br_if $d1 (f64.lt (local.get $m) (f64.const 2))) (set! $m (f64.mul (local.get $m) (f64.const 0.5))) (set! $e (f64.add (local.get $e) (f64.const 1))) (br $l1)))
+  (block $d2 (loop $l2 (br_if $d2 (f64.ge (local.get $m) (f64.const 1))) (set! $m (f64.mul (local.get $m) (f64.const 2))) (set! $e (f64.sub (local.get $e) (f64.const 1))) (br $l2)))
+  (let $t f64 (f64.div (f64.sub (local.get $m) (f64.const 1)) (f64.add (local.get $m) (f64.const 1))))
+  (let $t2 f64 (f64.mul (local.get $t) (local.get $t)))
+  (let $p f64 (f64.const 0.07692307692307693))   ;; 1/13
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $t2)) (f64.const 0.09090909090909091)))  ;; 1/11
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $t2)) (f64.const 0.1111111111111111)))   ;; 1/9
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $t2)) (f64.const 0.14285714285714285)))  ;; 1/7
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $t2)) (f64.const 0.2)))                   ;; 1/5
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $t2)) (f64.const 0.3333333333333333)))    ;; 1/3
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $t2)) (f64.const 1)))
+  (f64.add (f64.mul (local.get $e) (f64.const 0.6931471805599453)) (f64.mul (f64.const 2) (f64.mul (local.get $t) (local.get $p)))))
+
+;; sin(r)/cos(r) for small r via Taylor (used after quadrant reduction).
+(func $m_sin_small (param $r f64) (result f64) (effects)
+  (let $r2 f64 (f64.mul (local.get $r) (local.get $r)))
+  (let $p f64 (f64.const -2.5052108385441720e-08))  ;; -1/11!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const 2.7557319223985893e-06)))  ;; 1/9!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const -1.9841269841269841e-04))) ;; -1/7!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const 8.333333333333333e-03)))   ;; 1/5!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const -0.16666666666666666)))    ;; -1/3!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const 1)))
+  (f64.mul (local.get $r) (local.get $p)))
+(func $m_cos_small (param $r f64) (result f64) (effects)
+  (let $r2 f64 (f64.mul (local.get $r) (local.get $r)))
+  (let $p f64 (f64.const 2.08767569878681e-09))    ;; 1/12!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const -2.7557319223985893e-07))) ;; -1/10!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const 2.48015873015873e-05)))    ;; 1/8!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const -1.388888888888889e-03)))  ;; -1/6!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const 4.1666666666666664e-02)))  ;; 1/4!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const -0.5)))                     ;; -1/2!
+  (f64.add (f64.mul (local.get $p) (local.get $r2)) (f64.const 1)))
+
+;; sin/cos with quadrant range reduction (n = round(x/(π/2)), r in [-π/4,π/4]).
+(func $m_sin (param $x f64) (result f64) (effects)
+  (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x))))
+  (if (f64.eq (f64.abs (local.get $x)) (f64.div (f64.const 1) (f64.const 0))) (then (return (f64.div (f64.const 0) (f64.const 0)))))  ;; ±Inf → NaN
+  (let $n f64 (f64.nearest (f64.div (local.get $x) (f64.const 1.5707963267948966))))
+  (let $r f64 (f64.sub (local.get $x) (f64.mul (local.get $n) (f64.const 1.5707963267948966))))
+  (let $q i64 (i64.and (i64.trunc_f64_s (local.get $n)) (i64.const 3)))
+  (if (i64.lt_s (local.get $q) (i64.const 0)) (then (set! $q (i64.add (local.get $q) (i64.const 4)))))
+  (if (i64.eq (local.get $q) (i64.const 0)) (then (return (call $m_sin_small (local.get $r)))))
+  (if (i64.eq (local.get $q) (i64.const 1)) (then (return (call $m_cos_small (local.get $r)))))
+  (if (i64.eq (local.get $q) (i64.const 2)) (then (return (f64.neg (call $m_sin_small (local.get $r))))))
+  (f64.neg (call $m_cos_small (local.get $r))))
+(func $m_cos (param $x f64) (result f64) (effects)
+  (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x))))
+  (if (f64.eq (f64.abs (local.get $x)) (f64.div (f64.const 1) (f64.const 0))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (let $n f64 (f64.nearest (f64.div (local.get $x) (f64.const 1.5707963267948966))))
+  (let $r f64 (f64.sub (local.get $x) (f64.mul (local.get $n) (f64.const 1.5707963267948966))))
+  (let $q i64 (i64.and (i64.trunc_f64_s (local.get $n)) (i64.const 3)))
+  (if (i64.lt_s (local.get $q) (i64.const 0)) (then (set! $q (i64.add (local.get $q) (i64.const 4)))))
+  (if (i64.eq (local.get $q) (i64.const 0)) (then (return (call $m_cos_small (local.get $r)))))
+  (if (i64.eq (local.get $q) (i64.const 1)) (then (return (f64.neg (call $m_sin_small (local.get $r))))))
+  (if (i64.eq (local.get $q) (i64.const 2)) (then (return (f64.neg (call $m_cos_small (local.get $r))))))
+  (call $m_sin_small (local.get $r)))
+
+;; atan(x). |x|>1 → π/2 - atan(1/x); small |x| via series with one reduction step.
+(func $m_atan (param $x f64) (result f64) (effects)
+  (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x))))
+  (if (f64.eq (local.get $x) (f64.div (f64.const 1) (f64.const 0))) (then (return (f64.const 1.5707963267948966))))   ;; +Inf → π/2
+  (if (f64.eq (local.get $x) (f64.div (f64.const -1) (f64.const 0))) (then (return (f64.const -1.5707963267948966))))  ;; -Inf → -π/2
+  (let $neg i32 (f64.lt (local.get $x) (f64.const 0)))
+  (let $a f64 (f64.abs (local.get $x)))
+  (let $inv i32 (f64.gt (local.get $a) (f64.const 1)))
+  (if (local.get $inv) (then (set! $a (f64.div (f64.const 1) (local.get $a)))))
+  ;; reduce a in [0,1] further: atan(a) = π/6 + atan((a*√3-1)/(a+√3)) when a>tan(π/12)
+  (let $off f64 (f64.const 0))
+  (if (f64.gt (local.get $a) (f64.const 0.2679491924311227))  ;; tan(15°)
+    (then
+      (set! $off (f64.const 0.5235987755982988))  ;; π/6
+      (set! $a (f64.div (f64.sub (f64.mul (local.get $a) (f64.const 1.7320508075688772)) (f64.const 1)) (f64.add (local.get $a) (f64.const 1.7320508075688772))))))
+  (let $a2 f64 (f64.mul (local.get $a) (local.get $a)))
+  (let $p f64 (f64.const 0.06666666666666667))   ;; 1/15
+  (set! $p (f64.sub (f64.const 0.07692307692307693) (f64.mul (local.get $p) (local.get $a2))))  ;; 1/13 - ...
+  (set! $p (f64.sub (f64.const 0.09090909090909091) (f64.mul (local.get $p) (local.get $a2))))  ;; 1/11
+  (set! $p (f64.sub (f64.const 0.1111111111111111) (f64.mul (local.get $p) (local.get $a2))))   ;; 1/9
+  (set! $p (f64.sub (f64.const 0.14285714285714285) (f64.mul (local.get $p) (local.get $a2))))  ;; 1/7
+  (set! $p (f64.sub (f64.const 0.2) (f64.mul (local.get $p) (local.get $a2))))                   ;; 1/5
+  (set! $p (f64.sub (f64.const 0.3333333333333333) (f64.mul (local.get $p) (local.get $a2))))    ;; 1/3
+  (set! $p (f64.sub (f64.const 1) (f64.mul (local.get $p) (local.get $a2))))
+  (let $res f64 (f64.add (local.get $off) (f64.mul (local.get $a) (local.get $p))))
+  (if (local.get $inv) (then (set! $res (f64.sub (f64.const 1.5707963267948966) (local.get $res)))))
+  (if (local.get $neg) (then (set! $res (f64.neg (local.get $res)))))
+  (local.get $res))
+
 (func $f64_pow (param $x f64) (param $y f64) (result f64) (effects)
   ;; x**0 == 1 (incl NaN/Inf base)
   (if (f64.eq (local.get $y) (f64.const 0)) (then (return (f64.const 1))))
@@ -2407,6 +2562,8 @@
     (then (return (i32.const 1))))  ;; Math.clz32, Number/String/Boolean/isNaN/isFinite/parseFloat
   (if (i32.or (i32.eq (local.get $id) (i32.const 223)) (i32.eq (local.get $id) (i32.const 225))) (then (return (i32.const 1))))  ;; Math.fround, Array unshift
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
+  (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 241))) (then (return (i32.const 1))))  ;; transcendental Math (1-arg)
   (if (i32.or (i32.eq (local.get $id) (i32.const 11)) (i32.or (i32.eq (local.get $id) (i32.const 12)) (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.or (i32.eq (local.get $id) (i32.const 67)) (i32.eq (local.get $id) (i32.const 153))))))
     (then (return (i32.const 1))))  ;; charAt, charCodeAt, padStart, padEnd, bind
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
@@ -2858,6 +3015,29 @@
   (call $scope_define (local.get $mo) (cstring "hypot") (call $mk_native (i32.const 52) (cstring "hypot")))
   (call $scope_define (local.get $mo) (cstring "fround") (call $mk_native (i32.const 223) (cstring "fround")))
   (call $scope_define (local.get $mo) (cstring "imul") (call $mk_native (i32.const 224) (cstring "imul")))
+  (call $scope_define (local.get $mo) (cstring "exp") (call $mk_native (i32.const 226) (cstring "exp")))
+  (call $scope_define (local.get $mo) (cstring "log") (call $mk_native (i32.const 227) (cstring "log")))
+  (call $scope_define (local.get $mo) (cstring "sin") (call $mk_native (i32.const 228) (cstring "sin")))
+  (call $scope_define (local.get $mo) (cstring "cos") (call $mk_native (i32.const 229) (cstring "cos")))
+  (call $scope_define (local.get $mo) (cstring "tan") (call $mk_native (i32.const 230) (cstring "tan")))
+  (call $scope_define (local.get $mo) (cstring "cbrt") (call $mk_native (i32.const 231) (cstring "cbrt")))
+  (call $scope_define (local.get $mo) (cstring "log2") (call $mk_native (i32.const 232) (cstring "log2")))
+  (call $scope_define (local.get $mo) (cstring "log10") (call $mk_native (i32.const 233) (cstring "log10")))
+  (call $scope_define (local.get $mo) (cstring "expm1") (call $mk_native (i32.const 234) (cstring "expm1")))
+  (call $scope_define (local.get $mo) (cstring "log1p") (call $mk_native (i32.const 235) (cstring "log1p")))
+  (call $scope_define (local.get $mo) (cstring "sinh") (call $mk_native (i32.const 236) (cstring "sinh")))
+  (call $scope_define (local.get $mo) (cstring "cosh") (call $mk_native (i32.const 237) (cstring "cosh")))
+  (call $scope_define (local.get $mo) (cstring "tanh") (call $mk_native (i32.const 238) (cstring "tanh")))
+  (call $scope_define (local.get $mo) (cstring "asin") (call $mk_native (i32.const 239) (cstring "asin")))
+  (call $scope_define (local.get $mo) (cstring "acos") (call $mk_native (i32.const 240) (cstring "acos")))
+  (call $scope_define (local.get $mo) (cstring "atan") (call $mk_native (i32.const 241) (cstring "atan")))
+  (call $scope_define (local.get $mo) (cstring "atan2") (call $mk_native (i32.const 242) (cstring "atan2")))
+  (call $set_prop (local.get $mv) (call $mk_str (cstring "LN2")) (call $num (f64.const 0.6931471805599453)))
+  (call $set_prop (local.get $mv) (call $mk_str (cstring "LN10")) (call $num (f64.const 2.302585092994046)))
+  (call $set_prop (local.get $mv) (call $mk_str (cstring "LOG2E")) (call $num (f64.const 1.4426950408889634)))
+  (call $set_prop (local.get $mv) (call $mk_str (cstring "LOG10E")) (call $num (f64.const 0.4342944819032518)))
+  (call $set_prop (local.get $mv) (call $mk_str (cstring "SQRT2")) (call $num (f64.const 1.4142135623730951)))
+  (call $set_prop (local.get $mv) (call $mk_str (cstring "SQRT1_2")) (call $num (f64.const 0.7071067811865476)))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "PI")) (call $num (f64.const 3.141592653589793)))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "E")) (call $num (f64.const 2.718281828459045)))
   ;; JSON object
