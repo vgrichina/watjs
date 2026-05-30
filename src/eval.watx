@@ -194,12 +194,39 @@
 (func $push_scope_keys (param $out i32) (param $sc i32) (param $allNames i32) (effects)
   (if (i32.eqz (local.get $sc)) (then (return)))
   (let $cnt i32 (call $scope_count (local.get $sc)))
+  ;; spec OwnPropertyKeys order: integer-index keys ascending, THEN string keys in
+  ;; insertion order. Pass 1 emits integer indices ascending (min-find, n is small).
+  (let $last i32 (i32.const -1))
+  (block $p1e (loop $p1l
+    (let $best i32 (i32.const -1))
+    (let $bestkey i32 (i32.const 0))
+    (let $j i32 (i32.const 0))
+    (block $se (loop $sl
+      (br_if $se (i32.ge_s (local.get $j) (local.get $cnt)))
+      (let $e i32 (call $scope_entry (local.get $sc) (local.get $j)))
+      (let $kp i32 (i32.load (local.get $e)))
+      (let $idx i32 (call $str_array_index (local.get $kp)))
+      (if (i32.and (i32.ge_s (local.get $idx) (i32.const 0))
+            (i32.and (i32.gt_s (local.get $idx) (local.get $last))
+                     (i32.or (i32.eq (local.get $best) (i32.const -1)) (i32.lt_s (local.get $idx) (local.get $best)))))
+        (then
+          (if (i32.or (local.get $allNames) (i32.ne (call $entry_enumerable (i32.add (local.get $e) (i32.const 8))) (i32.const 0)))
+            (then (set! $best (local.get $idx)) (set! $bestkey (local.get $kp))))))
+      (set! $j (i32.add (local.get $j) (i32.const 1))) (br $sl)))
+    (br_if $p1e (i32.eq (local.get $best) (i32.const -1)))
+    (call $arr_push (local.get $out) (call $mk_str (local.get $bestkey)))
+    (set! $last (local.get $best))
+    (br $p1l)))
+  ;; pass 2: non-integer string keys in insertion order
   (let $i i32 (i32.const 0))
   (block $ke (loop $kl
     (br_if $ke (i32.ge_s (local.get $i) (local.get $cnt)))
-    (if (i32.and (i32.eqz (call $is_internal_key (i32.load (call $scope_entry (local.get $sc) (local.get $i)))))
-          (i32.or (local.get $allNames) (i32.ne (call $entry_enumerable (i32.add (call $scope_entry (local.get $sc) (local.get $i)) (i32.const 8))) (i32.const 0))))
-      (then (call $arr_push (local.get $out) (call $mk_str (i32.load (call $scope_entry (local.get $sc) (local.get $i)))))))
+    (let $e2 i32 (call $scope_entry (local.get $sc) (local.get $i)))
+    (let $kp2 i32 (i32.load (local.get $e2)))
+    (if (i32.and (i32.lt_s (call $str_array_index (local.get $kp2)) (i32.const 0))
+          (i32.and (i32.eqz (call $is_internal_key (local.get $kp2)))
+            (i32.or (local.get $allNames) (i32.ne (call $entry_enumerable (i32.add (local.get $e2) (i32.const 8))) (i32.const 0)))))
+      (then (call $arr_push (local.get $out) (call $mk_str (local.get $kp2)))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $kl))))
 
 ;; own enumerable (or all, if $allNames) key strings of any value → fresh array.
