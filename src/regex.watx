@@ -43,7 +43,37 @@
       (i64.store (i32.add (local.get $av) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $ms))))
       (i64.store (i32.add (local.get $av) (i32.const 16)) (call $mk_str (local.get $sub)))
       (call $to_str (call $call_val (local.get $repfn) (i32.const 3) (local.get $av) (call $v_undef))))
-    (else (local.get $replstr))))
+    (else  ;; expand $&, $$, $1-$9 in the replacement string
+      (if i32 (i32.eqz (call $str_has_char (local.get $replstr) (i32.const 36)))
+        (then (local.get $replstr))
+        (else
+          (let $out i32 (cstring ""))
+          (let $i i32 (i32.const 0))
+          (let $rl i32 (call $str_len (local.get $replstr)))
+          (block $e (loop $l
+            (br_if $e (i32.ge_s (local.get $i) (local.get $rl)))
+            (let $ch i32 (call $str_byte (local.get $replstr) (local.get $i)))
+            (if (i32.and (i32.eq (local.get $ch) (i32.const 36)) (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $rl)))  ;; '$' + something
+              (then
+                (let $nx i32 (call $str_byte (local.get $replstr) (i32.add (local.get $i) (i32.const 1))))
+                (if (i32.eq (local.get $nx) (i32.const 36))  ;; $$
+                  (then (set! $out (call $str_concat (local.get $out) (cstring "$"))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+                (if (i32.eq (local.get $nx) (i32.const 38))  ;; $& whole match
+                  (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $ms) (i32.sub (local.get $me) (local.get $ms))))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+                (if (i32.and (i32.ge_s (local.get $nx) (i32.const 49)) (i32.le_s (local.get $nx) (i32.const 57)))  ;; $1-$9
+                  (then
+                    (let $gn i32 (i32.sub (local.get $nx) (i32.const 48)))
+                    (if (i32.le_s (local.get $gn) (i32.load (i32.const 284)))
+                      (then
+                        (let $cb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $gn) (i32.const 1)) (i32.const 8))))
+                        (let $cs i32 (i32.load (local.get $cb)))
+                        (if (i32.ge_s (local.get $cs) (i32.const 0)) (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $cs) (i32.sub (i32.load (i32.add (local.get $cb) (i32.const 4))) (local.get $cs)))))))
+                        (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l))
+                      (else (set! $out (call $str_concat (local.get $out) (call $substr (local.get $replstr) (local.get $i) (i32.const 2)))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))))))
+            (set! $out (call $str_concat (local.get $out) (call $substr (local.get $replstr) (local.get $i) (i32.const 1))))
+            (set! $i (i32.add (local.get $i) (i32.const 1)))
+            (br $l)))
+          (local.get $out))))))
 
 ;; index of `ndl` in `hay` at/after `from`, or -1
 (func $str_find (param $hay i32) (param $ndl i32) (param $from i32) (result i32) (effects)
