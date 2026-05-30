@@ -497,7 +497,26 @@
       (call $scope_define (local.get $mo) (cstring "forEach") (call $mk_native (i32.const 125) (cstring "forEach")))
       (call $scope_define (local.get $mo) (cstring "clear") (call $mk_native (i32.const 127) (cstring "clear")))
       (call $scope_define_accessor (local.get $mo) (cstring "size") (call $mk_native (i32.const 126) (cstring "size")) (call $v_undef))
-      (return (call $mk_obj (local.get $mo)))))
+      ;; new Map(iterable of [k,v]): set each pair
+      (let $mov i64 (call $mk_obj (local.get $mo)))
+      (let $marg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_array (local.get $marg))
+        (then
+          (let $mav i32 (call $val_payload (local.get $marg)))
+          (let $man i32 (call $arr_len (local.get $mav)))
+          (let $mbuf i32 (call $heap_alloc (i32.const 16)))
+          (let $mi i32 (i32.const 0))
+          (block $mce (loop $mcl
+            (br_if $mce (i32.ge_s (local.get $mi) (local.get $man)))
+            (let $mpair i64 (call $arr_get (local.get $mav) (local.get $mi)))
+            (if (call $is_array (local.get $mpair))
+              (then
+                (i64.store (local.get $mbuf) (call $arr_get (call $val_payload (local.get $mpair)) (i32.const 0)))
+                (i64.store (i32.add (local.get $mbuf) (i32.const 8)) (call $arr_get (call $val_payload (local.get $mpair)) (i32.const 1)))
+                (drop (call $call_native (i32.const 121) (i32.const 2) (local.get $mbuf) (local.get $mov)))))
+            (set! $mi (i32.add (local.get $mi) (i32.const 1)))
+            (br $mcl)))))
+      (return (local.get $mov))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 121)) (i32.le_s (local.get $id) (i32.const 127)))
     (then
       (let $mk i32 (call $coll_arr (local.get $thisv) (cstring "@@mk")))
@@ -553,7 +572,22 @@
       (call $scope_define (local.get $so) (cstring "forEach") (call $mk_native (i32.const 134) (cstring "forEach")))
       (call $scope_define (local.get $so) (cstring "clear") (call $mk_native (i32.const 136) (cstring "clear")))
       (call $scope_define_accessor (local.get $so) (cstring "size") (call $mk_native (i32.const 135) (cstring "size")) (call $v_undef))
-      (return (call $mk_obj (local.get $so)))))
+      ;; new Set(iterable): add each element
+      (let $sov i64 (call $mk_obj (local.get $so)))
+      (let $sarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_array (local.get $sarg))
+        (then
+          (let $sav i32 (call $val_payload (local.get $sarg)))
+          (let $san i32 (call $arr_len (local.get $sav)))
+          (let $sbuf i32 (call $heap_alloc (i32.const 8)))
+          (let $si i32 (i32.const 0))
+          (block $sce (loop $scl
+            (br_if $sce (i32.ge_s (local.get $si) (local.get $san)))
+            (i64.store (local.get $sbuf) (call $arr_get (local.get $sav) (local.get $si)))
+            (drop (call $call_native (i32.const 131) (i32.const 1) (local.get $sbuf) (local.get $sov)))
+            (set! $si (i32.add (local.get $si) (i32.const 1)))
+            (br $scl)))))
+      (return (local.get $sov))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 131)) (i32.le_s (local.get $id) (i32.const 136)))
     (then
       (let $sk i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
