@@ -296,7 +296,7 @@
       (call $print_str (cstring "\n"))
       (return (call $v_undef))))
   ;; Function.prototype.call(thisArg, ...args) — this = the function
-  (if (i32.eq (local.get $id) (i32.const 151))
+  (if (i32.eq (local.get $id) (i32.const 194))
     (then
       (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $n i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
@@ -308,7 +308,7 @@
         (set! $i (i32.add (local.get $i) (i32.const 1))) (br $cal)))
       (return (call $call_val (local.get $thisv) (local.get $n) (local.get $buf) (local.get $ta)))))
   ;; Function.prototype.apply(thisArg, argArray) — this = the function
-  (if (i32.eq (local.get $id) (i32.const 152))
+  (if (i32.eq (local.get $id) (i32.const 195))
     (then
       (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $aa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
@@ -955,6 +955,32 @@
             (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 6))))))))
   (if (i32.eq (local.get $id) (i32.const 172))  ;; String.prototype.localeCompare(o) — byte-order compare
     (then (return (call $num (f64.convert_i32_s (call $str_cmp (call $to_str (local.get $thisv)) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+  (if (i32.eq (local.get $id) (i32.const 192))  ;; new Promise(executor) — synchronous resolved-value model
+    (then
+      (let $pp i32 (call $obj_new (i32.const 4)))
+      (call $scope_define (local.get $pp) (cstring "@@promise") (call $v_true))
+      (call $scope_define (local.get $pp) (cstring "@@pval") (call $v_undef))
+      (call $scope_define (local.get $pp) (cstring "then") (call $mk_native (i32.const 152) (cstring "then")))
+      (let $ppv i64 (call $mk_obj (local.get $pp)))
+      ;; resolve = a bound function (target=native193, this=the promise)
+      (let $prf i32 (call $heap_alloc (i32.const 40)))
+      (i32.store (local.get $prf) (i32.const 1448232540))  ;; bound magic
+      (i32.store (i32.add (local.get $prf) (i32.const 8)) (i32.const 0))
+      (i32.store (i32.add (local.get $prf) (i32.const 12)) (i32.const 0))
+      (i64.store (i32.add (local.get $prf) (i32.const 16)) (local.get $ppv))   ;; boundThis = promise
+      (i64.store (i32.add (local.get $prf) (i32.const 24)) (call $mk_native (i32.const 193) (cstring "resolve")))
+      (i32.store (i32.add (local.get $prf) (i32.const 32)) (i32.const 0))
+      (i32.store (i32.add (local.get $prf) (i32.const 36)) (call $heap_alloc (i32.const 8)))
+      (let $pexec i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $peav i32 (call $heap_alloc (i32.const 16)))
+      (i64.store (local.get $peav) (call $mk_fn (local.get $prf)))
+      (i64.store (i32.add (local.get $peav) (i32.const 8)) (call $mk_fn (local.get $prf)))  ;; reject = same (rejection ignored)
+      (if (call $is_function (local.get $pexec)) (then (drop (call $call_val (local.get $pexec) (i32.const 2) (local.get $peav) (call $v_undef)))))
+      (return (local.get $ppv))))
+  (if (i32.eq (local.get $id) (i32.const 193))  ;; promise resolve(v) (this = the promise) — set @@pval
+    (then
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@pval")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 179))  ;; Date.now()
     (then (return (call $num (call $now_ms)))))
   (if (i32.eq (local.get $id) (i32.const 180))  ;; new Date(...) → date object (UTC)
@@ -2251,10 +2277,10 @@
   (drop (call $def_native (local.get $g) (cstring "Set") (i32.const 130)))
   (let $datef i64 (call $def_native (local.get $g) (cstring "Date") (i32.const 180)))
   (call $set_prop (local.get $datef) (call $mk_str (cstring "now")) (call $mk_native (i32.const 179) (cstring "now")))
-  ;; Promise object with a resolve() factory (minimal; see vm.watx)
-  (let $promo i32 (call $obj_new (i32.const 4)))
-  (call $scope_define (local.get $promo) (cstring "resolve") (call $mk_native (i32.const 151) (cstring "resolve")))
-  (call $scope_define (local.get $g) (cstring "Promise") (call $mk_obj (local.get $promo)))
+  ;; Promise constructor (synchronous resolved-value model; see vm.watx)
+  (let $promf i64 (call $def_native (local.get $g) (cstring "Promise") (i32.const 192)))
+  (call $set_prop (local.get $promf) (call $mk_str (cstring "resolve")) (call $mk_native (i32.const 151) (cstring "resolve")))
+  (call $set_prop (local.get $promf) (call $mk_str (cstring "reject")) (call $mk_native (i32.const 151) (cstring "reject")))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "of")) (call $mk_native (i32.const 110) (cstring "of")))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 111) (cstring "from")))
   ;; Math object with methods + constants
