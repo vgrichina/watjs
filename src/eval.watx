@@ -738,6 +738,10 @@
     (then
       (if (call $is_undefined (local.get $thisv)) (then (return (call $mk_str (cstring "[object Undefined]")))))
       (if (call $is_null (local.get $thisv)) (then (return (call $mk_str (cstring "[object Null]")))))
+      ;; primitive number/string/boolean brands (per OrdinaryToPrimitive ToObject)
+      (if (call $is_number (local.get $thisv)) (then (return (call $mk_str (cstring "[object Number]")))))
+      (if (call $is_string (local.get $thisv)) (then (return (call $mk_str (cstring "[object String]")))))
+      (if (call $is_boolean (local.get $thisv)) (then (return (call $mk_str (cstring "[object Boolean]")))))
       ;; a string Symbol.toStringTag (@@toStringTag) overrides the builtin tag
       (if (call $is_object (local.get $thisv))
         (then
