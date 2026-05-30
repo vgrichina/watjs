@@ -1058,7 +1058,13 @@
       (if (i32.eq (local.get $id) (i32.const 145))  ;; toString([radix])
         (then
           (let $radix i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 10))))
-          (if (i32.eq (local.get $radix) (i32.const 10)) (then (return (call $mk_str (call $num_to_str (local.get $nv))))))
+          ;; RangeError for radix outside 2..36
+          (if (i32.or (i32.lt_s (local.get $radix) (i32.const 2)) (i32.gt_s (local.get $radix) (i32.const 36)))
+            (then (call $throw_type (cstring "RangeError") (cstring "toString() radix must be between 2 and 36")) (return (call $v_undef))))
+          ;; non-finite (NaN/±Infinity) or radix 10 → the decimal/word form (num_to_radix's trunc would trap)
+          (if (i32.or (i32.eq (local.get $radix) (i32.const 10))
+                (i32.or (f64.ne (local.get $nv) (local.get $nv)) (f64.eq (f64.abs (local.get $nv)) (f64.div (f64.const 1) (f64.const 0)))))
+            (then (return (call $mk_str (call $num_to_str (local.get $nv))))))
           (return (call $mk_str (call $num_to_radix (i32.trunc_f64_s (local.get $nv)) (local.get $radix))))))
       (return (call $mk_str (call $num_to_fixed (local.get $nv) (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 166))  ;; Number.prototype.toPrecision([p])
