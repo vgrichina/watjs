@@ -1446,7 +1446,7 @@
         (then
           (if (i32.eqz (local.get $argc))  ;; no sep -> whole string as single element
             (then (let $r0 i32 (call $arr_new (i32.const 2))) (call $arr_push (local.get $r0) (call $mk_str (local.get $s))) (return (call $mk_arr (local.get $r0)))))
-          (if (i32.and (call $is_object (local.get $a0)) (i32.ne (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "__re_src__")) (i32.const 0)))  ;; regex separator
+          (if (if i32 (call $is_object (local.get $a0)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "__re_src__")) (i32.const 0))) (else (i32.const 0)))  ;; regex separator (guard: i32.and would deref val_payload of a non-object)
             (then
               (call $re_apply_flags (local.get $a0))
               (let $pat i32 (call $re_pat_of (local.get $a0)))
@@ -1501,7 +1501,11 @@
           (return (call $mk_str (local.get $out)))))
       (if (i32.eq (local.get $id) (i32.const 62))  ;; repeat(n)
         (then
-          (let $cnt i32 (call $to_int_idx (call $to_num (local.get $a0))))
+          (let $cntf f64 (call $to_num (local.get $a0)))
+          ;; negative or +Infinity (or absurdly large) count → RangeError
+          (if (i32.or (f64.lt (local.get $cntf) (f64.const 0)) (f64.ge (local.get $cntf) (f64.const 1073741824)))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid count value")) (return (call $v_undef))))
+          (let $cnt i32 (call $to_int_idx (local.get $cntf)))
           (let $out i32 (cstring ""))
           (let $k i32 (i32.const 0))
           (block $re (loop $rl
