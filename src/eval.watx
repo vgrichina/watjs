@@ -1989,6 +1989,23 @@
         (then (call $apply_descriptor (call $val_payload (local.get $ob)) (call $to_str (local.get $ky)) (local.get $de))))
       (return (local.get $ob))))
   ;; Object.defineProperties(obj, descs)
+  (if (i32.eq (local.get $id) (i32.const 248))  ;; Object.getOwnPropertySymbols(o)
+    (then
+      (let $gsv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $gsarr i32 (call $arr_new (i32.const 4)))
+      (if (call $is_object (local.get $gsv))
+        (then
+          (let $gss i32 (call $val_payload (local.get $gsv)))
+          (let $gsc i32 (call $scope_count (local.get $gss)))
+          (let $gsi i32 (i32.const 0))
+          (block $gse (loop $gsl
+            (br_if $gse (i32.ge_s (local.get $gsi) (local.get $gsc)))
+            (let $gsk i32 (i32.load (call $scope_entry (local.get $gss) (local.get $gsi))))
+            ;; user symbol keys are "@@sym:…"/"@@symfor:…"
+            (if (i32.or (i32.eq (call $str_indexof (local.get $gsk) (cstring "@@sym:")) (i32.const 0)) (i32.eq (call $str_indexof (local.get $gsk) (cstring "@@symfor:")) (i32.const 0)))
+              (then (call $arr_push (local.get $gsarr) (call $make_symbol (local.get $gsk) (local.get $gsk)))))
+            (set! $gsi (i32.add (local.get $gsi) (i32.const 1))) (br $gsl)))))
+      (return (call $mk_arr (local.get $gsarr)))))
   (if (i32.eq (local.get $id) (i32.const 160))
     (then
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -3225,6 +3242,7 @@
   (let $objf i64 (call $def_native (local.get $g) (cstring "Object") (i32.const 9)))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "keys")) (call $mk_native (i32.const 10) (cstring "keys")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getOwnPropertyNames")) (call $mk_native (i32.const 112) (cstring "getOwnPropertyNames")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "getOwnPropertySymbols")) (call $mk_native (i32.const 248) (cstring "getOwnPropertySymbols")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "fromEntries")) (call $mk_native (i32.const 115) (cstring "fromEntries")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "assign")) (call $mk_native (i32.const 80) (cstring "assign")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "freeze")) (call $mk_native (i32.const 139) (cstring "freeze")))
