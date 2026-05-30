@@ -2395,14 +2395,23 @@
               (call $scope_define (local.get $fdr) (cstring "enumerable") (call $v_false))
               (call $scope_define (local.get $fdr) (cstring "configurable") (call $v_true))
               (return (call $mk_obj (local.get $fdr)))))
-          ;; other own props (static methods, F.prototype, frozen constants) →
-          ;; read the actual stored attributes from the function's @12 props slot
+          ;; other own props (static methods, F.prototype, frozen constants) → read
+          ;; the stored attributes from the function's prop scope. NATIVE fns keep it
+          ;; at @12; VM fns keep code at @12 and their statics in the @16 scope.
           (let $ffn i32 (call $val_payload (local.get $ob)))
-          (let $fps i32 (i32.load (i32.add (local.get $ffn) (i32.const 12))))
-          (if (local.get $fps)
+          (if (i32.and (i32.ge_s (i32.load (local.get $ffn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $ffn)) (i32.const 1448232528)))
             (then
-              (let $fslot i32 (call $scope_find_local (local.get $fps) (local.get $fks)))
-              (if (local.get $fslot) (then (return (call $make_descriptor (local.get $fslot)))))))
+              (let $vps i64 (i64.load (i32.add (local.get $ffn) (i32.const 16))))
+              (if (call $is_object (local.get $vps))
+                (then
+                  (let $vslot i32 (call $scope_find_local (call $val_payload (local.get $vps)) (local.get $fks)))
+                  (if (local.get $vslot) (then (return (call $make_descriptor (local.get $vslot))))))))
+            (else
+              (let $fps i32 (i32.load (i32.add (local.get $ffn) (i32.const 12))))
+              (if (local.get $fps)
+                (then
+                  (let $fslot i32 (call $scope_find_local (local.get $fps) (local.get $fks)))
+                  (if (local.get $fslot) (then (return (call $make_descriptor (local.get $fslot)))))))))
           ;; computed own props with no slot (length/name handled above; .prototype)
           (if (call $fn_own (local.get $ffn) (local.get $fks))
             (then
