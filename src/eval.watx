@@ -1993,7 +1993,7 @@
     (then
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $de i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-      (if (i32.eqz (call $is_object (local.get $ob)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $ob)) (i32.or (call $is_array (local.get $ob)) (call $is_function (local.get $ob)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object.defineProperties called on non-object")) (return (call $v_undef))))
       (if (i32.and (call $is_object (local.get $ob)) (call $is_object (local.get $de)))
         (then
