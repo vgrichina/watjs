@@ -2,4 +2,10 @@ start
 AND-should-print
 OR-should-print
 ternary-else-print
+retAnd(false)=false
+retAnd(true)=7
+retOr(true)=true
+retOr(false)=7
+retTern(true)=7
+retTern(false)=0
 end
