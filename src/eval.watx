@@ -1555,6 +1555,24 @@
     (then (return (call $num (f64.const 0)))))
   (if (i32.eq (local.get $id) (i32.const 268))  ;; Date.parse(str) → epoch ms
     (then (return (call $num (call $parse_date_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
+  (if (i32.eq (local.get $id) (i32.const 269))  ;; String.raw(template, ...subs)
+    (then
+      (let $srt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $srraw i64 (call $get_prop (local.get $srt) (call $mk_str (cstring "raw"))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $srraw)) (call $is_array (local.get $srraw))))
+        (then (call $throw_type (cstring "TypeError") (cstring "String.raw: raw is not object-coercible")) (return (call $v_undef))))
+      (let $srn i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $srraw) (call $mk_str (cstring "length"))))))
+      (if (i32.lt_s (local.get $srn) (i32.const 0)) (then (set! $srn (i32.const 0))))
+      (let $srout i32 (cstring ""))
+      (let $sri i32 (i32.const 0))
+      (block $sre (loop $srl
+        (br_if $sre (i32.ge_s (local.get $sri) (local.get $srn)))
+        (set! $srout (call $str_concat (local.get $srout) (call $to_str (call $get_prop (local.get $srraw) (call $num (f64.convert_i32_s (local.get $sri)))))))
+        ;; interleave substitution args (one fewer than raw segments)
+        (if (i32.and (i32.lt_s (local.get $sri) (i32.sub (local.get $srn) (i32.const 1))) (i32.lt_s (i32.add (local.get $sri) (i32.const 1)) (local.get $argc)))
+          (then (set! $srout (call $str_concat (local.get $srout) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $sri) (i32.const 1))))))))
+        (set! $sri (i32.add (local.get $sri) (i32.const 1))) (br $srl)))
+      (return (call $mk_str (local.get $srout)))))
   (if (i32.eq (local.get $id) (i32.const 259))  ;; Date.UTC(y,mo[,d,h,mi,s,ms]) → ms number
     (then
       (if (i32.lt_s (local.get $argc) (i32.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
@@ -2938,7 +2956,7 @@
   (if (i32.eq (local.get $id) (i32.const 254)) (then (return (i32.const 3))))  ;; setMinutes
   (if (i32.or (i32.eq (local.get $id) (i32.const 249)) (i32.or (i32.eq (local.get $id) (i32.const 252)) (i32.eq (local.get $id) (i32.const 256)))) (then (return (i32.const 1))))  ;; setTime, setDate, setMilliseconds
   (if (i32.eq (local.get $id) (i32.const 259)) (then (return (i32.const 7))))  ;; Date.UTC
-  (if (i32.or (i32.eq (local.get $id) (i32.const 261)) (i32.eq (local.get $id) (i32.const 268))) (then (return (i32.const 1))))  ;; Date setYear, Date.parse
+  (if (i32.or (i32.eq (local.get $id) (i32.const 261)) (i32.or (i32.eq (local.get $id) (i32.const 268)) (i32.eq (local.get $id) (i32.const 269)))) (then (return (i32.const 1))))  ;; Date setYear, Date.parse, String.raw
   (if (i32.or (i32.eq (local.get $id) (i32.const 11)) (i32.or (i32.eq (local.get $id) (i32.const 12)) (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.or (i32.eq (local.get $id) (i32.const 67)) (i32.eq (local.get $id) (i32.const 153))))))
     (then (return (i32.const 1))))  ;; charAt, charCodeAt, padStart, padEnd, bind
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
@@ -3269,10 +3287,15 @@
   (call $scope_define (local.get $sp) (cstring "endsWith") (call $mk_native (i32.const 65) (cstring "endsWith")))
   (call $scope_define (local.get $sp) (cstring "trimStart") (call $mk_native (i32.const 113) (cstring "trimStart")))
   (call $scope_define (local.get $sp) (cstring "trimEnd") (call $mk_native (i32.const 114) (cstring "trimEnd")))
+  (call $scope_define (local.get $sp) (cstring "trimLeft") (call $mk_native (i32.const 113) (cstring "trimLeft")))
+  (call $scope_define (local.get $sp) (cstring "trimRight") (call $mk_native (i32.const 114) (cstring "trimRight")))
+  (call $scope_define (local.get $sp) (cstring "toLocaleLowerCase") (call $mk_native (i32.const 17) (cstring "toLocaleLowerCase")))
+  (call $scope_define (local.get $sp) (cstring "toLocaleUpperCase") (call $mk_native (i32.const 16) (cstring "toLocaleUpperCase")))
   (call $scope_define (local.get $sp) (cstring "padStart") (call $mk_native (i32.const 66) (cstring "padStart")))
   (call $scope_define (local.get $sp) (cstring "padEnd") (call $mk_native (i32.const 67) (cstring "padEnd")))
   (call $scope_define (local.get $sp) (cstring "at") (call $mk_native (i32.const 68) (cstring "at")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCharCode")) (call $mk_native (i32.const 87) (cstring "fromCharCode")))
+  (call $set_prop (local.get $strf) (call $mk_str (cstring "raw")) (call $mk_native (i32.const 269) (cstring "raw")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCodePoint")) (call $mk_native (i32.const 87) (cstring "fromCodePoint")))
   (call $scope_define (local.get $sp) (cstring "match") (call $mk_native (i32.const 102) (cstring "match")))
   (call $scope_define (local.get $sp) (cstring "matchAll") (call $mk_native (i32.const 173) (cstring "matchAll")))
