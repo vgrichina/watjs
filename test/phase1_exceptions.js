@@ -25,3 +25,14 @@ print(result);
 assert(1 + 1 === 2);
 assert("a" + "b" === "ab", "concat works");
 print("asserts passed");
+
+// `return` out of a try-block must pop its handler. Otherwise the lingering
+// handler wrongly catches a throw raised later in the caller.
+function earlyReturn() {
+  try { return "early"; } catch (e) { return "WRONG:" + e; }
+}
+function caller() {
+  earlyReturn();      // exits its try via return — handler must not linger
+  throw "real";       // must propagate to the outer catch, unwrapped
+}
+try { caller(); } catch (e) { print("leak-check: " + e); }

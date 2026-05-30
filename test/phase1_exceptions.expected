@@ -3,3 +3,4 @@ caught: boom
 error: negative
 ok/skip
 asserts passed
+leak-check: real

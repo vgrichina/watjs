@@ -2418,6 +2418,17 @@
           (then
             (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
             (return (local.get $rv))))
+        ;; Pop any try-handlers still registered in the frame we're returning from.
+        ;; `return` (or break/continue) out of a try-block skips POPHANDLER, so the
+        ;; handler would linger and wrongly catch a throw raised later in the caller —
+        ;; seen in test262 as assert.sameValue wrapping an unrelated failure in
+        ;; "(_isSameValue operation threw)". Handlers of this frame sit at the top of
+        ;; the chain (any deeper-frame handler was popped when that call returned).
+        (block $hpe (loop $hpl
+          (br_if $hpe (i32.eqz (local.get $handler)))
+          (br_if $hpe (i32.ne (i32.load (i32.add (local.get $handler) (i32.const 8))) (local.get $frame)))
+          (set! $handler (i32.load (i32.add (local.get $handler) (i32.const 20))))
+          (br $hpl)))
         ;; constructor: unless the body returns an object, the result is the new instance
         (let $fnew i32 (i32.load (i32.add (local.get $frame) (i32.const 16))))
         (if (local.get $fnew)
