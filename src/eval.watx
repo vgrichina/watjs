@@ -1130,6 +1130,33 @@
       (if (call $is_object (local.get $thisv))
         (then (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (local.get $ks)) (i32.const 0))))))
       (return (call $v_false))))
+  ;; Object.hasOwn(O, key) — static HasOwnProperty after ToObject(O)
+  (if (i32.eq (local.get $id) (i32.const 277))
+    (then
+      (let $how i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_null (local.get $how)) (call $is_undefined (local.get $how)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (let $hok i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (call $is_function (local.get $how))
+        (then (return (call $mk_bool (call $fn_own (call $val_payload (local.get $how)) (local.get $hok))))))
+      (if (call $is_array (local.get $how))
+        (then
+          (let $hoap i32 (call $val_payload (local.get $how)))
+          (if (call $str_eq (local.get $hok) (cstring "length")) (then (return (call $v_true))))
+          (let $hoidx i32 (call $str_array_index (local.get $hok)))
+          (if (i32.and (i32.ge_s (local.get $hoidx) (i32.const 0)) (call $arr_has (local.get $hoap) (local.get $hoidx))) (then (return (call $v_true))))
+          (let $hoap2 i32 (i32.load (i32.add (local.get $hoap) (i32.const 12))))
+          (if (local.get $hoap2) (then (if (call $scope_find_local (local.get $hoap2) (local.get $hok)) (then (return (call $v_true))))))
+          (return (call $v_false))))
+      (if (call $is_string (local.get $how))
+        (then
+          (let $host i32 (call $val_payload (local.get $how)))
+          (if (call $str_eq (local.get $hok) (cstring "length")) (then (return (call $v_true))))
+          (let $hosi i32 (call $str_array_index (local.get $hok)))
+          (return (call $mk_bool (i32.and (i32.ge_s (local.get $hosi) (i32.const 0)) (i32.lt_s (local.get $hosi) (call $str_len (local.get $host))))))))
+      (if (call $is_object (local.get $how))
+        (then (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $how)) (local.get $hok)) (i32.const 0))))))
+      (return (call $v_false))))
   ;; array iterator constructors: entries(95)->kind 2, keys(96)->0, values(97)->1
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 95)) (i32.le_s (local.get $id) (i32.const 97)))
     (then
@@ -3087,6 +3114,7 @@
     (then (return (i32.const 1))))  ;; Math.clz32, Number/String/Boolean/isNaN/isFinite/parseFloat
   (if (i32.or (i32.eq (local.get $id) (i32.const 223)) (i32.eq (local.get $id) (i32.const 225))) (then (return (i32.const 1))))  ;; Math.fround, Array unshift
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
+  (if (i32.eq (local.get $id) (i32.const 277)) (then (return (i32.const 2))))  ;; Object.hasOwn
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 241))) (then (return (i32.const 1))))  ;; transcendental Math (1-arg)
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 244)) (i32.le_s (local.get $id) (i32.const 246))) (then (return (i32.const 1))))  ;; asinh/acosh/atanh
@@ -3679,6 +3707,7 @@
   (call $set_prop (local.get $objf) (call $mk_str (cstring "assign")) (call $mk_native (i32.const 80) (cstring "assign")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "freeze")) (call $mk_native (i32.const 139) (cstring "freeze")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "is")) (call $mk_native (i32.const 169) (cstring "is")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "hasOwn")) (call $mk_native (i32.const 277) (cstring "hasOwn")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "isFrozen")) (call $mk_native (i32.const 140) (cstring "isFrozen")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "create")) (call $mk_native (i32.const 81) (cstring "create")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getPrototypeOf")) (call $mk_native (i32.const 82) (cstring "getPrototypeOf")))
