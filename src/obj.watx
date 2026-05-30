@@ -274,6 +274,20 @@
   (if (call $is_object (local.get $cont))
     (then
       (let $o i32 (call $val_payload (local.get $cont)))
+      ;; Proxy: dispatch to the handler's get trap, else forward to the target
+      (let $phsl i32 (call $scope_find_local (local.get $o) (cstring "@@phandler")))
+      (if (local.get $phsl)
+        (then
+          (let $ptgt i64 (i64.load (call $scope_find_local (local.get $o) (cstring "@@ptarget"))))
+          (let $gtrap i64 (call $get_prop (i64.load (local.get $phsl)) (call $mk_str (cstring "get"))))
+          (if (call $is_function (local.get $gtrap))
+            (then
+              (let $gbuf i32 (call $heap_alloc (i32.const 24)))
+              (i64.store (local.get $gbuf) (local.get $ptgt))
+              (i64.store (i32.add (local.get $gbuf) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
+              (i64.store (i32.add (local.get $gbuf) (i32.const 16)) (local.get $cont))
+              (return (call $call_val (local.get $gtrap) (i32.const 3) (local.get $gbuf) (call $v_undef)))))
+          (return (call $get_prop (local.get $ptgt) (local.get $key)))))
       ;; mapped arguments: a numeric index < @@anp aliases a parameter slot
       (if (call $is_number (local.get $key))
         (then
@@ -413,6 +427,23 @@
   (if (call $is_object (local.get $cont))
     (then
       (let $o i32 (call $val_payload (local.get $cont)))
+      ;; Proxy: dispatch to the handler's set trap, else forward to the target
+      (let $phsl i32 (call $scope_find_local (local.get $o) (cstring "@@phandler")))
+      (if (local.get $phsl)
+        (then
+          (let $ptgt i64 (i64.load (call $scope_find_local (local.get $o) (cstring "@@ptarget"))))
+          (let $strap i64 (call $get_prop (i64.load (local.get $phsl)) (call $mk_str (cstring "set"))))
+          (if (call $is_function (local.get $strap))
+            (then
+              (let $sbuf i32 (call $heap_alloc (i32.const 32)))
+              (i64.store (local.get $sbuf) (local.get $ptgt))
+              (i64.store (i32.add (local.get $sbuf) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
+              (i64.store (i32.add (local.get $sbuf) (i32.const 16)) (local.get $val))
+              (i64.store (i32.add (local.get $sbuf) (i32.const 24)) (local.get $cont))
+              (drop (call $call_val (local.get $strap) (i32.const 4) (local.get $sbuf) (call $v_undef)))
+              (return)))
+          (call $set_prop (local.get $ptgt) (local.get $key) (local.get $val))
+          (return)))
       (if (call $scope_find_local (local.get $o) (cstring "@@frozen")) (then (return)))  ;; Object.freeze: ignore writes
       ;; mapped arguments: writing a numeric index < @@anp writes the parameter slot
       (if (call $is_number (local.get $key))

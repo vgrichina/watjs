@@ -1014,6 +1014,12 @@
       (return (call $mk_str (call $substr (local.get $kfkey) (i32.const 9) (i32.sub (call $str_len (local.get $kfkey)) (i32.const 9)))))))
   (if (i32.eq (local.get $id) (i32.const 199))  ;; Symbol.prototype.toString (this = symbol)
     (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (call $sym_desc (local.get $thisv))) (cstring ")"))))))
+  (if (i32.eq (local.get $id) (i32.const 209))  ;; new Proxy(target, handler)
+    (then
+      (let $pxo i32 (call $obj_new (i32.const 4)))
+      (call $scope_define (local.get $pxo) (cstring "@@ptarget") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (call $scope_define (local.get $pxo) (cstring "@@phandler") (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (return (call $mk_obj (local.get $pxo)))))
   (if (i32.eq (local.get $id) (i32.const 200))  ;; Reflect.get(target, key)
     (then (return (call $get_prop (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
   (if (i32.eq (local.get $id) (i32.const 201))  ;; Reflect.set(target, key, value) → true
@@ -2376,6 +2382,7 @@
   (call $scope_define (local.get $refo) (cstring "getOwnPropertyDescriptor") (call $mk_native (i32.const 207) (cstring "getOwnPropertyDescriptor")))
   (call $scope_define (local.get $refo) (cstring "apply") (call $mk_native (i32.const 208) (cstring "apply")))
   (call $scope_define (local.get $g) (cstring "Reflect") (call $mk_obj (local.get $refo)))
+  (drop (call $def_native (local.get $g) (cstring "Proxy") (i32.const 209)))
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
