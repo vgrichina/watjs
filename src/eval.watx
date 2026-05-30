@@ -262,7 +262,10 @@
 (func $alike_arr (param $thisv i64) (result i32) (effects)
   (if (call $is_array (local.get $thisv)) (then (return (call $val_payload (local.get $thisv)))))
   (let $len i32 (call $alike_len (local.get $thisv)))
-  (if (i32.gt_s (local.get $len) (i32.const 1048576)) (then (set! $len (i32.const 1048576))))
+  ;; cap materialization (each index also allocates a key string); 1M overflowed
+  ;; the heap on Infinity/huge `length` array-likes (OOB). 64K covers realistic
+  ;; array-likes and lets huge-length sparse tests early-exit instead of crashing.
+  (if (i32.gt_s (local.get $len) (i32.const 65536)) (then (set! $len (i32.const 65536))))
   (let $tmp i32 (call $arr_new (i32.add (local.get $len) (i32.const 1))))
   (let $i i32 (i32.const 0))
   (block $e (loop $l
