@@ -1,0 +1,6 @@
+basic=a|b|c::1,2
+raw=x\ny
+strraw=p\tq1r
+count=3,2
+plain=sum=7
+member=method:hi
