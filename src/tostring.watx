@@ -456,6 +456,17 @@
 
 ;; ToNumber for an object: prefer valueOf(), then __prim__ wrapper slot, else NaN.
 (func $obj_to_num (param $v i64) (result f64) (effects)
+  ;; Symbol.toPrimitive (number hint) is authoritative for ToNumber(object)
+  (let $ntpf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@toPrimitive"))))
+  (if (call $is_function (local.get $ntpf))
+    (then
+      (let $ntpa i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $ntpa) (call $mk_str (cstring "number")))
+      (let $ntpr i64 (call $call_val (local.get $ntpf) (i32.const 1) (local.get $ntpa) (local.get $v)))
+      (if (call $err) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+      (if (i32.or (call $is_object (local.get $ntpr)) (i32.or (call $is_array (local.get $ntpr)) (call $is_function (local.get $ntpr))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert object to primitive value")) (return (f64.div (f64.const 0) (f64.const 0)))))
+      (return (call $to_num (local.get $ntpr)))))
   (let $had i32 (i32.const 0))  ;; saw a user valueOf/toString that returned an object
   (let $vo i64 (call $get_prop (local.get $v) (call $mk_str (cstring "valueOf"))))
   (if (call $is_function (local.get $vo))
@@ -492,6 +503,22 @@
     (then (return (local.get $v))))
   ;; arrays stringify via join
   (if (call $is_array (local.get $v)) (then (return (call $mk_str (call $arr_join (local.get $v))))))
+  ;; Symbol.toPrimitive (key "@@toPrimitive"): if a callable, it is authoritative
+  (if (call $is_object (local.get $v))
+    (then
+      (let $tpf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@toPrimitive"))))
+      (if (call $is_function (local.get $tpf))
+        (then
+          (let $hintstr i32 (cstring "default"))
+          (if (i32.eq (local.get $hint) (i32.const 1)) (then (set! $hintstr (cstring "number"))))
+          (if (i32.eq (local.get $hint) (i32.const 2)) (then (set! $hintstr (cstring "string"))))
+          (let $tpa i32 (call $heap_alloc (i32.const 8)))
+          (i64.store (local.get $tpa) (call $mk_str (local.get $hintstr)))
+          (let $tpr i64 (call $call_val (local.get $tpf) (i32.const 1) (local.get $tpa) (local.get $v)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.or (call $is_object (local.get $tpr)) (i32.or (call $is_array (local.get $tpr)) (call $is_function (local.get $tpr))))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert object to primitive value")) (return (call $v_undef))))
+          (return (local.get $tpr))))))
   ;; string-order when the hint is "string", or "default" on a Date (own @@time)
   (let $strFirst i32 (i32.eq (local.get $hint) (i32.const 2)))
   (if (i32.and (i32.eq (local.get $hint) (i32.const 0)) (call $is_object (local.get $v)))
