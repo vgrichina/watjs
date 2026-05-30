@@ -764,8 +764,12 @@
       (if (call $is_object (local.get $thisv))
         (then
           (let $vo220 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
-          (if (local.get $vo220) (then (return (i64.load (local.get $vo220)))))))
-      (return (local.get $thisv))))
+          (if (local.get $vo220) (then (return (i64.load (local.get $vo220)))))
+          ;; object without a __prim__ wrapper slot → not a Number/Boolean → TypeError
+          (call $throw_type (cstring "TypeError") (cstring "valueOf called on incompatible receiver")) (return (call $v_undef))))
+      ;; primitive receiver: only number/boolean are valid for these valueOf's
+      (if (i32.or (call $is_number (local.get $thisv)) (call $is_boolean (local.get $thisv))) (then (return (local.get $thisv))))
+      (call $throw_type (cstring "TypeError") (cstring "valueOf called on incompatible receiver")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 221))  ;; Boolean.prototype.toString → "true"/"false"
     (then
       (let $bv221 i64 (local.get $thisv))
