@@ -838,6 +838,23 @@
       (let $io i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eqz (call $is_object (local.get $io))) (then (return (call $v_true))))  ;; non-objects are "frozen"
       (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $io)) (cstring "@@frozen")) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 169))  ;; Object.is(a, b) — SameValue
+    (then
+      (let $isa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $isb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.and (call $is_number (local.get $isa)) (call $is_number (local.get $isb)))
+        (then
+          (let $isan f64 (call $tonum_raw (local.get $isa)))
+          (let $isbn f64 (call $tonum_raw (local.get $isb)))
+          (if (i32.and (f64.ne (local.get $isan) (local.get $isan)) (f64.ne (local.get $isbn) (local.get $isbn))) (then (return (call $v_true))))  ;; both NaN
+          (if (i32.eqz (f64.eq (local.get $isan) (local.get $isbn))) (then (return (call $v_false))))
+          ;; equal: distinguish ±0 by sign
+          (if (f64.eq (local.get $isan) (f64.const 0))
+            (then (return (call $mk_bool (i32.eq (f64.lt (f64.div (f64.const 1) (local.get $isan)) (f64.const 0)) (f64.lt (f64.div (f64.const 1) (local.get $isbn)) (f64.const 0)))))))
+          (return (call $v_true))))
+      (return (call $mk_bool (call $strict_eq (local.get $isa) (local.get $isb))))))
+  (if (i32.eq (local.get $id) (i32.const 170))  ;; Math.clz32(x)
+    (then (return (call $num (f64.convert_i32_u (i32.clz (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 143))  ;; arguments[@@iterator]() → iterator (this = arguments obj)
     (then
       (let $it i32 (call $obj_new (i32.const 4)))
@@ -1948,6 +1965,7 @@
   (i32.store (i32.const 156) (local.get $sp))
   (call $scope_define (local.get $sp) (cstring "charAt") (call $mk_native (i32.const 11) (cstring "charAt")))
   (call $scope_define (local.get $sp) (cstring "charCodeAt") (call $mk_native (i32.const 12) (cstring "charCodeAt")))
+  (call $scope_define (local.get $sp) (cstring "codePointAt") (call $mk_native (i32.const 12) (cstring "codePointAt")))
   (call $scope_define (local.get $sp) (cstring "indexOf") (call $mk_native (i32.const 13) (cstring "indexOf")))
   (call $scope_define (local.get $sp) (cstring "slice") (call $mk_native (i32.const 14) (cstring "slice")))
   (call $scope_define (local.get $sp) (cstring "substring") (call $mk_native (i32.const 15) (cstring "substring")))
@@ -1970,6 +1988,7 @@
   (call $scope_define (local.get $sp) (cstring "padEnd") (call $mk_native (i32.const 67) (cstring "padEnd")))
   (call $scope_define (local.get $sp) (cstring "at") (call $mk_native (i32.const 68) (cstring "at")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCharCode")) (call $mk_native (i32.const 87) (cstring "fromCharCode")))
+  (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCodePoint")) (call $mk_native (i32.const 87) (cstring "fromCodePoint")))
   (call $scope_define (local.get $sp) (cstring "match") (call $mk_native (i32.const 102) (cstring "match")))
   (call $scope_define (local.get $sp) (cstring "replace") (call $mk_native (i32.const 103) (cstring "replace")))
   (call $scope_define (local.get $sp) (cstring "replaceAll") (call $mk_native (i32.const 109) (cstring "replaceAll")))
@@ -2035,6 +2054,7 @@
   (call $scope_define (local.get $mo) (cstring "min") (call $mk_native (i32.const 46) (cstring "min")))
   (call $scope_define (local.get $mo) (cstring "pow") (call $mk_native (i32.const 47) (cstring "pow")))
   (call $scope_define (local.get $mo) (cstring "trunc") (call $mk_native (i32.const 48) (cstring "trunc")))
+  (call $scope_define (local.get $mo) (cstring "clz32") (call $mk_native (i32.const 170) (cstring "clz32")))
   (call $scope_define (local.get $mo) (cstring "sign") (call $mk_native (i32.const 49) (cstring "sign")))
   (call $scope_define (local.get $mo) (cstring "hypot") (call $mk_native (i32.const 52) (cstring "hypot")))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "PI")) (call $num (f64.const 3.141592653589793)))
@@ -2051,6 +2071,7 @@
   (call $set_prop (local.get $objf) (call $mk_str (cstring "fromEntries")) (call $mk_native (i32.const 115) (cstring "fromEntries")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "assign")) (call $mk_native (i32.const 80) (cstring "assign")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "freeze")) (call $mk_native (i32.const 139) (cstring "freeze")))
+  (call $set_prop (local.get $objf) (call $mk_str (cstring "is")) (call $mk_native (i32.const 169) (cstring "is")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "isFrozen")) (call $mk_native (i32.const 140) (cstring "isFrozen")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "create")) (call $mk_native (i32.const 81) (cstring "create")))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "getPrototypeOf")) (call $mk_native (i32.const 82) (cstring "getPrototypeOf")))
@@ -2086,6 +2107,7 @@
   ;; global NaN / Infinity / undefined
   (call $scope_define (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))
+  (call $scope_define (local.get $g) (cstring "globalThis") (call $mk_obj (local.get $g)))
   (call $scope_define (local.get $g) (cstring "undefined") (call $v_undef))
   ;; built-ins are non-enumerable (spec: DontEnum) — clear enum on every builtin
   ;; object/prototype and each constructor's static-method scope. Done last so it
