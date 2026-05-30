@@ -2270,6 +2270,7 @@
 ;; (Map/Set/…) fall back to the production js_instanceof.
 (func $vm_instanceof (param $x i64) (param $f i64) (result i64) (effects)
   (if (i32.eqz (call $is_function (local.get $f))) (then (return (call $v_false))))
+  (if (call $is_array (local.get $x)) (then (return (call $js_instanceof (local.get $x) (local.get $f)))))  ;; arrays → general chain walk
   (if (i32.eqz (call $is_object (local.get $x))) (then (return (call $v_false))))
   (let $fp i32 (call $val_payload (local.get $f)))
   (if (i32.ne (i32.load (local.get $fp)) (i32.const 1448232526))

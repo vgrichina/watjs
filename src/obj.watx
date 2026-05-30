@@ -548,9 +548,15 @@
 (func $js_instanceof (param $x i64) (param $f i64) (result i64) (effects)
   (if (i32.eqz (call $is_function (local.get $f)))
     (then (call $throw_type (cstring "TypeError") (cstring "right operand of instanceof is not callable")) (return (call $v_false))))
-  (if (i32.eqz (call $is_object (local.get $x))) (then (return (call $v_false))))
   (let $protoScope i32 (call $val_payload (call $fn_get_prototype (call $val_payload (local.get $f)))))
-  (let $p i32 (call $scope_parent (call $val_payload (local.get $x))))
+  ;; start the prototype-chain walk: arrays begin at Array.prototype (reg 160),
+  ;; ordinary objects at their scope parent; anything else is not an instance.
+  (let $p i32 (i32.const 0))
+  (if (call $is_array (local.get $x))
+    (then (set! $p (i32.load (i32.const 160))))
+    (else (if (call $is_object (local.get $x))
+      (then (set! $p (call $scope_parent (call $val_payload (local.get $x)))))
+      (else (return (call $v_false))))))
   (block $brk (loop $cont
     (br_if $brk (i32.eqz (local.get $p)))
     (if (i32.eq (local.get $p) (local.get $protoScope)) (then (return (call $v_true))))

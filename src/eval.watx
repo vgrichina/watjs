@@ -2667,6 +2667,7 @@
       (let $ov i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.or (call $is_null (local.get $ov)) (call $is_undefined (local.get $ov)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (if (call $is_array (local.get $ov)) (then (return (call $mk_obj (i32.load (i32.const 160))))))  ;; Array.prototype
       (if (call $is_object (local.get $ov))
         (then
           (let $par i32 (call $scope_parent (call $val_payload (local.get $ov))))
