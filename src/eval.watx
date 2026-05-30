@@ -1503,6 +1503,33 @@
             (set! $fk (i32.add (local.get $fk) (i32.const 1)))
             (br $fl)))
           (return (local.get $thisv))))
+      (if (i32.eq (local.get $id) (i32.const 168))  ;; copyWithin(target, start[, end])
+        (then
+          (let $ct i32 (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+          (let $cs i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (let $ce i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))
+          (if (i32.lt_s (local.get $ct) (i32.const 0)) (then (set! $ct (i32.add (local.get $n) (local.get $ct))) (if (i32.lt_s (local.get $ct) (i32.const 0)) (then (set! $ct (i32.const 0))))))
+          (if (i32.lt_s (local.get $cs) (i32.const 0)) (then (set! $cs (i32.add (local.get $n) (local.get $cs))) (if (i32.lt_s (local.get $cs) (i32.const 0)) (then (set! $cs (i32.const 0))))))
+          (if (i32.lt_s (local.get $ce) (i32.const 0)) (then (set! $ce (i32.add (local.get $n) (local.get $ce)))))
+          (if (i32.gt_s (local.get $ce) (local.get $n)) (then (set! $ce (local.get $n))))
+          ;; count = min(end-start, n-target), clamped at 0
+          (let $ccnt i32 (i32.sub (local.get $ce) (local.get $cs)))
+          (if (i32.gt_s (local.get $ccnt) (i32.sub (local.get $n) (local.get $ct))) (then (set! $ccnt (i32.sub (local.get $n) (local.get $ct)))))
+          (if (i32.gt_s (local.get $ccnt) (i32.const 0))
+            (then
+              ;; read source into a temp buffer first (handles overlap)
+              (let $cbuf i32 (call $heap_alloc (i32.mul (local.get $ccnt) (i32.const 8))))
+              (let $ci i32 (i32.const 0))
+              (block $cre (loop $crl
+                (br_if $cre (i32.ge_s (local.get $ci) (local.get $ccnt)))
+                (i64.store (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8))) (call $arr_get (local.get $arr) (i32.add (local.get $cs) (local.get $ci))))
+                (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $crl)))
+              (set! $ci (i32.const 0))
+              (block $cwe (loop $cwl
+                (br_if $cwe (i32.ge_s (local.get $ci) (local.get $ccnt)))
+                (call $arr_set (local.get $arr) (i32.add (local.get $ct) (local.get $ci)) (i64.load (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8)))))
+                (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $cwl)))))
+          (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 30))  ;; lastIndexOf(x)
         (then
           (let $li i32 (i32.sub (local.get $n) (i32.const 1)))
@@ -1960,6 +1987,7 @@
   (call $scope_define (local.get $ap) (cstring "includes") (call $mk_native (i32.const 27) (cstring "includes")))
   (call $scope_define (local.get $ap) (cstring "at") (call $mk_native (i32.const 28) (cstring "at")))
   (call $scope_define (local.get $ap) (cstring "fill") (call $mk_native (i32.const 29) (cstring "fill")))
+  (call $scope_define (local.get $ap) (cstring "copyWithin") (call $mk_native (i32.const 168) (cstring "copyWithin")))
   (call $scope_define (local.get $ap) (cstring "lastIndexOf") (call $mk_native (i32.const 30) (cstring "lastIndexOf")))
   (call $scope_define (local.get $ap) (cstring "flat") (call $mk_native (i32.const 31) (cstring "flat")))
   (call $scope_define (local.get $ap) (cstring "flatMap") (call $mk_native (i32.const 32) (cstring "flatMap")))
