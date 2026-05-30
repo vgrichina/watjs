@@ -44,7 +44,13 @@ function collect(targets) {
     const p = path.isAbsolute(t) ? t : path.join(ROOT, t);
     if (!fs.existsSync(p)) continue;
     if (fs.statSync(p).isDirectory())
-      for (const n of fs.readdirSync(p).sort()) if (n.endsWith('.js')) out.push(path.join(p, n));
+      // recurse into subdirectories; skip _FIXTURE helper modules
+      for (const n of fs.readdirSync(p).sort()) {
+        if (n.startsWith('.')) continue;
+        const cp = path.join(p, n);
+        if (fs.statSync(cp).isDirectory()) out.push(...collect([cp]));
+        else if (n.endsWith('.js') && !n.endsWith('_FIXTURE.js')) out.push(cp);
+      }
     else if (p.endsWith('.js')) out.push(p);
   }
   return out;
