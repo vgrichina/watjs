@@ -245,7 +245,16 @@
       (if (call $key_is_length (local.get $key))
         (then (return (call $num (f64.convert_i32_s (call $arr_len (local.get $a)))))))
       (if (call $is_number (local.get $key))
-        (then (return (call $arr_get (local.get $a) (i32.trunc_f64_s (call $tonum_raw (local.get $key)))))))
+        (then
+          ;; only a finite integer in i32 range is an element index; others
+          ;; (NaN/>=2^31/fractional) → undefined (guard the trapping trunc)
+          (let $aget f64 (call $tonum_raw (local.get $key)))
+          (if (i32.and (f64.eq (local.get $aget) (local.get $aget))
+                (i32.and (f64.ge (local.get $aget) (f64.const 0))
+                  (i32.and (f64.lt (local.get $aget) (f64.const 2147483648))
+                           (f64.eq (local.get $aget) (f64.floor (local.get $aget))))))
+            (then (return (call $arr_get (local.get $a) (i32.trunc_f64_s (local.get $aget))))))
+          (return (call $v_undef))))
       ;; methods from Array.prototype (reg 160)
       (let $ap i32 (i32.load (i32.const 160)))
       (if (local.get $ap)
@@ -473,7 +482,16 @@
     (then
       (let $a i32 (call $val_payload (local.get $cont)))
       (if (call $is_number (local.get $key))
-        (then (call $arr_set (local.get $a) (i32.trunc_f64_s (call $tonum_raw (local.get $key))) (local.get $val)) (return)))
+        (then
+          ;; finite integer in i32 range → element; else (NaN/>=2^31/fractional)
+          ;; would be a named property (unsupported on arrays) — drop, don't trap
+          (let $aset f64 (call $tonum_raw (local.get $key)))
+          (if (i32.and (f64.eq (local.get $aset) (local.get $aset))
+                (i32.and (f64.ge (local.get $aset) (f64.const 0))
+                  (i32.and (f64.lt (local.get $aset) (f64.const 2147483648))
+                           (f64.eq (local.get $aset) (f64.floor (local.get $aset))))))
+            (then (call $arr_set (local.get $a) (i32.trunc_f64_s (local.get $aset)) (local.get $val))))
+          (return)))
       (return)))
   (if (call $is_object (local.get $cont))
     (then
