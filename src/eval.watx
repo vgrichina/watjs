@@ -865,6 +865,11 @@
       (return (call $mk_bool (call $strict_eq (local.get $isa) (local.get $isb))))))
   (if (i32.eq (local.get $id) (i32.const 170))  ;; Math.clz32(x)
     (then (return (call $num (f64.convert_i32_u (i32.clz (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+  (if (i32.eq (local.get $id) (i32.const 171))  ;; Number.prototype.toExponential(d)
+    (then (return (call $mk_str (call $num_to_exponential (call $to_num (local.get $thisv))
+            (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 6))))))))
+  (if (i32.eq (local.get $id) (i32.const 172))  ;; String.prototype.localeCompare(o) — byte-order compare
+    (then (return (call $num (f64.convert_i32_s (call $str_cmp (call $to_str (local.get $thisv)) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 143))  ;; arguments[@@iterator]() → iterator (this = arguments obj)
     (then
       (let $it i32 (call $obj_new (i32.const 4)))
@@ -1963,6 +1968,7 @@
   (call $scope_define (local.get $numproto) (cstring "toString") (call $mk_native (i32.const 145) (cstring "toString")))
   (call $scope_define (local.get $numproto) (cstring "toFixed") (call $mk_native (i32.const 146) (cstring "toFixed")))
   (call $scope_define (local.get $numproto) (cstring "toPrecision") (call $mk_native (i32.const 166) (cstring "toPrecision")))
+  (call $scope_define (local.get $numproto) (cstring "toExponential") (call $mk_native (i32.const 171) (cstring "toExponential")))
   (let $numf i64 (call $def_native (local.get $g) (cstring "Number") (i32.const 4)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
@@ -1999,6 +2005,7 @@
   (call $scope_define (local.get $sp) (cstring "constructor") (local.get $strf))
   (call $scope_define (local.get $sp) (cstring "split") (call $mk_native (i32.const 60) (cstring "split")))
   (call $scope_define (local.get $sp) (cstring "trim") (call $mk_native (i32.const 61) (cstring "trim")))
+  (call $scope_define (local.get $sp) (cstring "localeCompare") (call $mk_native (i32.const 172) (cstring "localeCompare")))
   (call $scope_define (local.get $sp) (cstring "repeat") (call $mk_native (i32.const 62) (cstring "repeat")))
   (call $scope_define (local.get $sp) (cstring "includes") (call $mk_native (i32.const 63) (cstring "includes")))
   (call $scope_define (local.get $sp) (cstring "replaceAll") (call $mk_native (i32.const 141) (cstring "replaceAll")))
