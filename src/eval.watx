@@ -3059,6 +3059,8 @@
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
+  (call $set_prop (local.get $arrf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $ap)))  ;; Array.prototype
+  (call $scope_define (local.get $ap) (cstring "constructor") (local.get $arrf))  ;; Array.prototype.constructor === Array
   (drop (call $def_native (local.get $g) (cstring "Map") (i32.const 120)))
   (drop (call $def_native (local.get $g) (cstring "Set") (i32.const 130)))
   (let $datef i64 (call $def_native (local.get $g) (cstring "Date") (i32.const 180)))
