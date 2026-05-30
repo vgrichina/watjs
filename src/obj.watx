@@ -300,6 +300,10 @@
         (then
           (let $slot i32 (call $scope_find_local (local.get $ap) (local.get $akey)))
           (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
+      ;; Object.prototype fallback (arrays inherit these)
+      (if (call $str_eq (local.get $akey) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
+      (if (call $str_eq (local.get $akey) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
+      (if (call $str_eq (local.get $akey) (cstring "toString")) (then (return (call $mk_native (i32.const 23) (cstring "toString")))))  ;; Array#toString = join
       (return (call $v_undef))))
   (if (call $is_number (local.get $cont))  ;; number methods via Number.prototype (reg 164)
     (then

@@ -959,6 +959,17 @@
       (let $ks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $is_function (local.get $thisv))
         (then (return (call $mk_bool (call $fn_own (call $val_payload (local.get $thisv)) (local.get $ks))))))
+      (if (call $is_array (local.get $thisv))
+        (then
+          (let $hap i32 (call $val_payload (local.get $thisv)))
+          (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $v_true))))
+          ;; element index in [0, length)
+          (let $hidx i32 (call $str_array_index (local.get $ks)))
+          (if (i32.and (i32.ge_s (local.get $hidx) (i32.const 0)) (i32.lt_s (local.get $hidx) (call $arr_len (local.get $hap)))) (then (return (call $v_true))))
+          ;; named property in the @12 scope
+          (let $hap2 i32 (i32.load (i32.add (local.get $hap) (i32.const 12))))
+          (if (local.get $hap2) (then (if (call $scope_find_local (local.get $hap2) (local.get $ks)) (then (return (call $v_true))))))
+          (return (call $v_false))))
       (if (call $is_object (local.get $thisv))
         (then (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (local.get $ks)) (i32.const 0))))))
       (return (call $v_false))))
