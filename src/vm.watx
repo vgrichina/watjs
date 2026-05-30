@@ -977,6 +977,45 @@
 
 ;; conditional  c ? t : e  (lowest precedence, right-assoc)
 (func $vm_c_expr (param $code i32) (effects)
+  ;; yield expression: `yield [expr]` → resume value is the expression result;
+  ;; `yield* E` delegates (result left undefined). yield is the lowest precedence.
+  (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "yield")))
+    (then
+      (call $next_token)
+      (if (i32.eq (call $tok_kind) (i32.const 12))  ;; yield* E
+        (then
+          (call $next_token)
+          (call $vm_c_expr (local.get $code))
+          (call $vm_emit_op (local.get $code) (i32.const 45))  ;; GETITER → [it]
+          (let $eyit i32 (call $vm_tmpname))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $eyit))
+          (let $eyr i32 (call $vm_tmpname))
+          (let $eytop i32 (call $vm_emit_cursor))
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $eyit))
+          (call $vm_emit_op (local.get $code) (i32.const 32))
+          (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "next"))
+          (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 0))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $eyr))
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $eyr))
+          (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "done"))
+          (call $vm_emit_op (local.get $code) (i32.const 23))
+          (let $eyend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $eyr))
+          (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "value"))
+          (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD
+          (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP resume
+          (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $eytop))
+          (call $vm_patch (local.get $code) (local.get $eyend))
+          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; result
+          (return)))
+      ;; yield [expr]
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 16))
+            (i32.or (i32.eq (call $tok_kind) (i32.const 20)) (i32.or (i32.eq (call $tok_kind) (i32.const 18))
+            (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eq (call $tok_kind) (i32.const 0)))))))
+        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)))  ;; yield undefined
+        (else (call $vm_c_expr (local.get $code))))
+      (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD → resume value = expression result
+      (return)))
   (call $vm_c_or (local.get $code))
   (if (i32.eq (call $tok_kind) (i32.const 36))  ;; '?'
     (then
@@ -1618,6 +1657,7 @@
               (return)))
           (call $vm_c_expr (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD (suspend with value)
+          (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP the resume value (statement form discards it)
           (drop (call $eat (i32.const 21)))
           (return)))
       (if (call $tok_is_kw (cstring "throw"))
@@ -2295,7 +2335,7 @@
         (return (if i64 (i32.gt_s (local.get $sp) (i32.const 0))
                   (then (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
                   (else (call $v_undef))))))
-    (if (i32.eq (local.get $op) (i32.const 7))  ;; YIELD — suspend
+    (if (i32.eq (local.get $op) (i32.const 7))  ;; YIELD — suspend; resume pushes the .next(v) argument
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (i32.store (i32.add (local.get $ctx) (i32.const 4)) (local.get $ip))
@@ -2303,6 +2343,7 @@
         (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $scope))
         (i32.store (i32.add (local.get $ctx) (i32.const 24)) (local.get $frame))
         (i32.store (i32.add (local.get $ctx) (i32.const 32)) (local.get $handler))
+        (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 1))  ;; resume pushes the value (yield expression result)
         (return (i64.load (i32.add (local.get $stack) (local.get $sp))))))
     (if (i32.eq (local.get $op) (i32.const 50))  ;; AWAIT — suspend, resume pushes the resolved value
       (then
@@ -3040,7 +3081,7 @@
   (call $mk_obj (local.get $g)))
 
 ;; gen.next(): resume the generator context, return { value, done }
-(func $vm_gen_result (param $genv i64) (result i64) (effects)
+(func $vm_gen_result (param $genv i64) (param $resumeval i64) (result i64) (effects)
   (let $ctx i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $genv) (call $mk_str (cstring "@@ctx"))))))
   (let $r i32 (call $obj_new (i32.const 2)))
   (if (call $vm_done (local.get $ctx))
@@ -3048,7 +3089,7 @@
       (call $scope_define (local.get $r) (cstring "value") (call $v_undef))
       (call $scope_define (local.get $r) (cstring "done") (call $v_true)))
     (else
-      (let $v i64 (call $vm_step (local.get $ctx) (call $v_undef)))
+      (let $v i64 (call $vm_step (local.get $ctx) (local.get $resumeval)))
       (call $scope_define (local.get $r) (cstring "value") (local.get $v))
       (call $scope_define (local.get $r) (cstring "done") (call $mk_bool (call $vm_done (local.get $ctx))))))
   (call $mk_obj (local.get $r)))

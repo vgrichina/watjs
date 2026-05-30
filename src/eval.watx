@@ -1116,8 +1116,8 @@
             (set! $fei (i32.add (local.get $fei) (i32.const 1)))
             (br $fel2)))))
       (return (call $mk_obj (local.get $feo)))))
-  (if (i32.eq (local.get $id) (i32.const 150))  ;; generator .next() — resumes the VM context
-    (then (return (call $vm_gen_result (local.get $thisv)))))
+  (if (i32.eq (local.get $id) (i32.const 150))  ;; generator .next([v]) — resumes the VM context
+    (then (return (call $vm_gen_result (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 151))  ;; Promise.resolve(v)
     (then (return (call $vm_promise (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 152))  ;; promise.then(cb)

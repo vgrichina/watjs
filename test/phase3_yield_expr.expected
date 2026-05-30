@@ -1,0 +1,4 @@
+r1={"value":1,"done":false}
+r2={"value":20,"done":false}
+r3={"value":15,"done":true}
+a=7
