@@ -633,8 +633,18 @@
           (let $sproto i64 (i64.load (i32.add (local.get $sfn) (i32.const 16))))
           (if (i32.eqz (call $is_object (local.get $sproto)))
             (then (set! $sproto (call $mk_obj (call $obj_new (i32.const 8)))) (i64.store (i32.add (local.get $sfn) (i32.const 16)) (local.get $sproto))))
-          (call $scope_define (call $val_payload (local.get $sproto)) (call $to_prop_key (local.get $key)) (local.get $val))
+          (let $svk i32 (call $to_prop_key (local.get $key)))
+          (let $svs i32 (call $scope_find_local (call $val_payload (local.get $sproto)) (local.get $svk)))
+          (if (local.get $svs) (then (if (i32.eqz (call $entry_writable (local.get $svs))) (then (return)))))  ;; non-writable own → ignore
+          (call $scope_define (call $val_payload (local.get $sproto)) (local.get $svk) (local.get $val))
           (return)))
-      (call $scope_define (call $fn_props (local.get $sfn)) (call $to_prop_key (local.get $key)) (local.get $val))
+      (let $sfk i32 (call $to_prop_key (local.get $key)))
+      (if (call $str_eq (local.get $sfk) (cstring "length")) (then (return)))  ;; non-writable computed
+      ;; non-writable own data prop (e.g. name) → ignore the assignment. Guard
+      ;; entry_writable behind the null check (i32.and is not short-circuit and
+      ;; would deref slot-4 when the slot is absent).
+      (let $sfs i32 (call $scope_find_local (call $fn_props (local.get $sfn)) (local.get $sfk)))
+      (if (local.get $sfs) (then (if (i32.eqz (call $entry_writable (local.get $sfs))) (then (return)))))
+      (call $scope_define (call $fn_props (local.get $sfn)) (local.get $sfk) (local.get $val))
       (return)))
   (call $throw_type (cstring "TypeError") (cstring "cannot set property of non-object")))

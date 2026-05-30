@@ -3186,7 +3186,7 @@
   (i32.store (local.get $fn) (local.get $id))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (call $native_arity (local.get $id)))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))
-  (call $scope_define (call $fn_props (local.get $fn)) (cstring "name") (call $mk_str (local.get $name)))
+  (call $scope_define_attr (call $fn_props (local.get $fn)) (cstring "name") (call $mk_str (local.get $name)) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $mk_fn (local.get $fn)))
 
 ;; call a user function: bind params in a fresh scope (parent = closure scope),
@@ -3372,7 +3372,7 @@
   (i32.store (local.get $fn) (local.get $id))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (call $native_arity (local.get $id)))   ;; nparam (.length)
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))  ;; props (lazy)
-  (call $scope_define (call $fn_props (local.get $fn)) (cstring "name") (call $mk_str (local.get $name)))
+  (call $scope_define_attr (call $fn_props (local.get $fn)) (cstring "name") (call $mk_str (local.get $name)) (i32.const 4))  ;; {W:false,E:false,C:true}
   (let $v i64 (call $mk_fn (local.get $fn)))
   (call $scope_define (local.get $scope) (local.get $name) (local.get $v))
   (local.get $v))

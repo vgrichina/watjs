@@ -1,0 +1,9 @@
+value=parseInt
+writable=false
+enumerable=false
+configurable=true
+after-assign=parseInt
+for-in-name=false
+hasOwn-before=true
+hasOwn-after=false
+length-after-assign=2

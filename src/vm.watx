@@ -2567,6 +2567,31 @@
                 (if (call $entry_configurable (local.get $dslot))
                   (then (drop (call $scope_delete (local.get $dsc) (local.get $dks))))
                   (else (set! $dres (call $v_false))))))))
+        ;; functions: delete a configurable own prop (e.g. name) from the native
+        ;; @12 store or a VM fn's @16 static/prototype scope.
+        (if (call $is_function (local.get $dobj))
+          (then
+            (let $dfn i32 (call $val_payload (local.get $dobj)))
+            (let $dfk i32 (call $to_str (local.get $dkey)))
+            (if (i32.and (i32.ge_s (i32.load (local.get $dfn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $dfn)) (i32.const 1448232528)))
+              (then
+                (let $dvp i64 (i64.load (i32.add (local.get $dfn) (i32.const 16))))
+                (if (call $is_object (local.get $dvp))
+                  (then
+                    (let $dvs i32 (call $scope_find_local (call $val_payload (local.get $dvp)) (local.get $dfk)))
+                    (if (local.get $dvs)
+                      (then (if (call $entry_configurable (local.get $dvs))
+                        (then (drop (call $scope_delete (call $val_payload (local.get $dvp)) (local.get $dfk))))
+                        (else (set! $dres (call $v_false)))))))))
+              (else
+                (let $dfp i32 (i32.load (i32.add (local.get $dfn) (i32.const 12))))
+                (if (local.get $dfp)
+                  (then
+                    (let $dfs i32 (call $scope_find_local (local.get $dfp) (local.get $dfk)))
+                    (if (local.get $dfs)
+                      (then (if (call $entry_configurable (local.get $dfs))
+                        (then (drop (call $scope_delete (local.get $dfp) (local.get $dfk))))
+                        (else (set! $dres (call $v_false))))))))))))
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $dres))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
