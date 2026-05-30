@@ -1149,6 +1149,7 @@
       (call $scope_define (local.get $ro) (cstring "global") (call $mk_bool (call $str_has_char (local.get $flg) (i32.const 103))))
       (call $scope_define (local.get $ro) (cstring "ignoreCase") (call $mk_bool (call $str_has_char (local.get $flg) (i32.const 105))))
       (call $scope_define (local.get $ro) (cstring "test") (call $mk_native (i32.const 101) (cstring "test")))
+      (call $scope_define (local.get $ro) (cstring "exec") (call $mk_native (i32.const 167) (cstring "exec")))
       (return (call $mk_obj (local.get $ro)))))
   (if (i32.eq (local.get $id) (i32.const 101))  ;; regex.test(str)  (this = regex obj)
     (then
@@ -1157,6 +1158,29 @@
       (call $re_apply_flags (local.get $thisv))
       (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (return (call $mk_bool (i32.ge_s (call $re_search_str (call $val_payload (local.get $src)) (local.get $sub)) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 167))  ;; regex.exec(str) (this = regex) → [match, ...caps] | null
+    (then
+      (let $src i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "__re_src__"))))
+      (if (i32.eqz (call $is_string (local.get $src))) (then (return (call $v_null))))
+      (call $re_apply_flags (local.get $thisv))
+      (let $pat i32 (call $re_pat_of (local.get $thisv)))
+      (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (let $start i32 (call $re_search_str (local.get $pat) (local.get $sub)))
+      (if (i32.lt_s (local.get $start) (i32.const 0)) (then (return (call $v_null))))
+      (let $end i32 (i32.load (i32.const 168)))
+      (let $r i32 (call $arr_new (i32.const 2)))
+      (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))
+      (let $gi i32 (i32.const 1))
+      (block $ece (loop $ecl
+        (br_if $ece (i32.gt_s (local.get $gi) (i32.load (i32.const 284))))
+        (let $cb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $gi) (i32.const 1)) (i32.const 8))))
+        (let $cs i32 (i32.load (local.get $cb)))
+        (if (i32.lt_s (local.get $cs) (i32.const 0))
+          (then (call $arr_push (local.get $r) (call $v_undef)))
+          (else (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $cs) (i32.sub (i32.load (i32.add (local.get $cb) (i32.const 4))) (local.get $cs)))))))
+        (set! $gi (i32.add (local.get $gi) (i32.const 1)))
+        (br $ecl)))
+      (return (call $mk_arr (local.get $r)))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 102)) (i32.le_s (local.get $id) (i32.const 104)))  ;; match/replace/search (this=string)
     (then
       (let $sub i32 (call $to_str (local.get $thisv)))
@@ -1465,11 +1489,16 @@
           (if (i32.lt_s (local.get $atx) (i32.const 0)) (then (set! $atx (i32.add (local.get $atx) (local.get $n)))))
           (if (i32.or (i32.lt_s (local.get $atx) (i32.const 0)) (i32.ge_s (local.get $atx) (local.get $n))) (then (return (call $v_undef))))
           (return (call $arr_get (local.get $arr) (local.get $atx)))))
-      (if (i32.eq (local.get $id) (i32.const 29))  ;; fill(v) — fill all slots
+      (if (i32.eq (local.get $id) (i32.const 29))  ;; fill(v[, start[, end]])
         (then
-          (let $fk i32 (i32.const 0))
+          (let $fstart i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (let $fend i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))
+          (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.add (local.get $n) (local.get $fstart))) (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.const 0))))))
+          (if (i32.lt_s (local.get $fend) (i32.const 0)) (then (set! $fend (i32.add (local.get $n) (local.get $fend)))))
+          (if (i32.gt_s (local.get $fend) (local.get $n)) (then (set! $fend (local.get $n))))
+          (let $fk i32 (local.get $fstart))
           (block $fe (loop $fl
-            (br_if $fe (i32.ge_s (local.get $fk) (local.get $n)))
+            (br_if $fe (i32.ge_s (local.get $fk) (local.get $fend)))
             (call $arr_set (local.get $arr) (local.get $fk) (local.get $a0))
             (set! $fk (i32.add (local.get $fk) (i32.const 1)))
             (br $fl)))
