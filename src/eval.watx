@@ -2087,7 +2087,8 @@
     (then (return (call $num (f64.promote_f32 (f32.demote_f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 224))  ;; Math.imul(a,b) — 32-bit integer multiply
     (then (return (call $num (f64.convert_i32_s (i32.mul (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 242)))  ;; transcendental Math
+  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 242)))
+              (i32.and (i32.ge_s (local.get $id) (i32.const 244)) (i32.le_s (local.get $id) (i32.const 246))))  ;; transcendental Math (243 = setPrototypeOf, excluded)
     (then
       (let $mx f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (i32.eq (local.get $id) (i32.const 226)) (then (return (call $num (call $m_exp (local.get $mx))))))
@@ -2116,6 +2117,14 @@
         (then (if (f64.gt (f64.abs (local.get $mx)) (f64.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
               (return (call $num (f64.sub (f64.const 1.5707963267948966) (call $m_atan (f64.div (local.get $mx) (f64.sqrt (f64.sub (f64.const 1) (f64.mul (local.get $mx) (local.get $mx)))))))))))
       (if (i32.eq (local.get $id) (i32.const 241)) (then (return (call $num (call $m_atan (local.get $mx))))))  ;; atan
+      (if (i32.eq (local.get $id) (i32.const 244))  ;; asinh(x) = ln(x + sqrt(x²+1))
+        (then (return (call $num (call $m_log (f64.add (local.get $mx) (f64.sqrt (f64.add (f64.mul (local.get $mx) (local.get $mx)) (f64.const 1)))))))))
+      (if (i32.eq (local.get $id) (i32.const 245))  ;; acosh(x) = ln(x + sqrt(x²-1)), x>=1
+        (then (if (f64.lt (local.get $mx) (f64.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+              (return (call $num (call $m_log (f64.add (local.get $mx) (f64.sqrt (f64.sub (f64.mul (local.get $mx) (local.get $mx)) (f64.const 1)))))))))
+      (if (i32.eq (local.get $id) (i32.const 246))  ;; atanh(x) = 0.5*ln((1+x)/(1-x)), |x|<=1
+        (then (if (f64.gt (f64.abs (local.get $mx)) (f64.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+              (return (call $num (f64.mul (f64.const 0.5) (call $m_log (f64.div (f64.add (f64.const 1) (local.get $mx)) (f64.sub (f64.const 1) (local.get $mx)))))))))
       ;; atan2(y, x)
       (let $a2x f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
       (if (f64.gt (local.get $a2x) (f64.const 0)) (then (return (call $num (call $m_atan (f64.div (local.get $mx) (local.get $a2x)))))))
@@ -2587,6 +2596,7 @@
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 241))) (then (return (i32.const 1))))  ;; transcendental Math (1-arg)
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 244)) (i32.le_s (local.get $id) (i32.const 246))) (then (return (i32.const 1))))  ;; asinh/acosh/atanh
   (if (i32.or (i32.eq (local.get $id) (i32.const 11)) (i32.or (i32.eq (local.get $id) (i32.const 12)) (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.or (i32.eq (local.get $id) (i32.const 67)) (i32.eq (local.get $id) (i32.const 153))))))
     (then (return (i32.const 1))))  ;; charAt, charCodeAt, padStart, padEnd, bind
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
@@ -3055,6 +3065,9 @@
   (call $scope_define (local.get $mo) (cstring "acos") (call $mk_native (i32.const 240) (cstring "acos")))
   (call $scope_define (local.get $mo) (cstring "atan") (call $mk_native (i32.const 241) (cstring "atan")))
   (call $scope_define (local.get $mo) (cstring "atan2") (call $mk_native (i32.const 242) (cstring "atan2")))
+  (call $scope_define (local.get $mo) (cstring "asinh") (call $mk_native (i32.const 244) (cstring "asinh")))
+  (call $scope_define (local.get $mo) (cstring "acosh") (call $mk_native (i32.const 245) (cstring "acosh")))
+  (call $scope_define (local.get $mo) (cstring "atanh") (call $mk_native (i32.const 246) (cstring "atanh")))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "LN2")) (call $num (f64.const 0.6931471805599453)))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "LN10")) (call $num (f64.const 2.302585092994046)))
   (call $set_prop (local.get $mv) (call $mk_str (cstring "LOG2E")) (call $num (f64.const 1.4426950408889634)))
