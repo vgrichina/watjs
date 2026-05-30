@@ -1590,6 +1590,32 @@
       (if (call $tok_is_kw (cstring "yield"))
         (then
           (call $next_token)
+          (if (i32.eq (call $tok_kind) (i32.const 12))  ;; yield* E — delegate: yield each value of E's iterator
+            (then
+              (call $next_token)  ;; consume '*'
+              (call $vm_c_expr (local.get $code))  ;; [iterable]
+              (call $vm_emit_op (local.get $code) (i32.const 45))  ;; GETITER → [it]
+              (let $yit i32 (call $vm_tmpname))
+              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $yit))  ;; STOREVAR it
+              (let $yr i32 (call $vm_tmpname))
+              (let $ytop i32 (call $vm_emit_cursor))
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yit))  ;; LOADVAR it
+              (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "next"))  ;; GETPROP next
+              (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; CALLM 0 → [r]
+              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $yr))  ;; STOREVAR r
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yr))  ;; LOADVAR r
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "done"))  ;; GETPROP done
+              (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
+              (let $yend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end (done)
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yr))  ;; LOADVAR r
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "value"))  ;; GETPROP value
+              (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD value (suspend); resume value pushed
+              (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP resume value (delegate resume args not forwarded)
+              (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $ytop))  ;; JMP top
+              (call $vm_patch (local.get $code) (local.get $yend))
+              (drop (call $eat (i32.const 21)))
+              (return)))
           (call $vm_c_expr (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD (suspend with value)
           (drop (call $eat (i32.const 21)))

@@ -1,0 +1,4 @@
+nested=[0,1,2,3]
+a1={"value":10,"done":false}
+a2={"value":20,"done":false}
+a3={"done":true}
