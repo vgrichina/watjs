@@ -2269,7 +2269,7 @@
       (if (i32.eqz (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
       (if (call $is_object (local.get $ob))
-        (then (call $apply_descriptor (call $val_payload (local.get $ob)) (call $to_str (local.get $ky)) (local.get $de))))
+        (then (call $apply_descriptor (call $val_payload (local.get $ob)) (call $to_prop_key (local.get $ky)) (local.get $de))))
       ;; arrays: a data descriptor at a canonical index writes the element (accessor
       ;; descriptors at indices aren't supported by the dense store — left as-is);
       ;; named props go to the @12 scope via apply_descriptor.
@@ -2415,7 +2415,7 @@
           (return (call $v_undef))))
       (if (i32.eqz (call $is_object (local.get $ob))) (then (return (call $v_undef))))
       (let $os i32 (call $val_payload (local.get $ob)))
-      (let $slot i32 (call $scope_find_local (local.get $os) (call $to_str (local.get $ky))))
+      (let $slot i32 (call $scope_find_local (local.get $os) (call $to_prop_key (local.get $ky))))
       (if (i32.eqz (local.get $slot)) (then (return (call $v_undef))))
       (return (call $make_descriptor (local.get $slot)))))
   (if (i32.eq (local.get $id) (i32.const 88))  ;; Array(...): Array(n)->len n, else from args
