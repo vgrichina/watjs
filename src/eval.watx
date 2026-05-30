@@ -3380,5 +3380,8 @@
   (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $strf))))
   (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $numf))))
   (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $arrf))))
+  (call $scope_clear_enum (i32.load (i32.const 184)))   ;; Boolean.prototype
+  (call $scope_clear_enum (i32.load (i32.const 308)))   ;; Date.prototype
+  (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $datef))))  ;; Date statics (now/UTC)
   (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $objf)))))
 
