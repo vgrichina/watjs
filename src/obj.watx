@@ -99,6 +99,20 @@
     (then (i32.store (local.get $a) (i32.add (local.get $i) (i32.const 1))))))
 (func $arr_push (param $a i32) (param $v i64) (effects)
   (call $arr_set (local.get $a) (call $arr_len (local.get $a)) (local.get $v)))
+;; set the array length to $n: truncate (drop the tail) or extend (with holes).
+(func $arr_set_length (param $a i32) (param $n i32) (effects)
+  (let $cur i32 (call $arr_len (local.get $a)))
+  (if (i32.lt_s (local.get $n) (local.get $cur))
+    (then (i32.store (local.get $a) (local.get $n)))  ;; truncate
+    (else (if (i32.gt_s (local.get $n) (local.get $cur))
+      (then
+        (if (i32.gt_s (local.get $n) (call $arr_cap (local.get $a))) (then (call $arr_grow (local.get $a) (local.get $n))))
+        (let $g i32 (local.get $cur))
+        (block $e (loop $l
+          (br_if $e (i32.ge_s (local.get $g) (local.get $n)))
+          (i64.store (call $arr_slot (local.get $a) (local.get $g)) (call $v_hole))
+          (set! $g (i32.add (local.get $g) (i32.const 1))) (br $l)))
+        (i32.store (local.get $a) (local.get $n)))))))
 ;; remove element at index $i, shifting the tail down; decrements length
 (func $arr_remove (param $a i32) (param $i i32) (effects)
   (let $n i32 (call $arr_len (local.get $a)))
@@ -583,10 +597,17 @@
       ;; a string key that's a canonical index (a["3"]=…) writes an element
       (let $ssidx i32 (call $str_array_index (local.get $askey)))
       (if (i32.ge_s (local.get $ssidx) (i32.const 0)) (then (call $arr_set (local.get $a) (local.get $ssidx) (local.get $val)) (return)))
+      ;; `length` assignment resizes the array (truncate / extend with holes);
+      ;; a non-integer / negative / out-of-i32-range value → RangeError.
+      (if (call $str_eq (local.get $askey) (cstring "length"))
+        (then
+          (let $lnv f64 (call $to_num (local.get $val)))
+          (let $ln i32 (call $to_int_idx (local.get $lnv)))
+          (if (i32.or (f64.ne (local.get $lnv) (f64.convert_i32_s (local.get $ln))) (f64.lt (local.get $lnv) (f64.const 0)))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return)))
+          (call $arr_set_length (local.get $a) (local.get $ln))
+          (return)))
       ;; named property on an array (a.foo, a[2**32-1], …) → @12 scope.
-      ;; `length` assignment is a distinct operation (resize) — leave it alone so
-      ;; the real length keeps being reported by key_is_length on read.
-      (if (call $str_eq (local.get $askey) (cstring "length")) (then (return)))
       (call $scope_define (call $arr_props (local.get $a)) (local.get $askey) (local.get $val))
       (return)))
   (if (call $is_object (local.get $cont))

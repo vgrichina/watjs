@@ -2392,8 +2392,16 @@
               (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
                 (then (call $arr_set (local.get $dpa) (local.get $dpidx) (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
                 (else (call $arr_set (local.get $dpa) (local.get $dpidx) (call $v_undef)))))
-            (else (if (i32.eqz (call $str_eq (local.get $dpk) (cstring "length")))  ;; length redefinition not supported
-              (then (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de))))))))
+            (else (if (call $str_eq (local.get $dpk) (cstring "length"))  ;; defineProperty(arr,"length",{value:n}) → resize
+              (then
+                (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
+                  (then
+                    (let $dlnv f64 (call $to_num (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
+                    (let $dln i32 (call $to_int_idx (local.get $dlnv)))
+                    (if (i32.or (f64.ne (local.get $dlnv) (f64.convert_i32_s (local.get $dln))) (f64.lt (local.get $dlnv) (f64.const 0)))
+                      (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
+                    (call $arr_set_length (local.get $dpa) (local.get $dln)))))
+              (else (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de))))))))
       (return (local.get $ob))))
   ;; Object.defineProperties(obj, descs)
   (if (i32.eq (local.get $id) (i32.const 248))  ;; Object.getOwnPropertySymbols(o)
