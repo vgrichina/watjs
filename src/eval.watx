@@ -94,9 +94,20 @@
   (if (call $err) (then (return (call $v_undef))))
   (if i64 (i32.or (call $is_string (local.get $pa)) (call $is_string (local.get $pb)))
     (then (call $mk_str (call $str_concat (call $to_str (local.get $pa)) (call $to_str (local.get $pb)))))
-    (else (call $num (f64.add (call $to_num (local.get $pa)) (call $to_num (local.get $pb)))))))
+    (else
+      (if i64 (i32.or (call $is_bigint (local.get $pa)) (call $is_bigint (local.get $pb)))
+        (then
+          (if (i32.and (call $is_bigint (local.get $pa)) (call $is_bigint (local.get $pb)))
+            (then (return (call $mk_bigint (i64.add (call $bigint_val (local.get $pa)) (call $bigint_val (local.get $pb)))))))
+          (call $throw_type (cstring "TypeError") (cstring "Cannot mix BigInt and other types, use explicit conversions"))
+          (return (call $v_undef)))
+        (else (call $num (f64.add (call $to_num (local.get $pa)) (call $to_num (local.get $pb)))))))))
 
 (func $strict_eq (param $a i64) (param $b i64) (result i32) (effects)
+  ;; BigInt: compare by value (distinct boxes for equal values), never === a non-bigint
+  (if (call $is_bigint (local.get $a))
+    (then (return (i32.and (call $is_bigint (local.get $b)) (i64.eq (call $bigint_val (local.get $a)) (call $bigint_val (local.get $b)))))))
+  (if (call $is_bigint (local.get $b)) (then (return (i32.const 0))))
   (if i32 (call $is_number (local.get $a))
     (then (if i32 (call $is_number (local.get $b))
             (then (f64.eq (call $tonum_raw (local.get $a)) (call $tonum_raw (local.get $b))))
@@ -145,8 +156,8 @@
               (then (i32.const 0))  ;; two objects, not the same reference
               (else
                 ;; number/string/bool primitives → compare as numbers
-                (let $ap i32 (i32.or (call $is_number (local.get $a)) (i32.or (call $is_string (local.get $a)) (call $is_boolean (local.get $a)))))
-                (let $bp i32 (i32.or (call $is_number (local.get $b)) (i32.or (call $is_string (local.get $b)) (call $is_boolean (local.get $b)))))
+                (let $ap i32 (i32.or (call $is_bigint (local.get $a)) (i32.or (call $is_number (local.get $a)) (i32.or (call $is_string (local.get $a)) (call $is_boolean (local.get $a))))))
+                (let $bp i32 (i32.or (call $is_bigint (local.get $b)) (i32.or (call $is_number (local.get $b)) (i32.or (call $is_string (local.get $b)) (call $is_boolean (local.get $b))))))
                 (if i32 (i32.and (local.get $ap) (local.get $bp))
                   (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
                   (else (i32.const 0))))))))))))))

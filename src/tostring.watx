@@ -438,6 +438,9 @@
   (if f64 (call $is_number (local.get $v))
     (then (call $tonum_raw (local.get $v)))
     (else
+      (if f64 (call $is_bigint (local.get $v))
+        (then (f64.convert_i64_s (call $bigint_val (local.get $v))))  ;; for == / relational (Number(bigint) is separate)
+      (else
       (if f64 (call $is_boolean (local.get $v))
         (then (f64.convert_i32_s (call $val_payload (local.get $v))))
       (else (if f64 (call $is_null (local.get $v)) (then (f64.const 0))
@@ -445,7 +448,7 @@
                (then (call $str_to_num (call $val_payload (local.get $v))))
       (else (if f64 (call $is_object (local.get $v))
                (then (call $obj_to_num (local.get $v)))
-      (else (f64.div (f64.const 0) (f64.const 0)))))))))))))  ;; undefined → NaN
+      (else (f64.div (f64.const 0) (f64.const 0)))))))))))))))  ;; undefined → NaN
 
 ;; ToNumber for an object: prefer valueOf(), then __prim__ wrapper slot, else NaN.
 (func $obj_to_num (param $v i64) (result f64) (effects)
