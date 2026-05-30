@@ -606,6 +606,10 @@
       ;; VM function: own/static props go into its @16 prototype scope (allocate one if absent)
       (if (i32.and (i32.ge_s (i32.load (local.get $sfn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $sfn)) (i32.const 1448232528)))
         (then
+          ;; assigning `.prototype` REPLACES the prototype object (@16), so new
+          ;; instances inherit from it — not a nested prototype.prototype property
+          (if (call $str_eq (call $to_prop_key (local.get $key)) (cstring "prototype"))
+            (then (i64.store (i32.add (local.get $sfn) (i32.const 16)) (local.get $val)) (return)))
           (let $sproto i64 (i64.load (i32.add (local.get $sfn) (i32.const 16))))
           (if (i32.eqz (call $is_object (local.get $sproto)))
             (then (set! $sproto (call $mk_obj (call $obj_new (i32.const 8)))) (i64.store (i32.add (local.get $sfn) (i32.const 16)) (local.get $sproto))))
