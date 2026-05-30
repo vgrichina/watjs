@@ -2006,7 +2006,7 @@
   (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
   (i32.store (i32.const 252) (call $heap_alloc (i32.const 2048)))  ;; label-entry stack
-  (let $code i32 (call $heap_alloc (i32.const 131072)))
+  (let $code i32 (call $heap_alloc (i32.const 4194304)))
   (call $vm_set_emit_cursor (i32.const 0))
   ;; the Error-hierarchy prelude is compiled into the same buffer first, so its
   ;; constructors exist (as VM functions) before user code runs (new ReferenceError, etc.)
