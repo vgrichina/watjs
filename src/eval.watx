@@ -393,29 +393,27 @@
 ;; apply a property descriptor (scope $ds) onto object scope $os at key $ks,
 ;; implementing the [[DefineOwnProperty]] validation + attribute-merge rules.
 ;; Throws TypeError (sets err) on an invalid (re)definition.
-(func $apply_descriptor (param $os i32) (param $ks i32) (param $ds i32) (effects)
-  ;; Read descriptor fields per spec: presence via HasProperty (proto-aware,
-  ;; scope_find), values via [[Get]] (accessor/inherited-aware, get_prop, each
-  ;; read once). $gs/$ss/$en/$cf/$wr/$vs are presence flags; $vGet/$vSet/$vVal
-  ;; the read values.
-  (let $dv i64 (call $mk_obj (local.get $ds)))
-  (let $gs i32 (call $scope_find (local.get $ds) (cstring "get")))
-  (let $ss i32 (call $scope_find (local.get $ds) (cstring "set")))
-  (let $en i32 (call $scope_find (local.get $ds) (cstring "enumerable")))
-  (let $cf i32 (call $scope_find (local.get $ds) (cstring "configurable")))
-  (let $wr i32 (call $scope_find (local.get $ds) (cstring "writable")))
-  (let $vs i32 (call $scope_find (local.get $ds) (cstring "value")))
-  (let $vGet i64 (if i64 (local.get $gs) (then (call $get_prop (local.get $dv) (call $mk_str (cstring "get")))) (else (call $v_undef))))
-  (let $vSet i64 (if i64 (local.get $ss) (then (call $get_prop (local.get $dv) (call $mk_str (cstring "set")))) (else (call $v_undef))))
-  (let $vVal i64 (if i64 (local.get $vs) (then (call $get_prop (local.get $dv) (call $mk_str (cstring "value")))) (else (call $v_undef))))
+;; $dval is the descriptor VALUE (any object — plain object, function, …). Read
+;; fields per spec: presence via HasProperty (js_in, proto-aware), values via
+;; [[Get]] (get_prop, accessor/inherited-aware, each read once).
+(func $apply_descriptor (param $os i32) (param $ks i32) (param $dval i64) (effects)
+  (let $gs i32 (call $truthy (call $js_in (call $mk_str (cstring "get")) (local.get $dval))))
+  (let $ss i32 (call $truthy (call $js_in (call $mk_str (cstring "set")) (local.get $dval))))
+  (let $en i32 (call $truthy (call $js_in (call $mk_str (cstring "enumerable")) (local.get $dval))))
+  (let $cf i32 (call $truthy (call $js_in (call $mk_str (cstring "configurable")) (local.get $dval))))
+  (let $wr i32 (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $dval))))
+  (let $vs i32 (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $dval))))
+  (let $vGet i64 (if i64 (local.get $gs) (then (call $get_prop (local.get $dval) (call $mk_str (cstring "get")))) (else (call $v_undef))))
+  (let $vSet i64 (if i64 (local.get $ss) (then (call $get_prop (local.get $dval) (call $mk_str (cstring "set")))) (else (call $v_undef))))
+  (let $vVal i64 (if i64 (local.get $vs) (then (call $get_prop (local.get $dval) (call $mk_str (cstring "value")))) (else (call $v_undef))))
   (let $isAcc i32 (i32.or (i32.ne (local.get $gs) (i32.const 0)) (i32.ne (local.get $ss) (i32.const 0))))
   (let $hasData i32 (i32.or (i32.ne (local.get $vs) (i32.const 0)) (i32.ne (local.get $wr) (i32.const 0))))
   ;; a descriptor cannot be both a data and an accessor descriptor
   (if (i32.and (local.get $isAcc) (local.get $hasData))
     (then (call $throw_type (cstring "TypeError") (cstring "Invalid property descriptor (data and accessor)")) (return)))
-  (let $wantEnum i32 (i32.and (i32.ne (local.get $en) (i32.const 0)) (call $truthy (call $get_prop (local.get $dv) (call $mk_str (cstring "enumerable"))))))
-  (let $wantConf i32 (i32.and (i32.ne (local.get $cf) (i32.const 0)) (call $truthy (call $get_prop (local.get $dv) (call $mk_str (cstring "configurable"))))))
-  (let $wantWrit i32 (i32.and (i32.ne (local.get $wr) (i32.const 0)) (call $truthy (call $get_prop (local.get $dv) (call $mk_str (cstring "writable"))))))
+  (let $wantEnum i32 (i32.and (i32.ne (local.get $en) (i32.const 0)) (call $truthy (call $get_prop (local.get $dval) (call $mk_str (cstring "enumerable"))))))
+  (let $wantConf i32 (i32.and (i32.ne (local.get $cf) (i32.const 0)) (call $truthy (call $get_prop (local.get $dval) (call $mk_str (cstring "configurable"))))))
+  (let $wantWrit i32 (i32.and (i32.ne (local.get $wr) (i32.const 0)) (call $truthy (call $get_prop (local.get $dval) (call $mk_str (cstring "writable"))))))
   (let $old i32 (call $scope_find_local (local.get $os) (local.get $ks)))
   ;; entry_is_accessor derefs old-4, so compute it ONCE guarded (i32.and is not short-circuit)
   (let $oldAcc i32 (if i32 (i32.ne (local.get $old) (i32.const 0)) (then (call $entry_is_accessor (local.get $old))) (else (i32.const 0))))
@@ -1267,8 +1265,8 @@
     (then
       (let $rpt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $rpd i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
-      (if (i32.and (call $is_object (local.get $rpt)) (call $is_object (local.get $rpd)))
-        (then (call $apply_descriptor (call $val_payload (local.get $rpt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (call $val_payload (local.get $rpd)))))
+      (if (i32.and (call $is_object (local.get $rpt)) (i32.or (call $is_object (local.get $rpd)) (i32.or (call $is_function (local.get $rpd)) (call $is_array (local.get $rpd)))))
+        (then (call $apply_descriptor (call $val_payload (local.get $rpt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (local.get $rpd))))
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 207))  ;; Reflect.getOwnPropertyDescriptor(target, key)
     (then (return (call $call_native (i32.const 156) (local.get $argc) (local.get $argv) (call $v_undef)))))
@@ -1887,12 +1885,12 @@
       (if (i32.eqz (i32.or (call $is_object (local.get $ob)) (i32.or (call $is_array (local.get $ob)) (call $is_function (local.get $ob)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object.defineProperty called on non-object")) (return (call $v_undef))))
       ;; descriptor must be an object; else TypeError
-      (if (i32.eqz (call $is_object (local.get $de)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
       ;; (arrays are accepted as valid targets but have no per-element descriptor
       ;; storage yet → no-op rather than a spurious TypeError)
       (if (call $is_object (local.get $ob))
-        (then (call $apply_descriptor (call $val_payload (local.get $ob)) (call $to_str (local.get $ky)) (call $val_payload (local.get $de)))))
+        (then (call $apply_descriptor (call $val_payload (local.get $ob)) (call $to_str (local.get $ky)) (local.get $de))))
       (return (local.get $ob))))
   ;; Object.defineProperties(obj, descs)
   (if (i32.eq (local.get $id) (i32.const 160))
@@ -1913,8 +1911,8 @@
             (if (call $entry_enumerable (i32.add (local.get $ent) (i32.const 8)))
               (then
                 (let $dv i64 (i64.load (i32.add (local.get $ent) (i32.const 8)))) ;; descriptor object value
-                (if (call $is_object (local.get $dv))
-                  (then (call $apply_descriptor (local.get $os) (i32.load (local.get $ent)) (call $val_payload (local.get $dv)))))))
+                (if (i32.or (call $is_object (local.get $dv)) (i32.or (call $is_function (local.get $dv)) (call $is_array (local.get $dv))))
+                  (then (call $apply_descriptor (local.get $os) (i32.load (local.get $ent)) (local.get $dv))))))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $dpl)))))
       (return (local.get $ob))))
@@ -2026,8 +2024,8 @@
             (if (call $entry_enumerable (i32.add (local.get $ce) (i32.const 8)))
               (then
                 (let $cdv i64 (i64.load (i32.add (local.get $ce) (i32.const 8))))
-                (if (call $is_object (local.get $cdv))
-                  (then (call $apply_descriptor (local.get $cro) (i32.load (local.get $ce)) (call $val_payload (local.get $cdv)))))))
+                (if (i32.or (call $is_object (local.get $cdv)) (i32.or (call $is_function (local.get $cdv)) (call $is_array (local.get $cdv))))
+                  (then (call $apply_descriptor (local.get $cro) (i32.load (local.get $ce)) (local.get $cdv))))))
             (set! $ci (i32.add (local.get $ci) (i32.const 1)))
             (br $ccl)))))
       (return (call $mk_obj (local.get $cro)))))
