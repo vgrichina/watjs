@@ -103,6 +103,13 @@
           (return (call $v_undef)))
         (else (call $num (f64.add (call $to_num (local.get $pa)) (call $to_num (local.get $pb)))))))))
 
+;; define a frozen constant ({writable:false, enumerable:false, configurable:false})
+;; on a function (e.g. Number.EPSILON) or an object (e.g. Math.PI).
+(func $def_const (param $ov i64) (param $name i32) (param $val i64) (effects)
+  (if (call $is_function (local.get $ov))
+    (then (call $scope_define_attr (call $fn_props (call $val_payload (local.get $ov))) (local.get $name) (local.get $val) (i32.const 0)))
+    (else (call $scope_define_attr (call $val_payload (local.get $ov)) (local.get $name) (local.get $val) (i32.const 0)))))
+
 ;; the number value for a Number.prototype method `this`: a number, or a Number
 ;; wrapper's __prim__. TypeError otherwise. Avoids to_num (which would recurse
 ;; valueOf↔toString for the bare Number.prototype object).
@@ -2039,9 +2046,16 @@
               (call $scope_define (local.get $fdr) (cstring "enumerable") (call $v_false))
               (call $scope_define (local.get $fdr) (cstring "configurable") (call $v_true))
               (return (call $mk_obj (local.get $fdr)))))
-          ;; other own props (static methods like Array.from, F.prototype, …) →
-          ;; {value, writable:true, enumerable:false, configurable:true}
-          (if (call $fn_own (call $val_payload (local.get $ob)) (local.get $fks))
+          ;; other own props (static methods, F.prototype, frozen constants) →
+          ;; read the actual stored attributes from the function's @12 props slot
+          (let $ffn i32 (call $val_payload (local.get $ob)))
+          (let $fps i32 (i32.load (i32.add (local.get $ffn) (i32.const 12))))
+          (if (local.get $fps)
+            (then
+              (let $fslot i32 (call $scope_find_local (local.get $fps) (local.get $fks)))
+              (if (local.get $fslot) (then (return (call $make_descriptor (local.get $fslot)))))))
+          ;; computed own props with no slot (length/name handled above; .prototype)
+          (if (call $fn_own (local.get $ffn) (local.get $fks))
             (then
               (let $fdr2 i32 (call $obj_new (i32.const 4)))
               (call $scope_define (local.get $fdr2) (cstring "value") (call $get_prop (local.get $ob) (call $mk_str (local.get $fks))))
@@ -2976,23 +2990,23 @@
   (call $scope_define (local.get $numproto) (cstring "valueOf") (call $mk_native (i32.const 220) (cstring "valueOf")))
   (let $numf i64 (call $def_native (local.get $g) (cstring "Number") (i32.const 4)))
   (call $scope_define (local.get $numproto) (cstring "constructor") (local.get $numf))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "NEGATIVE_INFINITY")) (call $num (f64.div (f64.const -1) (f64.const 0))))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "MAX_SAFE_INTEGER")) (call $num (f64.const 9007199254740991)))
+  (call $def_const (local.get $numf) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
+  (call $def_const (local.get $numf) (cstring "POSITIVE_INFINITY") (call $num (f64.div (f64.const 1) (f64.const 0))))
+  (call $def_const (local.get $numf) (cstring "NEGATIVE_INFINITY") (call $num (f64.div (f64.const -1) (f64.const 0))))
+  (call $def_const (local.get $numf) (cstring "MAX_SAFE_INTEGER") (call $num (f64.const 9007199254740991)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isNaN")) (call $mk_native (i32.const 84) (cstring "isNaN")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isInteger")) (call $mk_native (i32.const 85) (cstring "isInteger")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isFinite")) (call $mk_native (i32.const 86) (cstring "isFinite")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isSafeInteger")) (call $mk_native (i32.const 98) (cstring "isSafeInteger")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "parseInt")) (call $mk_native (i32.const 50) (cstring "parseInt")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "parseFloat")) (call $mk_native (i32.const 51) (cstring "parseFloat")))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "MIN_SAFE_INTEGER")) (call $num (f64.const -9007199254740991)))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "EPSILON")) (call $num (f64.const 2.220446049250313e-16)))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "MAX_VALUE")) (call $num (f64.const 1.7976931348623157e308)))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "MIN_VALUE")) (call $num (f64.const 5e-324)))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "NaN")) (call $num (f64.div (f64.const 0) (f64.const 0))))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "POSITIVE_INFINITY")) (call $num (f64.div (f64.const 1) (f64.const 0))))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "NEGATIVE_INFINITY")) (call $num (f64.div (f64.const -1) (f64.const 0))))
+  (call $def_const (local.get $numf) (cstring "MIN_SAFE_INTEGER") (call $num (f64.const -9007199254740991)))
+  (call $def_const (local.get $numf) (cstring "EPSILON") (call $num (f64.const 2.220446049250313e-16)))
+  (call $def_const (local.get $numf) (cstring "MAX_VALUE") (call $num (f64.const 1.7976931348623157e308)))
+  (call $def_const (local.get $numf) (cstring "MIN_VALUE") (call $num (f64.const 5e-324)))
+  (call $def_const (local.get $numf) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
+  (call $def_const (local.get $numf) (cstring "POSITIVE_INFINITY") (call $num (f64.div (f64.const 1) (f64.const 0))))
+  (call $def_const (local.get $numf) (cstring "NEGATIVE_INFINITY") (call $num (f64.div (f64.const -1) (f64.const 0))))
   (let $strf i64 (call $def_native (local.get $g) (cstring "String") (i32.const 5)))
   ;; String.prototype (reg 156) — methods dispatched on string primitives
   (let $sp i32 (call $obj_new (i32.const 48)))
@@ -3165,14 +3179,14 @@
   (call $scope_define (local.get $mo) (cstring "asinh") (call $mk_native (i32.const 244) (cstring "asinh")))
   (call $scope_define (local.get $mo) (cstring "acosh") (call $mk_native (i32.const 245) (cstring "acosh")))
   (call $scope_define (local.get $mo) (cstring "atanh") (call $mk_native (i32.const 246) (cstring "atanh")))
-  (call $set_prop (local.get $mv) (call $mk_str (cstring "LN2")) (call $num (f64.const 0.6931471805599453)))
-  (call $set_prop (local.get $mv) (call $mk_str (cstring "LN10")) (call $num (f64.const 2.302585092994046)))
-  (call $set_prop (local.get $mv) (call $mk_str (cstring "LOG2E")) (call $num (f64.const 1.4426950408889634)))
-  (call $set_prop (local.get $mv) (call $mk_str (cstring "LOG10E")) (call $num (f64.const 0.4342944819032518)))
-  (call $set_prop (local.get $mv) (call $mk_str (cstring "SQRT2")) (call $num (f64.const 1.4142135623730951)))
-  (call $set_prop (local.get $mv) (call $mk_str (cstring "SQRT1_2")) (call $num (f64.const 0.7071067811865476)))
-  (call $set_prop (local.get $mv) (call $mk_str (cstring "PI")) (call $num (f64.const 3.141592653589793)))
-  (call $set_prop (local.get $mv) (call $mk_str (cstring "E")) (call $num (f64.const 2.718281828459045)))
+  (call $def_const (local.get $mv) (cstring "LN2") (call $num (f64.const 0.6931471805599453)))
+  (call $def_const (local.get $mv) (cstring "LN10") (call $num (f64.const 2.302585092994046)))
+  (call $def_const (local.get $mv) (cstring "LOG2E") (call $num (f64.const 1.4426950408889634)))
+  (call $def_const (local.get $mv) (cstring "LOG10E") (call $num (f64.const 0.4342944819032518)))
+  (call $def_const (local.get $mv) (cstring "SQRT2") (call $num (f64.const 1.4142135623730951)))
+  (call $def_const (local.get $mv) (cstring "SQRT1_2") (call $num (f64.const 0.7071067811865476)))
+  (call $def_const (local.get $mv) (cstring "PI") (call $num (f64.const 3.141592653589793)))
+  (call $def_const (local.get $mv) (cstring "E") (call $num (f64.const 2.718281828459045)))
   ;; JSON object
   (let $jo i32 (call $obj_new (i32.const 4)))
   (call $scope_define (local.get $g) (cstring "JSON") (call $mk_obj (local.get $jo)))
