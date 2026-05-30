@@ -1414,6 +1414,7 @@
             (then (set! $dt (call $date_make (i64.trunc_f64_s (local.get $dcy)) (i64.trunc_f64_s (local.get $dcmo)) (i64.trunc_f64_s (local.get $dcd)) (i64.trunc_f64_s (local.get $dch)) (i64.trunc_f64_s (local.get $dcmi)) (i64.trunc_f64_s (local.get $dcs)) (i64.trunc_f64_s (local.get $dcms)))))
             (else (set! $dt (f64.div (f64.const 0) (f64.const 0)))))))
       (let $dobj i32 (call $obj_new (i32.const 16)))
+      (i32.store (local.get $dobj) (i32.load (i32.const 308)))  ;; prototype chain → Date.prototype
       (call $scope_define (local.get $dobj) (cstring "@@time") (call $num (local.get $dt)))
       (call $scope_define (local.get $dobj) (cstring "getTime") (call $mk_native (i32.const 182) (cstring "getTime")))
       (call $scope_define (local.get $dobj) (cstring "valueOf") (call $mk_native (i32.const 182) (cstring "valueOf")))
@@ -3179,6 +3180,11 @@
   (drop (call $def_native (local.get $g) (cstring "Set") (i32.const 130)))
   (let $datef i64 (call $def_native (local.get $g) (cstring "Date") (i32.const 180)))
   (call $set_prop (local.get $datef) (call $mk_str (cstring "now")) (call $mk_native (i32.const 179) (cstring "now")))
+  ;; Date.prototype (reg 308) — instances link to it for instanceof/getPrototypeOf/inheritance
+  (let $dproto i32 (call $obj_new (i32.const 8)))
+  (i32.store (i32.const 308) (local.get $dproto))
+  (call $scope_define (local.get $dproto) (cstring "constructor") (local.get $datef))
+  (call $set_prop (local.get $datef) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $dproto)))
   ;; Promise constructor (synchronous resolved-value model; see vm.watx)
   (let $promf i64 (call $def_native (local.get $g) (cstring "Promise") (i32.const 192)))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "resolve")) (call $mk_native (i32.const 151) (cstring "resolve")))
