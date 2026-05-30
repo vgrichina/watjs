@@ -146,6 +146,8 @@
       (then
         (if (local.get $dot) (then (br $ie)))
         (set! $dot (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $il)))
+    (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator → skip
+      (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $il)))
     (br_if $ie (i32.eqz (call $is_digit (local.get $c))))
     (if (i32.lt_s (local.get $nd) (i32.const 17))
       (then
