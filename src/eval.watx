@@ -1688,15 +1688,25 @@
           (let $i i32 (i32.const 0))
           (if (i32.ge_s (local.get $argc) (i32.const 2))
             (then (set! $racc (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-            (else (set! $racc (call $arr_get (local.get $arr) (i32.const 0))) (set! $i (i32.const 1))))
+            (else
+              ;; no initial value: the accumulator is the first PRESENT element
+              (let $rfound i32 (i32.const 0))
+              (block $fnd (loop $fl2
+                (br_if $fnd (i32.ge_s (local.get $i) (local.get $n)))
+                (if (call $arr_has (local.get $arr) (local.get $i))
+                  (then (set! $racc (call $arr_get (local.get $arr) (local.get $i))) (set! $i (i32.add (local.get $i) (i32.const 1))) (set! $rfound (i32.const 1)) (br $fnd)))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $fl2)))
+              (if (i32.eqz (local.get $rfound)) (then (call $throw_type (cstring "TypeError") (cstring "Reduce of empty array with no initial value")) (return (call $v_undef))))))
           (let $cargv i32 (call $heap_alloc (i32.const 32)))
           (block $de (loop $dl (br_if $de (i32.ge_s (local.get $i) (local.get $n)))
-            (i64.store (local.get $cargv) (local.get $racc))
-            (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $arr_get (local.get $arr) (local.get $i)))
-            (i64.store (i32.add (local.get $cargv) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $i))))
-            (i64.store (i32.add (local.get $cargv) (i32.const 24)) (local.get $thisv))
-            (set! $racc (call $call_val (local.get $a0) (i32.const 4) (local.get $cargv) (call $v_undef)))
-            (br_if $de (call $err))
+            (if (call $arr_has (local.get $arr) (local.get $i))  ;; skip holes
+              (then
+                (i64.store (local.get $cargv) (local.get $racc))
+                (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $arr_get (local.get $arr) (local.get $i)))
+                (i64.store (i32.add (local.get $cargv) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $i))))
+                (i64.store (i32.add (local.get $cargv) (i32.const 24)) (local.get $thisv))
+                (set! $racc (call $call_val (local.get $a0) (i32.const 4) (local.get $cargv) (call $v_undef)))
+                (br_if $de (call $err))))
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl)))
           (return (local.get $racc))))
       (return (call $v_undef))))
@@ -1708,15 +1718,25 @@
       (let $ri i32 (i32.sub (call $arr_len (local.get $rarr)) (i32.const 1)))
       (if (i32.ge_s (local.get $argc) (i32.const 2))
         (then (set! $racc2 (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-        (else (set! $racc2 (call $arr_get (local.get $rarr) (local.get $ri))) (set! $ri (i32.sub (local.get $ri) (i32.const 1)))))
+        (else
+          ;; no initial value: first PRESENT element from the end
+          (let $rrf i32 (i32.const 0))
+          (block $rfnd (loop $rfl
+            (br_if $rfnd (i32.lt_s (local.get $ri) (i32.const 0)))
+            (if (call $arr_has (local.get $rarr) (local.get $ri))
+              (then (set! $racc2 (call $arr_get (local.get $rarr) (local.get $ri))) (set! $ri (i32.sub (local.get $ri) (i32.const 1))) (set! $rrf (i32.const 1)) (br $rfnd)))
+            (set! $ri (i32.sub (local.get $ri) (i32.const 1))) (br $rfl)))
+          (if (i32.eqz (local.get $rrf)) (then (call $throw_type (cstring "TypeError") (cstring "Reduce of empty array with no initial value")) (return (call $v_undef))))))
       (let $rcargv i32 (call $heap_alloc (i32.const 32)))
       (block $rde (loop $rdl (br_if $rde (i32.lt_s (local.get $ri) (i32.const 0)))
-        (i64.store (local.get $rcargv) (local.get $racc2))
-        (i64.store (i32.add (local.get $rcargv) (i32.const 8)) (call $arr_get (local.get $rarr) (local.get $ri)))
-        (i64.store (i32.add (local.get $rcargv) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $ri))))
-        (i64.store (i32.add (local.get $rcargv) (i32.const 24)) (local.get $thisv))
-        (set! $racc2 (call $call_val (local.get $rfn) (i32.const 4) (local.get $rcargv) (call $v_undef)))
-        (br_if $rde (call $err))
+        (if (call $arr_has (local.get $rarr) (local.get $ri))  ;; skip holes
+          (then
+            (i64.store (local.get $rcargv) (local.get $racc2))
+            (i64.store (i32.add (local.get $rcargv) (i32.const 8)) (call $arr_get (local.get $rarr) (local.get $ri)))
+            (i64.store (i32.add (local.get $rcargv) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $ri))))
+            (i64.store (i32.add (local.get $rcargv) (i32.const 24)) (local.get $thisv))
+            (set! $racc2 (call $call_val (local.get $rfn) (i32.const 4) (local.get $rcargv) (call $v_undef)))
+            (br_if $rde (call $err))))
         (set! $ri (i32.sub (local.get $ri) (i32.const 1))) (br $rdl)))
       (return (local.get $racc2))))
   ;; --- static object/array/number/string methods (ids 80-87) ---
@@ -2329,7 +2349,7 @@
           (let $li i32 (i32.sub (local.get $n) (i32.const 1)))
           (block $lie (loop $lil
             (br_if $lie (i32.lt_s (local.get $li) (i32.const 0)))
-            (if (call $strict_eq (call $arr_get (local.get $arr) (local.get $li)) (local.get $a0)) (then (return (call $num (f64.convert_i32_s (local.get $li))))))
+            (if (i32.and (call $arr_has (local.get $arr) (local.get $li)) (call $strict_eq (call $arr_get (local.get $arr) (local.get $li)) (local.get $a0))) (then (return (call $num (f64.convert_i32_s (local.get $li))))))
             (set! $li (i32.sub (local.get $li) (i32.const 1)))
             (br $lil)))
           (return (call $num (f64.const -1)))))
@@ -2379,7 +2399,7 @@
           (let $i i32 (i32.const 0))
           (block $se (loop $sl
             (br_if $se (i32.ge_s (local.get $i) (local.get $n)))
-            (if (call $strict_eq (call $arr_get (local.get $arr) (local.get $i)) (local.get $a0))
+            (if (i32.and (call $arr_has (local.get $arr) (local.get $i)) (call $strict_eq (call $arr_get (local.get $arr) (local.get $i)) (local.get $a0)))
               (then (return (call $num (f64.convert_i32_s (local.get $i))))))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $sl)))
