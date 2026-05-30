@@ -2199,10 +2199,32 @@
   (if f64 (f64.lt (local.get $y) (f64.const 0)) (then (f64.div (f64.const 1) (local.get $r))) (else (local.get $r))))
 
 ;; create a standalone native function value (for attaching as a property)
+;; Spec `.length` (declared parameter count) for a native by its id. Returns 0
+;; for ids not listed — same as before, so this only ever ADDS correct arities.
+;; Only high-confidence arities are listed (an exhaustive id→arity table is TODO).
+(func $native_arity (param $id i32) (result i32) (effects)
+  ;; length 2
+  (if (i32.or (i32.eq (local.get $id) (i32.const 45)) (i32.or (i32.eq (local.get $id) (i32.const 46)) (i32.or (i32.eq (local.get $id) (i32.const 47)) (i32.eq (local.get $id) (i32.const 52)))))
+    (then (return (i32.const 2))))  ;; Math.max, min, pow, hypot
+  (if (i32.or (i32.eq (local.get $id) (i32.const 14)) (i32.or (i32.eq (local.get $id) (i32.const 15)) (i32.or (i32.eq (local.get $id) (i32.const 24)) (i32.or (i32.eq (local.get $id) (i32.const 50)) (i32.eq (local.get $id) (i32.const 156))))))
+    (then (return (i32.const 2))))  ;; String slice/substring, Array slice, parseInt, getOwnPropertyDescriptor
+  ;; length 1
+  (if (i32.or (i32.eq (local.get $id) (i32.const 40)) (i32.or (i32.eq (local.get $id) (i32.const 41)) (i32.or (i32.eq (local.get $id) (i32.const 42)) (i32.or (i32.eq (local.get $id) (i32.const 43)) (i32.or (i32.eq (local.get $id) (i32.const 44)) (i32.or (i32.eq (local.get $id) (i32.const 48)) (i32.eq (local.get $id) (i32.const 49))))))))
+    (then (return (i32.const 1))))  ;; Math.abs/floor/ceil/round/sqrt/trunc/sign
+  (if (i32.or (i32.eq (local.get $id) (i32.const 170)) (i32.or (i32.eq (local.get $id) (i32.const 4)) (i32.or (i32.eq (local.get $id) (i32.const 5)) (i32.or (i32.eq (local.get $id) (i32.const 6)) (i32.or (i32.eq (local.get $id) (i32.const 7)) (i32.or (i32.eq (local.get $id) (i32.const 8)) (i32.eq (local.get $id) (i32.const 51))))))))
+    (then (return (i32.const 1))))  ;; Math.clz32, Number/String/Boolean/isNaN/isFinite/parseFloat
+  (if (i32.or (i32.eq (local.get $id) (i32.const 11)) (i32.or (i32.eq (local.get $id) (i32.const 12)) (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.or (i32.eq (local.get $id) (i32.const 67)) (i32.eq (local.get $id) (i32.const 153))))))
+    (then (return (i32.const 1))))  ;; charAt, charCodeAt, padStart, padEnd, bind
+  ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
+  ;; Date.now(179), Symbol.toString(199), Number/Boolean valueOf(220), Boolean.toString(221)
+  (if (i32.or (i32.eq (local.get $id) (i32.const 18)) (i32.or (i32.eq (local.get $id) (i32.const 155)) (i32.or (i32.eq (local.get $id) (i32.const 179)) (i32.or (i32.eq (local.get $id) (i32.const 199)) (i32.or (i32.eq (local.get $id) (i32.const 220)) (i32.eq (local.get $id) (i32.const 221)))))))
+    (then (return (i32.const 0))))
+  (i32.const 0))
+
 (func $mk_native (param $id i32) (param $name i32) (result i64) (effects)
   (let $fn i32 (call $heap_alloc (i32.const 40)))
   (i32.store (local.get $fn) (local.get $id))
-  (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))
+  (i32.store (i32.add (local.get $fn) (i32.const 8)) (call $native_arity (local.get $id)))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))
   (call $scope_define (call $fn_props (local.get $fn)) (cstring "name") (call $mk_str (local.get $name)))
   (call $mk_fn (local.get $fn)))
@@ -2387,7 +2409,7 @@
 (func $def_native (param $scope i32) (param $name i32) (param $id i32) (result i64) (effects)
   (let $fn i32 (call $heap_alloc (i32.const 40)))
   (i32.store (local.get $fn) (local.get $id))
-  (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))   ;; nparam
+  (i32.store (i32.add (local.get $fn) (i32.const 8)) (call $native_arity (local.get $id)))   ;; nparam (.length)
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (i32.const 0))  ;; props (lazy)
   (call $scope_define (call $fn_props (local.get $fn)) (cstring "name") (call $mk_str (local.get $name)))
   (let $v i64 (call $mk_fn (local.get $fn)))
