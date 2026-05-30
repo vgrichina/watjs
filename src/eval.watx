@@ -1257,8 +1257,19 @@
         (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 102)) (i32.le_s (local.get $id) (i32.const 104)))  ;; match/replace/search
         (i32.or (i32.eq (local.get $id) (i32.const 109)) (i32.or (i32.eq (local.get $id) (i32.const 141))  ;; replaceAll
         (i32.or (i32.eq (local.get $id) (i32.const 113)) (i32.or (i32.eq (local.get $id) (i32.const 114))  ;; trimStart/trimEnd
-        (i32.or (i32.eq (local.get $id) (i32.const 138)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.eq (local.get $id) (i32.const 173)))))))))))) ;; substr/localeCompare/matchAll
+        (i32.or (i32.eq (local.get $id) (i32.const 138)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.or (i32.eq (local.get $id) (i32.const 173)) (i32.eq (local.get $id) (i32.const 299))))))))))))) ;; substr/localeCompare/matchAll/@@iterator
     (then (call $throw_type (cstring "TypeError") (cstring "String.prototype method called on null or undefined")) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 299))  ;; String.prototype[@@iterator] → char iterator
+    (then
+      (let $sisp i32 (call $to_str (local.get $thisv)))
+      (let $sica i32 (call $arr_new (i32.add (call $str_len (local.get $sisp)) (i32.const 1))))
+      (let $sii i32 (i32.const 0))
+      (block $sie (loop $sil
+        (br_if $sie (i32.ge_s (local.get $sii) (call $str_len (local.get $sisp))))
+        (call $arr_push (local.get $sica) (call $str_char_at (local.get $sisp) (local.get $sii)))
+        (set! $sii (i32.add (local.get $sii) (i32.const 1)))
+        (br $sil)))
+      (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $sica))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 270)) (i32.le_s (local.get $id) (i32.const 272)))  ;; String concat/lastIndexOf/normalize
     (then
       (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
@@ -3641,6 +3652,7 @@
   (call $scope_define (local.get $sp) (cstring "padStart") (call $mk_native (i32.const 66) (cstring "padStart")))
   (call $scope_define (local.get $sp) (cstring "padEnd") (call $mk_native (i32.const 67) (cstring "padEnd")))
   (call $scope_define (local.get $sp) (cstring "at") (call $mk_native (i32.const 68) (cstring "at")))
+  (call $scope_define (local.get $sp) (cstring "@@iterator") (call $mk_native (i32.const 299) (cstring "[Symbol.iterator]")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCharCode")) (call $mk_native (i32.const 87) (cstring "fromCharCode")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "raw")) (call $mk_native (i32.const 269) (cstring "raw")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCodePoint")) (call $mk_native (i32.const 87) (cstring "fromCodePoint")))

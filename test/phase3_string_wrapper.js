@@ -5,3 +5,6 @@ print("in=" + (1 in s) + "," + (3 in s));
 print("filter=" + Array.prototype.filter.call(s, function(){return true;}).join(","));
 var keys = []; for (var k in s) keys.push(k);
 print("for-in=" + keys.join(","));
+print("spread-obj=" + [...new String("xy")].join(","));
+print("iter-prim=" + [..."pq"].join(","));
+print("has-iter=" + (typeof String.prototype[Symbol.iterator]));

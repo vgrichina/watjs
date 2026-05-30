@@ -3,3 +3,6 @@ idx=abc
 in=true,false
 filter=a,b,c
 for-in=0,1,2
+spread-obj=x,y
+iter-prim=p,q
+has-iter=function
