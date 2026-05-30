@@ -67,6 +67,13 @@
 (func $str_byte (param $ptr i32) (param $i i32) (result i32) (effects)
   (i32.load8_u (i32.add (i32.add (local.get $ptr) (i32.const 4)) (local.get $i))))
 
+;; an internal/symbol property key starts with "@@" (bytes 64,64) — excluded
+;; from Object.keys / for-in / JSON enumeration.
+(func $is_internal_key (param $ptr i32) (result i32) (effects)
+  (i32.and (i32.ge_s (call $str_len (local.get $ptr)) (i32.const 2))
+    (i32.and (i32.eq (call $str_byte (local.get $ptr) (i32.const 0)) (i32.const 64))
+             (i32.eq (call $str_byte (local.get $ptr) (i32.const 1)) (i32.const 64)))))
+
 (func $str_set_byte (param $ptr i32) (param $i i32) (param $b i32) (effects)
   (i32.store8 (i32.add (i32.add (local.get $ptr) (i32.const 4)) (local.get $i)) (local.get $b)))
 

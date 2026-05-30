@@ -423,8 +423,8 @@
           (let $i i32 (i32.const 0))
           (block $ke (loop $kl
             (br_if $ke (i32.ge_s (local.get $i) (local.get $cnt)))
-            ;; Object.keys → enumerable only; getOwnPropertyNames → all
-            (if (i32.or (i32.eq (local.get $id) (i32.const 112)) (call $entry_enumerable (i32.add (call $scope_entry (local.get $sc) (local.get $i)) (i32.const 8))))
+            ;; Object.keys → enumerable only; getOwnPropertyNames → all; both skip @@ symbol/internal keys
+            (if (i32.and (i32.eqz (call $is_internal_key (i32.load (call $scope_entry (local.get $sc) (local.get $i))))) (i32.or (i32.eq (local.get $id) (i32.const 112)) (i32.ne (call $entry_enumerable (i32.add (call $scope_entry (local.get $sc) (local.get $i)) (i32.const 8))) (i32.const 0))))
               (then (call $arr_push (local.get $arr) (call $mk_str (i32.load (call $scope_entry (local.get $sc) (local.get $i)))))))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $kl)))))
@@ -440,7 +440,7 @@
           (let $i i32 (i32.const 0))
           (block $ke (loop $kl
             (br_if $ke (i32.ge_s (local.get $i) (local.get $cnt)))
-            (if (call $entry_enumerable (i32.add (call $scope_entry (local.get $sc) (local.get $i)) (i32.const 8)))
+            (if (i32.and (i32.ne (call $entry_enumerable (i32.add (call $scope_entry (local.get $sc) (local.get $i)) (i32.const 8))) (i32.const 0)) (i32.eqz (call $is_internal_key (i32.load (call $scope_entry (local.get $sc) (local.get $i))))))
               (then
                 (let $nm i32 (i32.load (call $scope_entry (local.get $sc) (local.get $i))))
                 (let $vv i64 (call $get_prop (local.get $a) (call $mk_str (local.get $nm))))
