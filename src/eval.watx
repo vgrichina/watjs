@@ -165,28 +165,63 @@
     (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
     (else (call $v_undef))))
 
-;; apply a property descriptor (scope $ds) onto object scope $os at key $ks.
+;; apply a property descriptor (scope $ds) onto object scope $os at key $ks,
+;; implementing the [[DefineOwnProperty]] validation + attribute-merge rules.
+;; Throws TypeError (sets err) on an invalid (re)definition.
 (func $apply_descriptor (param $os i32) (param $ks i32) (param $ds i32) (effects)
   (let $gs i32 (call $scope_find_local (local.get $ds) (cstring "get")))
   (let $ss i32 (call $scope_find_local (local.get $ds) (cstring "set")))
   (let $en i32 (call $scope_find_local (local.get $ds) (cstring "enumerable")))
   (let $cf i32 (call $scope_find_local (local.get $ds) (cstring "configurable")))
   (let $wr i32 (call $scope_find_local (local.get $ds) (cstring "writable")))
-  (let $attrs i32 (i32.const 0))
-  (if (i32.and (i32.ne (local.get $en) (i32.const 0)) (call $truthy (i64.load (local.get $en)))) (then (set! $attrs (i32.or (local.get $attrs) (i32.const 2)))))
-  (if (i32.and (i32.ne (local.get $cf) (i32.const 0)) (call $truthy (i64.load (local.get $cf)))) (then (set! $attrs (i32.or (local.get $attrs) (i32.const 4)))))
-  (if (i32.or (local.get $gs) (local.get $ss))
-    (then (call $scope_define_accessor_attr (local.get $os) (local.get $ks)
-            (if i64 (local.get $gs) (then (i64.load (local.get $gs))) (else (call $v_undef)))
-            (if i64 (local.get $ss) (then (i64.load (local.get $ss))) (else (call $v_undef)))
-            (local.get $attrs)))
+  (let $vs i32 (call $scope_find_local (local.get $ds) (cstring "value")))
+  (let $isAcc i32 (i32.or (i32.ne (local.get $gs) (i32.const 0)) (i32.ne (local.get $ss) (i32.const 0))))
+  (let $hasData i32 (i32.or (i32.ne (local.get $vs) (i32.const 0)) (i32.ne (local.get $wr) (i32.const 0))))
+  (let $wantEnum i32 (i32.and (i32.ne (local.get $en) (i32.const 0)) (call $truthy (i64.load (local.get $en)))))
+  (let $wantConf i32 (i32.and (i32.ne (local.get $cf) (i32.const 0)) (call $truthy (i64.load (local.get $cf)))))
+  (let $wantWrit i32 (i32.and (i32.ne (local.get $wr) (i32.const 0)) (call $truthy (i64.load (local.get $wr)))))
+  (let $old i32 (call $scope_find_local (local.get $os) (local.get $ks)))
+  ;; entry_is_accessor derefs old-4, so compute it ONCE guarded (i32.and is not short-circuit)
+  (let $oldAcc i32 (if i32 (i32.ne (local.get $old) (i32.const 0)) (then (call $entry_is_accessor (local.get $old))) (else (i32.const 0))))
+  (if (i32.eqz (local.get $old))
+    (then
+      ;; new property: forbidden on a non-extensible (frozen) object
+      (if (call $scope_find_local (local.get $os) (cstring "@@frozen"))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot define property, object is not extensible")) (return))))
     (else
-      (if (i32.and (i32.ne (local.get $wr) (i32.const 0)) (call $truthy (i64.load (local.get $wr)))) (then (set! $attrs (i32.or (local.get $attrs) (i32.const 8)))))
-      (let $vs i32 (call $scope_find_local (local.get $ds) (cstring "value")))
-      (let $old i32 (call $scope_find_local (local.get $os) (local.get $ks)))
+      ;; redefining: if the existing prop is non-configurable, enforce the limits
+      (if (i32.eqz (call $entry_configurable (local.get $old)))
+        (then
+          (if (local.get $wantConf) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))
+          (if (i32.and (i32.ne (local.get $en) (i32.const 0)) (i32.ne (i32.ne (local.get $wantEnum) (i32.const 0)) (i32.ne (call $entry_enumerable (local.get $old)) (i32.const 0))))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))
+          ;; cannot switch between data and accessor
+          (if (i32.or (i32.and (local.get $isAcc) (i32.eqz (local.get $oldAcc))) (i32.and (local.get $hasData) (local.get $oldAcc)))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))
+          ;; non-writable data: cannot become writable nor change value
+          (if (i32.and (i32.eqz (local.get $oldAcc)) (i32.eqz (call $entry_writable (local.get $old))))
+            (then
+              (if (local.get $wantWrit) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))
+              (if (i32.and (i32.ne (local.get $vs) (i32.const 0)) (i32.eqz (call $strict_eq (i64.load (local.get $vs)) (i64.load (local.get $old)))))
+                (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))))))))
+  ;; ---- validation passed: compute merged attrs and write ----
+  ;; treat as accessor if the descriptor is accessor, or it's generic over an
+  ;; existing accessor.
+  (let $treatAcc i32 (i32.or (local.get $isAcc) (i32.and (i32.eqz (local.get $hasData)) (local.get $oldAcc))))
+  (let $attrs i32 (if i32 (i32.ne (local.get $old) (i32.const 0)) (then (i32.and (call $entry_kind (local.get $old)) (i32.const 14))) (else (i32.const 0))))
+  (if (i32.ne (local.get $en) (i32.const 0)) (then (set! $attrs (if i32 (local.get $wantEnum) (then (i32.or (local.get $attrs) (i32.const 2))) (else (i32.and (local.get $attrs) (i32.const -3)))))))
+  (if (i32.ne (local.get $cf) (i32.const 0)) (then (set! $attrs (if i32 (local.get $wantConf) (then (i32.or (local.get $attrs) (i32.const 4))) (else (i32.and (local.get $attrs) (i32.const -5)))))))
+  (if (local.get $treatAcc)
+    (then
+      (call $scope_define_accessor_attr (local.get $os) (local.get $ks)
+        (if i64 (local.get $gs) (then (i64.load (local.get $gs))) (else (if i64 (local.get $oldAcc) (then (i64.load (call $val_payload (i64.load (local.get $old))))) (else (call $v_undef)))))
+        (if i64 (local.get $ss) (then (i64.load (local.get $ss))) (else (if i64 (local.get $oldAcc) (then (i64.load (i32.add (call $val_payload (i64.load (local.get $old))) (i32.const 8)))) (else (call $v_undef)))))
+        (local.get $attrs)))
+    (else
+      (if (i32.ne (local.get $wr) (i32.const 0)) (then (set! $attrs (if i32 (local.get $wantWrit) (then (i32.or (local.get $attrs) (i32.const 8))) (else (i32.and (local.get $attrs) (i32.const -9)))))))
       (call $scope_define_attr (local.get $os) (local.get $ks)
         (if i64 (local.get $vs) (then (i64.load (local.get $vs)))
-          (else (if i64 (i32.and (i32.ne (local.get $old) (i32.const 0)) (i32.eqz (call $entry_is_accessor (local.get $old)))) (then (i64.load (local.get $old))) (else (call $v_undef)))))
+          (else (if i64 (i32.and (i32.ne (local.get $old) (i32.const 0)) (i32.eqz (local.get $oldAcc))) (then (i64.load (local.get $old))) (else (call $v_undef)))))
         (local.get $attrs)))))
 
 ;; build a property-descriptor object from a property slot.
@@ -719,7 +754,19 @@
   (if (i32.eq (local.get $id) (i32.const 139))  ;; Object.freeze(o) → mark @@frozen, return o
     (then
       (let $fo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $is_object (local.get $fo)) (then (call $scope_define (call $val_payload (local.get $fo)) (cstring "@@frozen") (call $v_true))))
+      (if (call $is_object (local.get $fo))
+        (then
+          (let $fsc i32 (call $val_payload (local.get $fo)))
+          ;; clear configurable+writable bits on every own prop (data → readonly)
+          (let $fcnt i32 (call $scope_count (local.get $fsc)))
+          (let $fi i32 (i32.const 0))
+          (block $fze (loop $fzl
+            (br_if $fze (i32.ge_s (local.get $fi) (local.get $fcnt)))
+            (let $fe i32 (i32.add (call $scope_entry (local.get $fsc) (local.get $fi)) (i32.const 4)))
+            (i32.store (local.get $fe) (i32.and (i32.load (local.get $fe)) (i32.const -13)))  ;; clear C(4)+W(8)
+            (set! $fi (i32.add (local.get $fi) (i32.const 1)))
+            (br $fzl)))
+          (call $scope_define (local.get $fsc) (cstring "@@frozen") (call $v_true))))
       (return (local.get $fo))))
   (if (i32.eq (local.get $id) (i32.const 140))  ;; Object.isFrozen(o)
     (then
