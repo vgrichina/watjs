@@ -1511,6 +1511,17 @@
     (then
       (call $throw_type (cstring "TypeError") (cstring "Array.prototype method called on null or undefined"))
       (return (call $v_undef))))
+  ;; callback-taking array methods require a callable first argument
+  (if (i32.and
+        (i32.eqz (call $is_function (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+        (i32.or (i32.eq (local.get $id) (i32.const 25)) (i32.or (i32.eq (local.get $id) (i32.const 26))
+          (i32.or (i32.eq (local.get $id) (i32.const 32)) (i32.or (i32.eq (local.get $id) (i32.const 33)) (i32.or (i32.eq (local.get $id) (i32.const 34))
+          (i32.or (i32.eq (local.get $id) (i32.const 72)) (i32.or (i32.eq (local.get $id) (i32.const 73))
+          (i32.or (i32.eq (local.get $id) (i32.const 74)) (i32.or (i32.eq (local.get $id) (i32.const 75))
+          (i32.or (i32.eq (local.get $id) (i32.const 76)) (i32.or (i32.eq (local.get $id) (i32.const 77)) (i32.eq (local.get $id) (i32.const 137))))))))))))))
+    (then
+      (call $throw_type (cstring "TypeError") (cstring "callback is not a function"))
+      (return (call $v_undef))))
   ;; --- array3 methods (this = array): 74 find, 75 findIndex, 76 some, 77 every, 78 sort ---
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 74)) (i32.le_s (local.get $id) (i32.const 78)))
         (i32.or (call $is_array (local.get $thisv)) (call $is_object (local.get $thisv))))  ;; generic on array-likes
