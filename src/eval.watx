@@ -2441,9 +2441,10 @@
             (let $ent i32 (call $scope_entry (local.get $ps) (local.get $i)))
             (if (call $entry_enumerable (i32.add (local.get $ent) (i32.const 8)))
               (then
-                (let $dv i64 (i64.load (i32.add (local.get $ent) (i32.const 8)))) ;; descriptor object value
-                (if (i32.or (call $is_object (local.get $dv)) (i32.or (call $is_function (local.get $dv)) (call $is_array (local.get $dv))))
-                  (then (call $apply_descriptor (local.get $os) (i32.load (local.get $ent)) (local.get $dv))))))
+                (let $dv i64 (i64.load (i32.add (local.get $ent) (i32.const 8)))) ;; descriptor value — must be an object
+                (if (i32.eqz (i32.or (call $is_object (local.get $dv)) (i32.or (call $is_function (local.get $dv)) (call $is_array (local.get $dv)))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
+                (call $apply_descriptor (local.get $os) (i32.load (local.get $ent)) (local.get $dv))))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $dpl)))))
       (return (local.get $ob))))
@@ -2607,8 +2608,9 @@
             (if (call $entry_enumerable (i32.add (local.get $ce) (i32.const 8)))
               (then
                 (let $cdv i64 (i64.load (i32.add (local.get $ce) (i32.const 8))))
-                (if (i32.or (call $is_object (local.get $cdv)) (i32.or (call $is_function (local.get $cdv)) (call $is_array (local.get $cdv))))
-                  (then (call $apply_descriptor (local.get $cro) (i32.load (local.get $ce)) (local.get $cdv))))))
+                (if (i32.eqz (i32.or (call $is_object (local.get $cdv)) (i32.or (call $is_function (local.get $cdv)) (call $is_array (local.get $cdv)))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
+                (call $apply_descriptor (local.get $cro) (i32.load (local.get $ce)) (local.get $cdv))))
             (set! $ci (i32.add (local.get $ci) (i32.const 1)))
             (br $ccl)))))
       (return (call $mk_obj (local.get $cro)))))
