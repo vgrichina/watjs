@@ -36,3 +36,11 @@ print("dstr-obj-default=" + y.name);
 // name descriptor shape
 var nd = Object.getOwnPropertyDescriptor(decl, "name");
 print("name-desc=" + nd.value + "," + nd.writable + "," + nd.enumerable + "," + nd.configurable);
+
+// classes
+class Foo {}
+print("class-decl=" + Foo.name);
+var Ca = class {};
+print("class-anon=" + Ca.name);
+var Cb = class Named {};
+print("class-named=" + Cb.name);

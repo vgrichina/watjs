@@ -406,7 +406,7 @@
         (then
           (call $next_token)
           (call $vm_c_expr (local.get $code))                                                          ;; RHS (right-assoc)
-          (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61))  ;; `x = <anon fn>` → x.name = "x"
+          (if (i32.or (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61)) (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 4)))) (i32.const 51)))  ;; `x = <anon fn>` → x.name = "x"
             (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $vn))))
           (call $vm_emit_op (local.get $code) (i32.const 32))                                           ;; DUP → leave value as the expression result
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR
@@ -505,7 +505,7 @@
                       (if (i32.eq (call $tok_kind) (i32.const 37))  ;; key: value
                         (then (call $next_token) (call $vm_c_expr (local.get $code)))
                         (else (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $oki))))  ;; shorthand → LOADVAR
-                      (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61))  ;; `key: <anon fn>` → .name = key
+                      (if (i32.or (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61)) (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 4)))) (i32.const 51)))  ;; `key: <anon fn>` → .name = key
                         (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))))
                       (call $vm_emit_op (local.get $code) (i32.const 65))))))))))))  ;; DEFDATA (+ spread else)
           (br_if $oe (i32.eqz (call $eat (i32.const 22))))
@@ -1175,7 +1175,7 @@
                 (let $sk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → value present
                 (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP undefined
                 (call $vm_c_expr (local.get $code))  ;; default (assignment-level: stops at ',')
-                (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61))  ;; anon fn default → name = binding
+                (if (i32.or (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61)) (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 4)))) (i32.const 51)))  ;; anon fn default → name = binding
                   (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $nm))))
                 (call $vm_patch (local.get $code) (local.get $sk))))
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nm))))  ;; STOREVAR nm
@@ -1214,7 +1214,7 @@
                 (let $osk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))
                 (call $vm_emit_op (local.get $code) (i32.const 11))
                 (call $vm_c_expr (local.get $code))
-                (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61))
+                (if (i32.or (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61)) (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 4)))) (i32.const 51)))
                   (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $bind))))
                 (call $vm_patch (local.get $code) (local.get $osk))))
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $bind))))  ;; STOREVAR bind
@@ -1443,6 +1443,9 @@
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ctorT))   ;; LOADVAR ctor
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
   (call $vm_emit_op (local.get $code) (i32.const 51))  ;; SETPROTO → [ctor]
+  ;; a binding-name class (class Foo {} / class Named {}) names its constructor
+  (if (local.get $clsname)
+    (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $clsname))))
   ;; expression → leave [ctor] on the stack; declaration → bind the name
   (if (i32.eqz (local.get $isExpr))
     (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname)))))  ;; STOREVAR C
@@ -1547,7 +1550,7 @@
                 (call $next_token)
                 (call $vm_c_expr (local.get $code))
                 ;; name inference: `var f = function/arrow(){}` (anonymous literal) → f.name = "f"
-                (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61))
+                (if (i32.or (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61)) (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 4)))) (i32.const 51)))
                   (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $nm))))
                 (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nm))))  ;; STOREVAR
             (br_if $vd (i32.eqz (call $eat (i32.const 22))))  ;; ',' → another declarator
@@ -1899,7 +1902,7 @@
         (then
           (call $next_token)
           (call $vm_c_expr (local.get $code))
-          (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61))  ;; `x = <anon fn>` → x.name = "x"
+          (if (i32.or (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 61)) (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 4)))) (i32.const 51)))  ;; `x = <anon fn>` → x.name = "x"
             (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $an))))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR
           (drop (call $eat (i32.const 21)))
