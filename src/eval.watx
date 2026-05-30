@@ -143,6 +143,16 @@
     (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
     (else (call $v_undef))))
 
+;; truncate a split() result array to the optional limit argument (arg index 1).
+(func $split_apply_limit (param $arr i32) (param $argv i32) (param $argc i32) (effects)
+  (if (i32.ge_s (local.get $argc) (i32.const 2))
+    (then
+      (let $lv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.eqz (call $is_undefined (local.get $lv)))
+        (then
+          (let $lim i32 (i32.trunc_f64_s (call $to_num (local.get $lv))))
+          (if (i32.and (i32.ge_s (local.get $lim) (i32.const 0)) (i32.gt_s (call $arr_len (local.get $arr)) (local.get $lim))) (then (i32.store (local.get $arr) (local.get $lim)))))))))
+
 ;; apply a property descriptor (scope $ds) onto object scope $os at key $ks,
 ;; implementing the [[DefineOwnProperty]] validation + attribute-merge rules.
 ;; Throws TypeError (sets err) on an invalid (re)definition.
@@ -908,10 +918,18 @@
       (let $s i32 (call $to_str (local.get $thisv)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eq (local.get $id) (i32.const 61)) (then (return (call $mk_str (call $str_trim (local.get $s))))))
-      (if (i32.eq (local.get $id) (i32.const 63))  ;; includes(sub)
-        (then (return (call $mk_bool (i32.ge_s (call $str_indexof (local.get $s) (call $to_str (local.get $a0))) (i32.const 0))))))
-      (if (i32.eq (local.get $id) (i32.const 64))  ;; startsWith(p)
-        (then (return (call $mk_bool (i32.eq (call $str_indexof (call $substr (local.get $s) (i32.const 0) (call $str_len (call $to_str (local.get $a0)))) (call $to_str (local.get $a0))) (i32.const 0))))))
+      (if (i32.eq (local.get $id) (i32.const 63))  ;; includes(sub[, fromIndex])
+        (then
+          (let $ipos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (if (i32.lt_s (local.get $ipos) (i32.const 0)) (then (set! $ipos (i32.const 0))))
+          (let $ihay i32 (if i32 (i32.gt_s (local.get $ipos) (i32.const 0)) (then (call $substr (local.get $s) (local.get $ipos) (i32.sub (call $str_len (local.get $s)) (local.get $ipos)))) (else (local.get $s))))
+          (return (call $mk_bool (i32.ge_s (call $str_indexof (local.get $ihay) (call $to_str (local.get $a0))) (i32.const 0))))))
+      (if (i32.eq (local.get $id) (i32.const 64))  ;; startsWith(p[, pos])
+        (then
+          (let $sp2 i32 (call $to_str (local.get $a0)))
+          (let $spos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (if (i32.lt_s (local.get $spos) (i32.const 0)) (then (set! $spos (i32.const 0))))
+          (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (local.get $spos) (call $str_len (local.get $sp2))) (local.get $sp2))))))
       (if (i32.eq (local.get $id) (i32.const 65))  ;; endsWith(p)
         (then
           (let $pl i32 (call $str_len (call $to_str (local.get $a0))))
@@ -953,8 +971,11 @@
                     (set! $pos (local.get $me))))
                 (br $sl)))
               (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.sub (local.get $sln) (local.get $pos)))))
+              (call $split_apply_limit (local.get $r) (local.get $argv) (local.get $argc))
               (return (call $mk_arr (local.get $r)))))
-          (return (call $mk_arr (call $str_split (local.get $s) (call $to_str (local.get $a0)))))))
+          (let $sres i32 (call $str_split (local.get $s) (call $to_str (local.get $a0))))
+          (call $split_apply_limit (local.get $sres) (local.get $argv) (local.get $argc))
+          (return (call $mk_arr (local.get $sres)))))
       (if (i32.eq (local.get $id) (i32.const 141))  ;; replaceAll(search, repl) — string search
         (then
           (let $srch i32 (call $to_str (local.get $a0)))
@@ -1616,9 +1637,10 @@
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $jl)))
           (return (call $mk_str (local.get $out)))))
-      (if (i32.eq (local.get $id) (i32.const 27))  ;; includes(x) — SameValueZero (matches NaN)
+      (if (i32.eq (local.get $id) (i32.const 27))  ;; includes(x[, fromIndex]) — SameValueZero (matches NaN)
         (then
-          (let $i i32 (i32.const 0))
+          (let $i i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.trunc_f64_s (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (if (i32.lt_s (local.get $i) (i32.const 0)) (then (set! $i (i32.add (local.get $n) (local.get $i))) (if (i32.lt_s (local.get $i) (i32.const 0)) (then (set! $i (i32.const 0))))))
           (let $a0nan i32 (i32.and (call $is_number (local.get $a0)) (f64.ne (call $tonum_raw (local.get $a0)) (call $tonum_raw (local.get $a0)))))
           (block $ie (loop $il
             (br_if $ie (i32.ge_s (local.get $i) (local.get $n)))
