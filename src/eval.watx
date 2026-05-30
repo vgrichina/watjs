@@ -1501,6 +1501,16 @@
           (if (i32.or (i32.lt_s (local.get $atix) (i32.const 0)) (i32.ge_s (local.get $atix) (local.get $atsl))) (then (return (call $v_undef))))
           (return (call $str_char_at (local.get $s) (local.get $atix)))))
       (return (call $v_undef))))
+  ;; Array.prototype methods require an object-coercible `this`: null/undefined
+  ;; → TypeError (spec ToObject step). Covers the array-method id ranges.
+  (if (i32.and
+        (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+        (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 20)) (i32.le_s (local.get $id) (i32.const 36)))
+          (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 70)) (i32.le_s (local.get $id) (i32.const 78)))
+            (i32.or (i32.eq (local.get $id) (i32.const 137)) (i32.eq (local.get $id) (i32.const 168))))))
+    (then
+      (call $throw_type (cstring "TypeError") (cstring "Array.prototype method called on null or undefined"))
+      (return (call $v_undef))))
   ;; --- array3 methods (this = array): 74 find, 75 findIndex, 76 some, 77 every, 78 sort ---
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 74)) (i32.le_s (local.get $id) (i32.const 78)))
         (i32.or (call $is_array (local.get $thisv)) (call $is_object (local.get $thisv))))  ;; generic on array-likes
