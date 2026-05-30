@@ -1772,11 +1772,29 @@
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR
           (drop (call $eat (i32.const 21)))
           (return)))
-      (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43)))  ;; += -= *= /=
+      ;; logical assignment a ||= b (59) / a &&= b (60) / a ??= b (61): short-circuit
+      (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))
+        (then
+          (let $jop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 59)) (then (i32.const 28))   ;; ||= → JMPT_PEEK
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 60)) (then (i32.const 27)) (else (i32.const 68))))))  ;; &&=→JMPF_PEEK, ??=→JMP_NN
+          (call $next_token)
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; LOADVAR a → [a]
+          (let $p1 i32 (call $vm_emit_jump (local.get $code) (local.get $jop)))  ;; short-circuit → keep a
+          (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP a
+          (call $vm_c_expr (local.get $code))                  ;; eval RHS → [b]
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR a (pops)
+          (let $p2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
+          (call $vm_patch (local.get $code) (local.get $p1))   ;; keep-branch: [a]
+          (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP a (statement discards)
+          (call $vm_patch (local.get $code) (local.get $p2))
+          (drop (call $eat (i32.const 21)))
+          (return)))
+      (if (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.eq (call $tok_kind) (i32.const 58)))  ;; += -= *= /= **=
         (then
           (let $cop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))   ;; ADD
                           (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))   ;; SUB
-                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4)) (else (i32.const 5))))))))  ;; MUL/DIV
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4))
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 58)) (then (i32.const 43)) (else (i32.const 5))))))))))  ;; MUL/POW/DIV
           (call $next_token)
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; LOADVAR
           (call $vm_c_expr (local.get $code))                                                                       ;; RHS

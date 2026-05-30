@@ -439,6 +439,16 @@
   (if (i32.and (i32.eq (local.get $c) (i32.const 47)) (call $regex_allowed (local.get $prevk) (local.get $prevs) (local.get $prevl)))
     (then (call $lex_regex) (return)))
 
+  ;; 3-char compound assignment: **= ||= &&= ??=  (checked before 2-char forms)
+  (if (i32.and (i32.eq (local.get $c) (i32.const 42)) (i32.and (i32.eq (local.get $c1) (i32.const 42)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 61))))
+    (then (call $op_tok (i32.const 58) (i32.const 3)) (return)))  ;; **=
+  (if (i32.and (i32.eq (local.get $c) (i32.const 124)) (i32.and (i32.eq (local.get $c1) (i32.const 124)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 61))))
+    (then (call $op_tok (i32.const 59) (i32.const 3)) (return)))  ;; ||=
+  (if (i32.and (i32.eq (local.get $c) (i32.const 38)) (i32.and (i32.eq (local.get $c1) (i32.const 38)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 61))))
+    (then (call $op_tok (i32.const 60) (i32.const 3)) (return)))  ;; &&=
+  (if (i32.and (i32.eq (local.get $c) (i32.const 63)) (i32.and (i32.eq (local.get $c1) (i32.const 63)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 61))))
+    (then (call $op_tok (i32.const 61) (i32.const 3)) (return)))  ;; ??=
+
   ;; 2-char: ++ -- += -= *= /= == != <= >= && ||
   (if (i32.and (i32.eq (local.get $c) (i32.const 43)) (i32.eq (local.get $c1) (i32.const 43)))
     (then (call $op_tok (i32.const 38) (i32.const 2)) (return)))  ;; ++
