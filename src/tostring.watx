@@ -447,19 +447,19 @@
   ;; ToString ("[object Object]") → ToNumber → NaN (not a TypeError).
   (call $str_to_num (call $obj_to_str (local.get $v))))
 
-;; ToPrimitive with the "default" hint (used by `+` and `==`). Ordinary objects
-;; use number order (valueOf, then toString); Date uses string order
-;; (toString, then valueOf). Primitives pass through unchanged. Throws TypeError
-;; if a present valueOf/toString both return objects.
-(func $to_primitive (param $v i64) (result i64) (effects)
+;; ToPrimitive. $hint: 0 default, 1 number, 2 string. number order is
+;; valueOf→toString, string order is toString→valueOf. The "default" hint acts
+;; as number for ordinary objects and as string for Date. Primitives pass
+;; through; throws TypeError if a present valueOf/toString both return objects.
+(func $to_primitive_h (param $v i64) (param $hint i32) (result i64) (effects)
   ;; already a primitive
   (if (i32.eqz (i32.or (call $is_object (local.get $v)) (i32.or (call $is_array (local.get $v)) (call $is_function (local.get $v)))))
     (then (return (local.get $v))))
   ;; arrays stringify via join
   (if (call $is_array (local.get $v)) (then (return (call $mk_str (call $arr_join (local.get $v))))))
-  ;; Date (own @@time) takes the string hint
-  (let $strFirst i32 (i32.const 0))
-  (if (call $is_object (local.get $v))
+  ;; string-order when the hint is "string", or "default" on a Date (own @@time)
+  (let $strFirst i32 (i32.eq (local.get $hint) (i32.const 2)))
+  (if (i32.and (i32.eq (local.get $hint) (i32.const 0)) (call $is_object (local.get $v)))
     (then (if (call $scope_find_local (call $val_payload (local.get $v)) (cstring "@@time"))
             (then (set! $strFirst (i32.const 1))))))
   (let $had i32 (i32.const 0))
@@ -492,6 +492,43 @@
       (return (call $v_undef))))
   ;; ordinary object / function: default ToString brand
   (call $mk_str (call $obj_to_str (local.get $v))))
+
+;; ToPrimitive with the default hint (used by `+` and `==`).
+(func $to_primitive (param $v i64) (result i64) (effects)
+  (call $to_primitive_h (local.get $v) (i32.const 0)))
+
+;; Lexicographic (code-unit / byte) string less-than: 1 if a < b, else 0.
+(func $str_less (param $a i32) (param $b i32) (result i32) (effects)
+  (let $la i32 (call $str_len (local.get $a)))
+  (let $lb i32 (call $str_len (local.get $b)))
+  (let $n i32 (if i32 (i32.lt_s (local.get $la) (local.get $lb)) (then (local.get $la)) (else (local.get $lb))))
+  (let $i i32 (i32.const 0))
+  (block $brk (loop $cont
+    (br_if $brk (i32.ge_s (local.get $i) (local.get $n)))
+    (let $ca i32 (call $str_byte (local.get $a) (local.get $i)))
+    (let $cb i32 (call $str_byte (local.get $b) (local.get $i)))
+    (if (i32.lt_u (local.get $ca) (local.get $cb)) (then (return (i32.const 1))))
+    (if (i32.gt_u (local.get $ca) (local.get $cb)) (then (return (i32.const 0))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $cont)))
+  ;; common prefix equal → shorter string is less
+  (i32.lt_s (local.get $la) (local.get $lb)))
+
+;; Abstract Relational Comparison a < b (LeftFirst). Returns 0 false, 1 true,
+;; 2 undefined (a NaN operand). Both operands ToPrimitive(number); two string
+;; primitives compare lexicographically, otherwise numerically.
+(func $js_less (param $a i64) (param $b i64) (result i32) (effects)
+  (let $pa i64 (call $to_primitive_h (local.get $a) (i32.const 1)))
+  (if (call $err) (then (return (i32.const 0))))
+  (let $pb i64 (call $to_primitive_h (local.get $b) (i32.const 1)))
+  (if (call $err) (then (return (i32.const 0))))
+  (if (i32.and (call $is_string (local.get $pa)) (call $is_string (local.get $pb)))
+    (then (return (call $str_less (call $val_payload (local.get $pa)) (call $val_payload (local.get $pb))))))
+  (let $na f64 (call $to_num (local.get $pa)))
+  (let $nb f64 (call $to_num (local.get $pb)))
+  (if (i32.or (f64.ne (local.get $na) (local.get $na)) (f64.ne (local.get $nb) (local.get $nb)))
+    (then (return (i32.const 2))))  ;; NaN → undefined
+  (if i32 (f64.lt (local.get $na) (local.get $nb)) (then (i32.const 1)) (else (i32.const 0))))
 
 ;; Parse a string as a number: sign, digits, fraction, and e/E exponent.
 ;; Accumulates up to 17 significant digits into a u64 mantissa + decimal

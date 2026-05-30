@@ -2696,10 +2696,13 @@
         (let $cb i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $ca i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
         (let $cr i32 (i32.const 0))
-        (if (i32.eq (local.get $op) (i32.const 14)) (then (set! $cr (f64.lt (call $tonum_raw (local.get $ca)) (call $tonum_raw (local.get $cb))))))
-        (if (i32.eq (local.get $op) (i32.const 15)) (then (set! $cr (f64.gt (call $tonum_raw (local.get $ca)) (call $tonum_raw (local.get $cb))))))
-        (if (i32.eq (local.get $op) (i32.const 16)) (then (set! $cr (f64.le (call $tonum_raw (local.get $ca)) (call $tonum_raw (local.get $cb))))))
-        (if (i32.eq (local.get $op) (i32.const 17)) (then (set! $cr (f64.ge (call $tonum_raw (local.get $ca)) (call $tonum_raw (local.get $cb))))))
+        ;; relational comparisons via js_less (returns 0 false / 1 true / 2 NaN).
+        ;;  a<b: less(a,b)==1   a>b: less(b,a)==1
+        ;;  a<=b: less(b,a)==0  a>=b: less(a,b)==0   (NaN ⇒ all four false)
+        (if (i32.eq (local.get $op) (i32.const 14)) (then (set! $cr (i32.eq (call $js_less (local.get $ca) (local.get $cb)) (i32.const 1)))))
+        (if (i32.eq (local.get $op) (i32.const 15)) (then (set! $cr (i32.eq (call $js_less (local.get $cb) (local.get $ca)) (i32.const 1)))))
+        (if (i32.eq (local.get $op) (i32.const 16)) (then (set! $cr (i32.eq (call $js_less (local.get $cb) (local.get $ca)) (i32.const 0)))))
+        (if (i32.eq (local.get $op) (i32.const 17)) (then (set! $cr (i32.eq (call $js_less (local.get $ca) (local.get $cb)) (i32.const 0)))))
         (if (i32.eq (local.get $op) (i32.const 18)) (then (set! $cr (call $strict_eq (local.get $ca) (local.get $cb)))))
         (if (i32.eq (local.get $op) (i32.const 24)) (then (set! $cr (i32.eqz (call $strict_eq (local.get $ca) (local.get $cb))))))  ;; !==
         (if (i32.eq (local.get $op) (i32.const 25)) (then (set! $cr (call $loose_eq (local.get $ca) (local.get $cb)))))           ;; ==
