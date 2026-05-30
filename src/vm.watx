@@ -2725,12 +2725,15 @@
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (let $kv i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
-        ;; arrays and strings enumerate as numeric index strings "0".."n-1"
-        (if (i32.or (call $is_array (local.get $kv)) (call $is_string (local.get $kv)))
+        ;; arrays enumerate index strings then their named props
+        (if (call $is_array (local.get $kv))
           (then
-            (let $kn i32 (if i32 (call $is_array (local.get $kv))
-                            (then (call $arr_len (call $val_payload (local.get $kv))))
-                            (else (call $str_len (call $val_payload (local.get $kv))))))
+            (i64.store (i32.add (local.get $stack) (local.get $t)) (call $mk_arr (call $own_enum_keys (local.get $kv) (i32.const 0))))
+            (br $disp)))
+        ;; strings enumerate numeric index strings "0".."n-1"
+        (if (call $is_string (local.get $kv))
+          (then
+            (let $kn i32 (call $str_len (call $val_payload (local.get $kv))))
             (let $ka i32 (call $arr_new (local.get $kn)))
             (let $ki i32 (i32.const 0))
             (block $ke (loop $kl
