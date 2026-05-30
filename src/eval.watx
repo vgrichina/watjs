@@ -412,6 +412,61 @@
     (br $l)))
   (local.get $s))
 
+;; read a run of decimal digits at cursor (mem 312) in string $s; advance the
+;; cursor; return the value, or -1 if no digit. (helper for $parse_date_str)
+(func $pd_int (param $s i32) (param $len i32) (result i32) (effects)
+  (let $p i32 (i32.load (i32.const 312)))
+  (let $v i32 (i32.const 0))
+  (let $any i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $p) (local.get $len)))
+    (let $c i32 (call $str_byte (local.get $s) (local.get $p)))
+    (br_if $e (i32.or (i32.lt_s (local.get $c) (i32.const 48)) (i32.gt_s (local.get $c) (i32.const 57))))
+    (set! $v (i32.add (i32.mul (local.get $v) (i32.const 10)) (i32.sub (local.get $c) (i32.const 48))))
+    (set! $any (i32.const 1))
+    (set! $p (i32.add (local.get $p) (i32.const 1))) (br $l)))
+  (i32.store (i32.const 312) (local.get $p))
+  (if i32 (local.get $any) (then (local.get $v)) (else (i32.const -1))))
+;; current cursor byte (or 0 at end)
+(func $pd_peek (param $s i32) (param $len i32) (result i32) (effects)
+  (if i32 (i32.lt_s (i32.load (i32.const 312)) (local.get $len)) (then (call $str_byte (local.get $s) (i32.load (i32.const 312)))) (else (i32.const 0))))
+;; parse an ISO-8601 date string → epoch ms, or NaN. Handles YYYY[-MM[-DD]]
+;; [T HH:MM[:SS[.sss]]][Z]. (Timezone offsets other than Z are treated as UTC.)
+(func $parse_date_str (param $s i32) (result f64) (effects)
+  (let $len i32 (call $str_len (local.get $s)))
+  (i32.store (i32.const 312) (i32.const 0))
+  (let $y i32 (call $pd_int (local.get $s) (local.get $len)))
+  (if (i32.lt_s (local.get $y) (i32.const 0)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (let $mo i32 (i32.const 0)) (let $d i32 (i32.const 1))
+  (let $h i32 (i32.const 0)) (let $mi i32 (i32.const 0)) (let $sec i32 (i32.const 0)) (let $ms i32 (i32.const 0))
+  (if (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 45))  ;; '-'
+    (then
+      (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+      (set! $mo (i32.sub (call $pd_int (local.get $s) (local.get $len)) (i32.const 1)))
+      (if (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 45))
+        (then
+          (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+          (set! $d (call $pd_int (local.get $s) (local.get $len)))))))
+  ;; optional time part after 'T' or ' '
+  (if (i32.or (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 84)) (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 32)))
+    (then
+      (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+      (set! $h (call $pd_int (local.get $s) (local.get $len)))
+      (if (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 58))  ;; ':'
+        (then
+          (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+          (set! $mi (call $pd_int (local.get $s) (local.get $len)))
+          (if (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 58))
+            (then
+              (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+              (set! $sec (call $pd_int (local.get $s) (local.get $len)))
+              (if (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 46))  ;; '.'
+                (then
+                  (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+                  (set! $ms (call $pd_int (local.get $s) (local.get $len)))))))))))
+  (if (i32.lt_s (local.get $mo) (i32.const 0)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (call $date_make (i64.extend_i32_s (local.get $y)) (i64.extend_i32_s (local.get $mo)) (i64.extend_i32_s (local.get $d)) (i64.extend_i32_s (local.get $h)) (i64.extend_i32_s (local.get $mi)) (i64.extend_i32_s (local.get $sec)) (i64.extend_i32_s (local.get $ms))))
+
 ;; weekday (0=Sun) and month (0=Jan) 3-letter names for Date toString-family
 (func $wday_name (param $w i32) (result i32) (effects)
   (if (i32.eq (local.get $w) (i32.const 0)) (then (return (cstring "Sun"))))
@@ -1443,7 +1498,13 @@
   (if (i32.eq (local.get $id) (i32.const 180))  ;; new Date(...) → date object (UTC)
     (then
       (let $dt f64 (call $now_ms))
-      (if (i32.eq (local.get $argc) (i32.const 1)) (then (set! $dt (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+      (if (i32.eq (local.get $argc) (i32.const 1))
+        (then
+          (let $d1 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          ;; new Date(string) parses; new Date(Date) / number → its time value
+          (if (call $is_string (local.get $d1))
+            (then (set! $dt (call $parse_date_str (call $val_payload (local.get $d1)))))
+            (else (set! $dt (call $to_num (local.get $d1)))))))
       (if (i32.ge_s (local.get $argc) (i32.const 2))
         (then
           ;; ToNumber each component left-to-right; a throwing valueOf propagates.
@@ -1492,6 +1553,8 @@
       (return (call $num (local.get $stv)))))
   (if (i32.eq (local.get $id) (i32.const 257))  ;; getTimezoneOffset() — always UTC
     (then (return (call $num (f64.const 0)))))
+  (if (i32.eq (local.get $id) (i32.const 268))  ;; Date.parse(str) → epoch ms
+    (then (return (call $num (call $parse_date_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
   (if (i32.eq (local.get $id) (i32.const 259))  ;; Date.UTC(y,mo[,d,h,mi,s,ms]) → ms number
     (then
       (if (i32.lt_s (local.get $argc) (i32.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
@@ -2862,7 +2925,7 @@
   (if (i32.eq (local.get $id) (i32.const 254)) (then (return (i32.const 3))))  ;; setMinutes
   (if (i32.or (i32.eq (local.get $id) (i32.const 249)) (i32.or (i32.eq (local.get $id) (i32.const 252)) (i32.eq (local.get $id) (i32.const 256)))) (then (return (i32.const 1))))  ;; setTime, setDate, setMilliseconds
   (if (i32.eq (local.get $id) (i32.const 259)) (then (return (i32.const 7))))  ;; Date.UTC
-  (if (i32.eq (local.get $id) (i32.const 261)) (then (return (i32.const 1))))  ;; Date setYear
+  (if (i32.or (i32.eq (local.get $id) (i32.const 261)) (i32.eq (local.get $id) (i32.const 268))) (then (return (i32.const 1))))  ;; Date setYear, Date.parse
   (if (i32.or (i32.eq (local.get $id) (i32.const 11)) (i32.or (i32.eq (local.get $id) (i32.const 12)) (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.or (i32.eq (local.get $id) (i32.const 67)) (i32.eq (local.get $id) (i32.const 153))))))
     (then (return (i32.const 1))))  ;; charAt, charCodeAt, padStart, padEnd, bind
   ;; length 0: String toString/valueOf(18), Object.prototype.toString(155),
@@ -3332,6 +3395,7 @@
   (call $scope_define (local.get $dproto) (cstring "setUTCMilliseconds") (call $mk_native (i32.const 256) (cstring "setUTCMilliseconds")))
   (call $scope_define (local.get $dproto) (cstring "getTimezoneOffset") (call $mk_native (i32.const 257) (cstring "getTimezoneOffset")))
   (call $set_prop (local.get $datef) (call $mk_str (cstring "UTC")) (call $mk_native (i32.const 259) (cstring "UTC")))
+  (call $set_prop (local.get $datef) (call $mk_str (cstring "parse")) (call $mk_native (i32.const 268) (cstring "parse")))
   (call $scope_define (local.get $dproto) (cstring "toString") (call $mk_native (i32.const 258) (cstring "toString")))
   (call $scope_define (local.get $dproto) (cstring "toDateString") (call $mk_native (i32.const 262) (cstring "toDateString")))
   (call $scope_define (local.get $dproto) (cstring "toTimeString") (call $mk_native (i32.const 263) (cstring "toTimeString")))
