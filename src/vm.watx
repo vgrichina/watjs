@@ -1434,7 +1434,8 @@
         (else
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
           (call $vm_c_fnbody (local.get $code) (i32.const 0))
-          (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $mn))
+          (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; method .name = key
+          (call $vm_emit_op (local.get $code) (i32.const 73)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; DEFMETH (non-enumerable)
           (call $vm_emit_op (local.get $code) (i32.const 11))))))
     (br $cml)))
   (call $next_token)  ;; '}'
@@ -2789,6 +2790,18 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (call $set_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (call $mk_str (local.get $nm)) (local.get $v))
         (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))  ;; assignment yields the value
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 73))  ;; DEFMETH (operand: name) — [obj, fn] → non-enumerable {W,C} method
+      (then
+        (let $nm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $v i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $mo i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
+        (if (call $is_object (local.get $mo))
+          (then (call $scope_define_attr (call $val_payload (local.get $mo)) (local.get $nm) (local.get $v) (i32.const 12))))  ;; W|C, non-enumerable
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 35))  ;; SETIDX — [obj, key, val]
       (then
