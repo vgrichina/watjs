@@ -243,6 +243,9 @@
         (if (call $arr_has (local.get $aa) (local.get $ai))  ;; skip holes
           (then (call $arr_push (local.get $out) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $ai)))))))
         (set! $ai (i32.add (local.get $ai) (i32.const 1))) (br $il)))
+      ;; `length` is a non-enumerable own prop — getOwnPropertyNames includes it
+      ;; (after the indices), Object.keys/for-in (allNames=0) don't.
+      (if (local.get $allNames) (then (call $arr_push (local.get $out) (call $mk_str (cstring "length")))))
       (call $push_scope_keys (local.get $out) (i32.load (i32.add (local.get $aa) (i32.const 12))) (local.get $allNames))
       (return (local.get $out))))
   (if (call $is_object (local.get $a))
