@@ -1330,14 +1330,20 @@
             (set! $scs (call $str_concat (local.get $scs) (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $cck)))))
             (set! $cck (i32.add (local.get $cck) (i32.const 1))) (br $ccl)))
           (return (call $mk_str (local.get $scs)))))
-      ;; lastIndexOf(needle) — scan for the highest match position
+      ;; lastIndexOf(needle[, fromIndex]) — highest match position with start ≤ fromIndex
       (let $cln i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (let $clhl i32 (call $str_len (local.get $scs)))
       (let $clnl i32 (call $str_len (local.get $cln)))
+      (let $clmax i32 (i32.sub (local.get $clhl) (local.get $clnl)))  ;; last possible start
+      (if (i32.ge_s (local.get $argc) (i32.const 2))
+        (then
+          (let $cf i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+          (if (i32.lt_s (local.get $cf) (i32.const 0)) (then (set! $cf (i32.const 0))))
+          (if (i32.lt_s (local.get $cf) (local.get $clmax)) (then (set! $clmax (local.get $cf))))))
       (let $clres i32 (i32.const -1))
       (let $clp i32 (i32.const 0))
       (block $cle (loop $cll
-        (br_if $cle (i32.gt_s (local.get $clp) (i32.sub (local.get $clhl) (local.get $clnl))))
+        (br_if $cle (i32.gt_s (local.get $clp) (local.get $clmax)))
         (let $clj i32 (i32.const 0))
         (let $clok i32 (i32.const 1))
         (block $cme (loop $cml
@@ -1371,8 +1377,14 @@
           (if (i32.or (i32.lt_s (local.get $i) (i32.const 0)) (i32.ge_s (local.get $i) (local.get $slen)))
             (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
           (return (call $num (f64.convert_i32_s (call $str_byte (local.get $s) (local.get $i)))))))
-      (if (i32.eq (local.get $id) (i32.const 13))  ;; indexOf(needle)
-        (then (return (call $num (f64.convert_i32_s (call $str_indexof (local.get $s) (call $to_str (local.get $a0))))))))
+      (if (i32.eq (local.get $id) (i32.const 13))  ;; indexOf(needle[, fromIndex])
+        (then
+          (let $ndl i32 (call $to_str (local.get $a0)))
+          (let $from i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (if (i32.lt_s (local.get $from) (i32.const 0)) (then (set! $from (i32.const 0))))
+          (if (i32.gt_s (local.get $from) (local.get $slen)) (then (set! $from (local.get $slen))))
+          (let $idr i32 (call $str_indexof (call $substr (local.get $s) (local.get $from) (i32.sub (local.get $slen) (local.get $from))) (local.get $ndl)))
+          (return (call $num (f64.convert_i32_s (if i32 (i32.lt_s (local.get $idr) (i32.const 0)) (then (i32.const -1)) (else (i32.add (local.get $idr) (local.get $from)))))))))
       (if (i32.eq (local.get $id) (i32.const 16))  ;; toUpperCase
         (then (return (call $mk_str (call $str_case (local.get $s) (i32.const 1))))))
       (if (i32.eq (local.get $id) (i32.const 17))  ;; toLowerCase
