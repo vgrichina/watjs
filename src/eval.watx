@@ -3057,9 +3057,14 @@
                 (call $arr_set (local.get $arr) (i32.add (local.get $ct) (local.get $ci)) (i64.load (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8)))))
                 (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $cwl)))))
           (return (local.get $thisv))))
-      (if (i32.eq (local.get $id) (i32.const 30))  ;; lastIndexOf(x)
+      (if (i32.eq (local.get $id) (i32.const 30))  ;; lastIndexOf(x[, fromIndex])
         (then
           (let $li i32 (i32.sub (local.get $n) (i32.const 1)))
+          (if (i32.ge_s (local.get $argc) (i32.const 2))
+            (then
+              (let $lfi i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+              (if (i32.lt_s (local.get $lfi) (i32.const 0)) (then (set! $lfi (i32.add (local.get $n) (local.get $lfi)))))
+              (if (i32.lt_s (local.get $lfi) (local.get $li)) (then (set! $li (local.get $lfi))))))
           (block $lie (loop $lil
             (br_if $lie (i32.lt_s (local.get $li) (i32.const 0)))
             (if (i32.and (call $arr_has (local.get $arr) (local.get $li)) (call $strict_eq (call $arr_get (local.get $arr) (local.get $li)) (local.get $a0))) (then (return (call $num (f64.convert_i32_s (local.get $li))))))
@@ -3107,9 +3112,14 @@
             (set! $fli (i32.sub (local.get $fli) (i32.const 1)))
             (br $flil)))
           (return (if i64 (i32.eq (local.get $id) (i32.const 33)) (then (call $v_undef)) (else (call $num (f64.const -1)))))))
-      (if (i32.eq (local.get $id) (i32.const 22))  ;; indexOf(x)
+      (if (i32.eq (local.get $id) (i32.const 22))  ;; indexOf(x[, fromIndex])
         (then
           (let $i i32 (i32.const 0))
+          (if (i32.ge_s (local.get $argc) (i32.const 2))
+            (then
+              (set! $i (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+              (if (i32.lt_s (local.get $i) (i32.const 0)) (then (set! $i (i32.add (local.get $n) (local.get $i)))))
+              (if (i32.lt_s (local.get $i) (i32.const 0)) (then (set! $i (i32.const 0))))))
           (block $se (loop $sl
             (br_if $se (i32.ge_s (local.get $i) (local.get $n)))
             (if (i32.and (call $arr_has (local.get $arr) (local.get $i)) (call $strict_eq (call $arr_get (local.get $arr) (local.get $i)) (local.get $a0)))
