@@ -412,3 +412,20 @@
 (func $re_search_str (param $patStr i32) (param $subStr i32) (result i32) (effects)
   (call $re_search (i32.add (local.get $patStr) (i32.const 4)) (call $str_len (local.get $patStr))
                    (i32.add (local.get $subStr) (i32.const 4)) (call $str_len (local.get $subStr))))
+
+;; like re_search but begins scanning at byte offset $from (for g/y exec via lastIndex)
+(func $re_search_from (param $p i32) (param $plen i32) (param $s i32) (param $slen i32) (param $from i32) (result i32) (effects)
+  (call $re_reset_caps (local.get $p) (local.get $plen))
+  (let $start i32 (local.get $from))
+  (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.const 0))))
+  (block $e (loop $l
+    (br_if $e (i32.gt_s (local.get $start) (local.get $slen)))
+    (let $r i32 (call $re_match_alt (local.get $p) (i32.const 0) (local.get $plen) (local.get $s) (local.get $slen) (local.get $start)))
+    (if (i32.ge_s (local.get $r) (i32.const 0)) (then (i32.store (i32.const 168) (local.get $r)) (return (local.get $start))))
+    (set! $start (i32.add (local.get $start) (i32.const 1)))
+    (br $l)))
+  (i32.const -1))
+
+(func $re_search_str_from (param $patStr i32) (param $subStr i32) (param $from i32) (result i32) (effects)
+  (call $re_search_from (i32.add (local.get $patStr) (i32.const 4)) (call $str_len (local.get $patStr))
+                   (i32.add (local.get $subStr) (i32.const 4)) (call $str_len (local.get $subStr)) (local.get $from)))

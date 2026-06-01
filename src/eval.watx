@@ -2300,9 +2300,23 @@
       (call $re_apply_flags (local.get $thisv))
       (let $pat i32 (call $re_pat_of (local.get $thisv)))
       (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-      (let $start i32 (call $re_search_str (local.get $pat) (local.get $sub)))
-      (if (i32.lt_s (local.get $start) (i32.const 0)) (then (return (call $v_null))))
+      ;; global ('g', reg 276) / sticky ('y') regexes are stateful: start at lastIndex,
+      ;; update it to the match end (or reset to 0 on no match).
+      (let $reglobal i32 (i32.load (i32.const 276)))
+      (let $relastix i32 (i32.const 0))
+      (if (local.get $reglobal)
+        (then (set! $relastix (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))))))
+      (let $start i32 (if i32 (local.get $reglobal)
+        (then (if i32 (i32.gt_s (local.get $relastix) (call $str_len (local.get $sub)))
+                (then (i32.const -1))   ;; lastIndex past end → no match
+                (else (call $re_search_str_from (local.get $pat) (local.get $sub) (local.get $relastix)))))
+        (else (call $re_search_str (local.get $pat) (local.get $sub)))))
+      (if (i32.lt_s (local.get $start) (i32.const 0))
+        (then
+          (if (local.get $reglobal) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0)))))
+          (return (call $v_null))))
       (let $end i32 (i32.load (i32.const 168)))
+      (if (local.get $reglobal) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.convert_i32_s (local.get $end))))))
       (let $r i32 (call $arr_new (i32.const 2)))
       (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))
       (let $gi i32 (i32.const 1))
