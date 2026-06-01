@@ -1,0 +1,10 @@
+mem-or=7
+mem-and=7
+mem-nul=7
+skip=9,0
+idx-or=3
+idx-nul=1
+mem-pow=8
+idx-pow=16
+nested=5
+result=10,10

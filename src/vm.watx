@@ -647,11 +647,33 @@
             (call $vm_c_expr (local.get $code))
             (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX
             (br $e)))
-        (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43)))  ;; arr[i] += -= *= /= v
+        (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))  ;; arr[i] ||= &&= ??= v
+          (then
+            (let $ijop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 59)) (then (i32.const 28))
+                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 60)) (then (i32.const 27)) (else (i32.const 68))))))
+            (call $next_token)
+            (let $iik i32 (call $vm_tmpname)) (let $iio i32 (call $vm_tmpname))
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $iik))  ;; STOREVAR key → [obj]
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $iio))  ;; STOREVAR obj → []
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $iio))  ;; LOADVAR obj
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $iik))  ;; LOADVAR key
+            (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [old]
+            (let $ip1 i32 (call $vm_emit_jump (local.get $code) (local.get $ijop)))  ;; short-circuit (peek)
+            (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP old
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $iio))  ;; LOADVAR obj
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $iik))  ;; LOADVAR key
+            (call $vm_c_expr (local.get $code))  ;; RHS → [obj, key, rhs]
+            (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [rhs]
+            (let $ip2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
+            (call $vm_patch (local.get $code) (local.get $ip1))  ;; keep-branch: [old]
+            (call $vm_patch (local.get $code) (local.get $ip2))
+            (br $e)))
+        (if (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.eq (call $tok_kind) (i32.const 58)))  ;; arr[i] += -= *= /= **= v
           (then
             (let $icop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))
                             (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))
-                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4)) (else (i32.const 5))))))))
+                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4))
+                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 58)) (then (i32.const 43)) (else (i32.const 5))))))))))
             (call $next_token)
             (let $ck i32 (call $vm_tmpname)) (let $cv i32 (call $vm_tmpname))
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; STOREVAR @@k=key → [obj]
@@ -714,11 +736,30 @@
             (call $vm_c_expr (local.get $code))
             (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP
             (br $e)))
-        (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43)))  ;; obj.key += -= *= /= v
+        (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))  ;; obj.key ||= &&= ??= v
+          (then
+            (let $mjop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 59)) (then (i32.const 28))   ;; ||=→JMPT_PEEK
+                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 60)) (then (i32.const 27)) (else (i32.const 68))))))  ;; &&=→JMPF_PEEK, ??=→JMP_NN
+            (call $next_token)
+            (let $motmp i32 (call $vm_tmpname))
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $motmp))  ;; STOREVAR obj → []
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $motmp))  ;; LOADVAR obj
+            (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP → [old]
+            (let $mp1 i32 (call $vm_emit_jump (local.get $code) (local.get $mjop)))  ;; short-circuit (peek, keep old)
+            (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP old
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $motmp))  ;; LOADVAR obj
+            (call $vm_c_expr (local.get $code))  ;; RHS → [obj, rhs]
+            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP → [rhs]
+            (let $mp2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
+            (call $vm_patch (local.get $code) (local.get $mp1))  ;; keep-branch: [old]
+            (call $vm_patch (local.get $code) (local.get $mp2))
+            (br $e)))
+        (if (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.eq (call $tok_kind) (i32.const 58)))  ;; obj.key += -= *= /= **= v
           (then
             (let $mcop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))
                             (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))
-                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4)) (else (i32.const 5))))))))
+                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4))
+                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 58)) (then (i32.const 43)) (else (i32.const 5))))))))))  ;; MUL/POW/DIV
             (call $next_token)
             (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP obj
             (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP (old)
