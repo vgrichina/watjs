@@ -1,0 +1,12 @@
+num=-450
+str=aAz
+lits=truenull
+obj={"a":1,"b":[2,3]}
+arr=1-2-3
+dup=2
+unquoted=SE
+trailcomma=SE
+leadzero=SE
+trailjunk=SE
+empty=SE
+plus=SE

@@ -77,3 +77,213 @@
         (br $l)))
       (return (call $str_concat (local.get $out) (cstring "}")))))
   (i32.const 0))  ;; undefined / function
+
+;; ═══════════════════════════════════════════════════════════════
+;; JSON.parse — a strict, validating recursive-descent parser.
+;; Builds JS values directly and throws SyntaxError on malformed input.
+;; Cursor state: slot 404 = pos, 408 = src Str ptr, 412 = byte length.
+;; ═══════════════════════════════════════════════════════════════
+(func $jp_pos (result i32) (effects) (i32.load (i32.const 404)))
+(func $jp_setpos (param $p i32) (effects) (i32.store (i32.const 404) (local.get $p)))
+(func $jp_src (result i32) (effects) (i32.load (i32.const 408)))
+(func $jp_len (result i32) (effects) (i32.load (i32.const 412)))
+(func $jp_adv (effects) (call $jp_setpos (i32.add (call $jp_pos) (i32.const 1))))
+(func $jp_cur (result i32) (effects)  ;; current byte, or -1 at/after end
+  (if i32 (i32.lt_s (call $jp_pos) (call $jp_len))
+    (then (call $str_byte (call $jp_src) (call $jp_pos)))
+    (else (i32.const -1))))
+(func $jp_err (param $msg i32) (effects)
+  (call $throw_type (cstring "SyntaxError") (local.get $msg)))
+(func $jp_isdigit (param $c i32) (result i32) (effects)
+  (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))))
+
+;; skip JSON whitespace (space, tab, LF, CR only)
+(func $jp_ws (effects)
+  (block $e (loop $l
+    (let $c i32 (call $jp_cur))
+    (br_if $e (i32.eqz (i32.or (i32.eq (local.get $c) (i32.const 32))
+                       (i32.or (i32.eq (local.get $c) (i32.const 9))
+                       (i32.or (i32.eq (local.get $c) (i32.const 10))
+                               (i32.eq (local.get $c) (i32.const 13)))))))
+    (call $jp_adv)
+    (br $l))))
+
+;; consume zero-or-more decimal digits; return how many were consumed
+(func $jp_digits (result i32) (effects)
+  (let $n i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.eqz (call $jp_isdigit (call $jp_cur))))
+    (call $jp_adv)
+    (set! $n (i32.add (local.get $n) (i32.const 1)))
+    (br $l)))
+  (local.get $n))
+
+;; parse 4 hex digits (cursor at first); return value, advancing past all 4
+(func $jp_hex4 (result i32) (effects)
+  (let $v i32 (i32.const 0))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (i32.const 4)))
+    (let $c i32 (call $jp_cur))
+    (let $d i32 (i32.const -1))
+    (if (call $jp_isdigit (local.get $c)) (then (set! $d (i32.sub (local.get $c) (i32.const 48)))))
+    (if (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 102))) (then (set! $d (i32.add (i32.sub (local.get $c) (i32.const 97)) (i32.const 10)))))
+    (if (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 70))) (then (set! $d (i32.add (i32.sub (local.get $c) (i32.const 65)) (i32.const 10)))))
+    (if (i32.lt_s (local.get $d) (i32.const 0)) (then (call $jp_err (cstring "Bad Unicode escape in JSON")) (return (i32.const 0))))
+    (set! $v (i32.add (i32.mul (local.get $v) (i32.const 16)) (local.get $d)))
+    (call $jp_adv)
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l)))
+  (local.get $v))
+
+;; parse a string (cursor at opening quote) → heap Str ptr (0 on error)
+(func $jp_string (result i32) (effects)
+  (call $jp_adv)  ;; consume opening quote
+  (let $max i32 (i32.sub (call $jp_len) (call $jp_pos)))
+  (let $buf i32 (call $str_alloc (local.get $max)))
+  (let $o i32 (i32.const 0))
+  (block $e (loop $l
+    (let $c i32 (call $jp_cur))
+    (if (i32.lt_s (local.get $c) (i32.const 0)) (then (call $jp_err (cstring "Unterminated string in JSON")) (return (i32.const 0))))
+    (if (i32.eq (local.get $c) (i32.const 34)) (then (call $jp_adv) (br $e)))  ;; closing quote
+    (if (i32.lt_s (local.get $c) (i32.const 32)) (then (call $jp_err (cstring "Bad control character in string literal in JSON")) (return (i32.const 0))))
+    (if (i32.eq (local.get $c) (i32.const 92))
+      (then
+        (call $jp_adv)  ;; consume backslash
+        (let $e2 i32 (call $jp_cur))
+        (let $out i32 (i32.const -1))
+        (if (i32.eq (local.get $e2) (i32.const 34)) (then (set! $out (i32.const 34))))
+        (if (i32.eq (local.get $e2) (i32.const 92)) (then (set! $out (i32.const 92))))
+        (if (i32.eq (local.get $e2) (i32.const 47)) (then (set! $out (i32.const 47))))
+        (if (i32.eq (local.get $e2) (i32.const 98)) (then (set! $out (i32.const 8))))
+        (if (i32.eq (local.get $e2) (i32.const 102)) (then (set! $out (i32.const 12))))
+        (if (i32.eq (local.get $e2) (i32.const 110)) (then (set! $out (i32.const 10))))
+        (if (i32.eq (local.get $e2) (i32.const 114)) (then (set! $out (i32.const 13))))
+        (if (i32.eq (local.get $e2) (i32.const 116)) (then (set! $out (i32.const 9))))
+        (if (i32.eq (local.get $e2) (i32.const 117))
+          (then
+            (call $jp_adv)  ;; consume 'u'
+            (let $cp i32 (call $jp_hex4))
+            (if (call $err) (then (return (i32.const 0))))
+            (call $str_set_byte (local.get $buf) (local.get $o) (i32.and (local.get $cp) (i32.const 255)))
+            (set! $o (i32.add (local.get $o) (i32.const 1)))
+            (br $l)))
+        (if (i32.lt_s (local.get $out) (i32.const 0)) (then (call $jp_err (cstring "Bad escaped character in JSON")) (return (i32.const 0))))
+        (call $str_set_byte (local.get $buf) (local.get $o) (local.get $out))
+        (set! $o (i32.add (local.get $o) (i32.const 1)))
+        (call $jp_adv)
+        (br $l)))
+    (call $str_set_byte (local.get $buf) (local.get $o) (local.get $c))
+    (set! $o (i32.add (local.get $o) (i32.const 1)))
+    (call $jp_adv)
+    (br $l)))
+  (i32.store (local.get $buf) (local.get $o))  ;; fix length header to actual
+  (local.get $buf))
+
+;; parse a number (cursor at '-' or first digit) → number JSValue
+(func $jp_number (result i64) (effects)
+  (let $start i32 (call $jp_pos))
+  (if (i32.eq (call $jp_cur) (i32.const 45)) (then (call $jp_adv)))  ;; minus
+  (let $c i32 (call $jp_cur))
+  (if (i32.eq (local.get $c) (i32.const 48))
+    (then (call $jp_adv))  ;; lone leading zero
+    (else
+      (if (i32.and (i32.ge_s (local.get $c) (i32.const 49)) (i32.le_s (local.get $c) (i32.const 57)))
+        (then (drop (call $jp_digits)))
+        (else (call $jp_err (cstring "Unexpected token in JSON")) (return (call $v_undef))))))
+  (if (i32.eq (call $jp_cur) (i32.const 46))  ;; fraction
+    (then
+      (call $jp_adv)
+      (if (i32.eqz (call $jp_digits)) (then (call $jp_err (cstring "Unterminated fractional number in JSON")) (return (call $v_undef))))))
+  (if (i32.or (i32.eq (call $jp_cur) (i32.const 101)) (i32.eq (call $jp_cur) (i32.const 69)))  ;; e / E
+    (then
+      (call $jp_adv)
+      (if (i32.or (i32.eq (call $jp_cur) (i32.const 43)) (i32.eq (call $jp_cur) (i32.const 45))) (then (call $jp_adv)))
+      (if (i32.eqz (call $jp_digits)) (then (call $jp_err (cstring "Exponent part is missing a number in JSON")) (return (call $v_undef))))))
+  (let $len i32 (i32.sub (call $jp_pos) (local.get $start)))
+  (let $s i32 (call $str_alloc (local.get $len)))
+  (let $k i32 (i32.const 0))
+  (block $ce (loop $cl
+    (br_if $ce (i32.ge_s (local.get $k) (local.get $len)))
+    (call $str_set_byte (local.get $s) (local.get $k) (call $str_byte (call $jp_src) (i32.add (local.get $start) (local.get $k))))
+    (set! $k (i32.add (local.get $k) (i32.const 1)))
+    (br $cl)))
+  (call $num (call $str_to_num (local.get $s))))
+
+;; match a literal keyword (true/false/null) at cursor
+(func $jp_lit (param $word i32) (param $val i64) (result i64) (effects)
+  (let $n i32 (call $str_len (local.get $word)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (if (i32.ne (call $jp_cur) (call $str_byte (local.get $word) (local.get $i)))
+      (then (call $jp_err (cstring "Unexpected token in JSON")) (return (call $v_undef))))
+    (call $jp_adv)
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l)))
+  (local.get $val))
+
+(func $jp_object (result i64) (effects)
+  (let $o i32 (call $obj_new (i32.const 4)))
+  (call $jp_adv)  ;; consume {
+  (call $jp_ws)
+  (if (i32.eq (call $jp_cur) (i32.const 125)) (then (call $jp_adv) (return (call $mk_obj (local.get $o)))))
+  (block $done (loop $members
+    (call $jp_ws)
+    (if (i32.ne (call $jp_cur) (i32.const 34)) (then (call $jp_err (cstring "Expected property name or '}' in JSON")) (return (call $v_undef))))
+    (let $key i32 (call $jp_string))
+    (if (call $err) (then (return (call $v_undef))))
+    (call $jp_ws)
+    (if (i32.ne (call $jp_cur) (i32.const 58)) (then (call $jp_err (cstring "Expected ':' after property name in JSON")) (return (call $v_undef))))
+    (call $jp_adv)  ;; consume :
+    (let $val i64 (call $jp_value))
+    (if (call $err) (then (return (call $v_undef))))
+    (call $set_prop (call $mk_obj (local.get $o)) (call $mk_str (local.get $key)) (local.get $val))
+    (call $jp_ws)
+    (let $c i32 (call $jp_cur))
+    (if (i32.eq (local.get $c) (i32.const 44)) (then (call $jp_adv) (br $members)))
+    (if (i32.eq (local.get $c) (i32.const 125)) (then (call $jp_adv) (br $done)))
+    (call $jp_err (cstring "Expected ',' or '}' after property value in JSON")) (return (call $v_undef))))
+  (call $mk_obj (local.get $o)))
+
+(func $jp_array (result i64) (effects)
+  (let $a i32 (call $arr_new (i32.const 4)))
+  (call $jp_adv)  ;; consume [
+  (call $jp_ws)
+  (if (i32.eq (call $jp_cur) (i32.const 93)) (then (call $jp_adv) (return (call $mk_arr (local.get $a)))))
+  (block $done (loop $elems
+    (let $val i64 (call $jp_value))
+    (if (call $err) (then (return (call $v_undef))))
+    (call $arr_push (local.get $a) (local.get $val))
+    (call $jp_ws)
+    (let $c i32 (call $jp_cur))
+    (if (i32.eq (local.get $c) (i32.const 44)) (then (call $jp_adv) (br $elems)))
+    (if (i32.eq (local.get $c) (i32.const 93)) (then (call $jp_adv) (br $done)))
+    (call $jp_err (cstring "Expected ',' or ']' after array element in JSON")) (return (call $v_undef))))
+  (call $mk_arr (local.get $a)))
+
+(func $jp_value (result i64) (effects)
+  (call $jp_ws)
+  (let $c i32 (call $jp_cur))
+  (if (i32.eq (local.get $c) (i32.const 123)) (then (return (call $jp_object))))   ;; {
+  (if (i32.eq (local.get $c) (i32.const 91)) (then (return (call $jp_array))))    ;; [
+  (if (i32.eq (local.get $c) (i32.const 34)) (then (return (call $mk_str (call $jp_string)))))  ;; "
+  (if (i32.eq (local.get $c) (i32.const 116)) (then (return (call $jp_lit (cstring "true") (call $v_true)))))
+  (if (i32.eq (local.get $c) (i32.const 102)) (then (return (call $jp_lit (cstring "false") (call $v_false)))))
+  (if (i32.eq (local.get $c) (i32.const 110)) (then (return (call $jp_lit (cstring "null") (call $v_null)))))
+  (if (i32.or (i32.eq (local.get $c) (i32.const 45)) (call $jp_isdigit (local.get $c)))
+    (then (return (call $jp_number))))
+  (call $jp_err (cstring "Unexpected token in JSON"))
+  (call $v_undef))
+
+;; top-level entry: parse the whole source; trailing junk is a SyntaxError.
+(func $json_parse (param $src i32) (result i64) (effects)
+  (i32.store (i32.const 408) (local.get $src))
+  (i32.store (i32.const 412) (call $str_len (local.get $src)))
+  (i32.store (i32.const 404) (i32.const 0))
+  (let $v i64 (call $jp_value))
+  (if (call $err) (then (return (call $v_undef))))
+  (call $jp_ws)
+  (if (i32.lt_s (call $jp_pos) (call $jp_len))
+    (then (call $jp_err (cstring "Unexpected non-whitespace character after JSON")) (return (call $v_undef))))
+  (local.get $v))

@@ -2199,8 +2199,7 @@
   (if (i32.eq (local.get $id) (i32.const 106))  ;; JSON.parse(text)
     (then
       (let $jt i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-      (let $wrapped i32 (call $str_concat (call $str_concat (cstring "(") (local.get $jt)) (cstring ")")))
-      (return (call $vm_eval_str (local.get $wrapped)))))
+      (return (call $json_parse (local.get $jt)))))
   ;; --- regex (100 RegExp, 101 test) and string regex methods (102 match,103 replace,104 search) ---
   (if (i32.eq (local.get $id) (i32.const 100))  ;; RegExp(pattern[,flags])
     (then
