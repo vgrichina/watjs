@@ -2608,6 +2608,32 @@
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (br $al)))
       (return (call $mk_arr (local.get $arx2)))))
+  (if (i32.eq (local.get $id) (i32.const 301))  ;; objRest(src, exclArr) — object-rest destructuring helper
+    (then
+      (let $rsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $rexcl i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $robj i32 (call $obj_new (i32.const 8)))
+      (if (i32.or (call $is_object (local.get $rsrc)) (call $is_array (local.get $rsrc)))
+        (then
+          (let $rkeys i32 (call $own_enum_keys (local.get $rsrc) (i32.const 0)))
+          (let $rn i32 (call $arr_len (local.get $rkeys)))
+          (let $rxa i32 (call $val_payload (local.get $rexcl)))
+          (let $rxn i32 (call $arr_len (local.get $rxa)))
+          (let $ri i32 (i32.const 0))
+          (block $rke (loop $rkl
+            (br_if $rke (i32.ge_s (local.get $ri) (local.get $rn)))
+            (let $rk i64 (call $arr_get (local.get $rkeys) (local.get $ri)))
+            (let $rkp i32 (call $val_payload (local.get $rk)))
+            (let $rex i32 (i32.const 0))
+            (let $rj i32 (i32.const 0))
+            (block $exe (loop $exl
+              (br_if $exe (i32.ge_s (local.get $rj) (local.get $rxn)))
+              (if (call $str_eq (local.get $rkp) (call $val_payload (call $arr_get (local.get $rxa) (local.get $rj)))) (then (set! $rex (i32.const 1)) (br $exe)))
+              (set! $rj (i32.add (local.get $rj) (i32.const 1))) (br $exl)))
+            (if (i32.eqz (local.get $rex))
+              (then (call $set_prop (call $mk_obj (local.get $robj)) (local.get $rk) (call $get_prop (local.get $rsrc) (local.get $rk)))))
+            (set! $ri (i32.add (local.get $ri) (i32.const 1))) (br $rkl)))))
+      (return (call $mk_obj (local.get $robj)))))
   (if (i32.eq (local.get $id) (i32.const 80))  ;; Object.assign(target, ...sources)
     (then
       (let $t i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))

@@ -1299,9 +1299,21 @@
   (if (i32.eq (call $tok_kind) (i32.const 17))  ;; { object pattern }
     (then
       (call $next_token)  ;; consume {
+      (let $exclArr i32 (call $arr_new (i32.const 4)))  ;; keys already bound (for ...rest exclusion)
       (block $oe (loop $ol
         (br_if $oe (i32.eq (call $tok_kind) (i32.const 18)))  ;; }
+        (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...rest — bind remaining own enumerable props
+          (then
+            (call $next_token)
+            (let $restnm i32 (call $ident_name)) (call $next_token)
+            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_native (i32.const 301) (cstring "")))  ;; PUSH objRest
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $srcTmp))  ;; LOADVAR src
+            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_arr (local.get $exclArr)))  ;; PUSH exclArr
+            (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (i32.const 2))  ;; CALL 2
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $restnm))  ;; STOREVAR rest
+            (br $oe)))
         (let $key i32 (call $ident_name)) (call $next_token)
+        (call $arr_push (local.get $exclArr) (call $mk_str (local.get $key)))
         (let $bind i32 (local.get $key))
         (let $nested i32 (i32.const 0))
         (if (i32.eq (call $tok_kind) (i32.const 37))  ;; key: target

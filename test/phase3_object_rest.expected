@@ -1,0 +1,5 @@
+var=1|{"b":2,"c":3}
+multi=12|{"p":3,"q":4}
+param=1:{"b":2,"c":3}
+all={"m":5,"n":6}
+non-enum-excluded={"k":1}
