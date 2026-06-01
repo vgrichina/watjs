@@ -1946,6 +1946,17 @@
                     (set! $pos (i32.add (local.get $ms) (i32.const 1))))
                   (else
                     (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.sub (local.get $ms) (local.get $pos)))))
+                    ;; splice the match's capture groups into the result (positions are relative to $pos)
+                    (let $gc i32 (i32.const 1))
+                    (block $gce (loop $gcl
+                      (br_if $gce (i32.gt_s (local.get $gc) (i32.load (i32.const 284))))
+                      (let $gb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $gc) (i32.const 1)) (i32.const 8))))
+                      (let $cs i32 (i32.load (local.get $gb)))
+                      (if (i32.lt_s (local.get $cs) (i32.const 0))
+                        (then (call $arr_push (local.get $r) (call $v_undef)))
+                        (else (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (i32.add (local.get $pos) (local.get $cs)) (i32.sub (i32.load (i32.add (local.get $gb) (i32.const 4))) (local.get $cs)))))))
+                      (set! $gc (i32.add (local.get $gc) (i32.const 1)))
+                      (br $gcl)))
                     (set! $pos (local.get $me))))
                 (br $sl)))
               (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.sub (local.get $sln) (local.get $pos)))))

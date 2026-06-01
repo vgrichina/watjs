@@ -1,0 +1,7 @@
+flat-hole=[1,3]
+flat-nested-hole=[1,2,4]
+flat-deep=[1,2,3]
+split-cap=["a","1","b","2",""]
+split-nocap=["a","b",""]
+split-multicap=["","2024","-","01"]
+split-str=["a","b","c"]
