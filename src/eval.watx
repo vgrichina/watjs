@@ -1158,6 +1158,10 @@
     (then
       (let $feo i32 (call $obj_new (i32.const 8)))
       (let $fesrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_null (local.get $fesrc)) (call $is_undefined (local.get $fesrc)))  ;; RequireObjectCoercible
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (if (i32.eqz (i32.or (call $is_array (local.get $fesrc)) (i32.or (call $is_object (local.get $fesrc)) (call $is_string (local.get $fesrc)))))  ;; not iterable (number/boolean/symbol)
+        (then (call $throw_type (cstring "TypeError") (cstring "object is not iterable")) (return (call $v_undef))))
       (if (call $is_array (local.get $fesrc))
         (then
           (let $fea i32 (call $val_payload (local.get $fesrc)))
@@ -2473,6 +2477,8 @@
   (if (i32.eq (local.get $id) (i32.const 248))  ;; Object.getOwnPropertySymbols(o)
     (then
       (let $gsv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_null (local.get $gsv)) (call $is_undefined (local.get $gsv)))  ;; ToObject → TypeError
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (let $gsarr i32 (call $arr_new (i32.const 4)))
       (if (call $is_object (local.get $gsv))
         (then

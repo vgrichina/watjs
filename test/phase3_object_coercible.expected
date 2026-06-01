@@ -1,0 +1,6 @@
+gops-undef=TE
+gops-null=TE
+fromEntries-undef=TE
+fromEntries-num=TE
+gops-obj-ok=NOTHROW
+fromEntries-ok=NOTHROW
