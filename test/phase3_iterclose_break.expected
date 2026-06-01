@@ -1,0 +1,5 @@
+break-closes=true
+normal-no-close=false
+array-break=12
+array-full=123
+continue=13

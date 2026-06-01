@@ -2141,8 +2141,12 @@
               (call $vm_c_stmt (local.get $code))  ;; body
               (call $vm_patch_conts (local.get $code) (local.get $oftop))  ;; continue → next iteration
               (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $oftop))  ;; JMP top
-              (call $vm_patch (local.get $code) (local.get $ofpend))  ;; done → here
-              (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → end
+              (call $vm_patch (local.get $code) (local.get $ofpend))  ;; done (normal exhaustion) → here (no IteratorClose)
+              (let $ofskip i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → endAll (skip the break-close)
+              (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → here: close the iterator first
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; LOADVAR it
+              (call $vm_emit_op (local.get $code) (i32.const 74))  ;; CLOSEITER (it.return() on break)
+              (call $vm_patch (local.get $code) (local.get $ofskip))  ;; endAll
               (call $vm_loop_exit (local.get $ofls))
               (return)))
           (call $cursor_restore (local.get $ofdetect))  ;; not for-of → regular for
@@ -3067,6 +3071,16 @@
         (if (call $is_object (local.get $mo))
           (then (call $scope_define_attr (call $val_payload (local.get $mo)) (local.get $nm) (local.get $v) (i32.const 12))))  ;; W|C, non-enumerable
         (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 74))  ;; CLOSEITER — pop iterator, call its return() if callable (IteratorClose)
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $itv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (if (call $is_object (local.get $itv))
+          (then
+            (let $retv i64 (call $get_prop (local.get $itv) (call $mk_str (cstring "return"))))
+            (if (call $is_function (local.get $retv))
+              (then (drop (call $call_val (local.get $retv) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $itv)))))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 35))  ;; SETIDX — [obj, key, val]
       (then
