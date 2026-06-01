@@ -3023,17 +3023,27 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $osrc i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $oobj i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left on stack
-        (if (call $is_object (local.get $osrc))
-          (then
-            (let $oss i32 (call $val_payload (local.get $osrc)))
-            (let $on i32 (call $scope_count (local.get $oss)))
+        (if (i32.or (call $is_object (local.get $osrc)) (call $is_array (local.get $osrc)))
+          (then  ;; copy own ENUMERABLE keys (own_enum_keys handles arrays + filters non-enum/internal)
+            (let $okeys i32 (call $own_enum_keys (local.get $osrc) (i32.const 0)))
+            (let $on i32 (call $arr_len (local.get $okeys)))
             (let $oi i32 (i32.const 0))
             (block $ose (loop $osl
               (br_if $ose (i32.ge_s (local.get $oi) (local.get $on)))
-              (let $okv i64 (call $mk_str (i32.load (call $scope_entry (local.get $oss) (local.get $oi)))))
+              (let $okv i64 (call $arr_get (local.get $okeys) (local.get $oi)))
               (call $set_prop (local.get $oobj) (local.get $okv) (call $get_prop (local.get $osrc) (local.get $okv)))
               (set! $oi (i32.add (local.get $oi) (i32.const 1)))
-              (br $osl)))))
+              (br $osl))))
+          (else (if (call $is_string (local.get $osrc))
+            (then  ;; string → copy each char as index property "0".."n-1"
+              (let $ostr i32 (call $val_payload (local.get $osrc)))
+              (let $osn i32 (call $str_len (local.get $ostr)))
+              (let $osi i32 (i32.const 0))
+              (block $sse (loop $ssl
+                (br_if $sse (i32.ge_s (local.get $osi) (local.get $osn)))
+                (call $set_prop (local.get $oobj) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $osi)))) (call $str_char_at (local.get $ostr) (local.get $osi)))
+                (set! $osi (i32.add (local.get $osi) (i32.const 1)))
+                (br $ssl)))))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 70))  ;; DELETE — [obj, key] → bool
       (then

@@ -1,0 +1,8 @@
+arr={"0":1,"1":2,"2":3}
+str={"0":"a","1":"b"}
+obj={"a":1,"b":2}
+override={"a":2}
+null={}
+undef={"x":1}
+num={}
+nonenum={}
