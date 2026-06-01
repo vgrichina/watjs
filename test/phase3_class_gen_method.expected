@@ -1,0 +1,12 @@
+g1=1
+g2=2
+done=true
+spread=0,1,2
+dstr-param=7,8
+static-gen=99
+computed-gen=5
+plain=42
+getter=7
+static-plain=8
+named-static=1
+gen-named-get=2
