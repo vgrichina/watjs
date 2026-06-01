@@ -1249,6 +1249,43 @@
 ;; with element/property defaults and array rest (matching var-destructuring);
 ;; a nested array/object target recurses through a fresh temp. Leaves the cursor
 ;; just past the closing ']' / '}'. Emits STOREVAR for each bound name.
+;; skip a balanced bracket group ([ ] / { } / ( )) starting at the current opener.
+(func $vm_skip_balanced (effects)
+  (let $d i32 (i32.const 0))
+  (block $e (loop $l
+    (let $k i32 (call $tok_kind))
+    (br_if $e (i32.eqz (local.get $k)))  ;; EOF guard
+    (if (i32.or (i32.eq (local.get $k) (i32.const 19)) (i32.or (i32.eq (local.get $k) (i32.const 17)) (i32.eq (local.get $k) (i32.const 15))))
+      (then (set! $d (i32.add (local.get $d) (i32.const 1)))))
+    (if (i32.or (i32.eq (local.get $k) (i32.const 20)) (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.eq (local.get $k) (i32.const 16))))
+      (then (set! $d (i32.sub (local.get $d) (i32.const 1)))
+            (if (i32.eqz (local.get $d)) (then (call $next_token) (br $e)))))
+    (call $next_token) (br $l))))
+
+;; A nested pattern element/property may carry a `= default` AFTER its closing
+;; bracket. We must apply the default to the temp BEFORE destructuring it, so we
+;; peek past the balanced pattern, emit the default-application onto $nt first,
+;; then rewind and recurse. Cursor enters at the pattern opener.
+(func $vm_c_nested_with_default (param $code i32) (param $nt i32) (effects)
+  (let $ps i32 (call $cursor_save))  ;; at the '[' / '{'
+  (call $vm_skip_balanced)           ;; advance past the matching closer
+  (let $hd i32 (i32.eq (call $tok_kind) (i32.const 24)))  ;; '=' default follows?
+  (let $rs i32 (i32.const 0))
+  (if (local.get $hd)
+    (then
+      (call $next_token)  ;; consume '='
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $nt))  ;; LOADVAR nt
+      (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+      (call $vm_emit_op (local.get $code) (i32.const 18))  ;; STRICTEQ
+      (let $sk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → value present, skip default
+      (call $vm_c_expr (local.get $code))  ;; eval default
+      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nt))  ;; STOREVAR nt
+      (call $vm_patch (local.get $code) (local.get $sk))
+      (set! $rs (call $cursor_save))))  ;; position after the default expr
+  (call $cursor_restore (local.get $ps))  ;; rewind to pattern opener
+  (call $vm_c_destructure_param (local.get $code) (local.get $nt))  ;; destructure (consumes pattern)
+  (if (local.get $hd) (then (call $cursor_restore (local.get $rs)))))  ;; skip past the default we pre-parsed
+
 (func $vm_c_destructure_param (param $code i32) (param $srcTmp i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [ array pattern ]
     (then
@@ -1276,7 +1313,7 @@
           (then
             (let $nt i32 (call $vm_tmpname))
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nt))  ;; STOREVAR nt
-            (call $vm_c_destructure_param (local.get $code) (local.get $nt)))
+            (call $vm_c_nested_with_default (local.get $code) (local.get $nt)))
           (else
             (let $nm i32 (call $ident_name)) (call $next_token)
             ;; element default (value === undefined ? default : value)
@@ -1329,7 +1366,7 @@
           (then
             (let $ont i32 (call $vm_tmpname))
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ont))
-            (call $vm_c_destructure_param (local.get $code) (local.get $ont)))
+            (call $vm_c_nested_with_default (local.get $code) (local.get $ont)))
           (else
             (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = default
               (then
