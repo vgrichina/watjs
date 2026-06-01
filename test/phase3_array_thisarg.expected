@@ -6,3 +6,5 @@ every=true
 find=2
 findIndex=1
 no-thisarg=2,4
+map-fe=300
+set-fe=300
