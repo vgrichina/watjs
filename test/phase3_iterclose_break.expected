@@ -3,3 +3,6 @@ normal-no-close=false
 array-break=12
 array-full=123
 continue=13
+throw-closes=true
+throw-prop=Z
+gen=12

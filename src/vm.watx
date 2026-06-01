@@ -2121,9 +2121,15 @@
               (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "done"))  ;; GETPROP done
               (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
               (let $ofpend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end (pops)
-              ;; x = r.value  (or destructure r.value into the array pattern)
+              ;; x = r.value  (read OUTSIDE the handler: a throwing value-getter is NOT an IteratorClose trigger)
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $rn))  ;; LOADVAR r
               (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "value"))  ;; GETPROP value → [val]
+              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@ofval"))  ;; STOREVAR @@ofval
+              ;; handler around binding+body: on abrupt completion, IteratorClose then re-throw
+              (call $vm_emit_op (local.get $code) (i32.const 48))  ;; PUSHHANDLER
+              (let $ofhloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catchIp placeholder
+              (call $vm_emit_op (local.get $code) (cstring "@@ofexc"))  ;; catch var
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@ofval"))  ;; LOADVAR @@ofval → [val]
               (if (i32.gt_s (local.get $ofncnt) (i32.const 0))
                 (then
                   (let $ofpt i32 (call $vm_tmpname))
@@ -2139,11 +2145,20 @@
                     (br $ofbl))))
                 (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))  ;; STOREVAR x
               (call $vm_c_stmt (local.get $code))  ;; body
-              (call $vm_patch_conts (local.get $code) (local.get $oftop))  ;; continue → next iteration
+              ;; normal + continue converge here: POPHANDLER then loop
+              (call $vm_patch_conts (local.get $code) (call $vm_emit_cursor))  ;; continue → POPHANDLER point
+              (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER
               (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $oftop))  ;; JMP top
+              ;; throw handler: exc bound to @@ofexc → IteratorClose, re-throw
+              (i32.store (i32.add (local.get $code) (local.get $ofhloc)) (call $vm_emit_cursor))  ;; catchIp = here
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; LOADVAR it
+              (call $vm_emit_op (local.get $code) (i32.const 75))  ;; CLOSEITER-suppress (throw-completion: original exception wins)
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@ofexc"))  ;; LOADVAR @@ofexc
+              (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW (re-raise original)
               (call $vm_patch (local.get $code) (local.get $ofpend))  ;; done (normal exhaustion) → here (no IteratorClose)
-              (let $ofskip i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → endAll (skip the break-close)
-              (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → here: close the iterator first
+              (let $ofskip i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → endAll (skip break-close)
+              (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → here: POPHANDLER + close
+              (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER (remove for-of handler)
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; LOADVAR it
               (call $vm_emit_op (local.get $code) (i32.const 74))  ;; CLOSEITER (it.return() on break)
               (call $vm_patch (local.get $code) (local.get $ofskip))  ;; endAll
@@ -3072,15 +3087,17 @@
           (then (call $scope_define_attr (call $val_payload (local.get $mo)) (local.get $nm) (local.get $v) (i32.const 12))))  ;; W|C, non-enumerable
         (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 74))  ;; CLOSEITER — pop iterator, call its return() if callable (IteratorClose)
+    (if (i32.or (i32.eq (local.get $op) (i32.const 74)) (i32.eq (local.get $op) (i32.const 75)))  ;; CLOSEITER: 74 break (propagate return's throw) / 75 throw (suppress it)
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $itv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (if (call $is_object (local.get $itv))
           (then
+            (let $cierr i32 (call $err))  ;; in-flight exception (op 75 restores it → suppresses return()'s own throw)
             (let $retv i64 (call $get_prop (local.get $itv) (call $mk_str (cstring "return"))))
             (if (call $is_function (local.get $retv))
-              (then (drop (call $call_val (local.get $retv) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $itv)))))))
+              (then (drop (call $call_val (local.get $retv) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $itv)))))
+            (if (i32.eq (local.get $op) (i32.const 75)) (then (call $set_err (local.get $cierr))))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 35))  ;; SETIDX — [obj, key, val]
       (then
