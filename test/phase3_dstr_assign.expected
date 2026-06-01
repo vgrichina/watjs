@@ -1,0 +1,11 @@
+arr=1,2|[1,2]
+swap=2,1
+nested=3,4|[[3],[4]]
+default=9
+rest=1:[2,3]
+hole=8
+obj=5,6|{"a":5,"b":6}
+obj-def=11
+obj-nested=12
+arrlit=3
+paren=10

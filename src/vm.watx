@@ -1086,6 +1086,7 @@
         (else (call $vm_c_expr (local.get $code))))
       (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD → resume value = expression result
       (return)))
+  (if (call $vm_c_dstr_assign_expr (local.get $code)) (then (return)))  ;; [pat]=RHS / ({pat}=RHS)
   (call $vm_c_or (local.get $code))
   (if (i32.eq (call $tok_kind) (i32.const 36))  ;; '?'
     (then
@@ -1285,6 +1286,61 @@
   (call $cursor_restore (local.get $ps))  ;; rewind to pattern opener
   (call $vm_c_destructure_param (local.get $code) (local.get $nt))  ;; destructure (consumes pattern)
   (if (local.get $hd) (then (call $cursor_restore (local.get $rs)))))  ;; skip past the default we pre-parsed
+
+;; destructuring-ASSIGNMENT expression: `[pat] = RHS` or `({pat} = RHS)`.
+;; Detect via lookahead (a '=' immediately after the balanced pattern), emit the
+;; assignment via vm_c_destructure_param, and leave the RHS value on the stack
+;; (a destructuring assignment evaluates to its RHS). Returns 1 if handled (cursor
+;; consumed), 0 if not a destructuring assignment (cursor unchanged).
+(func $vm_c_dstr_assign_expr (param $code i32) (result i32) (effects)
+  (if (i32.eq (call $tok_kind) (i32.const 19))  ;; '[' array pattern
+    (then
+      (let $ps i32 (call $cursor_save))
+      (call $vm_skip_balanced)  ;; past matching ']'
+      (let $isda i32 (i32.eq (call $tok_kind) (i32.const 24)))  ;; '=' follows?
+      (call $cursor_restore (local.get $ps))  ;; rewind to '['
+      (if (local.get $isda)
+        (then
+          (let $ps2 i32 (call $cursor_save))   ;; at '['
+          (call $vm_skip_balanced)
+          (call $next_token)  ;; consume '='
+          (call $vm_c_expr (local.get $code))  ;; RHS → [val]
+          (let $tmp i32 (call $vm_tmpname))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $tmp))  ;; STOREVAR tmp
+          (let $rs i32 (call $cursor_save))    ;; after RHS
+          (call $cursor_restore (local.get $ps2))  ;; back to '['
+          (call $vm_c_destructure_param (local.get $code) (local.get $tmp))
+          (call $cursor_restore (local.get $rs))   ;; skip past RHS
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tmp))  ;; LOADVAR → value
+          (return (i32.const 1))))
+      (return (i32.const 0))))
+  (if (i32.eq (call $tok_kind) (i32.const 15))  ;; '(' — maybe ({pat} = RHS)
+    (then
+      (let $ps i32 (call $cursor_save))
+      (call $next_token)  ;; '('
+      (if (i32.ne (call $tok_kind) (i32.const 17))  ;; inner must be '{'
+        (then (call $cursor_restore (local.get $ps)) (return (i32.const 0))))
+      (call $vm_skip_balanced)  ;; past matching '}'
+      (let $isda i32 (i32.eq (call $tok_kind) (i32.const 24)))  ;; '=' follows?
+      (call $cursor_restore (local.get $ps))  ;; rewind to '('
+      (if (local.get $isda)
+        (then
+          (call $next_token)  ;; consume '('
+          (let $ps2 i32 (call $cursor_save))   ;; at '{'
+          (call $vm_skip_balanced)
+          (call $next_token)  ;; consume '='
+          (call $vm_c_expr (local.get $code))  ;; RHS → [val] (stops at ')')
+          (let $tmp i32 (call $vm_tmpname))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $tmp))  ;; STOREVAR tmp
+          (let $rs i32 (call $cursor_save))    ;; at ')'
+          (call $cursor_restore (local.get $ps2))  ;; back to '{'
+          (call $vm_c_destructure_param (local.get $code) (local.get $tmp))
+          (call $cursor_restore (local.get $rs))   ;; back to ')'
+          (call $next_token)  ;; consume ')'
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tmp))  ;; LOADVAR → value
+          (return (i32.const 1))))
+      (return (i32.const 0))))
+  (i32.const 0))
 
 (func $vm_c_destructure_param (param $code i32) (param $srcTmp i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [ array pattern ]
@@ -2145,39 +2201,19 @@
       (call $look_restore)
       (if (local.get $daisda)
         (then
-          (call $next_token)  ;; '['
-          (let $danames i32 (call $heap_alloc (i32.const 256)))
-          (let $darest i32 (call $heap_alloc (i32.const 256)))
-          (let $dacnt i32 (i32.const 0))
-          (block $dpe (loop $dpl
-            (br_if $dpe (i32.eq (call $tok_kind) (i32.const 20)))
-            (i32.store (i32.add (local.get $darest) (i32.mul (local.get $dacnt) (i32.const 4))) (i32.const 0))
-            (if (i32.eq (call $tok_kind) (i32.const 54)) (then (i32.store (i32.add (local.get $darest) (i32.mul (local.get $dacnt) (i32.const 4))) (i32.const 1)) (call $next_token)))  ;; ...rest
-            (i32.store (i32.add (local.get $danames) (i32.mul (local.get $dacnt) (i32.const 4))) (call $ident_name))
-            (call $next_token)
-            (set! $dacnt (i32.add (local.get $dacnt) (i32.const 1)))
-            (br_if $dpe (i32.eqz (call $eat (i32.const 22))))
-            (br $dpl)))
-          (call $next_token) (call $next_token)  ;; ']' '='
-          (call $vm_c_expr (local.get $code))  ;; RHS → [val]
+          ;; route through vm_c_destructure_param (handles nested/default/rest/holes
+          ;; for identifier targets). Parse RHS first (it follows the pattern), stash
+          ;; it in a temp, then rewind and destructure the pattern out of the temp.
+          (let $ps i32 (call $cursor_save))     ;; at '['
+          (call $vm_skip_balanced)              ;; past matching ']'
+          (call $next_token)                    ;; consume '='
+          (call $vm_c_expr (local.get $code))   ;; RHS → [val]
           (let $datmp i32 (call $vm_tmpname))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $datmp))  ;; STOREVAR tmp
-          (let $dai i32 (i32.const 0))
-          (block $dbe (loop $dbl
-            (br_if $dbe (i32.ge_s (local.get $dai) (local.get $dacnt)))
-            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $datmp))  ;; LOADVAR tmp → [tmp]
-            (if (i32.load (i32.add (local.get $darest) (i32.mul (local.get $dai) (i32.const 4))))
-              (then  ;; ...rest = tmp.slice(i)
-                (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [tmp, tmp]
-                (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "slice"))  ;; [tmp, slicefn]
-                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (local.get $dai))))  ;; [tmp, slicefn, i]
-                (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 1)))  ;; CALLM 1 → [result]
-              (else
-                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (local.get $dai))))
-                (call $vm_emit_op (local.get $code) (i32.const 31))))  ;; GETIDX
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $danames) (i32.mul (local.get $dai) (i32.const 4)))))  ;; STOREVAR name
-            (set! $dai (i32.add (local.get $dai) (i32.const 1)))
-            (br $dbl)))
+          (let $rs i32 (call $cursor_save))     ;; after the RHS
+          (call $cursor_restore (local.get $ps))  ;; back to '['
+          (call $vm_c_destructure_param (local.get $code) (local.get $datmp))
+          (call $cursor_restore (local.get $rs))  ;; skip past the RHS we pre-parsed
           (drop (call $eat (i32.const 21)))
           (return)))))
   ;; object destructuring assignment statement:  ({a, b: c} = expr)
@@ -2201,33 +2237,18 @@
           (call $look_restore)
           (if (local.get $odisda)
             (then
-              (call $next_token) (call $next_token)  ;; '(' '{'
-              (let $odsrc i32 (call $heap_alloc (i32.const 256)))
-              (let $odtgt i32 (call $heap_alloc (i32.const 256)))
-              (let $odcnt i32 (i32.const 0))
-              (block $odpe (loop $odpl
-                (br_if $odpe (i32.eq (call $tok_kind) (i32.const 18)))
-                (let $odkey i32 (call $ident_name)) (call $next_token)
-                (i32.store (i32.add (local.get $odsrc) (i32.mul (local.get $odcnt) (i32.const 4))) (local.get $odkey))
-                (if (i32.eq (call $tok_kind) (i32.const 37))  ;; 'key: target'
-                  (then (call $next_token) (i32.store (i32.add (local.get $odtgt) (i32.mul (local.get $odcnt) (i32.const 4))) (call $ident_name)) (call $next_token))
-                  (else (i32.store (i32.add (local.get $odtgt) (i32.mul (local.get $odcnt) (i32.const 4))) (local.get $odkey))))  ;; shorthand
-                (set! $odcnt (i32.add (local.get $odcnt) (i32.const 1)))
-                (br_if $odpe (i32.eqz (call $eat (i32.const 22))))
-                (br $odpl)))
-              (call $next_token) (call $next_token)  ;; '}' '='
-              (call $vm_c_expr (local.get $code))  ;; RHS
-              (call $next_token)  ;; ')'
+              (call $next_token)  ;; consume '(' → cursor at '{'
+              (let $ps i32 (call $cursor_save))     ;; at '{'
+              (call $vm_skip_balanced)              ;; past matching '}'
+              (call $next_token)                    ;; consume '='
+              (call $vm_c_expr (local.get $code))   ;; RHS → [val] (stops at ')')
               (let $odtmp i32 (call $vm_tmpname))
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $odtmp))  ;; STOREVAR tmp
-              (let $odi i32 (i32.const 0))
-              (block $odbe (loop $odbl
-                (br_if $odbe (i32.ge_s (local.get $odi) (local.get $odcnt)))
-                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $odtmp))  ;; LOADVAR tmp
-                (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $odsrc) (i32.mul (local.get $odi) (i32.const 4)))))  ;; GETPROP key
-                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $odtgt) (i32.mul (local.get $odi) (i32.const 4)))))  ;; STOREVAR target
-                (set! $odi (i32.add (local.get $odi) (i32.const 1)))
-                (br $odbl)))
+              (let $rs i32 (call $cursor_save))     ;; at ')'
+              (call $cursor_restore (local.get $ps))  ;; back to '{'
+              (call $vm_c_destructure_param (local.get $code) (local.get $odtmp))
+              (call $cursor_restore (local.get $rs))  ;; back to ')'
+              (call $next_token)  ;; consume ')'
               (drop (call $eat (i32.const 21)))
               (return))))
         (else (call $look_restore)))))
