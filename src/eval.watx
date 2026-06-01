@@ -1227,6 +1227,8 @@
   ;; array iterator constructors: entries(95)->kind 2, keys(96)->0, values(97)->1
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 95)) (i32.le_s (local.get $id) (i32.const 97)))
     (then
+      (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Array.prototype values/keys/entries called on null or undefined")) (return (call $v_undef))))
       (let $itobj i32 (call $obj_new (i32.const 8)))
       (call $scope_define (local.get $itobj) (cstring "@@arr") (local.get $thisv))
       (call $scope_define (local.get $itobj) (cstring "@@i") (call $num (f64.const 0)))
