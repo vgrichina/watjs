@@ -1181,6 +1181,9 @@
 ;; inline (JMP over it) and a PUSH of the VM-fn value. magic from regs 232 (async)
 ;; / 236 (generator), both cleared here.
 (func $vm_c_fnbody (param $code i32) (param $selfname i32) (effects)
+  (let $genf i32 (i32.load (i32.const 236)))   ;; capture this fn's gen/async flags before the body can clobber mem
+  (let $asyncf i32 (i32.load (i32.const 232)))
+  (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; clear so nested fns don't inherit
   (call $next_token)  ;; '('
   (let $params i32 (call $heap_alloc (i32.const 256)))
   (let $pdef i32 (call $heap_alloc (i32.const 256)))   ;; per-param default-expr cursor (0 = none)
@@ -1265,14 +1268,16 @@
     (set! $pti (i32.add (local.get $pti) (i32.const 1)))
     (br $ptl)))
   (call $cursor_restore (local.get $bodycur))  ;; back to the body
+  ;; generator: suspend after the param prologue (eager param eval per spec — defaults/
+  ;; destructuring run when the generator is CALLED, before the body, throwing on call).
+  (if (local.get $genf) (then (call $vm_emit_op (local.get $code) (i32.const 77))))  ;; GENPRO_SUSPEND
   (call $vm_c_stmt (local.get $code))  ;; body block
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; default RET undefined
   (call $vm_patch (local.get $code) (local.get $pj))
   (let $fn i32 (call $heap_alloc (i32.add (i32.const 32) (i32.mul (local.get $np) (i32.const 4)))))  ;; @16 proto (i64), @24 closureScope, @28 params, @(28+np*4) name
-  (let $isasync i32 (i32.load (i32.const 232)))
-  (let $isgen i32 (i32.load (i32.const 236)))
-  (i32.store (i32.const 232) (i32.const 0)) (i32.store (i32.const 236) (i32.const 0))
+  (let $isasync i32 (local.get $asyncf))
+  (let $isgen i32 (local.get $genf))
   (i32.store (local.get $fn) (if i32 (local.get $isgen) (then (i32.const 1448232527))
     (else (if i32 (local.get $isasync) (then (i32.const 1448232528)) (else (i32.const 1448232526))))))  ;; GEN / ASYNC / NORMAL
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
@@ -2630,6 +2635,15 @@
         (return (if i64 (i32.gt_s (local.get $sp) (i32.const 0))
                   (then (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
                   (else (call $v_undef))))))
+    (if (i32.eq (local.get $op) (i32.const 77))  ;; GENPRO_SUSPEND — suspend after eager param prologue; resume pushes nothing
+      (then
+        (i32.store (i32.add (local.get $ctx) (i32.const 4)) (local.get $ip))
+        (i32.store (i32.add (local.get $ctx) (i32.const 12)) (local.get $sp))
+        (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $scope))
+        (i32.store (i32.add (local.get $ctx) (i32.const 24)) (local.get $frame))
+        (i32.store (i32.add (local.get $ctx) (i32.const 32)) (local.get $handler))
+        (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 0))  ;; resume pushes nothing
+        (return (call $v_undef))))
     (if (i32.eq (local.get $op) (i32.const 7))  ;; YIELD — suspend; resume pushes the .next(v) argument
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
@@ -3446,6 +3460,10 @@
   (i32.store (i32.add (local.get $ctx) (i32.const 28)) (local.get $gscope))
   (i32.store (i32.add (local.get $ctx) (i32.const 32)) (i32.const 0))  ;; handler chain
   (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 0))  ;; await resume flag
+  ;; eager param eval: run the prologue (defaults/destructuring) now, suspending at
+  ;; GENPRO_SUSPEND. A throw here sets the err flag, which vm_step returns and the
+  ;; calling frame's loop unwinds — i.e. the generator call throws, per spec.
+  (drop (call $vm_step (local.get $ctx) (call $v_undef)))
   (let $g i32 (call $obj_new (i32.const 4)))
   (call $scope_define (local.get $g) (cstring "@@ctx") (call $num (f64.convert_i32_s (local.get $ctx))))
   (call $scope_define (local.get $g) (cstring "next") (call $mk_native (i32.const 150) (cstring "next")))

@@ -1,0 +1,10 @@
+basic=1,2
+default=5
+eager=D
+unres-call=ReferenceError
+dstr-null=TypeError
+dstr=3,4
+for-of=123
+gen-meth=9
+class-gen=7
+next-arg=42
