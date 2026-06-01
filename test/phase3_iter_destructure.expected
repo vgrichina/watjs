@@ -1,0 +1,12 @@
+basic=1,2
+default=1,9
+rest=1:[2,3]
+hole=2,4
+nested=1,2
+string=xyz
+param=7
+swap=2,1
+short=1,undefined
+gen=1,2
+iter-throws=Error
+not-iterable=TE
