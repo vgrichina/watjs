@@ -2779,7 +2779,7 @@
     (then (return (call $num (call $parse_int_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
             (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (i32.const 0))))))))
   (if (i32.eq (local.get $id) (i32.const 51))  ;; parseFloat(s)
-    (then (return (call $num (call $str_to_num (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
+    (then (return (call $num (call $parse_float (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
   ;; --- Math methods (no this) ---
   (if (i32.eq (local.get $id) (i32.const 223))  ;; Math.fround — round to float32 precision
     (then (return (call $num (f64.promote_f32 (f32.demote_f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))

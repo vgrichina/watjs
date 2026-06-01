@@ -1,0 +1,11 @@
+plain=3.14
+trailing=3.14
+ws=42.5
+exp=1000
+hex-no=0
+dot=0.5
+infinity=Infinity
+none=NaN
+neg-exp=-0.0025
+int=42
+leading-dot-sign=0.25
