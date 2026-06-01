@@ -1415,6 +1415,10 @@
           (if (i32.gt_s (local.get $start) (local.get $slen)) (then (set! $start (local.get $slen))))
           (if (i32.lt_s (local.get $end) (i32.const 0)) (then (set! $end (i32.const 0))))
           (if (i32.gt_s (local.get $end) (local.get $slen)) (then (set! $end (local.get $slen))))
+          ;; substring (15) uses min(start,end)..max(start,end) — swap if reversed (slice does not)
+          (if (i32.eq (local.get $id) (i32.const 15))
+            (then (if (i32.gt_s (local.get $start) (local.get $end))
+              (then (let $tmp i32 (local.get $start)) (set! $start (local.get $end)) (set! $end (local.get $tmp))))))
           (return (call $mk_str (call $substr (local.get $s) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))))
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 139))  ;; Object.freeze(o) → mark @@frozen, return o
