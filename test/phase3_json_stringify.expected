@@ -1,0 +1,13 @@
+compact={"b":2,"a":1}
+arr=[1,"x",true,null]
+undef=[null,null]
+space2={|  "a": 1,|  "b": [|    2,|    3|  ]|}
+spacestr=[|->1,|->2|]
+wlist={"a":1,"c":3}
+repfn={"a":1}
+repmul={"a":10,"b":20}
+tojson="C"
+wrapNum=5
+wrapStr="hi"
+ctrl="\b\f\n\r\t"
+circular=TypeError
