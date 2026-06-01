@@ -2077,7 +2077,7 @@
             (i64.store (local.get $cargv) (local.get $el))
             (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
             (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
-            (let $ft i32 (call $truthy (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $v_undef))))
+            (let $ft i32 (call $truthy (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))  ;; thisArg = 2nd arg
             (br_if $fe (call $err))
             (if (i32.eq (local.get $id) (i32.const 74)) (then (if (local.get $ft) (then (return (local.get $el))))))           ;; find
             (if (i32.eq (local.get $id) (i32.const 75)) (then (if (local.get $ft) (then (return (call $num (f64.convert_i32_s (local.get $i))))))))  ;; findIndex
@@ -2138,7 +2138,7 @@
                 (i64.store (local.get $cargv) (local.get $el))
                 (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
                 (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
-                (if (call $truthy (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $v_undef)))
+                (if (call $truthy (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))  ;; thisArg = 2nd arg
                   (then (call $arr_push (local.get $r) (local.get $el))))))
             (br_if $fe (call $err))
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $fl)))
@@ -3232,7 +3232,7 @@
                 (i64.store (local.get $cargv) (call $arr_get (local.get $arr) (local.get $i)))
                 (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
                 (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
-                (let $res i64 (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $v_undef)))
+                (let $res i64 (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))  ;; thisArg = 2nd arg
                 (if (i32.eq (local.get $id) (i32.const 26)) (then (call $arr_push (local.get $r) (local.get $res)))))
               (else (if (i32.eq (local.get $id) (i32.const 26)) (then (call $arr_push (local.get $r) (call $v_hole))))))  ;; map preserves holes
             (br_if $fe (call $err))
