@@ -1,0 +1,4 @@
+obj-get=get x
+obj-set=set y
+cls-get=get foo
+cls-set=set bar
