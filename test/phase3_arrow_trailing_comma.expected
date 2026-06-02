@@ -1,0 +1,5 @@
+single=5
+multi=3
+default=3
+rest=1:2
+none-still-ok=9

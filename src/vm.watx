@@ -1803,7 +1803,8 @@
             (if (i32.and (i32.eqz (local.get $dd)) (i32.eq (local.get $dk) (i32.const 22))) (then (br $dse)))
             (call $next_token) (br $dsl)))))
       (set! $np (i32.add (local.get $np) (i32.const 1)))
-      (br_if $pe (i32.eqz (call $eat (i32.const 22))))
+      (br_if $pe (i32.eqz (call $eat (i32.const 22))))  ;; no comma → done
+      (br_if $pe (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma before ')'
       (br $pl)))))
   (call $next_token)  ;; ')'
   (local.get $np))
