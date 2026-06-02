@@ -1,0 +1,9 @@
+undeclared-throws=THROW:ReferenceError
+declared-ok=5
+let-ok=2
+param-ok=9
+outer-ok=5
+const-throws=THROW:TypeError
+obj-prop-ok=5
+sloppy-undeclared-ok=7
+program-strict-undeclared=ReferenceError
