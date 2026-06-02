@@ -2156,6 +2156,7 @@
                 (br_if $vd (i32.eqz (call $eat (i32.const 22))))
                 (br $vl)))
             (let $nm i32 (call $ident_name)) (call $next_token)
+            (if (call $vm_strict_lhs_check (local.get $nm)) (then (return)))  ;; strict: `var/let/const eval|arguments` → SyntaxError
             (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' initializer
               (then
                 (call $next_token)

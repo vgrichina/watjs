@@ -1,0 +1,6 @@
+var-eval=SyntaxError
+var-arguments=SyntaxError
+let-eval=SyntaxError
+const-eval=SyntaxError
+sloppy-ok=NO-THROW
+normal-ok=NO-THROW
