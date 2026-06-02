@@ -1,0 +1,3 @@
+strict-with=SyntaxError
+strict-with-body=SyntaxError
+strict-normal-ok=NO-THROW

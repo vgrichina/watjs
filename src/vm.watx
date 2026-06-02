@@ -2043,6 +2043,10 @@
 
 ;; statement compiler — emits bytecode (control flow via jumps, not re-scanning)
 (func $vm_c_stmt (param $code i32) (effects)
+  ;; `with` is a reserved word in strict mode → early SyntaxError (sloppy `with` is
+  ;; valid but unsupported; those aren't negative tests, so only flag it in strict).
+  (if (i32.and (i32.load (i32.const 388)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "with"))))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Strict mode code may not include a with statement")) (return)))
   ;; labeled statement:  IDENT : stmt   (the next loop picks up the pending label)
   (if (i32.eq (call $tok_kind) (i32.const 3))
     (then
