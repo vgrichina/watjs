@@ -1340,6 +1340,15 @@
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
   (let $entry i32 (call $vm_emit_cursor))
   (let $bodycur i32 (call $cursor_save))  ;; '{' of the body
+  ;; strict mode: own "use strict" directive at body start, OR lexically inherited.
+  (let $savestrict i32 (i32.load (i32.const 388)))
+  (let $thisstrict i32 (local.get $savestrict))
+  (call $next_token)  ;; consume '{'
+  (if (i32.eq (call $tok_kind) (i32.const 2))  ;; first statement a string literal?
+    (then (if (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict"))
+      (then (set! $thisstrict (i32.const 1))))))
+  (call $cursor_restore (local.get $bodycur))  ;; rewind to '{'
+  (i32.store (i32.const 388) (local.get $thisstrict))  ;; nested fns inherit this strictness
   ;; prologue: default-parameter initializers — if param === undefined, assign default
   (let $dpi i32 (i32.const 0))
   (block $dpe (loop $dpl
@@ -1385,6 +1394,7 @@
   (call $vm_c_stmt (local.get $code))  ;; body block
   (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
   (i32.store (i32.const 372) (local.get $savehc)) (i32.store (i32.const 376) (local.get $savehb))  ;; restore enclosing hoist list
+  (i32.store (i32.const 388) (local.get $savestrict))  ;; restore enclosing strictness
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; default RET undefined
   (call $vm_patch (local.get $code) (local.get $pj))
@@ -1407,7 +1417,8 @@
     (br $cl)))
   ;; .name: the declared name (named fn decl/expr), or 0 → "" until inferred
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $np) (i32.const 4))) (local.get $selfname))
-  (i32.store (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4))) (i32.const 0))  ;; not an arrow (binds own arguments)
+  (i32.store (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))
+    (if i32 (local.get $thisstrict) (then (i32.const 4)) (else (i32.const 0))))  ;; bit2 = strict (bit0/1 arrow — not an arrow here)
   ;; named function: CLOSURE_NAMED binds the name to the function inside its own
   ;; body (recursive named function expressions); anonymous: plain CLOSURE.
   (if (local.get $selfname)
@@ -2693,6 +2704,7 @@
   (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 340) (call $heap_alloc (i32.const 256)))  ;; finally-cursor stack
   (i32.store (i32.const 360) (i32.const 0))  ;; innermost loop's finally-base
   (i32.store (i32.const 372) (i32.const 0)) (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))  ;; fn-hoist position list
+  (i32.store (i32.const 388) (i32.const 0))  ;; compile-time strict-mode flag (lexically inherited)
   ;; Size the code buffer to the source: bytecode is bounded by a small multiple
   ;; of source length (densest real case ~5 bytes/char; 16 is a safe ceiling),
   ;; plus a fixed 128 KB base that covers the always-compiled Error prelude. A
@@ -2989,13 +3001,14 @@
         ;; tail-call (self-recursion, allocation-free) and for ARROW functions (they
         ;; have no own arguments — it resolves lexically). After params so it aliases.
         ;; template flags @(32+np*4): bit0 = skip own `arguments` (arrow w/o rest),
-        ;; bit1 = arrow (skip own `this` — both resolve lexically up the scope chain).
-        (if (i32.and (i32.eqz (local.get $reuse))
-                     (i32.eqz (i32.and (i32.load (i32.add (local.get $cfn) (i32.add (i32.const 32) (i32.mul (local.get $cnp) (i32.const 4))))) (i32.const 1))))
+        ;; bit1 = arrow (skip own `this`, lexical), bit2 = strict (plain-call this = undefined).
+        (let $cflags i32 (i32.load (i32.add (local.get $cfn) (i32.add (i32.const 32) (i32.mul (local.get $cnp) (i32.const 4)))))) ;; fn flags
+        (if (i32.and (i32.eqz (local.get $reuse)) (i32.eqz (i32.and (local.get $cflags) (i32.const 1))))
           (then (call $scope_define (local.get $cns) (cstring "arguments") (call $vm_make_arguments (local.get $cns) (local.get $cfn) (local.get $stack) (local.get $cbase) (local.get $argc)))))
-        (if (i32.eqz (i32.and (i32.load (i32.add (local.get $cfn) (i32.add (i32.const 32) (i32.mul (local.get $cnp) (i32.const 4))))) (i32.const 2)))  ;; non-arrow → bind own `this`
-          (then (call $scope_define (local.get $cns) (cstring "this")  ;; receiver for methods, else the global object (sloppy)
-            (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $mk_obj (local.get $gscope)))))))
+        (if (i32.eqz (i32.and (local.get $cflags) (i32.const 2)))  ;; non-arrow → bind own `this`
+          (then (call $scope_define (local.get $cns) (cstring "this")  ;; method→receiver; plain call→ undefined (strict) / global (sloppy)
+            (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase))))
+              (else (if i64 (i32.and (local.get $cflags) (i32.const 4)) (then (call $v_undef)) (else (call $mk_obj (local.get $gscope)))))))))
         (if (i32.eq (local.get $op) (i32.const 21))  ;; TAILCALL: reuse current frame
           (then (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12)))))
           (else  ;; CALL / CALLM: push a new frame; result base drops callee (+ receiver)
@@ -3765,8 +3778,10 @@
   ;; `arguments` — both resolve lexically through the captured scope.
   (let $vcflags i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))))
   (if (i32.eqz (i32.and (local.get $vcflags) (i32.const 2)))
-    (then (call $scope_define (local.get $ns) (cstring "this")  ;; bind `this` (receiver / global object for plain calls)
-      (if i64 (call $is_undefined (local.get $thisv)) (then (call $mk_obj (i32.load (i32.const 204)))) (else (local.get $thisv))))))
+    (then (call $scope_define (local.get $ns) (cstring "this")  ;; receiver; or undefined (strict) / global (sloppy) when none given
+      (if i64 (call $is_undefined (local.get $thisv))
+        (then (if i64 (i32.and (local.get $vcflags) (i32.const 4)) (then (call $v_undef)) (else (call $mk_obj (i32.load (i32.const 204))))))
+        (else (local.get $thisv))))))
   ;; bind `arguments` so callbacks invoked by native methods (forEach/map/sort/…) can use it
   (if (i32.eqz (i32.and (local.get $vcflags) (i32.const 1)))
     (then (call $scope_define (local.get $ns) (cstring "arguments") (call $vm_make_arguments_argv (local.get $ns) (local.get $fn) (local.get $argv) (local.get $argc)))))

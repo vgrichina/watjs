@@ -1,0 +1,9 @@
+plain-call-undef=true
+sloppy-global=true
+method-receiver=5
+nested-inherits=true
+this-prop-throws=TypeError
+call-with-this=7
+strict-callback-this=true
+strict-callback-thisArg=9
+sloppy-callback-global=true
