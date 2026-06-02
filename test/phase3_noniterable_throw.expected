@@ -1,0 +1,10 @@
+empty-null=TE
+empty-undef=TE
+empty-num=TE
+empty-bool=TE
+nonempty-null=TE
+forof-null=TE
+forof-num=TE
+forof-emptyptn-null=TE
+plain-arr-ok=NOTHROW
+gen-iter-ok=NOTHROW
