@@ -130,6 +130,70 @@
   (i32.store (i32.const 320) (local.get $n)))
 (func $vm_finally_emit_all (param $code i32) (effects)
   (call $vm_finally_emit_to (local.get $code) (i32.const 0)))
+
+;; ── function-declaration hoisting ──  reg 372 = count, 376 = base ptr (4-byte
+;; source positions). A pre-scan compiles statement-position `function NAME`
+;; declarations at the top of the function/program; the body-compile then SKIPS
+;; them (matched by source position) so a redeclare/reassign before the decl line
+;; isn't clobbered. Saved/restored across nested function bodies.
+(func $vm_hoist_record (param $pos i32) (effects)
+  (let $n i32 (i32.load (i32.const 372)))
+  (if (i32.lt_s (local.get $n) (i32.const 256))  ;; cap (rare to exceed; silently ignore beyond)
+    (then
+      (i32.store (i32.add (i32.load (i32.const 376)) (i32.mul (local.get $n) (i32.const 4))) (local.get $pos))
+      (i32.store (i32.const 372) (i32.add (local.get $n) (i32.const 1))))))
+(func $vm_hoist_contains (param $pos i32) (result i32) (effects)
+  (let $n i32 (i32.load (i32.const 372)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (if (i32.eq (i32.load (i32.add (i32.load (i32.const 376)) (i32.mul (local.get $i) (i32.const 4)))) (local.get $pos))
+      (then (return (i32.const 1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l)))
+  (i32.const 0))
+;; statement-position test: a function declaration follows nothing (start),
+;; ';', '{', or '}'  (an expression-position `function` follows '='/'('/','/return…).
+(func $vm_stmt_pos (param $prevk i32) (result i32) (effects)
+  (i32.or (i32.eqz (local.get $prevk)) (i32.or (i32.eq (local.get $prevk) (i32.const 17))
+    (i32.or (i32.eq (local.get $prevk) (i32.const 18)) (i32.eq (local.get $prevk) (i32.const 21))))))
+;; Scan the upcoming body for statement-position `function NAME` declarations at
+;; depth==decldepth, compile each hoisted (CLOSURE+STOREVAR) and record its pos.
+;; decldepth=1 for a function body (cursor at '{'); 0 for the program top level.
+(func $vm_hoist_fns (param $code i32) (param $decldepth i32) (effects)
+  (let $start i32 (call $cursor_save))
+  (let $depth i32 (i32.const 0))
+  (let $prevk i32 (i32.const 0))
+  (block $he (loop $hl
+    (let $k i32 (call $tok_kind))
+    (br_if $he (i32.eqz (local.get $k)))  ;; EOF
+    (if (i32.or (i32.eq (local.get $k) (i32.const 17)) (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.eq (local.get $k) (i32.const 19))))
+      (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $prevk (local.get $k)) (call $next_token) (br $hl)))
+    (if (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.eq (local.get $k) (i32.const 20))))
+      (then (set! $depth (i32.sub (local.get $depth) (i32.const 1)))
+            (br_if $he (i32.lt_s (local.get $depth) (local.get $decldepth)))  ;; body closed
+            (set! $prevk (local.get $k)) (call $next_token) (br $hl)))
+    (if (i32.and (i32.eq (local.get $depth) (local.get $decldepth))
+          (i32.and (i32.eq (local.get $k) (i32.const 3))
+            (i32.and (call $tok_is_kw (cstring "function")) (call $vm_stmt_pos (local.get $prevk)))))
+      (then
+        (call $vm_hoist_record (call $pos))
+        (let $fnm i32 (call $vm_c_function (local.get $code)))  ;; emits PUSH fn (consumes the whole decl)
+        (if (local.get $fnm)
+          (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fnm)))  ;; STOREVAR
+          (else (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP (anonymous — shouldn't happen for a decl)
+        (set! $prevk (i32.const 21))
+        (br $hl)))
+    (set! $prevk (local.get $k)) (call $next_token) (br $hl)))
+  (call $cursor_restore (local.get $start)))
+;; skip a `function`/`function*` NAME (params){body} declaration without emitting
+;; (used when it was already hoisted). Cursor at 'function'.
+(func $vm_skip_fn_decl (effects)
+  (call $next_token)  ;; 'function'
+  (if (i32.eq (call $tok_kind) (i32.const 12)) (then (call $next_token)))  ;; '*'
+  (if (i32.eq (call $tok_kind) (i32.const 3)) (then (call $next_token)))   ;; NAME
+  (if (i32.eq (call $tok_kind) (i32.const 15)) (then (call $vm_skip_balanced)))  ;; (params)
+  (if (i32.eq (call $tok_kind) (i32.const 17)) (then (call $vm_skip_balanced))))  ;; {body}
 ;; patch unlabeled break/continue lists AND (if the current loop is labeled) the
 ;; label entry's matching list, all to `target`.
 (func $vm_patch_breaks (param $code i32) (param $target i32) (effects)
@@ -1226,6 +1290,10 @@
   (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; clear so nested fns don't inherit
   (let $savefin i32 (i32.load (i32.const 320)))  ;; nested fn: a return runs only THIS fn's finallys
   (i32.store (i32.const 320) (i32.const 0))
+  (let $savehc i32 (i32.load (i32.const 372)))  ;; nested fn: its own hoist list
+  (let $savehb i32 (i32.load (i32.const 376)))
+  (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))
+  (i32.store (i32.const 372) (i32.const 0))
   (call $next_token)  ;; '('
   (let $params i32 (call $heap_alloc (i32.const 256)))
   (let $pdef i32 (call $heap_alloc (i32.const 256)))   ;; per-param default-expr cursor (0 = none)
@@ -1313,8 +1381,10 @@
   ;; generator: suspend after the param prologue (eager param eval per spec — defaults/
   ;; destructuring run when the generator is CALLED, before the body, throwing on call).
   (if (local.get $genf) (then (call $vm_emit_op (local.get $code) (i32.const 77))))  ;; GENPRO_SUSPEND
+  (if (i32.eq (call $tok_kind) (i32.const 17)) (then (call $vm_hoist_fns (local.get $code) (i32.const 1))))  ;; hoist `function NAME` decls (body is a '{...}' block)
   (call $vm_c_stmt (local.get $code))  ;; body block
   (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
+  (i32.store (i32.const 372) (local.get $savehc)) (i32.store (i32.const 376) (local.get $savehb))  ;; restore enclosing hoist list
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; default RET undefined
   (call $vm_patch (local.get $code) (local.get $pj))
@@ -1980,6 +2050,9 @@
       ;; function NAME ( params ) { body }   (declaration)
       (if (call $tok_is_kw (cstring "function"))
         (then
+          ;; already hoisted (compiled+bound at the top of this fn body)? skip it.
+          (if (call $vm_hoist_contains (call $pos))
+            (then (call $vm_skip_fn_decl) (return)))
           (let $fnm i32 (call $vm_c_function (local.get $code)))  ;; emits PUSH fn
           (if (local.get $fnm)
             (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fnm)))  ;; STOREVAR
@@ -2618,6 +2691,7 @@
   (i32.store (i32.const 252) (call $heap_alloc (i32.const 2048)))  ;; label-entry stack
   (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 340) (call $heap_alloc (i32.const 256)))  ;; finally-cursor stack
   (i32.store (i32.const 360) (i32.const 0))  ;; innermost loop's finally-base
+  (i32.store (i32.const 372) (i32.const 0)) (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))  ;; fn-hoist position list
   ;; Size the code buffer to the source: bytecode is bounded by a small multiple
   ;; of source length (densest real case ~5 bytes/char; 16 is a safe ceiling),
   ;; plus a fixed 128 KB base that covers the always-compiled Error prelude. A

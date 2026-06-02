@@ -1,0 +1,7 @@
+call-before-decl=7
+init-from-hoisted=3
+nested=42
+reassign-not-clobbered=5
+call-then-reassign=9,10
+iife-name-not-leaked=undefined
+mutual=true
