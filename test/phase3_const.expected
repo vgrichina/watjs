@@ -1,0 +1,9 @@
+reassign-throws=THROW:TypeError
+compound-throws=THROW:TypeError
+read-ok=42
+loop-redefine-ok=6
+forof-ok=123
+let-reassign-ok=2
+object-mutate-ok=2
+const-fn-ok=7
+param-ok=5
