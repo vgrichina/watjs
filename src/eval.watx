@@ -2703,6 +2703,11 @@
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (br $al)))
       (return (call $mk_arr (local.get $arx2)))))
+  (if (i32.eq (local.get $id) (i32.const 302))  ;; Object.prototype.valueOf — ToObject(this) = this for objects
+    (then
+      (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (return (local.get $thisv))))
   (if (i32.eq (local.get $id) (i32.const 301))  ;; objRest(src, exclArr) — object-rest destructuring helper
     (then
       (let $rsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -4099,7 +4104,7 @@
   ;; Object.prototype — real backing object holding the brand-check toString etc.
   (let $objproto i32 (call $obj_new (i32.const 8)))
   (call $scope_define (local.get $objproto) (cstring "toString") (call $mk_native (i32.const 155) (cstring "toString")))
-  (call $scope_define (local.get $objproto) (cstring "valueOf") (call $mk_native (i32.const 18) (cstring "valueOf")))
+  (call $scope_define (local.get $objproto) (cstring "valueOf") (call $mk_native (i32.const 302) (cstring "valueOf")))
   (call $scope_define (local.get $objproto) (cstring "hasOwnProperty") (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))
   (call $scope_define (local.get $objproto) (cstring "propertyIsEnumerable") (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))
   (call $scope_define (local.get $objproto) (cstring "isPrototypeOf") (call $mk_native (i32.const 300) (cstring "isPrototypeOf")))

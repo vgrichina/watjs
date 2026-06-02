@@ -1,0 +1,6 @@
+obj-identity=true
+obj-via-proto=true
+str-prim=abc
+num-prim=42
+number-obj-still-nan=NaN
+obj-plus-string=[object Object]
