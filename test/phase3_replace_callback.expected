@@ -3,3 +3,5 @@ offset=x1y
 nogroup=ABC
 string-arg=abb
 unmatched-grp=a|undefined|c
+global-fn=1a2b
+global-str=1a2b
