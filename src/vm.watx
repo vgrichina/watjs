@@ -1056,6 +1056,7 @@
           (else
             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $key)))
             (call $vm_emit_op (local.get $code) (i32.const 70))  ;; DELETE
+            (if (i32.load (i32.const 388)) (then (call $vm_emit_op (local.get $code) (i32.const 84))))  ;; strict: non-config delete → TypeError
             (br $e)))))
     (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
       (then
@@ -1065,7 +1066,9 @@
         (let $nk2 i32 (call $tok_kind))
         (if (i32.or (i32.eq (local.get $nk2) (i32.const 23)) (i32.eq (local.get $nk2) (i32.const 19)))
           (then (call $vm_emit_op (local.get $code) (i32.const 31)) (br $l))  ;; GETIDX
-          (else (call $vm_emit_op (local.get $code) (i32.const 70)) (br $e)))))  ;; DELETE
+          (else (call $vm_emit_op (local.get $code) (i32.const 70))
+                (if (i32.load (i32.const 388)) (then (call $vm_emit_op (local.get $code) (i32.const 84))))  ;; strict: non-config delete → TypeError
+                (br $e)))))  ;; DELETE
     ;; not a member access → bare delete: discard value, result is true
     (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
     (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1)))
@@ -3383,6 +3386,11 @@
                         (else (set! $dres (call $v_false))))))))))))
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $dres))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 84))  ;; DELCHECK — strict: a false `delete` result (non-configurable) → TypeError
+      (then
+        (if (i32.eqz (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot delete property in strict mode"))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 71))  ;; SETCOMPLETION — pop TOS → completion register (mem 288)
       (then

@@ -1,0 +1,6 @@
+delete-nonconfig=THROW:TypeError
+delete-config-ok=true
+delete-nonexistent-ok=true
+delete-frozen=THROW:TypeError
+delete-idx-nonconfig=THROW:TypeError
+sloppy-nonconfig-false=false
