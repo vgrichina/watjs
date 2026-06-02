@@ -1520,6 +1520,12 @@
         (if (local.get $isrest) (then (br $ae)))  ;; rest is last
         (br_if $ae (i32.eqz (call $eat (i32.const 22))))
         (br $al)))
+      ;; IteratorClose on normal completion if the iterator isn't done (no rest exhausted it)
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $dnm)) (call $vm_emit_op (local.get $code) (i32.const 23))  ;; LOADVAR done; NOT
+      (let $cdj i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → skip (done)
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itnm))  ;; LOADVAR it
+      (call $vm_emit_op (local.get $code) (i32.const 74))  ;; CLOSEITER
+      (call $vm_patch (local.get $code) (local.get $cdj))
       (call $next_token)))  ;; consume ]
   (if (i32.eq (call $tok_kind) (i32.const 17))  ;; { object pattern }
     (then
