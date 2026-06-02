@@ -733,8 +733,26 @@
         (set! $ipp (call $scope_parent (local.get $ipp)))
         (br $ipl)))
       (return (call $v_false))))
-  ;; Function constructor (157) and Function.prototype empty fn (158): no-ops
-  (if (i32.or (i32.eq (local.get $id) (i32.const 157)) (i32.eq (local.get $id) (i32.const 158)))
+  ;; Function(p1, …, pN, body)  |  new Function(…)  — build source and eval it,
+  ;; returning the resulting function. Params are the all-but-last args (joined by
+  ;; ','), the body is the last arg. The name is "anonymous" per spec.
+  (if (i32.eq (local.get $id) (i32.const 157))
+    (then
+      (let $fsrc i32 (cstring "(function anonymous("))
+      (let $fnp i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
+      (let $fi i32 (i32.const 0))
+      (block $ffe (loop $ffl
+        (br_if $ffe (i32.ge_s (local.get $fi) (local.get $fnp)))
+        (if (i32.gt_s (local.get $fi) (i32.const 0)) (then (set! $fsrc (call $str_concat (local.get $fsrc) (cstring ",")))))
+        (set! $fsrc (call $str_concat (local.get $fsrc) (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $fi)))))
+        (set! $fi (i32.add (local.get $fi) (i32.const 1)))
+        (br $ffl)))
+      (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "){\n")))
+      (if (i32.gt_s (local.get $argc) (i32.const 0))
+        (then (set! $fsrc (call $str_concat (local.get $fsrc) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.sub (local.get $argc) (i32.const 1))))))))
+      (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "\n})")))
+      (return (call $vm_eval_str (local.get $fsrc)))))
+  (if (i32.eq (local.get $id) (i32.const 158))  ;; Function.prototype empty fn: no-op
     (then (return (call $v_undef))))
   ;; Object.prototype.toString — the [[Class]] brand check (this = the value)
   (if (i32.eq (local.get $id) (i32.const 155))
@@ -3464,6 +3482,7 @@
     (then (return (i32.const 1))))  ;; Map,Set,Date,Promise,Proxy
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 210)) (i32.le_s (local.get $id) (i32.const 219)))
     (then (return (i32.const 1))))  ;; TypedArrays + ArrayBuffer
+  (if (i32.eq (local.get $id) (i32.const 157)) (then (return (i32.const 1))))  ;; Function
   (i32.const 0))
 
 ;; 1 if a value is a constructor. Native fns consult native_is_ctor; VM and bound

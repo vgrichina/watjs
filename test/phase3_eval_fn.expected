@@ -1,0 +1,8 @@
+eval-fn-call=7
+eval-fn-stored=12
+Function-call=5
+new-Function=25
+Function-noargs=42
+Function-name=anonymous
+eval-fn-closure-global=11
+nested-eval-fn=9

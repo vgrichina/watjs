@@ -2995,16 +2995,18 @@
         (if (i32.eq (local.get $op) (i32.const 21))  ;; TAILCALL: reuse current frame
           (then (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12)))))
           (else  ;; CALL / CALLM: push a new frame; result base drops callee (+ receiver)
-            (let $fr i32 (call $heap_alloc (i32.const 20)))
+            (let $fr i32 (call $heap_alloc (i32.const 24)))
             (i32.store (local.get $fr) (local.get $ip))
             (i32.store (i32.add (local.get $fr) (i32.const 4)) (local.get $frame))
             (i32.store (i32.add (local.get $fr) (i32.const 8)) (local.get $scope))
             (i32.store (i32.add (local.get $fr) (i32.const 12)) (local.get $rbase))
             (i32.store (i32.add (local.get $fr) (i32.const 16)) (i32.const 0))  ;; not a constructor frame
+            (i32.store (i32.add (local.get $fr) (i32.const 20)) (local.get $code))  ;; saved code buffer
             (set! $frame (local.get $fr))
             (set! $sp (local.get $rbase))))
         (set! $scope (local.get $cns))
         (set! $ip (local.get $centry))
+        (set! $code (i32.load (i32.add (local.get $cfn) (i32.const 12))))  ;; switch to the callee's code buffer (eval'd fns live elsewhere)
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 57))  ;; EXTEND — [protoObj, superCtor] → link inheritance, leaves [protoObj]
       (then
@@ -3072,16 +3074,18 @@
           (set! $pi (i32.add (local.get $pi) (i32.const 1)))
           (br $pl)))
         (call $scope_define (local.get $cns) (cstring "this") (call $mk_obj (local.get $newo)))
-        (let $fr i32 (call $heap_alloc (i32.const 20)))
+        (let $fr i32 (call $heap_alloc (i32.const 24)))
         (i32.store (local.get $fr) (local.get $ip))
         (i32.store (i32.add (local.get $fr) (i32.const 4)) (local.get $frame))
         (i32.store (i32.add (local.get $fr) (i32.const 8)) (local.get $scope))
         (i32.store (i32.add (local.get $fr) (i32.const 12)) (local.get $cbase))
         (i32.store (i32.add (local.get $fr) (i32.const 16)) (local.get $newo))  ;; constructor frame → new object
+        (i32.store (i32.add (local.get $fr) (i32.const 20)) (local.get $code))  ;; saved code buffer
         (set! $frame (local.get $fr))
         (set! $sp (local.get $cbase))
         (set! $scope (local.get $cns))
         (set! $ip (i32.load (i32.add (local.get $cfn) (i32.const 4))))
+        (set! $code (i32.load (i32.add (local.get $cfn) (i32.const 12))))  ;; switch to the callee's code buffer
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 76))  ;; NEWSPREAD — [ctor, argsArray] → construct with array args
       (then
@@ -3126,16 +3130,18 @@
           (set! $nspi (i32.add (local.get $nspi) (i32.const 1)))
           (br $nspl)))
         (call $scope_define (local.get $nscns) (cstring "this") (call $mk_obj (local.get $nsnewo)))
-        (let $nsfr i32 (call $heap_alloc (i32.const 20)))
+        (let $nsfr i32 (call $heap_alloc (i32.const 24)))
         (i32.store (local.get $nsfr) (local.get $ip))
         (i32.store (i32.add (local.get $nsfr) (i32.const 4)) (local.get $frame))
         (i32.store (i32.add (local.get $nsfr) (i32.const 8)) (local.get $scope))
         (i32.store (i32.add (local.get $nsfr) (i32.const 12)) (local.get $nscbase))
         (i32.store (i32.add (local.get $nsfr) (i32.const 16)) (local.get $nsnewo))
+        (i32.store (i32.add (local.get $nsfr) (i32.const 20)) (local.get $code))  ;; saved code buffer
         (set! $frame (local.get $nsfr))
         (set! $sp (local.get $nscbase))
         (set! $scope (local.get $nscns))
         (set! $ip (i32.load (i32.add (local.get $nscfn) (i32.const 4))))
+        (set! $code (i32.load (i32.add (local.get $nscfn) (i32.const 12))))  ;; switch to the callee's code buffer
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 20))  ;; RET
       (then
@@ -3163,6 +3169,7 @@
             (then (set! $rv (call $mk_obj (local.get $fnew)))))))
         (set! $ip (i32.load (local.get $frame)))
         (set! $scope (i32.load (i32.add (local.get $frame) (i32.const 8))))
+        (set! $code (i32.load (i32.add (local.get $frame) (i32.const 20))))  ;; restore caller's code buffer
         (let $rb i32 (i32.load (i32.add (local.get $frame) (i32.const 12))))
         (set! $frame (i32.load (i32.add (local.get $frame) (i32.const 4))))
         (i64.store (i32.add (local.get $stack) (local.get $rb)) (local.get $rv))
