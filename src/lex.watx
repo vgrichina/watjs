@@ -209,6 +209,8 @@
   (let $val f64 (f64.const 0))
   (block $de (loop $dl
     (let $c i32 (call $ch_at (i32.const 0)))
+    (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator → skip
+      (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $dl)))
     (let $d i32 (i32.const -1))
     (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57)))
       (then (set! $d (i32.sub (local.get $c) (i32.const 48)))))                       ;; 0-9
