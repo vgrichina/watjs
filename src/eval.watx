@@ -1300,7 +1300,7 @@
           (if (i32.or (i32.eq (local.get $radix) (i32.const 10))
                 (i32.or (f64.ne (local.get $nv) (local.get $nv)) (f64.eq (f64.abs (local.get $nv)) (f64.div (f64.const 1) (f64.const 0)))))
             (then (return (call $mk_str (call $num_to_str (local.get $nv))))))
-          (return (call $mk_str (call $num_to_radix (i32.trunc_f64_s (local.get $nv)) (local.get $radix))))))
+          (return (call $mk_str (call $num_to_radix_f (local.get $nv) (local.get $radix))))))
       (let $fxd i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.or (i32.lt_s (local.get $fxd) (i32.const 0)) (i32.gt_s (local.get $fxd) (i32.const 100)))
         (then (call $throw_type (cstring "RangeError") (cstring "toFixed() digits argument must be between 0 and 100")) (return (call $v_undef))))
