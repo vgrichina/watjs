@@ -1,0 +1,8 @@
+nested-arrow=5
+arrow-in-map=7
+arrow-counter=2
+regular-fn-this-unchanged=3
+nested-regular-fn-this=object
+rest-arrow=3
+arrow-args-lexical=7
+arrow-in-forEach=6
