@@ -1,0 +1,7 @@
+read-before-assign=true
+closure-assign=5
+no-reset-on-redeclare=5
+shadow-outer=undefined
+multi-decl=true,2,true
+loop-redeclare=34
+typeof-bare=undefined
