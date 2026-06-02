@@ -1368,6 +1368,14 @@
         (let $spn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $spi) (i32.const 4)))))
         (if (i32.or (call $str_eq (local.get $spn) (cstring "eval")) (call $str_eq (local.get $spn) (cstring "arguments")))
           (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Parameter named eval or arguments not allowed in strict mode"))))
+        ;; duplicate parameter name is an early SyntaxError in strict
+        (let $spj i32 (i32.add (local.get $spi) (i32.const 1)))
+        (block $sde (loop $sdl
+          (br_if $sde (i32.ge_s (local.get $spj) (local.get $np)))
+          (if (call $str_eq (local.get $spn) (i32.load (i32.add (local.get $params) (i32.mul (local.get $spj) (i32.const 4)))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate parameter name not allowed in strict mode"))))
+          (set! $spj (i32.add (local.get $spj) (i32.const 1)))
+          (br $sdl)))
         (set! $spi (i32.add (local.get $spi) (i32.const 1)))
         (br $spl)))))
   ;; prologue: default-parameter initializers — if param === undefined, assign default

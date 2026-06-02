@@ -1,0 +1,5 @@
+dup-param=SyntaxError
+dup-param-expr=SyntaxError
+dup-param-3=SyntaxError
+sloppy-dup-ok=NO-THROW
+distinct-ok=NO-THROW
