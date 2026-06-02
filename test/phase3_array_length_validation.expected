@@ -1,0 +1,9 @@
+new-neg=RangeError
+new-huge=RangeError
+new-frac=RangeError
+new-nan=RangeError
+assign-neg=RangeError
+valid-3=3
+valid-0=0
+valid-args=1,2,3
+valid-max-ok=ok

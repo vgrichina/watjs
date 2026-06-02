@@ -2685,7 +2685,13 @@
     (then
       (if (i32.and (i32.eq (local.get $argc) (i32.const 1)) (call $is_number (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
         (then
-          (let $arlen i32 (i32.trunc_f64_s (call $tonum_raw (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+          (let $arnf f64 (call $tonum_raw (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+          ;; len must be a uint32 (integer in [0, 2^32-1]); else RangeError. Also avoids
+          ;; an i32.trunc trap on huge/NaN/Infinity values.
+          (if (i32.eqz (i32.and (i32.and (f64.ge (local.get $arnf) (f64.const 0)) (f64.le (local.get $arnf) (f64.const 4294967295)))
+                                (f64.eq (local.get $arnf) (f64.floor (local.get $arnf)))))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
+          (let $arlen i32 (i32.trunc_f64_u (local.get $arnf)))
           (let $arx i32 (call $arr_new (i32.add (local.get $arlen) (i32.const 1))))
           (if (i32.gt_s (local.get $arlen) (i32.const 0)) (then (call $arr_set (local.get $arx) (i32.sub (local.get $arlen) (i32.const 1)) (call $v_undef))))
           (return (call $mk_arr (local.get $arx)))))
