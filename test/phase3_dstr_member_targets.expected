@@ -1,0 +1,11 @@
+arr-mem=1,2
+arr-idx=3,4
+arr-chain=9
+arr-default=7
+arr-rest=1:2,3
+arr-nested=8
+obj-mem=5
+obj-def=7
+obj-idx=9
+plain-arr=1,2
+plain-obj=3
