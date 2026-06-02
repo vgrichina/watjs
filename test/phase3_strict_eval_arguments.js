@@ -9,3 +9,8 @@ t("strict-normal-ok", function(){ eval("'use strict'; var x; x = 5;"); });
 t("eval-as-value-ok", function(){ "use strict"; var f = eval; return typeof f; });
 t("eval-call-ok", function(){ "use strict"; return eval("1+1"); });
 t("arguments-index-ok", function(){ "use strict"; return (function(){ return arguments[0]; })(7); });
+p("param-eval", (function(){ try{ eval("'use strict'; function f(eval){}"); return "no"; }catch(e){ return e.name; } })());
+p("param-arguments", (function(){ try{ eval("'use strict'; var g=function(arguments){};"); return "no"; }catch(e){ return e.name; } })());
+p("param-own-directive", (function(){ try{ eval("function h(eval){ 'use strict'; }"); return "no"; }catch(e){ return e.name; } })());
+p("sloppy-param-eval", (function(){ return eval("(function(eval){ return eval; })(7)"); })());
+p("strict-normal-params", (function(){ "use strict"; return ((a,b)=>a+b)(2,3); })());

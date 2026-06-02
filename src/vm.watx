@@ -199,7 +199,7 @@
 (func $vm_strict_lhs_check (param $name i32) (result i32) (effects)
   (if (i32.load (i32.const 388))
     (then (if (i32.or (call $str_eq (local.get $name) (cstring "eval")) (call $str_eq (local.get $name) (cstring "arguments")))
-      (then (call $throw_type (cstring "SyntaxError") (cstring "Assignment to eval or arguments is not allowed in strict mode")) (return (i32.const 1))))))
+      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Assignment to eval or arguments is not allowed in strict mode")) (return (i32.const 1))))))
   (i32.const 0))
 ;; patch unlabeled break/continue lists AND (if the current loop is labeled) the
 ;; label entry's matching list, all to `target`.
@@ -1359,6 +1359,17 @@
       (then (set! $thisstrict (i32.const 1))))))
   (call $cursor_restore (local.get $bodycur))  ;; rewind to '{'
   (i32.store (i32.const 388) (local.get $thisstrict))  ;; nested fns inherit this strictness
+  ;; strict: a parameter named `eval`/`arguments` is an early SyntaxError
+  (if (local.get $thisstrict)
+    (then
+      (let $spi i32 (i32.const 0))
+      (block $spe (loop $spl
+        (br_if $spe (i32.ge_s (local.get $spi) (local.get $np)))
+        (let $spn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $spi) (i32.const 4)))))
+        (if (i32.or (call $str_eq (local.get $spn) (cstring "eval")) (call $str_eq (local.get $spn) (cstring "arguments")))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Parameter named eval or arguments not allowed in strict mode"))))
+        (set! $spi (i32.add (local.get $spi) (i32.const 1)))
+        (br $spl)))))
   ;; prologue: default-parameter initializers — if param === undefined, assign default
   (let $dpi i32 (i32.const 0))
   (block $dpe (loop $dpl
@@ -3966,8 +3977,19 @@
 ;; vm_step to HALT — real stateful execution, all state in linear memory.
 (func $eval_prog (param $ptr i32) (param $len i32) (result i32) (effects)
   (call $set_err (i32.const 0))
+  (i32.store (i32.const 400) (i32.const 0))  ;; "surfaceable syntax error" flag (set only by intentional early-error detections)
   (let $ctx i32 (call $vm_new (call $vm_compile_prog (local.get $ptr) (local.get $len))))
-  (if (call $err) (then (return (i32.const 1))))  ;; compile-time error
+  (if (call $err)
+    (then
+      ;; Surface ONLY an intentional SyntaxError (reg 400). An incidental compile
+      ;; error from unsupported syntax stays silent (returning 1) — surfacing all of
+      ;; them would flip ~300 vacuous passes (tests whose syntax we don't parse).
+      (if (i32.load (i32.const 400))
+        (then
+          (let $cev i64 (call $err_val))
+          (let $cs i32 (call $to_str (local.get $cev)))
+          (call $host_throw (i32.add (local.get $cs) (i32.const 4)) (call $str_len (local.get $cs)))))
+      (return (i32.const 1))))
   (block $e (loop $l
     (br_if $e (call $vm_done (local.get $ctx)))
     (drop (call $vm_step (local.get $ctx) (call $v_undef)))
