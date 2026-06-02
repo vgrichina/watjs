@@ -1,0 +1,8 @@
+true-toString=true
+false-toString=false
+true-valueOf=true
+false-valueOf=false
+constructor=true
+missing-prop=true
+new-Boolean=true
+typeof=function

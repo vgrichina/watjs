@@ -344,6 +344,14 @@
           (let $nslot i32 (call $scope_find_local (local.get $np) (call $to_prop_key (local.get $key))))
           (if (local.get $nslot) (then (return (i64.load (local.get $nslot)))))))
       (return (call $v_undef))))
+  (if (call $is_boolean (local.get $cont))  ;; boolean methods via Boolean.prototype (reg 184)
+    (then
+      (let $bp i32 (i32.load (i32.const 184)))
+      (if (local.get $bp)
+        (then
+          (let $bslot i32 (call $scope_find_local (local.get $bp) (call $to_prop_key (local.get $key))))
+          (if (local.get $bslot) (then (return (i64.load (local.get $bslot)))))))
+      (return (call $v_undef))))
   (if (call $is_string (local.get $cont))
     (then
       (if (call $key_is_length (local.get $key))
