@@ -194,6 +194,13 @@
   (if (i32.eq (call $tok_kind) (i32.const 3)) (then (call $next_token)))   ;; NAME
   (if (i32.eq (call $tok_kind) (i32.const 15)) (then (call $vm_skip_balanced)))  ;; (params)
   (if (i32.eq (call $tok_kind) (i32.const 17)) (then (call $vm_skip_balanced))))  ;; {body}
+;; strict mode: `eval`/`arguments` may not be an assignment/update target (early
+;; SyntaxError). Returns 1 (and raises a SyntaxError) if so — caller should return.
+(func $vm_strict_lhs_check (param $name i32) (result i32) (effects)
+  (if (i32.load (i32.const 388))
+    (then (if (i32.or (call $str_eq (local.get $name) (cstring "eval")) (call $str_eq (local.get $name) (cstring "arguments")))
+      (then (call $throw_type (cstring "SyntaxError") (cstring "Assignment to eval or arguments is not allowed in strict mode")) (return (i32.const 1))))))
+  (i32.const 0))
 ;; patch unlabeled break/continue lists AND (if the current loop is labeled) the
 ;; label entry's matching list, all to `target`.
 (func $vm_patch_breaks (param $code i32) (param $target i32) (effects)
@@ -2537,6 +2544,8 @@
       ;; assignment:  NAME = expr ;   |  NAME op= expr ;
       (call $look_save)
       (let $an i32 (call $ident_name)) (call $next_token)
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61))) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))))  ;; = / op= / ||= / ++ / --
+        (then (if (call $vm_strict_lhs_check (local.get $an)) (then (return)))))  ;; strict: eval/arguments target → SyntaxError
       (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '='
         (then
           (call $next_token)

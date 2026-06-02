@@ -1,0 +1,9 @@
+eval-assign=SyntaxError
+arguments-assign=SyntaxError
+eval-compound=SyntaxError
+eval-increment=SyntaxError
+sloppy-allows=NO-THROW
+strict-normal-ok=NO-THROW
+eval-as-value-ok=NO-THROW
+eval-call-ok=NO-THROW
+arguments-index-ok=NO-THROW
