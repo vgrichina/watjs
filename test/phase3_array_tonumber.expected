@@ -1,0 +1,8 @@
+Number-single=5
+Number-empty=0
+Number-multi=NaN
+mult=10
+minus=7
+unary-plus=7
+string-ctx-unchanged=5
+obj-still-nan=NaN

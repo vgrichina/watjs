@@ -1,0 +1,9 @@
+function p(n,v){print(n+"="+v);}
+p("Number-single", Number([5]));
+p("Number-empty", Number([]));
+p("Number-multi", Number([1,2]));
+p("mult", [5]*2);
+p("minus", [10]-3);
+p("unary-plus", +[7]);
+p("string-ctx-unchanged", [5]+"");
+p("obj-still-nan", Number({}));
