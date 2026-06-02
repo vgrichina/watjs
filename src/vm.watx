@@ -77,12 +77,14 @@
   (i32.store (i32.add (local.get $entry) (local.get $coff)) (i32.add (local.get $c) (i32.const 1))))
 
 (func $vm_loop_enter (result i32) (effects)
-  (let $save i32 (call $heap_alloc (i32.const 20)))
+  (let $save i32 (call $heap_alloc (i32.const 24)))
   (i32.store (local.get $save) (i32.load (i32.const 208)))
   (i32.store (i32.add (local.get $save) (i32.const 4)) (i32.load (i32.const 212)))
   (i32.store (i32.add (local.get $save) (i32.const 8)) (i32.load (i32.const 216)))
   (i32.store (i32.add (local.get $save) (i32.const 12)) (i32.load (i32.const 220)))
   (i32.store (i32.add (local.get $save) (i32.const 16)) (i32.load (i32.const 248)))  ;; prev curlabel
+  (i32.store (i32.add (local.get $save) (i32.const 20)) (i32.load (i32.const 360)))  ;; prev loop's finally-base
+  (i32.store (i32.const 360) (i32.load (i32.const 320)))  ;; this loop's finally-base = current finally depth
   (i32.store (i32.const 208) (call $heap_alloc (i32.const 1024))) (i32.store (i32.const 212) (i32.const 0))
   (i32.store (i32.const 216) (call $heap_alloc (i32.const 1024))) (i32.store (i32.const 220) (i32.const 0))
   ;; this loop's label entry: the pending label (if any), else none
@@ -95,7 +97,8 @@
   (i32.store (i32.const 212) (i32.load (i32.add (local.get $save) (i32.const 4))))
   (i32.store (i32.const 216) (i32.load (i32.add (local.get $save) (i32.const 8))))
   (i32.store (i32.const 220) (i32.load (i32.add (local.get $save) (i32.const 12))))
-  (i32.store (i32.const 248) (i32.load (i32.add (local.get $save) (i32.const 16)))))  ;; restore curlabel
+  (i32.store (i32.const 248) (i32.load (i32.add (local.get $save) (i32.const 16))))  ;; restore curlabel
+  (i32.store (i32.const 360) (i32.load (i32.add (local.get $save) (i32.const 20)))))  ;; restore loop finally-base
 ;; ── finally completion ──  reg 320 = finally-stack depth, 340 = base ptr.
 ;; Each 4-byte entry = the finally block's '{' cursor (from cursor_save). A
 ;; `return` inside a try-with-finally must run all enclosing finally blocks first;
@@ -107,15 +110,17 @@
   (i32.store (i32.const 320) (i32.add (local.get $n) (i32.const 1))))
 (func $vm_finally_pop (effects)
   (i32.store (i32.const 320) (i32.sub (i32.load (i32.const 320)) (i32.const 1))))
-;; Re-emit every enclosing finally block inline before an abrupt return. While
-;; re-emitting entry i the active depth is set to i, so a `return` inside that
-;; finally runs only the OUTER finallys (and naturally overrides this return).
-(func $vm_finally_emit_all (param $code i32) (effects)
+;; Re-emit finally blocks inline (innermost first) down to depth $base, before an
+;; abrupt completion. While re-emitting entry i the active depth is set to i, so a
+;; `return` inside that finally runs only the OUTER finallys (and naturally
+;; overrides this completion). `return` uses base 0 (all enclosing finallys);
+;; break/continue use the target loop's recorded finally-base (reg 360).
+(func $vm_finally_emit_to (param $code i32) (param $base i32) (effects)
   (let $n i32 (i32.load (i32.const 320)))
   (let $i i32 (local.get $n))
   (block $e (loop $l
     (set! $i (i32.sub (local.get $i) (i32.const 1)))
-    (br_if $e (i32.lt_s (local.get $i) (i32.const 0)))
+    (br_if $e (i32.lt_s (local.get $i) (local.get $base)))
     (i32.store (i32.const 320) (local.get $i))
     (let $save i32 (call $cursor_save))
     (call $cursor_restore (i32.load (i32.add (i32.load (i32.const 340)) (i32.mul (local.get $i) (i32.const 4)))))
@@ -123,6 +128,8 @@
     (call $cursor_restore (local.get $save))
     (br $l)))
   (i32.store (i32.const 320) (local.get $n)))
+(func $vm_finally_emit_all (param $code i32) (effects)
+  (call $vm_finally_emit_to (local.get $code) (i32.const 0)))
 ;; patch unlabeled break/continue lists AND (if the current loop is labeled) the
 ;; label entry's matching list, all to `target`.
 (func $vm_patch_breaks (param $code i32) (param $target i32) (effects)
@@ -2048,6 +2055,7 @@
               (if (local.get $be) (then (call $vm_label_add (local.get $be) (i32.const 0) (call $vm_emit_jump (local.get $code) (i32.const 12))))))
             (else (if (i32.load (i32.const 208))  ;; plain break → innermost loop
               (then
+                (call $vm_finally_emit_to (local.get $code) (i32.load (i32.const 360)))  ;; run finallys between break and the loop
                 (i32.store (i32.add (i32.load (i32.const 208)) (i32.mul (i32.load (i32.const 212)) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 12)))
                 (i32.store (i32.const 212) (i32.add (i32.load (i32.const 212)) (i32.const 1)))))))
           (drop (call $eat (i32.const 21)))
@@ -2061,6 +2069,7 @@
               (if (local.get $ce) (then (call $vm_label_add (local.get $ce) (i32.const 1) (call $vm_emit_jump (local.get $code) (i32.const 12))))))
             (else (if (i32.load (i32.const 216))  ;; plain continue
               (then
+                (call $vm_finally_emit_to (local.get $code) (i32.load (i32.const 360)))  ;; run finallys between continue and the loop
                 (i32.store (i32.add (i32.load (i32.const 216)) (i32.mul (i32.load (i32.const 220)) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 12)))
                 (i32.store (i32.const 220) (i32.add (i32.load (i32.const 220)) (i32.const 1)))))))
           (drop (call $eat (i32.const 21)))
@@ -2599,6 +2608,7 @@
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
   (i32.store (i32.const 252) (call $heap_alloc (i32.const 2048)))  ;; label-entry stack
   (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 340) (call $heap_alloc (i32.const 256)))  ;; finally-cursor stack
+  (i32.store (i32.const 360) (i32.const 0))  ;; innermost loop's finally-base
   ;; Size the code buffer to the source: bytecode is bounded by a small multiple
   ;; of source length (densest real case ~5 bytes/char; 16 is a safe ceiling),
   ;; plus a fixed 128 KB base that covers the always-compiled Error prelude. A
