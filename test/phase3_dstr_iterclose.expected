@@ -5,3 +5,5 @@ arr=1,2
 arr-rest=1:2,3
 param=7
 string=xy
+throw-close=true
+next-throw-noclose=false

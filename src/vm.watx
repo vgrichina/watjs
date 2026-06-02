@@ -1424,6 +1424,7 @@
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; already done → undefined
   (let $j2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP end
   (call $vm_patch (local.get $code) (local.get $j1))  ;; not done:
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1))) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $dnm))  ;; done=true (so a next()-throw leaves us "done" → no IteratorClose)
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itnm))  ;; LOADVAR it
   (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP
   (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "next"))  ;; GETPROP next
@@ -1450,6 +1451,7 @@
   (let $top i32 (call $vm_emit_cursor))
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $dnm)) (call $vm_emit_op (local.get $code) (i32.const 23))  ;; LOADVAR done; NOT
   (let $jend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end (done)
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1))) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $dnm))  ;; done=true before next() (next-throw → done)
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itnm))  ;; LOADVAR it
   (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP
   (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "next"))  ;; GETPROP next
@@ -1482,6 +1484,10 @@
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $itnm))  ;; STOREVAR it
       (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 0)))  ;; PUSH false
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $dnm))  ;; STOREVAR done=false
+      ;; handler around the bindings: on abrupt completion (binding/default throws), IteratorClose then re-throw
+      (call $vm_emit_op (local.get $code) (i32.const 48))  ;; PUSHHANDLER
+      (let $dhloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catchIp placeholder
+      (call $vm_emit_op (local.get $code) (cstring "@@dexc"))
       (let $i i32 (i32.const 0))
       (block $ae (loop $al
         (br_if $ae (i32.eq (call $tok_kind) (i32.const 20)))  ;; ]
@@ -1520,12 +1526,24 @@
         (if (local.get $isrest) (then (br $ae)))  ;; rest is last
         (br_if $ae (i32.eqz (call $eat (i32.const 22))))
         (br $al)))
+      (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER (normal completion)
       ;; IteratorClose on normal completion if the iterator isn't done (no rest exhausted it)
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $dnm)) (call $vm_emit_op (local.get $code) (i32.const 23))  ;; LOADVAR done; NOT
       (let $cdj i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → skip (done)
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itnm))  ;; LOADVAR it
       (call $vm_emit_op (local.get $code) (i32.const 74))  ;; CLOSEITER
       (call $vm_patch (local.get $code) (local.get $cdj))
+      (let $dskip i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → past the throw handler
+      ;; throw handler: close the iterator (unless done — a next()-throw doesn't close), re-throw original
+      (i32.store (i32.add (local.get $code) (local.get $dhloc)) (call $vm_emit_cursor))  ;; catchIp = here
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $dnm)) (call $vm_emit_op (local.get $code) (i32.const 23))  ;; LOADVAR done; NOT
+      (let $dnc i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → skip close (done)
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itnm))  ;; LOADVAR it
+      (call $vm_emit_op (local.get $code) (i32.const 75))  ;; CLOSEITER-suppress
+      (call $vm_patch (local.get $code) (local.get $dnc))
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@dexc"))  ;; LOADVAR @@dexc
+      (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW
+      (call $vm_patch (local.get $code) (local.get $dskip))
       (call $next_token)))  ;; consume ]
   (if (i32.eq (call $tok_kind) (i32.const 17))  ;; { object pattern }
     (then

@@ -8,3 +8,7 @@ p("arr", (function(){var [a,b]=[1,2,3];return a+","+b;})());
 p("arr-rest", (function(){var [a,...r]=[1,2,3];return a+":"+r.join(",");})());
 p("param", (function([a,b]){return a+b;})([3,4]));
 p("string", (function(){var [a,b]="xyz";return a+b;})());
+var ff; function mk2(){ff=false;return{[Symbol.iterator](){return{next(){return{value:null,done:false};},return(){ff=true;return{done:true};}};}};}
+try{ var [{x}]=mk2(); }catch(e){} p("throw-close", ff);
+var fg; function mk3(){fg=false;return{[Symbol.iterator](){return{next(){throw new Error("N");},return(){fg=true;return{done:true};}};}};}
+try{ var [a]=mk3(); }catch(e){} p("next-throw-noclose", fg);
