@@ -1,0 +1,6 @@
+global-stateful=true,false,true
+global-multi=true,true,false
+nonglobal-repeat=true,true
+lastindex-track=2
+no-match-reset=0
+basic=true
