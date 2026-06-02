@@ -96,6 +96,33 @@
   (i32.store (i32.const 216) (i32.load (i32.add (local.get $save) (i32.const 8))))
   (i32.store (i32.const 220) (i32.load (i32.add (local.get $save) (i32.const 12))))
   (i32.store (i32.const 248) (i32.load (i32.add (local.get $save) (i32.const 16)))))  ;; restore curlabel
+;; ── finally completion ──  reg 320 = finally-stack depth, 340 = base ptr.
+;; Each 4-byte entry = the finally block's '{' cursor (from cursor_save). A
+;; `return` inside a try-with-finally must run all enclosing finally blocks first;
+;; we re-emit them inline (innermost first) before the RET. Reset to 0 across a
+;; nested function body so an inner return doesn't run the outer fn's finallys.
+(func $vm_finally_push (param $cur i32) (effects)
+  (let $n i32 (i32.load (i32.const 320)))
+  (i32.store (i32.add (i32.load (i32.const 340)) (i32.mul (local.get $n) (i32.const 4))) (local.get $cur))
+  (i32.store (i32.const 320) (i32.add (local.get $n) (i32.const 1))))
+(func $vm_finally_pop (effects)
+  (i32.store (i32.const 320) (i32.sub (i32.load (i32.const 320)) (i32.const 1))))
+;; Re-emit every enclosing finally block inline before an abrupt return. While
+;; re-emitting entry i the active depth is set to i, so a `return` inside that
+;; finally runs only the OUTER finallys (and naturally overrides this return).
+(func $vm_finally_emit_all (param $code i32) (effects)
+  (let $n i32 (i32.load (i32.const 320)))
+  (let $i i32 (local.get $n))
+  (block $e (loop $l
+    (set! $i (i32.sub (local.get $i) (i32.const 1)))
+    (br_if $e (i32.lt_s (local.get $i) (i32.const 0)))
+    (i32.store (i32.const 320) (local.get $i))
+    (let $save i32 (call $cursor_save))
+    (call $cursor_restore (i32.load (i32.add (i32.load (i32.const 340)) (i32.mul (local.get $i) (i32.const 4)))))
+    (call $vm_c_stmt (local.get $code))  ;; the finally '{...}' block (stack-neutral)
+    (call $cursor_restore (local.get $save))
+    (br $l)))
+  (i32.store (i32.const 320) (local.get $n)))
 ;; patch unlabeled break/continue lists AND (if the current loop is labeled) the
 ;; label entry's matching list, all to `target`.
 (func $vm_patch_breaks (param $code i32) (param $target i32) (effects)
@@ -1190,6 +1217,8 @@
   (let $genf i32 (i32.load (i32.const 236)))   ;; capture this fn's gen/async flags before the body can clobber mem
   (let $asyncf i32 (i32.load (i32.const 232)))
   (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; clear so nested fns don't inherit
+  (let $savefin i32 (i32.load (i32.const 320)))  ;; nested fn: a return runs only THIS fn's finallys
+  (i32.store (i32.const 320) (i32.const 0))
   (call $next_token)  ;; '('
   (let $params i32 (call $heap_alloc (i32.const 256)))
   (let $pdef i32 (call $heap_alloc (i32.const 256)))   ;; per-param default-expr cursor (0 = none)
@@ -1278,6 +1307,7 @@
   ;; destructuring run when the generator is CALLED, before the body, throwing on call).
   (if (local.get $genf) (then (call $vm_emit_op (local.get $code) (i32.const 77))))  ;; GENPRO_SUSPEND
   (call $vm_c_stmt (local.get $code))  ;; body block
+  (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; default RET undefined
   (call $vm_patch (local.get $code) (local.get $pj))
@@ -1947,10 +1977,19 @@
           (if (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0))))
             (then
               (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+              (call $vm_finally_emit_all (local.get $code))  ;; run enclosing finally blocks first
               (call $vm_emit_op (local.get $code) (i32.const 20))
               (drop (call $eat (i32.const 21)))
               (return)))
           (call $vm_c_commaexpr (local.get $code))
+          ;; with an enclosing finally, the value is computed, the finally(s) run,
+          ;; then RET — no tail-call peephole (the finally must run after the call).
+          (if (i32.load (i32.const 320))
+            (then
+              (call $vm_finally_emit_all (local.get $code))
+              (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET
+              (drop (call $eat (i32.const 21)))
+              (return)))
           (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 19))  ;; ends in CALL?
             (then
               (i32.store (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8))) (i32.const 21))  ;; → TAILCALL
@@ -2070,6 +2109,20 @@
       (if (call $tok_is_kw (cstring "try"))
         (then
           (call $next_token)  ;; 'try'
+          ;; pre-scan: the finally block is parsed last, but `return` inside the
+          ;; try/catch body must run it first — locate its '{' cursor now.
+          (let $prefin i32 (i32.const 0))
+          (let $pscur i32 (call $cursor_save))
+          (call $vm_skip_balanced)  ;; past the try '{...}' block
+          (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "catch")))
+            (then
+              (call $next_token)  ;; 'catch'
+              (if (i32.eq (call $tok_kind) (i32.const 15)) (then (call $vm_skip_balanced)))  ;; '(' binding ')'
+              (call $vm_skip_balanced)))  ;; catch '{...}'
+          (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "finally")))
+            (then (call $next_token) (set! $prefin (call $cursor_save))))  ;; cursor at finally '{'
+          (call $cursor_restore (local.get $pscur))
+          (if (local.get $prefin) (then (call $vm_finally_push (local.get $prefin))))
           (call $vm_emit_op (local.get $code) (i32.const 48))  ;; PUSHHANDLER catchIp, varname (placeholders)
           (let $hloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catchIp
           (let $vloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catch var name
@@ -2090,13 +2143,15 @@
                   (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; bind name
                   (call $next_token) (call $next_token))  ;; var ')'
                 (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@catch"))))  ;; catch {} — bind to a throwaway
-              (call $vm_c_stmt (local.get $code))  ;; catch block
+              (call $vm_c_stmt (local.get $code))  ;; catch block (return here also runs finally)
+              (if (local.get $prefin) (then (call $vm_finally_pop)))  ;; finally code itself is emitted with the entry popped
               (set! $jcatch (call $vm_emit_jump (local.get $code) (i32.const 12))))  ;; JMP → Lnormal (run finally)
             (else
               ;; try/finally with no catch: bind exc to @@exc, run finally, then re-throw
               (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@exc"))
               (call $next_token)  ;; 'finally'
               (set! $fincur (call $cursor_save))  ;; finally block '{'
+              (if (local.get $prefin) (then (call $vm_finally_pop)))  ;; pop before re-emitting the finally body
               (call $vm_c_stmt (local.get $code))  ;; finally (exception copy)
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@exc"))  ;; LOADVAR @@exc
               (call $vm_emit_op (local.get $code) (i32.const 47))))  ;; THROW (re-raise)
@@ -2543,6 +2598,7 @@
   (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
   (i32.store (i32.const 252) (call $heap_alloc (i32.const 2048)))  ;; label-entry stack
+  (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 340) (call $heap_alloc (i32.const 256)))  ;; finally-cursor stack
   ;; Size the code buffer to the source: bytecode is bounded by a small multiple
   ;; of source length (densest real case ~5 bytes/char; 16 is a safe ceiling),
   ;; plus a fixed 128 KB base that covers the always-compiled Error prelude. A
