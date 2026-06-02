@@ -342,6 +342,48 @@
   (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 2)) (i32.or (i32.const 128) (i32.and (local.get $cp) (i32.const 63))))
   (i32.add (local.get $o) (i32.const 3)))
 
+;; skip a ${ ... } substitution (pos is just after the `${`); advance past the
+;; matching `}`, correctly tracking nested braces, strings, and nested templates.
+(func $skip_template_expr (effects)
+  (let $bd i32 (i32.const 1))
+  (block $e (loop $l
+    (let $c i32 (call $ch_at (i32.const 0)))
+    (br_if $e (i32.eq (local.get $c) (i32.const -1)))
+    (if (i32.eq (local.get $c) (i32.const 123)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1))) (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $l)))  ;; {
+    (if (i32.eq (local.get $c) (i32.const 125))  ;; }
+      (then
+        (set! $bd (i32.sub (local.get $bd) (i32.const 1)))
+        (call $set_pos (i32.add (call $pos) (i32.const 1)))
+        (if (i32.eqz (local.get $bd)) (then (br $e)))
+        (br $l)))
+    (if (i32.eq (local.get $c) (i32.const 96)) (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (call $skip_template) (br $l)))  ;; nested template
+    (if (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const 39)))  ;; "string" / 'string'
+      (then
+        (let $q i32 (local.get $c))
+        (call $set_pos (i32.add (call $pos) (i32.const 1)))
+        (block $qe (loop $ql
+          (let $sc i32 (call $ch_at (i32.const 0)))
+          (br_if $qe (i32.eq (local.get $sc) (i32.const -1)))
+          (br_if $qe (i32.eq (local.get $sc) (local.get $q)))
+          (if (i32.eq (local.get $sc) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))
+          (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $ql)))
+        (call $set_pos (i32.add (call $pos) (i32.const 1)))  ;; closing quote
+        (br $l)))
+    (call $set_pos (i32.add (call $pos) (i32.const 1)))
+    (br $l))))
+
+;; skip a template body: pos is just after the opening `; advance past the closing `
+(func $skip_template (effects)
+  (block $se (loop $sl
+    (let $c i32 (call $ch_at (i32.const 0)))
+    (br_if $se (i32.eq (local.get $c) (i32.const -1)))
+    (if (i32.eq (local.get $c) (i32.const 96)) (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $se)))  ;; closing `
+    (if (i32.eq (local.get $c) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $sl)))  ;; escape: skip 2
+    (if (i32.and (i32.eq (local.get $c) (i32.const 36)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 123)))  ;; ${
+      (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (call $skip_template_expr) (br $sl)))
+    (call $set_pos (i32.add (call $pos) (i32.const 1)))
+    (br $sl))))
+
 ;; Lex a template literal `...${..}...`. TOK_KIND=53, TOK_START/TOK_LEN = raw
 ;; content between backticks (including the ${...} parts; parsed later).
 (func $lex_template (effects)
@@ -351,7 +393,9 @@
     (let $c i32 (call $ch_at (i32.const 0)))
     (br_if $se (i32.eq (local.get $c) (i32.const -1)))
     (br_if $se (i32.eq (local.get $c) (i32.const 96)))  ;; closing `
-    (if (i32.eq (local.get $c) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))  ;; skip escaped
+    (if (i32.eq (local.get $c) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $sl)))  ;; skip escaped (\ + next)
+    (if (i32.and (i32.eq (local.get $c) (i32.const 36)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 123)))  ;; ${ → skip the whole substitution (handles nested templates/braces/strings)
+      (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (call $skip_template_expr) (br $sl)))
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $sl)))
   (call $set_tok (i32.const 53) (local.get $start) (i32.sub (call $pos) (local.get $start)))
