@@ -774,7 +774,7 @@
           (then
             (call $next_token)
             (call $vm_c_expr (local.get $code))
-            (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX
+            (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 83)) (else (i32.const 35))))  ;; SETIDX (strict→83)
             (br $e)))
         (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))  ;; arr[i] ||= &&= ??= v
           (then
@@ -863,7 +863,7 @@
           (then
             (call $next_token)
             (call $vm_c_expr (local.get $code))
-            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP
+            (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 82)) (else (i32.const 34)))) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP (strict→82)
             (br $e)))
         (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))  ;; obj.key ||= &&= ??= v
           (then
@@ -3528,6 +3528,30 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (call $set_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (call $mk_str (local.get $nm)) (local.get $v))
         (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))  ;; assignment yields the value
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 82))  ;; SETPROP_STRICT — [obj, val]; a refused write throws TypeError
+      (then
+        (let $nm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $v i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i32.store (i32.const 392) (i32.const 1))
+        (call $set_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (call $mk_str (local.get $nm)) (local.get $v))
+        (i32.store (i32.const 392) (i32.const 0))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 83))  ;; SETIDX_STRICT — [obj, key, val]; refused write throws
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $v i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $key i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i32.store (i32.const 392) (i32.const 1))
+        (call $set_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (local.get $key) (local.get $v))
+        (i32.store (i32.const 392) (i32.const 0))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 73))  ;; DEFMETH (operand: name) — [obj, fn] → non-enumerable {W,C} method
       (then

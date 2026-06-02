@@ -605,6 +605,11 @@
   (call $v_false))
 
 ;; set_prop(container, key, val)
+;; in a strict [[Set]] (reg 392 set by the SETPROP_STRICT/SETIDX_STRICT opcodes), a
+;; refused write (non-writable data, getter-only accessor, add to non-extensible)
+;; throws a TypeError instead of being silently ignored.
+(func $set_fail (effects)
+  (if (i32.load (i32.const 392)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property")))))
 (func $set_prop (param $cont i64) (param $key i64) (param $val i64) (effects)
   (if (call $is_array (local.get $cont))
     (then
@@ -665,7 +670,7 @@
           (if (i32.and (i32.ge_s (local.get $tidx) (i32.const 0)) (i32.lt_s (local.get $tidx) (local.get $tln)))
             (then (call $ta_write (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))) (call $to_num (local.get $val)))))
           (return)))
-      (if (call $scope_find_local (local.get $o) (cstring "@@frozen")) (then (return)))  ;; Object.freeze: ignore writes
+      (if (call $scope_find_local (local.get $o) (cstring "@@frozen")) (then (call $set_fail) (return)))  ;; Object.freeze: ignore writes (strict: throw)
       ;; mapped arguments: writing a numeric index < @@anp writes the parameter slot
       (if (call $is_number (local.get $key))
         (then
@@ -690,15 +695,16 @@
                 (then
                   (let $av i32 (call $heap_alloc (i32.const 8)))
                   (i64.store (local.get $av) (local.get $val))
-                  (drop (call $call_val (local.get $set) (i32.const 1) (local.get $av) (local.get $cont)))))
+                  (drop (call $call_val (local.get $set) (i32.const 1) (local.get $av) (local.get $cont))))
+                (else (call $set_fail)))  ;; getter-only accessor → strict throws
               (return)))
-          ;; non-writable data property → ignore the assignment
-          (if (i32.eqz (call $entry_writable (local.get $slot))) (then (return)))))
+          ;; non-writable data property → ignore the assignment (strict: throw)
+          (if (i32.eqz (call $entry_writable (local.get $slot))) (then (call $set_fail) (return)))))
       ;; adding a NEW own property to a non-extensible object (preventExtensions/
-      ;; seal/freeze) is refused (no own slot yet + @@noext marker present).
+      ;; seal/freeze) is refused (no own slot yet + @@noext marker present); strict: throw.
       (if (i32.and (i32.eqz (call $scope_find_local (local.get $o) (local.get $ks)))
                    (i32.ne (call $scope_find_local (local.get $o) (cstring "@@noext")) (i32.const 0)))
-        (then (return)))
+        (then (call $set_fail) (return)))
       (call $scope_define (local.get $o) (local.get $ks) (local.get $val))
       (return)))
   (if (call $is_function (local.get $cont))

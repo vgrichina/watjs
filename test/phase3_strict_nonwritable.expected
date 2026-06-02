@@ -1,0 +1,9 @@
+assign-frozen=TypeError
+assign-getter-only=TypeError
+assign-nonwritable=TypeError
+add-nonextensible=TypeError
+assign-index-frozen=NO-THROW
+sloppy-frozen-noop=1
+sloppy-nonwritable-noop=1
+strict-writable-ok=2
+strict-new-prop-ok=5
