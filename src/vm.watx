@@ -2241,21 +2241,16 @@
           (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (call $next_token)))
           (let $ofvar i32 (i32.const 0))
           (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $ofvar (call $ident_name)) (call $next_token)))
-          ;; array destructuring pattern as the loop variable: for (var [a,b] of E)
+          ;; destructuring pattern as the loop variable: for (var [a,b] of E) / for (var {x} of E).
+          ;; Capture the pattern cursor; bind via vm_c_destructure_param (iterator protocol for
+          ;; arrays incl. inner-close, property access for objects, member targets, defaults).
           (let $ofnames i32 (i32.const 0))
           (let $ofncnt i32 (i32.const 0))
-          (if (i32.and (i32.eqz (local.get $ofvar)) (i32.eq (call $tok_kind) (i32.const 19)))
+          (let $ofpatcur i32 (i32.const 0))
+          (if (i32.and (i32.eqz (local.get $ofvar)) (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17))))
             (then
-              (set! $ofnames (call $heap_alloc (i32.const 256)))
-              (call $next_token)
-              (block $pne (loop $pnl
-                (br_if $pne (i32.eq (call $tok_kind) (i32.const 20)))
-                (i32.store (i32.add (local.get $ofnames) (i32.mul (local.get $ofncnt) (i32.const 4))) (call $ident_name))
-                (set! $ofncnt (i32.add (local.get $ofncnt) (i32.const 1)))
-                (call $next_token)
-                (br_if $pne (i32.eqz (call $eat (i32.const 22))))
-                (br $pnl)))
-              (call $next_token)  ;; ']'
+              (set! $ofpatcur (call $cursor_save))
+              (call $vm_skip_balanced)
               (set! $ofvar (i32.const -1))))  ;; pattern-mode sentinel
           (let $isof i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of")))))
           (let $isin i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "in")))))
@@ -2291,19 +2286,13 @@
               (let $ofhloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catchIp placeholder
               (call $vm_emit_op (local.get $code) (cstring "@@ofexc"))  ;; catch var
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@ofval"))  ;; LOADVAR @@ofval → [val]
-              (if (i32.gt_s (local.get $ofncnt) (i32.const 0))
-                (then
-                  (let $ofpt i32 (call $vm_tmpname))
-                  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofpt))  ;; STOREVAR tmp
-                  (let $ofpi i32 (i32.const 0))
-                  (block $ofbe (loop $ofbl
-                    (br_if $ofbe (i32.ge_s (local.get $ofpi) (local.get $ofncnt)))
-                    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ofpt))  ;; LOADVAR tmp
-                    (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (local.get $ofpi))))
-                    (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX
-                    (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $ofnames) (i32.mul (local.get $ofpi) (i32.const 4)))))  ;; STOREVAR name
-                    (set! $ofpi (i32.add (local.get $ofpi) (i32.const 1)))
-                    (br $ofbl))))
+              (if (local.get $ofpatcur)
+                (then  ;; destructuring pattern: bind via vm_c_destructure_param
+                  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@ofdt"))  ;; STOREVAR temp
+                  (let $ofbody i32 (call $cursor_save))
+                  (call $cursor_restore (local.get $ofpatcur))
+                  (call $vm_c_destructure_param (local.get $code) (cstring "@@ofdt"))
+                  (call $cursor_restore (local.get $ofbody)))
                 (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))  ;; STOREVAR x
               (call $vm_c_stmt (local.get $code))  ;; body
               ;; normal + continue converge here: POPHANDLER then loop

@@ -1,0 +1,8 @@
+obj-of=12
+ary-of=3 7 
+rename=q
+default=9 5 
+nested=3
+ary-rest=1:2,3
+single=123
+forin=pq
