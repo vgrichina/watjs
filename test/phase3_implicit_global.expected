@@ -1,0 +1,7 @@
+arrow-implicit-global=1
+nested-fn-implicit-global=2
+deep-implicit-global=3
+closure-updates-outer=9
+counter-closure=2
+const-reassign-sloppy-throws=THROW:TypeError
+strict-undeclared-throws=THROW:ReferenceError
