@@ -38,11 +38,25 @@
 (func $re_repl_of (param $repfn i64) (param $repisfn i32) (param $replstr i32) (param $sub i32) (param $ms i32) (param $me i32) (result i32) (effects)
   (if i32 (local.get $repisfn)
     (then
-      (let $av i32 (call $heap_alloc (i32.const 24)))
-      (i64.store (local.get $av) (call $mk_str (call $substr (local.get $sub) (local.get $ms) (i32.sub (local.get $me) (local.get $ms)))))
-      (i64.store (i32.add (local.get $av) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $ms))))
-      (i64.store (i32.add (local.get $av) (i32.const 16)) (call $mk_str (local.get $sub)))
-      (call $to_str (call $call_val (local.get $repfn) (i32.const 3) (local.get $av) (call $v_undef))))
+      ;; callback args per spec: (match, p1, p2, …, pN, offset, string)
+      (let $ng i32 (i32.load (i32.const 284)))  ;; number of capture groups
+      (let $nargs i32 (i32.add (local.get $ng) (i32.const 3)))
+      (let $av i32 (call $heap_alloc (i32.mul (local.get $nargs) (i32.const 8))))
+      (i64.store (local.get $av) (call $mk_str (call $substr (local.get $sub) (local.get $ms) (i32.sub (local.get $me) (local.get $ms)))))  ;; match
+      (let $gi i32 (i32.const 0))
+      (block $ge (loop $gl
+        (br_if $ge (i32.ge_s (local.get $gi) (local.get $ng)))
+        (let $gcb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (local.get $gi) (i32.const 8))))
+        (let $gcs i32 (i32.load (local.get $gcb)))
+        (i64.store (i32.add (local.get $av) (i32.mul (i32.add (local.get $gi) (i32.const 1)) (i32.const 8)))
+          (if i64 (i32.ge_s (local.get $gcs) (i32.const 0))
+            (then (call $mk_str (call $substr (local.get $sub) (local.get $gcs) (i32.sub (i32.load (i32.add (local.get $gcb) (i32.const 4))) (local.get $gcs)))))
+            (else (call $v_undef))))  ;; unmatched group → undefined
+        (set! $gi (i32.add (local.get $gi) (i32.const 1)))
+        (br $gl)))
+      (i64.store (i32.add (local.get $av) (i32.mul (i32.add (local.get $ng) (i32.const 1)) (i32.const 8))) (call $num (f64.convert_i32_s (local.get $ms))))  ;; offset
+      (i64.store (i32.add (local.get $av) (i32.mul (i32.add (local.get $ng) (i32.const 2)) (i32.const 8))) (call $mk_str (local.get $sub)))  ;; string
+      (call $to_str (call $call_val (local.get $repfn) (local.get $nargs) (local.get $av) (call $v_undef))))
     (else  ;; expand $&, $$, $1-$9 in the replacement string
       (if i32 (i32.eqz (call $str_has_char (local.get $replstr) (i32.const 36)))
         (then (local.get $replstr))

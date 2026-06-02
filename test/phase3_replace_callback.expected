@@ -1,0 +1,5 @@
+groups=ba
+offset=x1y
+nogroup=ABC
+string-arg=abb
+unmatched-grp=a|undefined|c
