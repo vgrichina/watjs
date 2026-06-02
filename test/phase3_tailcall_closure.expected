@@ -1,0 +1,6 @@
+tail-closure=42
+deep-self=100000
+arrow-args-lexical=7
+arrow-rest=4
+fn-args=3
+nested-chain=5
