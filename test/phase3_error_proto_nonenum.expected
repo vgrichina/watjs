@@ -1,0 +1,9 @@
+Error-name-enum=false
+TypeError-name-enum=false
+RangeError-name-enum=false
+msg-enum=false
+tostr-enum=false
+name-val=Error
+typeerr-name=TypeError
+proto-keys=[]
+toString-works=TypeError: x
