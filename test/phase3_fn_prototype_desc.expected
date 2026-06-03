@@ -1,0 +1,5 @@
+fn-proto=true,false,false
+gen-proto=true,false,false
+class-proto=false,false,false
+fn-proto-value=true
+has-proto-own=true
