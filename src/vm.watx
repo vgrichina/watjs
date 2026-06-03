@@ -710,7 +710,7 @@
               (else  ;; identifier-leading: key | get/set accessor | method | shorthand
                 (let $oki i32 (call $ident_name)) (call $next_token)
                 (if (i32.and (i32.or (call $str_eq (local.get $oki) (cstring "get")) (call $str_eq (local.get $oki) (cstring "set")))
-                             (i32.or (i32.eq (call $tok_kind) (i32.const 3)) (i32.or (i32.eq (call $tok_kind) (i32.const 2)) (i32.eq (call $tok_kind) (i32.const 19)))))  ;; get/set NAME(){} | get/set [computed](){}
+                             (i32.or (i32.eq (call $tok_kind) (i32.const 3)) (i32.or (i32.eq (call $tok_kind) (i32.const 2)) (i32.or (i32.eq (call $tok_kind) (i32.const 1)) (i32.eq (call $tok_kind) (i32.const 19))))))  ;; get/set NAME(){} | get/set "str"/NUM | get/set [computed](){}
                   (then
                     (let $isget i32 (call $str_eq (local.get $oki) (cstring "get")))
                     (let $oaname i32 (i32.const 0))  ;; literal accessor key (0 = computed)

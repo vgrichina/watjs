@@ -1,0 +1,6 @@
+num-getter=three
+num-setter=9
+str-getter=ex
+str-setter=4
+num-method=70
+is-accessor=function
