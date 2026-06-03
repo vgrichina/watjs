@@ -1,0 +1,9 @@
+bool-valueOf=false
+bool-toString=false
+num-valueOf=0
+num-toString=0
+str-toString=""
+str-valueOf=""
+no-prim-leak=-1
+normal-str=ABC
+normal-bool=false

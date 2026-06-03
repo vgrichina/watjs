@@ -4062,6 +4062,7 @@
   ;; Boolean.prototype (reg 184) — carries constructor + valueOf/toString for wrappers
   (let $boolproto i32 (call $obj_new (i32.const 8)))
   (i32.store (i32.const 184) (local.get $boolproto))
+  (call $scope_define (local.get $boolproto) (cstring "__prim__") (call $mk_bool (i32.const 0)))  ;; Boolean.prototype is a Boolean object (false)
   (call $scope_define (local.get $boolproto) (cstring "constructor") (local.get $boolf))
   (call $scope_define (local.get $boolproto) (cstring "valueOf") (call $mk_native (i32.const 220) (cstring "valueOf")))
   (call $scope_define (local.get $boolproto) (cstring "toString") (call $mk_native (i32.const 221) (cstring "toString")))
@@ -4124,6 +4125,7 @@
   ;; String.prototype (reg 156) — methods dispatched on string primitives
   (let $sp i32 (call $obj_new (i32.const 48)))
   (i32.store (i32.const 156) (local.get $sp))
+  (call $scope_define (local.get $sp) (cstring "__prim__") (call $mk_str (cstring "")))  ;; String.prototype is a String object ("")
   (call $scope_define (local.get $sp) (cstring "charAt") (call $mk_native (i32.const 11) (cstring "charAt")))
   (call $scope_define (local.get $sp) (cstring "charCodeAt") (call $mk_native (i32.const 12) (cstring "charCodeAt")))
   (call $scope_define (local.get $sp) (cstring "codePointAt") (call $mk_native (i32.const 12) (cstring "codePointAt")))
