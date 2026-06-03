@@ -730,7 +730,7 @@
   (if (i32.eq (local.get $id) (i32.const 159))
     (then
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
-      (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.eqz (local.get $pslot)) (then (return (call $v_false))))
       (return (call $mk_bool (call $entry_enumerable (local.get $pslot))))))
   ;; Object.prototype.isPrototypeOf(v) — is `this` anywhere in v's prototype chain?

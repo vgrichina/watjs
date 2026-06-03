@@ -1,0 +1,4 @@
+enum-sym=true
+nonenum-sym=false
+absent-sym=false
+enum-str=true
