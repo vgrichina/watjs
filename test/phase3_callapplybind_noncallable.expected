@@ -1,0 +1,6 @@
+call-nonfn=THROW:TypeError
+apply-nonfn=THROW:TypeError
+bind-nonfn=THROW:TypeError
+call-ok=7
+apply-ok=5
+bind-ok=15

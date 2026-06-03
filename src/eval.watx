@@ -664,6 +664,7 @@
   ;; Function.prototype.call(thisArg, ...args) — this = the function
   (if (i32.eq (local.get $id) (i32.const 194))
     (then
+      (if (i32.eqz (call $is_function (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.call called on non-function")) (return (call $v_undef))))
       (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $n i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
       (let $buf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $n) (i32.const 0)) (then (local.get $n)) (else (i32.const 1))) (i32.const 8))))
@@ -676,6 +677,7 @@
   ;; Function.prototype.apply(thisArg, argArray) — this = the function
   (if (i32.eq (local.get $id) (i32.const 195))
     (then
+      (if (i32.eqz (call $is_function (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.apply called on non-function")) (return (call $v_undef))))
       (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $aa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (let $n i32 (i32.const 0))
@@ -694,6 +696,7 @@
   ;; Function.prototype.bind(thisArg, ...bound) — this = the function to bind
   (if (i32.eq (local.get $id) (i32.const 153))
     (then
+      (if (i32.eqz (call $is_function (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.bind called on non-function")) (return (call $v_undef))))
       (let $bthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $bargc i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
       (let $bbuf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $bargc) (i32.const 0)) (then (local.get $bargc)) (else (i32.const 1))) (i32.const 8))))
