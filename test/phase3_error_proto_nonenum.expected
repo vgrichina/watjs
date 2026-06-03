@@ -7,3 +7,6 @@ name-val=Error
 typeerr-name=TypeError
 proto-keys=[]
 toString-works=TypeError: x
+global-Error-enum=false
+global-TypeError-enum=false
+global-Error-present=function
