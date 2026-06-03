@@ -542,8 +542,14 @@
       (if (call $tok_is_kw (cstring "new"))  ;; new F(args)  /  new a.b.C(args)
         (then
           (call $next_token)
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; LOADVAR ctor
-          (call $next_token)
+          (if (i32.eq (call $tok_kind) (i32.const 15))  ;; new (expr)(...) — parenthesized callee
+            (then
+              (call $next_token)  ;; '('
+              (call $vm_c_expr (local.get $code))  ;; callee value on stack
+              (call $next_token))  ;; ')'
+            (else
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; LOADVAR ctor
+              (call $next_token)))
           (block $nme (loop $nml  ;; member path on the constructor (no call)
             (br_if $nme (i32.ne (call $tok_kind) (i32.const 23)))  ;; '.'
             (call $next_token)
