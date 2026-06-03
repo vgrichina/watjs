@@ -297,6 +297,24 @@
     (then (call $str_eq (call $val_payload (local.get $key)) (cstring "length")))
     (else (i32.const 0))))
 
+;; look up an inherited property slot for a function: Function.prototype (reg 336)
+;; then Object.prototype (reg 328). Returns the slot ptr, or 0 if not found.
+(func $fn_inherited_slot (param $ks i32) (result i32) (effects)
+  (let $fpv i64 (i64.load (i32.const 336)))
+  (if (call $is_function (local.get $fpv))
+    (then
+      (let $fpp i32 (i32.load (i32.add (call $val_payload (local.get $fpv)) (i32.const 12))))
+      (if (local.get $fpp)
+        (then
+          (let $s i32 (call $scope_find (local.get $fpp) (local.get $ks)))
+          (if (local.get $s) (then (return (local.get $s))))))))
+  (let $op i32 (i32.load (i32.const 328)))
+  (if (local.get $op)
+    (then
+      (let $s2 i32 (call $scope_find (local.get $op) (local.get $ks)))
+      (if (local.get $s2) (then (return (local.get $s2))))))
+  (i32.const 0))
+
 ;; get_prop(container, key) -> value
 (func $get_prop (param $cont i64) (param $key i64) (result i64) (effects)
   (if (call $is_array (local.get $cont))
@@ -462,6 +480,8 @@
               (if (local.get $vslot) (then (return (i64.load (local.get $vslot)))))))
           (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
           (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
+          (let $vinh i32 (call $fn_inherited_slot (local.get $ks)))
+          (if (local.get $vinh) (then (return (i64.load (local.get $vinh)))))
           (return (call $v_undef))))
       (if (call $str_eq (local.get $ks) (cstring "prototype")) (then (return (call $fn_get_prototype (local.get $fn)))))
       (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
@@ -472,6 +492,8 @@
           (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
       (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
       (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
+      (let $ninh i32 (call $fn_inherited_slot (local.get $ks)))
+      (if (local.get $ninh) (then (return (i64.load (local.get $ninh)))))
       (return (call $v_undef))))
   ;; symbol: .description / .toString / .valueOf
   (if (call $is_symbol (local.get $cont))
@@ -600,7 +622,9 @@
       (if (local.get $anp) (then (if (call $scope_find_local (local.get $anp) (call $to_prop_key (local.get $key))) (then (return (call $v_true))))))
       (return (call $v_false))))
   (if (call $is_function (local.get $obj))
-    (then (return (call $mk_bool (call $fn_own (call $val_payload (local.get $obj)) (call $to_prop_key (local.get $key)))))))
+    (then
+      (if (call $fn_own (call $val_payload (local.get $obj)) (call $to_prop_key (local.get $key))) (then (return (call $v_true))))
+      (return (call $mk_bool (i32.ne (call $fn_inherited_slot (call $to_prop_key (local.get $key))) (i32.const 0))))))
   (call $throw_type (cstring "TypeError") (cstring "cannot use 'in' on non-object"))
   (call $v_false))
 
