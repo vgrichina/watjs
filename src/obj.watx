@@ -334,6 +334,7 @@
             (then (return (call $arr_get (local.get $a) (i32.trunc_f64_s (local.get $aget))))))))
             ;; non-index numeric falls through to the lookups below
       (let $akey i32 (call $to_prop_key (local.get $key)))
+      (if (call $str_eq (local.get $akey) (cstring "__proto__")) (then (return (call $js_get_prototype (local.get $cont)))))  ;; → Array.prototype
       ;; a string key that's a canonical index ("0", a["3"]) is an element
       (let $asidx i32 (call $str_array_index (local.get $akey)))
       (if (i32.ge_s (local.get $asidx) (i32.const 0)) (then (return (call $arr_get (local.get $a) (local.get $asidx)))))
@@ -451,6 +452,7 @@
     (then
       (let $fn i32 (call $val_payload (local.get $cont)))
       (let $ks i32 (call $to_prop_key (local.get $key)))
+      (if (call $str_eq (local.get $ks) (cstring "__proto__")) (then (return (call $js_get_prototype (local.get $cont)))))  ;; → Function.prototype
       ;; Function.prototype methods (shared by both engine fn reprs)
       (if (call $str_eq (local.get $ks) (cstring "call")) (then (return (call $mk_native (i32.const 194) (cstring "call")))))
       (if (call $str_eq (local.get $ks) (cstring "apply")) (then (return (call $mk_native (i32.const 195) (cstring "apply")))))

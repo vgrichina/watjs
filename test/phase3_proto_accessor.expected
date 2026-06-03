@@ -1,0 +1,9 @@
+get=true
+set-links=hi
+get-after=true
+fn=true
+arr=true
+create-null=undefined
+set-null=null
+set-prim-noop=true
+cycle=TypeError

@@ -676,6 +676,20 @@
             (call $arr_set_length (local.get $dpa) (local.get $dln)))))
       (else (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de)))))))
 
+;; [[GetPrototypeOf]]: array → Array.prototype; function → Function.prototype
+;; (Function.prototype itself → Object.prototype); object → its scope parent (or null).
+(func $js_get_prototype (param $ov i64) (result i64) (effects)
+  (if (call $is_array (local.get $ov)) (then (return (call $mk_obj (i32.load (i32.const 160))))))
+  (if (call $is_function (local.get $ov))
+    (then
+      (if (call $strict_eq (local.get $ov) (i64.load (i32.const 336))) (then (return (call $mk_obj (i32.load (i32.const 328))))))
+      (return (i64.load (i32.const 336)))))
+  (if (call $is_object (local.get $ov))
+    (then
+      (let $par i32 (call $scope_parent (call $val_payload (local.get $ov))))
+      (if (local.get $par) (then (return (call $mk_obj (local.get $par)))))))
+  (call $v_null))
+
 ;; ToObject(v): objects/arrays/functions pass through; primitives → boxed wrapper.
 ;; null/undefined are the caller's responsibility (they must pre-check); here they
 ;; degrade to a fresh empty object rather than trapping.
@@ -789,6 +803,20 @@
         (set! $ipp (call $scope_parent (local.get $ipp)))
         (br $ipl)))
       (return (call $v_false))))
+  ;; Object.prototype.__proto__ getter (303) — returns this's [[Prototype]]
+  (if (i32.eq (local.get $id) (i32.const 303))
+    (then (return (call $js_get_prototype (local.get $thisv)))))
+  ;; Object.prototype.__proto__ setter (304) — SetPrototypeOf if value is Object/Null, else no-op
+  (if (i32.eq (local.get $id) (i32.const 304))
+    (then
+      (let $ppv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.and (i32.or (call $is_object (local.get $ppv)) (call $is_null (local.get $ppv))) (call $is_object (local.get $thisv)))
+        (then
+          (let $ppbuf i32 (call $heap_alloc (i32.const 16)))
+          (i64.store (local.get $ppbuf) (local.get $thisv))
+          (i64.store (i32.add (local.get $ppbuf) (i32.const 8)) (local.get $ppv))
+          (drop (call $call_native (i32.const 243) (i32.const 2) (local.get $ppbuf) (call $v_undef)))))  ;; delegate to setPrototypeOf (cycle check)
+      (return (call $v_undef))))
   ;; Function(p1, …, pN, body)  |  new Function(…)  — build source and eval it,
   ;; returning the resulting function. Params are the all-but-last args (joined by
   ;; ','), the body is the last arg. The name is "anonymous" per spec.
@@ -2861,7 +2889,8 @@
       (if (i32.eqz (i32.or (call $is_object (local.get $crp)) (i32.or (call $is_null (local.get $crp)) (i32.or (call $is_array (local.get $crp)) (call $is_function (local.get $crp))))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
       (let $cro i32 (call $obj_new (i32.const 8)))
-      (if (call $is_object (local.get $crp)) (then (i32.store (local.get $cro) (call $val_payload (local.get $crp)))))
+      (if (call $is_object (local.get $crp)) (then (i32.store (local.get $cro) (call $val_payload (local.get $crp))))
+        (else (if (call $is_null (local.get $crp)) (then (i32.store (local.get $cro) (i32.const 0))))))  ;; Object.create(null) → no [[Prototype]]
       ;; optional 2nd arg: property descriptors (like defineProperties).
       ;; If Properties is supplied, ToObject(Properties) is applied — null throws.
       (let $crd i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
@@ -2912,18 +2941,7 @@
       (let $ov i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.or (call $is_null (local.get $ov)) (call $is_undefined (local.get $ov)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
-      (if (call $is_array (local.get $ov)) (then (return (call $mk_obj (i32.load (i32.const 160))))))  ;; Array.prototype
-      ;; functions: [[Prototype]] is Function.prototype (reg 336); Function.prototype
-      ;; itself → Object.prototype.
-      (if (call $is_function (local.get $ov))
-        (then
-          (if (call $strict_eq (local.get $ov) (i64.load (i32.const 336))) (then (return (call $mk_obj (i32.load (i32.const 328))))))
-          (return (i64.load (i32.const 336)))))
-      (if (call $is_object (local.get $ov))
-        (then
-          (let $par i32 (call $scope_parent (call $val_payload (local.get $ov))))
-          (if (local.get $par) (then (return (call $mk_obj (local.get $par)))))))
-      (return (call $v_null))))
+      (return (call $js_get_prototype (local.get $ov)))))
   (if (i32.eq (local.get $id) (i32.const 83))  ;; Array.isArray(x)
     (then (return (call $mk_bool (call $is_array (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
   (if (i32.eq (local.get $id) (i32.const 84))  ;; Number.isNaN(x) — no coercion
@@ -4292,6 +4310,8 @@
   (call $scope_define (local.get $objproto) (cstring "hasOwnProperty") (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))
   (call $scope_define (local.get $objproto) (cstring "propertyIsEnumerable") (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))
   (call $scope_define (local.get $objproto) (cstring "isPrototypeOf") (call $mk_native (i32.const 300) (cstring "isPrototypeOf")))
+  ;; __proto__ accessor (get/set [[Prototype]]) — inherited by all objects
+  (call $scope_define_accessor (local.get $objproto) (cstring "__proto__") (call $mk_native (i32.const 303) (cstring "get __proto__")) (call $mk_native (i32.const 304) (cstring "set __proto__")))
   (call $scope_define (local.get $objproto) (cstring "constructor") (local.get $objf))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $objproto)))
   ;; register Object.prototype as the [[Prototype]] root (obj_new links new
