@@ -3498,6 +3498,13 @@
               (then (call $scope_define (call $fn_props (local.get $dfn)) (cstring "@@dellen") (call $v_true))))
             (if (i32.and (i32.ge_s (i32.load (local.get $dfn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $dfn)) (i32.const 1448232528)))
               (then
+                ;; VM fn name/length are struct fields, not slots → park a flag bit
+                ;; (bit4=name deleted, bit5=length deleted); fn_own/get_prop honor it.
+                (let $dflo i32 (i32.add (local.get $dfn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $dfn) (i32.const 8))) (i32.const 4)))))
+                (if (call $str_eq (local.get $dfk) (cstring "name"))
+                  (then (i32.store (local.get $dflo) (i32.or (i32.load (local.get $dflo)) (i32.const 16)))))
+                (if (call $str_eq (local.get $dfk) (cstring "length"))
+                  (then (i32.store (local.get $dflo) (i32.or (i32.load (local.get $dflo)) (i32.const 32)))))
                 (let $dvp i64 (i64.load (i32.add (local.get $dfn) (i32.const 16))))
                 (if (call $is_object (local.get $dvp))
                   (then

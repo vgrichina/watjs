@@ -469,8 +469,11 @@
                   (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vproto))
                   (call $scope_define_attr (call $val_payload (local.get $vproto)) (cstring "constructor") (local.get $cont) (i32.const 12))))  ;; F.prototype.constructor === F {W:true,E:false,C:true}
               (return (local.get $vproto))))
-          (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
-          (if (call $str_eq (local.get $ks) (cstring "name"))  ;; declared/inferred name @(28+np*4), 0 → ""
+          (if (i32.and (call $str_eq (local.get $ks) (cstring "length"))  ;; not deleted (flag bit5=32)
+                (i32.eqz (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 32))))
+            (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
+          (if (i32.and (call $str_eq (local.get $ks) (cstring "name"))  ;; declared/inferred name @(28+np*4); not deleted (flag bit4=16)
+                (i32.eqz (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 16))))
             (then
               (let $nmp i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))))
               (return (if i64 (local.get $nmp) (then (call $mk_str (local.get $nmp))) (else (call $mk_str (cstring "")))))))
@@ -551,11 +554,14 @@
       (if (i32.eqz (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528))))
         (then
           (let $lp i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
-          (if (local.get $lp) (then (if (call $scope_find_local (local.get $lp) (cstring "@@dellen")) (then (return (i32.const 0))))))))
+          (if (local.get $lp) (then (if (call $scope_find_local (local.get $lp) (cstring "@@dellen")) (then (return (i32.const 0)))))))
+        ;; VM fn: length deleted → flag bit5 (32) in @(32+np*4)
+        (else (if (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 32)) (then (return (i32.const 0))))))
       (return (i32.const 1))))
   (if (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
     (then
-      (if (call $str_eq (local.get $ks) (cstring "name")) (then (return (i32.const 1))))  ;; VM fns always own .name (@(28+np*4))
+      (if (call $str_eq (local.get $ks) (cstring "name"))  ;; VM fns own .name unless deleted (flag bit4=16)
+        (then (return (i32.eqz (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 16))))))
       ;; .prototype is an own property of every non-arrow VM fn (arrow flag = bit1)
       (if (call $str_eq (local.get $ks) (cstring "prototype"))
         (then (return (i32.eqz (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 2))))))
