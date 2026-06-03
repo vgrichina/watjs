@@ -3204,6 +3204,9 @@
               (else (call $v_undef))))
           (set! $pi (i32.add (local.get $pi) (i32.const 1)))
           (br $pl)))
+        ;; bind `arguments` (unless flag bit0 = skip-own-arguments, i.e. arrow w/o rest)
+        (if (i32.eqz (i32.and (i32.load (i32.add (local.get $cfn) (i32.add (i32.const 32) (i32.mul (local.get $cnp) (i32.const 4))))) (i32.const 1)))
+          (then (call $scope_define (local.get $cns) (cstring "arguments") (call $vm_make_arguments (local.get $cns) (local.get $cfn) (local.get $stack) (local.get $cbase) (local.get $argc)))))
         (call $scope_define (local.get $cns) (cstring "this") (call $mk_obj (local.get $newo)))
         (let $fr i32 (call $heap_alloc (i32.const 24)))
         (i32.store (local.get $fr) (local.get $ip))
@@ -3226,7 +3229,18 @@
         (let $nsargc i32 (call $arr_len (local.get $nsarr)))
         (let $nsdata i32 (call $arr_data (local.get $nsarr)))
         (let $nscbase i32 (i32.sub (local.get $sp) (i32.const 8)))  ;; ctor slot
+        ;; callee must be a function
+        (if (i32.eqz (call $is_function (i64.load (i32.add (local.get $stack) (local.get $nscbase)))))
+          (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (set! $sp (local.get $nscbase)) (br $disp)))
         (let $nscfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $nscbase)))))
+        ;; bound function: [[Construct]] the target with bound args + spread args
+        (if (i32.eq (i32.load (local.get $nscfn)) (i32.const 1448232540))
+          (then
+            (let $nsbres i64 (call $vm_construct (i64.load (i32.add (local.get $stack) (local.get $nscbase))) (local.get $nsargc) (local.get $nsdata)))
+            (set! $sp (local.get $nscbase))
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $nsbres))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
         (if (i32.ne (i32.load (local.get $nscfn)) (i32.const 1448232526))  ;; native ctor
           (then
             (let $nsnid i32 (i32.load (local.get $nscfn)))
@@ -3260,6 +3274,9 @@
               (else (call $v_undef))))
           (set! $nspi (i32.add (local.get $nspi) (i32.const 1)))
           (br $nspl)))
+        ;; bind `arguments` (unless flag bit0 = skip-own-arguments)
+        (if (i32.eqz (i32.and (i32.load (i32.add (local.get $nscfn) (i32.add (i32.const 32) (i32.mul (local.get $nscnp) (i32.const 4))))) (i32.const 1)))
+          (then (call $scope_define (local.get $nscns) (cstring "arguments") (call $vm_make_arguments_argv (local.get $nscns) (local.get $nscfn) (local.get $nsdata) (local.get $nsargc)))))
         (call $scope_define (local.get $nscns) (cstring "this") (call $mk_obj (local.get $nsnewo)))
         (let $nsfr i32 (call $heap_alloc (i32.const 24)))
         (i32.store (local.get $nsfr) (local.get $ip))
