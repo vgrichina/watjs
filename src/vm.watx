@@ -3755,6 +3755,25 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $dk i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $dobj i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left in place
+        ;; computed-key name inference: an anonymous VM-fn value gets .name = the key
+        ;; name (a symbol key → "[desc]"), get/set prefixed. Non-computed keys already
+        ;; ran SETNAMEIFANON, so this no-ops on them.
+        (if (call $is_function (local.get $dv))
+          (then
+            (let $dfp i32 (call $val_payload (local.get $dv)))
+            (if (i32.and (i32.ge_s (i32.load (local.get $dfp)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $dfp)) (i32.const 1448232528)))
+              (then
+                (let $dnoff i32 (i32.add (i32.add (local.get $dfp) (i32.const 28)) (i32.mul (i32.load (i32.add (local.get $dfp) (i32.const 8))) (i32.const 4))))
+                (if (i32.eqz (i32.load (local.get $dnoff)))
+                  (then
+                    (let $dkname i32 (if i32 (call $is_symbol (local.get $dk))
+                      (then (if i32 (i32.eqz (call $str_len (call $sym_desc (local.get $dk))))
+                        (then (cstring ""))  ;; symbol with no description → name ""
+                        (else (call $str_concat (cstring "[") (call $str_concat (call $sym_desc (local.get $dk)) (cstring "]"))))))
+                      (else (call $to_str (local.get $dk)))))
+                    (i32.store (local.get $dnoff)
+                      (if i32 (i32.eq (local.get $op) (i32.const 65)) (then (local.get $dkname))
+                        (else (call $str_concat (if i32 (i32.eq (local.get $op) (i32.const 66)) (then (cstring "get ")) (else (cstring "set "))) (local.get $dkname)))))))))))
         (if (i32.eq (local.get $op) (i32.const 65))
           (then (call $set_prop (local.get $dobj) (local.get $dk) (local.get $dv)))                                  ;; DEFDATA
           (else (call $scope_set_accessor (call $val_payload (local.get $dobj)) (call $to_str (local.get $dk)) (i32.eq (local.get $op) (i32.const 66)) (local.get $dv))))  ;; DEFGET(66)/DEFSET(67)

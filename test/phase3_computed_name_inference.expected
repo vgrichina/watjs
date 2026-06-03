@@ -1,0 +1,8 @@
+method='foo'
+data-fn='bar'
+arrow='foo2'
+getter='get fooG'
+setter='set fooS'
+sym-desc='[desc]'
+sym-nodesc=''
+named-keeps='named'
