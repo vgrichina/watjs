@@ -1,0 +1,11 @@
+message=msg
+message-enum=false
+message-writable=true
+message-config=true
+not-in-keys=true
+cause=42
+no-cause-prop=false
+type-cause=c
+noarg-message=true
+toString=RangeError: r
+null-opt=false
