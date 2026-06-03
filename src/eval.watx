@@ -4433,11 +4433,11 @@
   (call $set_prop (local.get $strf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $sp)))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $numproto)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $ap)))
-  ;; global NaN / Infinity / undefined
-  (call $scope_define (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))))
-  (call $scope_define (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))))
+  ;; global NaN / Infinity / undefined are {W:false,E:false,C:false} (attrs 0)
+  (call $scope_define_attr (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))) (i32.const 0))
+  (call $scope_define_attr (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))) (i32.const 0))
   (call $scope_define (local.get $g) (cstring "globalThis") (call $mk_obj (local.get $g)))
-  (call $scope_define (local.get $g) (cstring "undefined") (call $v_undef))
+  (call $scope_define_attr (local.get $g) (cstring "undefined") (call $v_undef) (i32.const 0))
   ;; built-ins are non-enumerable (spec: DontEnum) — clear enum on every builtin
   ;; object/prototype and each constructor's static-method scope. Done last so it
   ;; covers everything defined above.

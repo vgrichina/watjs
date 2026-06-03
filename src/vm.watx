@@ -3598,9 +3598,12 @@
         (let $saslot i32 (call $scope_find (local.get $scope) (local.get $sanm)))
         (if (local.get $saslot)
           (then
-            ;; const (non-writable, non-accessor binding) → TypeError in ALL modes
-            (if (i32.and (i32.eqz (call $entry_writable (local.get $saslot))) (i32.eqz (call $entry_is_accessor (local.get $saslot))))
+            ;; const lexical binding (const-bit 16) → TypeError in ALL modes
+            (if (i32.and (call $entry_kind (local.get $saslot)) (i32.const 16))
               (then (call $throw_type (cstring "TypeError") (cstring "Assignment to constant variable.")) (br $disp)))
+            ;; non-writable data property (e.g. NaN/Infinity/undefined) → sloppy no-op
+            (if (i32.and (i32.eqz (call $entry_writable (local.get $saslot))) (i32.eqz (call $entry_is_accessor (local.get $saslot))))
+              (then (br $disp)))
             (i64.store (local.get $saslot) (i64.load (i32.add (local.get $stack) (local.get $sp)))))
           (else (call $scope_define (local.get $gscope) (local.get $sanm) (i64.load (i32.add (local.get $stack) (local.get $sp))))))  ;; undeclared → implicit global
         (br $disp)))
@@ -3609,7 +3612,7 @@
         (let $dcnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
-        (call $scope_define_attr (local.get $scope) (local.get $dcnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 6))  ;; E|C, non-writable
+        (call $scope_define_attr (local.get $scope) (local.get $dcnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 22))  ;; E|C + const-bit(16), non-writable
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 80))  ;; STOREVAR_STRICT — strict assignment: ReferenceError if the binding is undeclared
       (then

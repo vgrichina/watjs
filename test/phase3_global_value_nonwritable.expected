@@ -1,0 +1,9 @@
+NaN-attrs=false,false,false
+Infinity-attrs=false,false,false
+undefined-attrs=false,false,false
+sloppy-NaN=true
+sloppy-undef=undefined
+const-throws=TypeError
+strict-NaN=TypeError
+normal-var=2
+implicit-global=7
