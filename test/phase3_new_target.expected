@@ -1,0 +1,6 @@
+ctor=true
+plain=undefined
+ctor-direct=ok
+arrow-inherit=true
+arrow-plain=undefined
+toplevel=undefined
