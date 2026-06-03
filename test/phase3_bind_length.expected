@@ -6,3 +6,7 @@ bind-over=0
 bind-empty=0
 bind-call=15
 desc=2,false,false,true
+name-named=bound foo
+name-anon=bound 
+name-double=bound bound foo
+name-desc=false,false,true

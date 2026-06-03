@@ -11,3 +11,7 @@ p("bind-empty", f0.bind(null,1).length);  // 0
 function add(a,b){ return a+b; }
 p("bind-call", add.bind(null,10)(5));     // 15
 p("desc", (function(){ var d=Object.getOwnPropertyDescriptor(f3.bind(null,1),"length"); return d.value+","+d.writable+","+d.enumerable+","+d.configurable; })()); // 2,false,false,true
+p("name-named", (function foo(){}).bind(null).name);     // bound foo
+p("name-anon", (function(){}).bind(null).name);          // bound (trailing space)
+p("name-double", (function foo(){}).bind(null).bind(null).name); // bound bound foo
+p("name-desc", (function(){ var d=Object.getOwnPropertyDescriptor((function g(){}).bind(null),"name"); return d.writable+","+d.enumerable+","+d.configurable; })()); // false,false,true
