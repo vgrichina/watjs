@@ -248,6 +248,19 @@
 (func $lex_ident (effects)
   (let $start i32 (call $pos))
   (block $ie (loop $il
+    ;; a \uHHHH or \u{H+} unicode escape is part of the identifier (IdentifierName)
+    (if (i32.and (i32.eq (call $ch_at (i32.const 0)) (i32.const 92)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 117)))
+      (then
+        (call $set_pos (i32.add (call $pos) (i32.const 2)))  ;; skip "\u"
+        (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 123))  ;; \u{ … }
+          (then
+            (block $ce (loop $cl
+              (br_if $ce (i32.eq (call $ch_at (i32.const 0)) (i32.const -1)))
+              (br_if $ce (i32.eq (call $ch_at (i32.const 0)) (i32.const 125)))  ;; '}'
+              (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $cl)))
+            (call $set_pos (i32.add (call $pos) (i32.const 1))))  ;; skip '}'
+          (else (call $set_pos (i32.add (call $pos) (i32.const 4)))))  ;; 4 hex digits
+        (br $il)))
     (br_if $ie (i32.eqz (call $is_alnum (call $ch_at (i32.const 0)))))
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $il)))
@@ -288,18 +301,29 @@
       (then
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (let $n i32 (i32.load8_u (i32.add (local.get $src) (local.get $i))))
-        (if (i32.eq (local.get $n) (i32.const 117))  ;; \uHHHH
+        (if (i32.eq (local.get $n) (i32.const 117))  ;; \uHHHH  or  \u{H+}
           (then
             (let $cp i32 (i32.const 0))
-            (let $j i32 (i32.const 0))
-            (block $he (loop $hl
-              (br_if $he (i32.ge_s (local.get $j) (i32.const 4)))
-              (let $h i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1))))))
-              (br_if $he (i32.lt_s (local.get $h) (i32.const 0)))
-              (set! $cp (i32.add (i32.mul (local.get $cp) (i32.const 16)) (local.get $h)))
-              (set! $i (i32.add (local.get $i) (i32.const 1)))
-              (set! $j (i32.add (local.get $j) (i32.const 1)))
-              (br $hl)))
+            (if (i32.eq (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1)))) (i32.const 123))  ;; \u{ … }
+              (then
+                (set! $i (i32.add (local.get $i) (i32.const 1)))  ;; advance onto '{'
+                (block $ce (loop $cl
+                  (let $hc i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1))))))
+                  (br_if $ce (i32.lt_s (local.get $hc) (i32.const 0)))  ;; non-hex (the '}') ends it
+                  (set! $cp (i32.add (i32.mul (local.get $cp) (i32.const 16)) (local.get $hc)))
+                  (set! $i (i32.add (local.get $i) (i32.const 1)))
+                  (br $cl)))
+                (set! $i (i32.add (local.get $i) (i32.const 1))))  ;; advance onto '}'
+              (else
+                (let $j i32 (i32.const 0))
+                (block $he (loop $hl
+                  (br_if $he (i32.ge_s (local.get $j) (i32.const 4)))
+                  (let $h i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1))))))
+                  (br_if $he (i32.lt_s (local.get $h) (i32.const 0)))
+                  (set! $cp (i32.add (i32.mul (local.get $cp) (i32.const 16)) (local.get $h)))
+                  (set! $i (i32.add (local.get $i) (i32.const 1)))
+                  (set! $j (i32.add (local.get $j) (i32.const 1)))
+                  (br $hl)))))
             (set! $o (call $utf8_emit (local.get $p) (local.get $o) (local.get $cp))))
           (else (if (i32.eq (local.get $n) (i32.const 120))  ;; \xHH
             (then
@@ -473,6 +497,8 @@
   (if (call $is_digit (local.get $c)) (then (call $lex_number) (return)))
   (if (i32.and (i32.eq (local.get $c) (i32.const 46)) (call $is_digit (local.get $c1)))
     (then (call $lex_number) (return)))  ;; .5
+  (if (i32.and (i32.eq (local.get $c) (i32.const 92)) (i32.eq (local.get $c1) (i32.const 117)))
+    (then (call $lex_ident) (return)))  ;; \u… → identifier starting with a unicode escape
   (if (call $is_alpha (local.get $c)) (then (call $lex_ident) (return)))
   (if (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const 39)))
     (then (call $lex_string (local.get $c)) (return)))  ;; " or '
