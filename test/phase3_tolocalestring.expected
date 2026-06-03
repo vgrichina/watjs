@@ -1,0 +1,8 @@
+num=255
+num-own=true
+arr=1,2,3
+arr-own=true
+obj=[object Object]
+obj-own=true
+len=0
+is-fn=function

@@ -803,6 +803,14 @@
         (set! $ipp (call $scope_parent (local.get $ipp)))
         (br $ipl)))
       (return (call $v_false))))
+  ;; Object/Number/Array.prototype.toLocaleString (305) — default locale: delegate to this.toString()
+  (if (i32.eq (local.get $id) (i32.const 305))
+    (then
+      (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (let $tls i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "toString"))))
+      (if (call $is_function (local.get $tls)) (then (return (call $call_fn0 (local.get $tls) (local.get $thisv)))))
+      (return (call $mk_str (call $to_str (local.get $thisv))))))
   ;; Object.prototype.__proto__ getter (303) — returns this's [[Prototype]]
   (if (i32.eq (local.get $id) (i32.const 303))
     (then (return (call $js_get_prototype (local.get $thisv)))))
@@ -4005,6 +4013,7 @@
   (i32.store (i32.const 164) (local.get $numproto))
   (call $scope_define (local.get $numproto) (cstring "__prim__") (call $num (f64.const 0)))  ;; Number.prototype is a Number object (+0)
   (call $scope_define (local.get $numproto) (cstring "toString") (call $mk_native (i32.const 145) (cstring "toString")))
+  (call $scope_define (local.get $numproto) (cstring "toLocaleString") (call $mk_native (i32.const 305) (cstring "toLocaleString")))
   (call $scope_define (local.get $numproto) (cstring "toFixed") (call $mk_native (i32.const 146) (cstring "toFixed")))
   (call $scope_define (local.get $numproto) (cstring "toPrecision") (call $mk_native (i32.const 166) (cstring "toPrecision")))
   (call $scope_define (local.get $numproto) (cstring "toExponential") (call $mk_native (i32.const 171) (cstring "toExponential")))
@@ -4087,6 +4096,7 @@
   (call $scope_define (local.get $ap) (cstring "pop") (call $mk_native (i32.const 21) (cstring "pop")))
   (call $scope_define (local.get $ap) (cstring "indexOf") (call $mk_native (i32.const 22) (cstring "indexOf")))
   (call $scope_define (local.get $ap) (cstring "join") (call $mk_native (i32.const 23) (cstring "join")))
+  (call $scope_define (local.get $ap) (cstring "toLocaleString") (call $mk_native (i32.const 305) (cstring "toLocaleString")))
   (call $scope_define (local.get $ap) (cstring "slice") (call $mk_native (i32.const 24) (cstring "slice")))
   (call $scope_define (local.get $ap) (cstring "forEach") (call $mk_native (i32.const 25) (cstring "forEach")))
   (call $scope_define (local.get $ap) (cstring "map") (call $mk_native (i32.const 26) (cstring "map")))
@@ -4310,6 +4320,7 @@
   (call $scope_define (local.get $objproto) (cstring "hasOwnProperty") (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))
   (call $scope_define (local.get $objproto) (cstring "propertyIsEnumerable") (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))
   (call $scope_define (local.get $objproto) (cstring "isPrototypeOf") (call $mk_native (i32.const 300) (cstring "isPrototypeOf")))
+  (call $scope_define (local.get $objproto) (cstring "toLocaleString") (call $mk_native (i32.const 305) (cstring "toLocaleString")))
   ;; __proto__ accessor (get/set [[Prototype]]) — inherited by all objects
   (call $scope_define_accessor (local.get $objproto) (cstring "__proto__") (call $mk_native (i32.const 303) (cstring "get __proto__")) (call $mk_native (i32.const 304) (cstring "set __proto__")))
   (call $scope_define (local.get $objproto) (cstring "constructor") (local.get $objf))
