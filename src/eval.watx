@@ -3544,6 +3544,10 @@
   ;; Date.now(179), Symbol.toString(199), Number/Boolean valueOf(220), Boolean.toString(221)
   (if (i32.or (i32.eq (local.get $id) (i32.const 18)) (i32.or (i32.eq (local.get $id) (i32.const 155)) (i32.or (i32.eq (local.get $id) (i32.const 179)) (i32.or (i32.eq (local.get $id) (i32.const 199)) (i32.or (i32.eq (local.get $id) (i32.const 220)) (i32.eq (local.get $id) (i32.const 221)))))))
     (then (return (i32.const 0))))
+  ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
+  (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 9)) (i32.or (i32.eq (local.get $id) (i32.const 88)) (i32.or (i32.eq (local.get $id) (i32.const 157)) (i32.eq (local.get $id) (i32.const 192))))) (then (return (i32.const 1))))
   ;; Object static methods — length 3: defineProperty(90)
   (if (i32.eq (local.get $id) (i32.const 90)) (then (return (i32.const 3))))
   ;; length 2: assign(80) create(81) defineProperties(160) is(169) setPrototypeOf(243)
