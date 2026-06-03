@@ -3527,6 +3527,16 @@
     (then (return (i32.const 1))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 161)) (i32.or (i32.eq (local.get $id) (i32.const 112)) (i32.or (i32.eq (local.get $id) (i32.const 248)) (i32.or (i32.eq (local.get $id) (i32.const 115)) (i32.or (i32.eq (local.get $id) (i32.const 162)) (i32.or (i32.eq (local.get $id) (i32.const 163)) (i32.or (i32.eq (local.get $id) (i32.const 164)) (i32.eq (local.get $id) (i32.const 165)))))))))
     (then (return (i32.const 1))))
+  ;; JSON.stringify(105)=3, Reflect.set(201)/defineProperty(206)/apply(208)=3
+  (if (i32.or (i32.eq (local.get $id) (i32.const 105)) (i32.or (i32.eq (local.get $id) (i32.const 201)) (i32.or (i32.eq (local.get $id) (i32.const 206)) (i32.eq (local.get $id) (i32.const 208)))))
+    (then (return (i32.const 3))))
+  ;; JSON.parse(106)=2, Reflect get(200)/has(202)/deleteProperty(203)/getOwnPropertyDescriptor(207)/construct(222)=2, Function.prototype.apply(195)=2
+  (if (i32.or (i32.eq (local.get $id) (i32.const 106)) (i32.or (i32.eq (local.get $id) (i32.const 200)) (i32.or (i32.eq (local.get $id) (i32.const 202)) (i32.or (i32.eq (local.get $id) (i32.const 203)) (i32.or (i32.eq (local.get $id) (i32.const 207)) (i32.or (i32.eq (local.get $id) (i32.const 222)) (i32.eq (local.get $id) (i32.const 195))))))))
+    (then (return (i32.const 2))))
+  ;; Number isNaN(84)/isInteger(85)/isFinite(86)/isSafeInteger(98)=1, Array.isArray(83)/from(111)=1,
+  ;; Reflect ownKeys(204)/getPrototypeOf(205)=1, Function.prototype.call(194)=1
+  (if (i32.or (i32.eq (local.get $id) (i32.const 84)) (i32.or (i32.eq (local.get $id) (i32.const 85)) (i32.or (i32.eq (local.get $id) (i32.const 86)) (i32.or (i32.eq (local.get $id) (i32.const 98)) (i32.or (i32.eq (local.get $id) (i32.const 83)) (i32.or (i32.eq (local.get $id) (i32.const 111)) (i32.or (i32.eq (local.get $id) (i32.const 204)) (i32.or (i32.eq (local.get $id) (i32.const 205)) (i32.eq (local.get $id) (i32.const 194))))))))))
+    (then (return (i32.const 1))))
   (i32.const 0))
 
 ;; 1 if a native id is a constructor (valid with `new`). Everything else native
