@@ -1,0 +1,8 @@
+ctor-is-C=true
+instance-ctor=true
+desc=true,false,true
+derived-ctor=true
+derived-instance=true
+this-constructor=true
+hasOwn-constructor=true
+for-in-no-ctor=[]

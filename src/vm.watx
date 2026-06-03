@@ -3120,6 +3120,10 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $pv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (i64.store (i32.add (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))) (i32.const 16)) (local.get $pv))
+        ;; proto.constructor = ctor  {W:true,E:false,C:true}
+        (if (call $is_object (local.get $pv))
+          (then (call $scope_define_attr (call $val_payload (local.get $pv)) (cstring "constructor")
+                  (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))) (i32.const 12))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 46))  ;; NEW argc — construct an instance
       (then
