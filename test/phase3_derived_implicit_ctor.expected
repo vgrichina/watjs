@@ -1,0 +1,5 @@
+field-from-parent=1
+instanceof-parent=true
+instanceof-self=true
+inherited-method=51
+parent-proto-chain=g

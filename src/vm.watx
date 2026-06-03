@@ -1474,6 +1474,30 @@
   (i32.store (i32.add (local.get $fn) (i32.const 32)) (i32.const 8))    ;; bit3 = class constructor (synthetic, no plain call)
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_fn (local.get $fn))))
 
+;; emit a PUSH of a synthetic DERIVED constructor — runs `super()` (no forwarded args) then returns
+;; covers `class B extends A {}` so `new B()` invokes A's constructor with this=instance
+(func $vm_emit_derived_ctor (param $code i32) (effects)
+  (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))
+  (let $entry i32 (call $vm_emit_cursor))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))   ;; receiver
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
+  (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@super"))  ;; parent ctor
+  (call $vm_emit_op (local.get $code) (i32.const 86)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; SUPERCALL, 0 args
+  (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP super result
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+  (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET undefined
+  (call $vm_patch (local.get $code) (local.get $pj))
+  (let $fn i32 (call $heap_alloc (i32.const 36)))
+  (i32.store (local.get $fn) (i32.const 1448232526))
+  (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
+  (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))
+  (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
+  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))
+  (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))
+  (i32.store (i32.add (local.get $fn) (i32.const 28)) (i32.const 0))
+  (i32.store (i32.add (local.get $fn) (i32.const 32)) (i32.const 8))    ;; bit3 = class constructor
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_fn (local.get $fn))))
+
 ;; Compile a destructuring pattern (cursor at '[' or '{') that binds from the
 ;; value already stored in variable $srcTmp. Single-level array/object patterns
 ;; with element/property defaults and array rest (matching var-destructuring);
@@ -2033,7 +2057,11 @@
     (br $cml)))
   (call $next_token)  ;; '}'
   (if (i32.eqz (local.get $hasctor))
-    (then (call $vm_emit_empty_fn (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))))
+    (then
+      (if (local.get $superT)
+        (then (call $vm_emit_derived_ctor (local.get $code)))
+        (else (call $vm_emit_empty_fn (local.get $code))))
+      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))))
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ctorT))   ;; LOADVAR ctor
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
   (call $vm_emit_op (local.get $code) (i32.const 51))  ;; SETPROTO → [ctor]
