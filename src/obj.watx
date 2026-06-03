@@ -467,7 +467,7 @@
                 (then
                   (set! $vproto (call $mk_obj (call $obj_new (i32.const 8))))
                   (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vproto))
-                  (call $scope_define (call $val_payload (local.get $vproto)) (cstring "constructor") (local.get $cont))))  ;; F.prototype.constructor === F
+                  (call $scope_define_attr (call $val_payload (local.get $vproto)) (cstring "constructor") (local.get $cont) (i32.const 12))))  ;; F.prototype.constructor === F {W:true,E:false,C:true}
               (return (local.get $vproto))))
           (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
           (if (call $str_eq (local.get $ks) (cstring "name"))  ;; declared/inferred name @(28+np*4), 0 → ""
@@ -574,8 +574,8 @@
       (let $po i32 (call $obj_new (i32.const 8)))
       (let $pv i64 (call $mk_obj (local.get $po)))
       (call $scope_define (local.get $props) (cstring "prototype") (local.get $pv))
-      ;; F.prototype.constructor === F
-      (call $scope_define (local.get $po) (cstring "constructor") (call $mk_fn (local.get $fn)))
+      ;; F.prototype.constructor === F  {W:true,E:false,C:true}
+      (call $scope_define_attr (local.get $po) (cstring "constructor") (call $mk_fn (local.get $fn)) (i32.const 12))
       (local.get $pv))))
 
 ;; x instanceof F : walk x's prototype chain looking for F.prototype

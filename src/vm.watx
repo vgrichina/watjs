@@ -3157,7 +3157,7 @@
           (then
             (set! $cproto (call $mk_obj (call $obj_new (i32.const 8))))
             (i64.store (i32.add (local.get $cfn) (i32.const 16)) (local.get $cproto))
-            (call $scope_define (call $val_payload (local.get $cproto)) (cstring "constructor") (i64.load (i32.add (local.get $stack) (local.get $cbase))))))  ;; .prototype.constructor = ctor
+            (call $scope_define_attr (call $val_payload (local.get $cproto)) (cstring "constructor") (i64.load (i32.add (local.get $stack) (local.get $cbase))) (i32.const 12))))  ;; .prototype.constructor = ctor {W:true,E:false,C:true}
         (i32.store (local.get $newo) (call $val_payload (local.get $cproto)))
         (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 8))))
         (let $cns i32 (call $scope_new (call $vm_fn_parent (local.get $cfn) (local.get $gscope)) (i32.add (local.get $cnp) (i32.const 4))))
@@ -3213,7 +3213,7 @@
           (then
             (set! $nscproto (call $mk_obj (call $obj_new (i32.const 8))))
             (i64.store (i32.add (local.get $nscfn) (i32.const 16)) (local.get $nscproto))
-            (call $scope_define (call $val_payload (local.get $nscproto)) (cstring "constructor") (i64.load (i32.add (local.get $stack) (local.get $nscbase))))))
+            (call $scope_define_attr (call $val_payload (local.get $nscproto)) (cstring "constructor") (i64.load (i32.add (local.get $stack) (local.get $nscbase))) (i32.const 12))))
         (i32.store (local.get $nsnewo) (call $val_payload (local.get $nscproto)))
         (let $nscnp i32 (i32.load (i32.add (local.get $nscfn) (i32.const 8))))
         (let $nscns i32 (call $scope_new (call $vm_fn_parent (local.get $nscfn) (local.get $gscope)) (i32.add (local.get $nscnp) (i32.const 4))))
