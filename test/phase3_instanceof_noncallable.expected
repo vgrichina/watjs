@@ -1,0 +1,8 @@
+obj-rhs=THROW:TypeError
+num-rhs=THROW:TypeError
+null-rhs=THROW:TypeError
+string-rhs=THROW:TypeError
+normal=true
+class=true
+array=true
+error-subclass=true
