@@ -1,0 +1,8 @@
+map-keys=[]
+set-keys=[]
+promise-keys=[]
+map-works=1,1
+set-works=true,2
+promise-works=function
+map-json={}
+map-forin=[]

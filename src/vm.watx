@@ -3953,7 +3953,7 @@
   (let $o i32 (call $obj_new (i32.const 4)))
   (call $scope_define (local.get $o) (cstring "@@promise") (call $v_true))
   (call $scope_define (local.get $o) (cstring "@@pval") (local.get $v))
-  (call $scope_define (local.get $o) (cstring "then") (call $mk_native (i32.const 152) (cstring "then")))
+  (call $scope_define_attr (local.get $o) (cstring "then") (call $mk_native (i32.const 152) (cstring "then")) (i32.const 12))  ;; DontEnum
   (call $mk_obj (local.get $o)))
 (func $vm_await_unwrap (param $v i64) (result i64) (effects)  ;; await: a promise → its value, else the value
   (if (call $vm_is_promise (local.get $v)) (then (return (call $get_prop (local.get $v) (call $mk_str (cstring "@@pval"))))))

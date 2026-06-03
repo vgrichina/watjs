@@ -1036,6 +1036,7 @@
       (call $scope_define (local.get $mo) (cstring "values") (call $mk_native (i32.const 177) (cstring "values")))
       (call $scope_define (local.get $mo) (cstring "entries") (call $mk_native (i32.const 178) (cstring "entries")))
       (call $scope_define (local.get $mo) (cstring "@@iterator") (call $mk_native (i32.const 178) (cstring "entries")))
+      (call $scope_clear_enum (local.get $mo))  ;; Map methods are DontEnum (not own enumerable props)
       ;; new Map(iterable of [k,v]): set each pair
       (let $mov i64 (call $mk_obj (local.get $mo)))
       (let $marg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -1114,6 +1115,7 @@
       (call $scope_define (local.get $so) (cstring "values") (call $mk_native (i32.const 175) (cstring "values")))
       (call $scope_define (local.get $so) (cstring "keys") (call $mk_native (i32.const 175) (cstring "keys")))
       (call $scope_define (local.get $so) (cstring "@@iterator") (call $mk_native (i32.const 175) (cstring "values")))
+      (call $scope_clear_enum (local.get $so))  ;; Set methods are DontEnum
       ;; new Set(iterable): add each element
       (let $sov i64 (call $mk_obj (local.get $so)))
       (let $sarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -1574,7 +1576,7 @@
       (let $pp i32 (call $obj_new (i32.const 4)))
       (call $scope_define (local.get $pp) (cstring "@@promise") (call $v_true))
       (call $scope_define (local.get $pp) (cstring "@@pval") (call $v_undef))
-      (call $scope_define (local.get $pp) (cstring "then") (call $mk_native (i32.const 152) (cstring "then")))
+      (call $scope_define_attr (local.get $pp) (cstring "then") (call $mk_native (i32.const 152) (cstring "then")) (i32.const 12))  ;; DontEnum
       (let $ppv i64 (call $mk_obj (local.get $pp)))
       ;; resolve = a bound function (target=native193, this=the promise)
       (let $prf i32 (call $heap_alloc (i32.const 40)))
