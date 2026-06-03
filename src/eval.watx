@@ -300,9 +300,14 @@
   (let $i i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $len)))
-    (call $arr_set (local.get $tmp) (local.get $i) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))
+    ;; absent index (HasProperty false) → store a hole so iteration methods skip it,
+    ;; matching real-array hole semantics for map/forEach/filter/some/every/reduce/…
+    (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $i))) (local.get $thisv)))
+      (then (call $arr_set (local.get $tmp) (local.get $i) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i))))))
+      (else (call $arr_set (local.get $tmp) (local.get $i) (call $v_hole))))
     (br_if $e (call $err))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i32.store (local.get $tmp) (local.get $len))  ;; preserve the full length even if the tail is absent
   (local.get $tmp))
 
 ;; safe to i64.trunc_f64_s? (finite and within i64 range — trunc traps otherwise)
