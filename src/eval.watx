@@ -742,7 +742,11 @@
         (set! $bi (i32.add (local.get $bi) (i32.const 1))) (br $bbl)))
       (let $bf i32 (call $heap_alloc (i32.const 40)))
       (i32.store (local.get $bf) (i32.const 1448232540))           ;; bound magic
-      (i32.store (i32.add (local.get $bf) (i32.const 8)) (i32.const 0))   ;; nparams
+      ;; bound .length = max(0, target.length − boundArgsCount)
+      (let $btlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
+      (let $bnp i32 (i32.sub (local.get $btlen) (local.get $bargc)))
+      (if (i32.lt_s (local.get $bnp) (i32.const 0)) (then (set! $bnp (i32.const 0))))
+      (i32.store (i32.add (local.get $bf) (i32.const 8)) (local.get $bnp))   ;; .length (NOT used by call_bound)
       (i32.store (i32.add (local.get $bf) (i32.const 12)) (i32.const 0))  ;; props
       (i64.store (i32.add (local.get $bf) (i32.const 16)) (local.get $bthis))
       (i64.store (i32.add (local.get $bf) (i32.const 24)) (local.get $thisv))
