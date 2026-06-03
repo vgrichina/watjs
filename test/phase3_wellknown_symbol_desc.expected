@@ -1,0 +1,8 @@
+iterator=false,false,false
+toPrimitive=false,false,false
+hasInstance=false,false,false
+for=true,false,true
+keyFor=true,false,true
+iterator-is-symbol=symbol
+array-iterable=function
+symbol-keys-empty=[]

@@ -3973,18 +3973,20 @@
   (i32.store (i32.const 292) (i32.const 0))                       ;; user-symbol counter
   (i32.store (i32.const 296) (call $scope_new (i32.const 0) (i32.const 8)))  ;; Symbol.for registry
   (let $symf i64 (call $def_native (local.get $g) (cstring "Symbol") (i32.const 196)))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "iterator")) (call $make_symbol (cstring "@@iterator") (cstring "Symbol.iterator")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "asyncIterator")) (call $make_symbol (cstring "@@asyncIterator") (cstring "Symbol.asyncIterator")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "hasInstance")) (call $make_symbol (cstring "@@hasInstance") (cstring "Symbol.hasInstance")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "toPrimitive")) (call $make_symbol (cstring "@@toPrimitive") (cstring "Symbol.toPrimitive")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "toStringTag")) (call $make_symbol (cstring "@@toStringTag") (cstring "Symbol.toStringTag")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "isConcatSpreadable")) (call $make_symbol (cstring "@@isConcatSpreadable") (cstring "Symbol.isConcatSpreadable")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "species")) (call $make_symbol (cstring "@@species") (cstring "Symbol.species")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "match")) (call $make_symbol (cstring "@@match") (cstring "Symbol.match")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "replace")) (call $make_symbol (cstring "@@replace") (cstring "Symbol.replace")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "search")) (call $make_symbol (cstring "@@search") (cstring "Symbol.search")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "split")) (call $make_symbol (cstring "@@split") (cstring "Symbol.split")))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "unscopables")) (call $make_symbol (cstring "@@unscopables") (cstring "Symbol.unscopables")))
+  ;; well-known symbols are {[[Writable]]:false, [[Enumerable]]:false, [[Configurable]]:false}
+  (let $symp i32 (call $fn_props (call $val_payload (local.get $symf))))
+  (call $scope_define_attr (local.get $symp) (cstring "iterator") (call $make_symbol (cstring "@@iterator") (cstring "Symbol.iterator")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "asyncIterator") (call $make_symbol (cstring "@@asyncIterator") (cstring "Symbol.asyncIterator")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "hasInstance") (call $make_symbol (cstring "@@hasInstance") (cstring "Symbol.hasInstance")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "toPrimitive") (call $make_symbol (cstring "@@toPrimitive") (cstring "Symbol.toPrimitive")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "toStringTag") (call $make_symbol (cstring "@@toStringTag") (cstring "Symbol.toStringTag")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "isConcatSpreadable") (call $make_symbol (cstring "@@isConcatSpreadable") (cstring "Symbol.isConcatSpreadable")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "species") (call $make_symbol (cstring "@@species") (cstring "Symbol.species")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "match") (call $make_symbol (cstring "@@match") (cstring "Symbol.match")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "replace") (call $make_symbol (cstring "@@replace") (cstring "Symbol.replace")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "search") (call $make_symbol (cstring "@@search") (cstring "Symbol.search")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "split") (call $make_symbol (cstring "@@split") (cstring "Symbol.split")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "unscopables") (call $make_symbol (cstring "@@unscopables") (cstring "Symbol.unscopables")) (i32.const 0))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "for")) (call $mk_native (i32.const 197) (cstring "for")))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "keyFor")) (call $mk_native (i32.const 198) (cstring "keyFor")))
   ;; Reflect — static facade over the internal property operations
@@ -4209,5 +4211,6 @@
   (call $scope_clear_enum (i32.load (i32.const 308)))   ;; Date.prototype
   (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $datef))))  ;; Date statics (now/UTC)
   (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $objf))))
-  (call $scope_clear_enum (local.get $refo)))  ;; Reflect.* methods are DontEnum
+  (call $scope_clear_enum (local.get $refo))  ;; Reflect.* methods are DontEnum
+  (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $symf)))))  ;; Symbol.* (well-known symbols, for/keyFor) are DontEnum
 
