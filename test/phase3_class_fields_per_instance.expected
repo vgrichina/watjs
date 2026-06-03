@@ -1,0 +1,11 @@
+field-x=1
+own-x=true
+not-on-proto=false
+proto-keys=[]
+inst-keys=["x","y"]
+per-instance=1
+field+method=10
+refs-this=2
+no-init-own=true
+no-init-val=true
+field-then-ctor=xy
