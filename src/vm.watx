@@ -2024,13 +2024,17 @@
       (then
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
         (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']' → [proto, key]
-        (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method
-          (then (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync)) (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [proto, key, fn]
-          (else (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = field initializer
-            (then (call $next_token) (call $vm_c_expr (local.get $code)))
-            (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))))
-        (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [val]
-        (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
+        (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method → non-enumerable {W,C}, name from key
+          (then
+            (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync))
+            (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; → [proto, key, fn]
+            (call $vm_emit_op (local.get $code) (i32.const 87)))  ;; DEFMETH_KEY (pops all three)
+          (else
+            (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = field initializer (enumerable data)
+              (then (call $next_token) (call $vm_c_expr (local.get $code)))
+              (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))
+            (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [val]
+            (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP
         (drop (call $eat (i32.const 21)))
         (br $cml)))
     ;; getter/setter:  get NAME(){}  |  set NAME(arg){}
@@ -2923,6 +2927,22 @@
     (br $cont)))
   (call $v_false))
 
+;; infer .name for an anonymous VM-fn value from a property key (string/number →
+;; ToString; symbol → "[desc]" or "" if no description), optional prefix ("get "/
+;; "set "/0). No-ops on named fns, non-VM fns, and non-functions.
+(func $vm_infer_name (param $fnval i64) (param $keyval i64) (param $prefix i32) (effects)
+  (if (i32.eqz (call $is_function (local.get $fnval))) (then (return)))
+  (let $fp i32 (call $val_payload (local.get $fnval)))
+  (if (i32.eqz (i32.and (i32.ge_s (i32.load (local.get $fp)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fp)) (i32.const 1448232528)))) (then (return)))
+  (let $noff i32 (i32.add (i32.add (local.get $fp) (i32.const 28)) (i32.mul (i32.load (i32.add (local.get $fp) (i32.const 8))) (i32.const 4))))
+  (if (i32.load (local.get $noff)) (then (return)))  ;; already named
+  (let $kn i32 (if i32 (call $is_symbol (local.get $keyval))
+    (then (if i32 (i32.eqz (call $str_len (call $sym_desc (local.get $keyval))))
+      (then (cstring ""))
+      (else (call $str_concat (cstring "[") (call $str_concat (call $sym_desc (local.get $keyval)) (cstring "]"))))))
+    (else (call $to_str (local.get $keyval)))))
+  (i32.store (local.get $noff) (if i32 (local.get $prefix) (then (call $str_concat (local.get $prefix) (local.get $kn))) (else (local.get $kn)))))
+
 ;; run from the context's saved (ip, sp) until the next YIELD or HALT.
 ;; YIELD → returns the yielded value, state saved for the next call (done=0).
 ;; HALT  → sets done=1, returns the final top-of-stack value (or undefined).
@@ -3725,6 +3745,18 @@
           (then (call $scope_define_attr (call $val_payload (local.get $mo)) (local.get $nm) (local.get $v) (i32.const 12))))  ;; W|C, non-enumerable
         (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))
         (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 87))  ;; DEFMETH_KEY — [obj, key, fn] → non-enum {W,C} method, infer name from key
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $mkfn i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $mkk i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $mkobj i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (call $vm_infer_name (local.get $mkfn) (local.get $mkk) (i32.const 0))
+        (if (call $is_object (local.get $mkobj))
+          (then (call $scope_define_attr (call $val_payload (local.get $mkobj)) (call $to_prop_key (local.get $mkk)) (local.get $mkfn) (i32.const 12))))  ;; W|C, non-enumerable
+        (br $disp)))
     (if (i32.or (i32.eq (local.get $op) (i32.const 74)) (i32.eq (local.get $op) (i32.const 75)))  ;; CLOSEITER: 74 break (propagate return's throw) / 75 throw (suppress it)
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
@@ -3755,25 +3787,10 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $dk i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $dobj i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left in place
-        ;; computed-key name inference: an anonymous VM-fn value gets .name = the key
-        ;; name (a symbol key → "[desc]"), get/set prefixed. Non-computed keys already
-        ;; ran SETNAMEIFANON, so this no-ops on them.
-        (if (call $is_function (local.get $dv))
-          (then
-            (let $dfp i32 (call $val_payload (local.get $dv)))
-            (if (i32.and (i32.ge_s (i32.load (local.get $dfp)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $dfp)) (i32.const 1448232528)))
-              (then
-                (let $dnoff i32 (i32.add (i32.add (local.get $dfp) (i32.const 28)) (i32.mul (i32.load (i32.add (local.get $dfp) (i32.const 8))) (i32.const 4))))
-                (if (i32.eqz (i32.load (local.get $dnoff)))
-                  (then
-                    (let $dkname i32 (if i32 (call $is_symbol (local.get $dk))
-                      (then (if i32 (i32.eqz (call $str_len (call $sym_desc (local.get $dk))))
-                        (then (cstring ""))  ;; symbol with no description → name ""
-                        (else (call $str_concat (cstring "[") (call $str_concat (call $sym_desc (local.get $dk)) (cstring "]"))))))
-                      (else (call $to_str (local.get $dk)))))
-                    (i32.store (local.get $dnoff)
-                      (if i32 (i32.eq (local.get $op) (i32.const 65)) (then (local.get $dkname))
-                        (else (call $str_concat (if i32 (i32.eq (local.get $op) (i32.const 66)) (then (cstring "get ")) (else (cstring "set "))) (local.get $dkname)))))))))))
+        ;; computed-key name inference (no-op for literal keys, already named)
+        (call $vm_infer_name (local.get $dv) (local.get $dk)
+          (if i32 (i32.eq (local.get $op) (i32.const 65)) (then (i32.const 0))
+            (else (if i32 (i32.eq (local.get $op) (i32.const 66)) (then (cstring "get ")) (else (cstring "set "))))))
         (if (i32.eq (local.get $op) (i32.const 65))
           (then (call $set_prop (local.get $dobj) (local.get $dk) (local.get $dv)))                                  ;; DEFDATA
           (else (call $scope_set_accessor (call $val_payload (local.get $dobj)) (call $to_str (local.get $dk)) (i32.eq (local.get $op) (i32.const 66)) (local.get $dv))))  ;; DEFGET(66)/DEFSET(67)

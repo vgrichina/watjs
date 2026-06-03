@@ -1,0 +1,7 @@
+name=m
+name2=bar
+static-name=mS
+getter-name=get mG
+nonenum=false
+not-in-keys=true
+callable=true
