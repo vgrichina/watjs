@@ -3404,7 +3404,7 @@
         (if (call $is_array (local.get $dobj))
           (then
             (let $dap i32 (call $val_payload (local.get $dobj)))
-            (let $dks2 i32 (call $to_str (local.get $dkey)))
+            (let $dks2 i32 (call $to_prop_key (local.get $dkey)))
             (let $didx i32 (call $str_array_index (local.get $dks2)))
             (if (i32.and (i32.ge_s (local.get $didx) (i32.const 0)) (i32.lt_s (local.get $didx) (call $arr_len (local.get $dap))))
               (then (i64.store (call $arr_slot (local.get $dap) (local.get $didx)) (call $v_hole)))  ;; element → hole
@@ -3414,7 +3414,7 @@
         (if (call $is_object (local.get $dobj))
           (then
             (let $dsc i32 (call $val_payload (local.get $dobj)))
-            (let $dks i32 (call $to_str (local.get $dkey)))
+            (let $dks i32 (call $to_prop_key (local.get $dkey)))
             (let $dslot i32 (call $scope_find_local (local.get $dsc) (local.get $dks)))
             (if (local.get $dslot)
               (then
@@ -3426,7 +3426,7 @@
         (if (call $is_function (local.get $dobj))
           (then
             (let $dfn i32 (call $val_payload (local.get $dobj)))
-            (let $dfk i32 (call $to_str (local.get $dkey)))
+            (let $dfk i32 (call $to_prop_key (local.get $dkey)))
             ;; computed `length` is configurable: park a "@@dellen" marker in the
             ;; @12 props store so fn_own/getOwnPropertyDescriptor report it absent.
             ;; Only for NATIVE fns — a VM fn's @12 is its code pointer (fn_props

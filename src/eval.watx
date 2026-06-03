@@ -3999,6 +3999,7 @@
   (call $scope_define (local.get $refo) (cstring "getOwnPropertyDescriptor") (call $mk_native (i32.const 207) (cstring "getOwnPropertyDescriptor")))
   (call $scope_define (local.get $refo) (cstring "apply") (call $mk_native (i32.const 208) (cstring "apply")))
   (call $scope_define (local.get $refo) (cstring "construct") (call $mk_native (i32.const 222) (cstring "construct")))
+  (call $scope_define_attr (local.get $refo) (cstring "@@toStringTag") (call $mk_str (cstring "Reflect")) (i32.const 4))  ;; toString → [object Reflect]; {W:false,E:false,C:true}
   (call $scope_define (local.get $g) (cstring "Reflect") (call $mk_obj (local.get $refo)))
   (drop (call $def_native (local.get $g) (cstring "Proxy") (i32.const 209)))
   ;; TypedArrays + ArrayBuffer (elem type = id-210)
@@ -4081,7 +4082,7 @@
   (let $mo i32 (call $obj_new (i32.const 24)))
   (let $mv i64 (call $mk_obj (local.get $mo)))
   (call $scope_define (local.get $g) (cstring "Math") (local.get $mv))
-  (call $scope_define (local.get $mo) (cstring "@@toStringTag") (call $mk_str (cstring "Math")))
+  (call $scope_define_attr (local.get $mo) (cstring "@@toStringTag") (call $mk_str (cstring "Math")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $mo) (cstring "abs") (call $mk_native (i32.const 40) (cstring "abs")))
   (call $scope_define (local.get $mo) (cstring "floor") (call $mk_native (i32.const 41) (cstring "floor")))
   (call $scope_define (local.get $mo) (cstring "ceil") (call $mk_native (i32.const 42) (cstring "ceil")))
@@ -4127,7 +4128,7 @@
   ;; JSON object
   (let $jo i32 (call $obj_new (i32.const 4)))
   (call $scope_define (local.get $g) (cstring "JSON") (call $mk_obj (local.get $jo)))
-  (call $scope_define (local.get $jo) (cstring "@@toStringTag") (call $mk_str (cstring "JSON")))
+  (call $scope_define_attr (local.get $jo) (cstring "@@toStringTag") (call $mk_str (cstring "JSON")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $jo) (cstring "stringify") (call $mk_native (i32.const 105) (cstring "stringify")))
   (call $scope_define (local.get $jo) (cstring "parse") (call $mk_native (i32.const 106) (cstring "parse")))
   ;; Object with .keys

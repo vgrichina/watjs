@@ -1,0 +1,11 @@
+before=42
+has-before=true
+delete-ret=true
+after=undefined
+has-after=false
+str-delete=true
+str-after=undefined
+nonconf-delete=false
+nonconf-still=7
+reflect-tag-del=true
+reflect-tag-after=undefined
