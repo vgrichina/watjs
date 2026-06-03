@@ -1,0 +1,7 @@
+a=1
+b=2
+instanceof-target=true
+nested-a=9
+nested-b=8
+return-obj=5
+native-array=3

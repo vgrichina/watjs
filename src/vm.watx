@@ -3131,6 +3131,14 @@
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
+        ;; bound function: [[Construct]] the target with bound args prepended
+        (if (i32.eq (i32.load (local.get $cfn)) (i32.const 1448232540))
+          (then
+            (let $bcres i64 (call $vm_construct (i64.load (i32.add (local.get $stack) (local.get $cbase))) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8)))))
+            (set! $sp (local.get $cbase))
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $bcres))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
         (if (i32.ne (i32.load (local.get $cfn)) (i32.const 1448232526))  ;; native ctor (Map/Set/…) → use its return
           (then
             (let $nid i32 (i32.load (local.get $cfn)))

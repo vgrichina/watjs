@@ -3694,6 +3694,53 @@
     (then (call $call_native (i32.load (local.get $fn)) (i32.const 0) (local.get $argv) (local.get $thisv)))
     (else (call $v_undef))))))  ;; @0==0 (production user fn) no longer exists
 
+;; [[Construct]] a value with args in $argbuf (argc i64s). Handles bound fns
+;; (prepend bound args, recurse on target), native ctors (incl. Number/String/
+;; Boolean wrappers), and VM-fn ctors (fresh object, proto = cf.prototype, run
+;; body, use a returned object else the new object). Throws on a non-constructor.
+(func $vm_construct (param $cf i64) (param $argc i32) (param $argbuf i32) (result i64) (effects)
+  (if (i32.eqz (call $is_function (local.get $cf)))
+    (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (return (call $v_undef))))
+  (let $fn i32 (call $val_payload (local.get $cf)))
+  (let $magic i32 (i32.load (local.get $fn)))
+  ;; bound function: construct the target with boundArgs ++ argbuf
+  (if (i32.eq (local.get $magic) (i32.const 1448232540))
+    (then
+      (let $bt i64 (i64.load (i32.add (local.get $fn) (i32.const 24))))
+      (let $ba i32 (i32.load (i32.add (local.get $fn) (i32.const 32))))
+      (let $bb i32 (i32.load (i32.add (local.get $fn) (i32.const 36))))
+      (let $tot i32 (i32.add (local.get $ba) (local.get $argc)))
+      (let $cb i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $tot) (i32.const 0)) (then (local.get $tot)) (else (i32.const 1))) (i32.const 8))))
+      (let $ci i32 (i32.const 0))
+      (block $cbe (loop $cbl
+        (br_if $cbe (i32.ge_s (local.get $ci) (local.get $ba)))
+        (i64.store (i32.add (local.get $cb) (i32.mul (local.get $ci) (i32.const 8))) (i64.load (i32.add (local.get $bb) (i32.mul (local.get $ci) (i32.const 8)))))
+        (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $cbl)))
+      (let $cj i32 (i32.const 0))
+      (block $cce (loop $ccl
+        (br_if $cce (i32.ge_s (local.get $cj) (local.get $argc)))
+        (i64.store (i32.add (local.get $cb) (i32.mul (i32.add (local.get $ba) (local.get $cj)) (i32.const 8))) (i64.load (i32.add (local.get $argbuf) (i32.mul (local.get $cj) (i32.const 8)))))
+        (set! $cj (i32.add (local.get $cj) (i32.const 1))) (br $ccl)))
+      (return (call $vm_construct (local.get $bt) (local.get $tot) (local.get $cb)))))
+  ;; native constructor
+  (if (i32.lt_s (local.get $magic) (i32.const 1448232526))
+    (then
+      (if (i32.eqz (call $native_is_ctor (local.get $magic)))
+        (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (return (call $v_undef))))
+      (if (i32.or (i32.eq (local.get $magic) (i32.const 4)) (i32.or (i32.eq (local.get $magic) (i32.const 5)) (i32.eq (local.get $magic) (i32.const 6))))
+        (then (return (call $make_wrapper (call $call_native (local.get $magic) (local.get $argc) (local.get $argbuf) (call $v_undef))
+          (if i32 (i32.eq (local.get $magic) (i32.const 4)) (then (i32.load (i32.const 164)))
+            (else (if i32 (i32.eq (local.get $magic) (i32.const 5)) (then (i32.load (i32.const 156))) (else (i32.load (i32.const 184))))))))))
+      (return (call $call_native (local.get $magic) (local.get $argc) (local.get $argbuf) (call $v_undef)))))
+  ;; VM-function constructor
+  (let $obj i32 (call $obj_new (i32.const 8)))
+  (let $proto i64 (call $get_prop (local.get $cf) (call $mk_str (cstring "prototype"))))
+  (if (call $is_object (local.get $proto)) (then (i32.store (local.get $obj) (call $val_payload (local.get $proto)))))
+  (let $res i64 (call $call_val (local.get $cf) (local.get $argc) (local.get $argbuf) (call $mk_obj (local.get $obj))))
+  (if i64 (i32.or (call $is_object (local.get $res)) (i32.or (call $is_array (local.get $res)) (call $is_function (local.get $res))))
+    (then (local.get $res))
+    (else (call $mk_obj (local.get $obj)))))
+
 ;; eval(string): re-enter the parser on the string, return the completion value.
 
 ;; parse and evaluate a call:  callee '(' args ')'
