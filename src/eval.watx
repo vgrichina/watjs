@@ -772,11 +772,17 @@
   (if (i32.eq (local.get $id) (i32.const 300))
     (then
       (let $ipv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (call $is_array (local.get $thisv)))) (then (return (call $v_false))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv))))) (then (return (call $v_false))))
       (let $ipthis i32 (call $val_payload (local.get $thisv)))
+      ;; v is a function: its chain is Function.prototype → Object.prototype. If `this`
+      ;; IS Function.prototype, it's in the chain; else continue from Object.prototype.
+      (if (call $is_function (local.get $ipv))
+        (then
+          (if (call $strict_eq (local.get $thisv) (i64.load (i32.const 336))) (then (return (call $v_true))))))
       (let $ipp i32 (i32.const 0))
       (if (call $is_array (local.get $ipv)) (then (set! $ipp (i32.load (i32.const 160))))
-        (else (if (call $is_object (local.get $ipv)) (then (set! $ipp (call $scope_parent (call $val_payload (local.get $ipv))))))))
+        (else (if (call $is_object (local.get $ipv)) (then (set! $ipp (call $scope_parent (call $val_payload (local.get $ipv)))))
+          (else (if (call $is_function (local.get $ipv)) (then (set! $ipp (i32.load (i32.const 328)))))))))  ;; fn → continue from Object.prototype
       (block $ipe (loop $ipl
         (br_if $ipe (i32.eqz (local.get $ipp)))
         (if (i32.eq (local.get $ipp) (local.get $ipthis)) (then (return (call $v_true))))
@@ -2907,6 +2913,12 @@
       (if (i32.or (call $is_null (local.get $ov)) (call $is_undefined (local.get $ov)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (if (call $is_array (local.get $ov)) (then (return (call $mk_obj (i32.load (i32.const 160))))))  ;; Array.prototype
+      ;; functions: [[Prototype]] is Function.prototype (reg 336); Function.prototype
+      ;; itself → Object.prototype.
+      (if (call $is_function (local.get $ov))
+        (then
+          (if (call $strict_eq (local.get $ov) (i64.load (i32.const 336))) (then (return (call $mk_obj (i32.load (i32.const 328))))))
+          (return (i64.load (i32.const 336)))))
       (if (call $is_object (local.get $ov))
         (then
           (let $par i32 (call $scope_parent (call $val_payload (local.get $ov))))

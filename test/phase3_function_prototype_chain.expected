@@ -1,0 +1,10 @@
+getproto-userfn=true
+getproto-arrow=true
+getproto-Number=true
+getproto-Array=true
+getproto-FnProto=true
+isproto-fnproto-Number=true
+isproto-fnproto-userfn=true
+isproto-objproto-fn=true
+isproto-neg=false
+reflect-getproto=true
