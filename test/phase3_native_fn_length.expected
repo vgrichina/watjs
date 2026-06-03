@@ -1,0 +1,15 @@
+Object.keys=1
+Object.values=1
+Object.entries=1
+Object.assign=2
+Object.create=2
+Object.freeze=1
+Object.is=2
+Object.getPrototypeOf=1
+Object.setPrototypeOf=2
+Object.defineProperty=3
+Object.defineProperties=2
+Object.getOwnPropertyNames=1
+Object.preventExtensions=1
+Object.seal=1
+length-desc={"value":1,"writable":false,"enumerable":false,"configurable":true}

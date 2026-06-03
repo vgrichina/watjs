@@ -3515,6 +3515,18 @@
   ;; Date.now(179), Symbol.toString(199), Number/Boolean valueOf(220), Boolean.toString(221)
   (if (i32.or (i32.eq (local.get $id) (i32.const 18)) (i32.or (i32.eq (local.get $id) (i32.const 155)) (i32.or (i32.eq (local.get $id) (i32.const 179)) (i32.or (i32.eq (local.get $id) (i32.const 199)) (i32.or (i32.eq (local.get $id) (i32.const 220)) (i32.eq (local.get $id) (i32.const 221)))))))
     (then (return (i32.const 0))))
+  ;; Object static methods — length 3: defineProperty(90)
+  (if (i32.eq (local.get $id) (i32.const 90)) (then (return (i32.const 3))))
+  ;; length 2: assign(80) create(81) defineProperties(160) is(169) setPrototypeOf(243)
+  (if (i32.or (i32.eq (local.get $id) (i32.const 80)) (i32.or (i32.eq (local.get $id) (i32.const 81)) (i32.or (i32.eq (local.get $id) (i32.const 160)) (i32.or (i32.eq (local.get $id) (i32.const 169)) (i32.eq (local.get $id) (i32.const 243))))))
+    (then (return (i32.const 2))))
+  ;; length 1: keys(10) values(91) entries(92) freeze(139) isFrozen(140) getPrototypeOf(82)
+  ;;           getOwnPropertyDescriptors(161) getOwnPropertyNames(112) getOwnPropertySymbols(248)
+  ;;           fromEntries(115) preventExtensions(162) isExtensible(163) seal(164) isSealed(165)
+  (if (i32.or (i32.eq (local.get $id) (i32.const 10)) (i32.or (i32.eq (local.get $id) (i32.const 91)) (i32.or (i32.eq (local.get $id) (i32.const 92)) (i32.or (i32.eq (local.get $id) (i32.const 139)) (i32.or (i32.eq (local.get $id) (i32.const 140)) (i32.eq (local.get $id) (i32.const 82)))))))
+    (then (return (i32.const 1))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 161)) (i32.or (i32.eq (local.get $id) (i32.const 112)) (i32.or (i32.eq (local.get $id) (i32.const 248)) (i32.or (i32.eq (local.get $id) (i32.const 115)) (i32.or (i32.eq (local.get $id) (i32.const 162)) (i32.or (i32.eq (local.get $id) (i32.const 163)) (i32.or (i32.eq (local.get $id) (i32.const 164)) (i32.eq (local.get $id) (i32.const 165)))))))))
+    (then (return (i32.const 1))))
   (i32.const 0))
 
 ;; 1 if a native id is a constructor (valid with `new`). Everything else native
