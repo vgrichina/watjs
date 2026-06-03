@@ -1,0 +1,8 @@
+num-typeof=object
+num-valueOf=1
+num-a=1
+bool-typeof=object
+bool-x=5
+str-typeof=object
+str-y=7
+obj-passthrough=true

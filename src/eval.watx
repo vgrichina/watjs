@@ -648,6 +648,18 @@
   (call $scope_define (local.get $r) (cstring "configurable") (call $mk_bool (call $entry_configurable (local.get $slot))))
   (call $mk_obj (local.get $r)))
 
+;; ToObject(v): objects/arrays/functions pass through; primitives → boxed wrapper.
+;; null/undefined are the caller's responsibility (they must pre-check); here they
+;; degrade to a fresh empty object rather than trapping.
+(func $to_object (param $a i64) (result i64) (effects)
+  (if (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a))))
+    (then (return (local.get $a))))
+  (if (call $is_number (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 164))))))
+  (if (call $is_string (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 156))))))
+  (if (call $is_boolean (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 184))))))
+  (if (call $is_symbol (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.const 0)))))
+  (call $mk_obj (call $obj_new (i32.const 8))))
+
 ;; native dispatch by id (1 = print, 2 = assert)
 (func $call_native (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   (if (i32.eq (local.get $id) (i32.const 1))  ;; print (console.log style)
@@ -2757,6 +2769,7 @@
       (let $t i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.or (call $is_null (local.get $t)) (call $is_undefined (local.get $t)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (set! $t (call $to_object (local.get $t)))  ;; ToObject(target): primitive → wrapper
       (let $k i32 (i32.const 1))
       (block $ae (loop $al
         (br_if $ae (i32.ge_s (local.get $k) (local.get $argc)))
