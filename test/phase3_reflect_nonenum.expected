@@ -1,0 +1,5 @@
+apply-enum=false
+get-enum=false
+defineProperty-enum=false
+keys-empty=[]
+has-method=function
