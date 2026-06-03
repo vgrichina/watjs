@@ -1,0 +1,9 @@
+call-no-ctor=THROW:TypeError
+call-with-ctor=THROW:TypeError
+derived-call=THROW:TypeError
+new-ok=5
+empty-new-ok=object
+super-call-ok=7
+method-ok=9
+static-ok=3
+regular-fn-ok=1

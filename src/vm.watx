@@ -521,7 +521,7 @@
               (if (i32.ne (call $tok_kind) (i32.const 16))
                 (then (block $se (loop $sl (call $vm_c_expr (local.get $code)) (set! $sargc (i32.add (local.get $sargc) (i32.const 1))) (br_if $se (i32.eqz (call $eat (i32.const 22)))) (br $sl)))))
               (call $next_token)  ;; ')'
-              (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $sargc))  ;; CALLM (this = instance)
+              (call $vm_emit_op (local.get $code) (i32.const 86)) (call $vm_emit_op (local.get $code) (local.get $sargc))  ;; SUPERCALL (CALLM, exempt from class-ctor-without-new check)
               (return)))
           (if (i32.eq (call $tok_kind) (i32.const 23))  ;; super.method(...)
             (then
@@ -1297,7 +1297,8 @@
 (func $vm_c_fnbody (param $code i32) (param $selfname i32) (effects)
   (let $genf i32 (i32.load (i32.const 236)))   ;; capture this fn's gen/async flags before the body can clobber mem
   (let $asyncf i32 (i32.load (i32.const 232)))
-  (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; clear so nested fns don't inherit
+  (let $classf i32 (i32.load (i32.const 404)))  ;; this fn is a class constructor (set by vm_c_class)
+  (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0)) (i32.store (i32.const 404) (i32.const 0))  ;; clear so nested fns don't inherit
   (let $savefin i32 (i32.load (i32.const 320)))  ;; nested fn: a return runs only THIS fn's finallys
   (i32.store (i32.const 320) (i32.const 0))
   (let $savehc i32 (i32.load (i32.const 372)))  ;; nested fn: its own hoist list
@@ -1447,7 +1448,8 @@
   ;; .name: the declared name (named fn decl/expr), or 0 → "" until inferred
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $np) (i32.const 4))) (local.get $selfname))
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))
-    (if i32 (local.get $thisstrict) (then (i32.const 4)) (else (i32.const 0))))  ;; bit2 = strict (bit0/1 arrow — not an arrow here)
+    (i32.or (if i32 (local.get $thisstrict) (then (i32.const 4)) (else (i32.const 0)))  ;; bit2 strict
+            (if i32 (local.get $classf) (then (i32.const 8)) (else (i32.const 0)))))  ;; bit3 class constructor (no plain call)
   ;; named function: CLOSURE_NAMED binds the name to the function inside its own
   ;; body (recursive named function expressions); anonymous: plain CLOSURE.
   (if (local.get $selfname)
@@ -1469,7 +1471,7 @@
   (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))
   (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))    ;; closureScope (0 → gscope fallback)
   (i32.store (i32.add (local.get $fn) (i32.const 28)) (i32.const 0))    ;; name ""
-  (i32.store (i32.add (local.get $fn) (i32.const 32)) (i32.const 0))    ;; not an arrow
+  (i32.store (i32.add (local.get $fn) (i32.const 32)) (i32.const 8))    ;; bit3 = class constructor (synthetic, no plain call)
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_fn (local.get $fn))))
 
 ;; Compile a destructuring pattern (cursor at '[' or '{') that binds from the
@@ -2017,6 +2019,7 @@
         (drop (call $eat (i32.const 21))))  ;; optional ';'
       (else (if (call $str_eq (local.get $mn) (cstring "constructor"))
         (then
+          (i32.store (i32.const 404) (i32.const 1))  ;; mark: this fnbody is a class constructor (no plain call)
           (call $vm_c_fnbody (local.get $code) (i32.const 0))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))
           (set! $hasctor (i32.const 1)))
@@ -2980,11 +2983,11 @@
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
-    (if (i32.or (i32.eq (local.get $op) (i32.const 19)) (i32.or (i32.eq (local.get $op) (i32.const 21)) (i32.eq (local.get $op) (i32.const 33))))  ;; CALL / TAILCALL / CALLM
+    (if (i32.or (i32.eq (local.get $op) (i32.const 19)) (i32.or (i32.eq (local.get $op) (i32.const 21)) (i32.or (i32.eq (local.get $op) (i32.const 33)) (i32.eq (local.get $op) (i32.const 86)))))  ;; CALL / TAILCALL / CALLM / SUPERCALL
       (then
         (let $argc i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
-        (let $isM i32 (i32.eq (local.get $op) (i32.const 33)))  ;; method call → receiver is below the callee
+        (let $isM i32 (i32.or (i32.eq (local.get $op) (i32.const 33)) (i32.eq (local.get $op) (i32.const 86))))  ;; method call (or super-call) → receiver below the callee
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))  ;; callee slot
         (let $rbase i32 (if i32 (local.get $isM) (then (i32.sub (local.get $cbase) (i32.const 8))) (else (local.get $cbase))))  ;; result base
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
@@ -3047,6 +3050,9 @@
         ;; template flags @(32+np*4): bit0 = skip own `arguments` (arrow w/o rest),
         ;; bit1 = arrow (skip own `this`, lexical), bit2 = strict (plain-call this = undefined).
         (let $cflags i32 (i32.load (i32.add (local.get $cfn) (i32.add (i32.const 32) (i32.mul (local.get $cnp) (i32.const 4)))))) ;; fn flags
+        (if (i32.and (local.get $cflags) (i32.const 8))  ;; class ctor flag (bit3)
+          (then (if (i32.ne (local.get $op) (i32.const 86))  ;; plain call (not super()) → TypeError
+            (then (call $throw_type (cstring "TypeError") (cstring "Class constructor cannot be invoked without 'new'")) (set! $sp (local.get $rbase)) (br $disp)))))
         (if (i32.and (i32.eqz (local.get $reuse)) (i32.eqz (i32.and (local.get $cflags) (i32.const 1))))
           (then (call $scope_define (local.get $cns) (cstring "arguments") (call $vm_make_arguments (local.get $cns) (local.get $cfn) (local.get $stack) (local.get $cbase) (local.get $argc)))))
         (if (i32.eqz (i32.and (local.get $cflags) (i32.const 2)))  ;; non-arrow → bind own `this`
