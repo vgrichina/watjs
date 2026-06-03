@@ -10,3 +10,6 @@ p("real-filter", [1,,3].filter(function(){ return true; }).length); // 2
 // Array.from still fills undefined (does NOT skip)
 p("from-len", Array.from(a).length);   // 3
 p("from-fill", Array.from({length:2}).join("|")); // "|" (two undefineds)
+// flatMap skips absent indices too
+p("flatmap-arraylike", [].flatMap.call(a, function(e){ return [e*2]; }).join(","));  // 2,42
+p("flatmap-holes", [1,,3].flatMap(function(e){ return [e]; }).join(","));            // 1,3

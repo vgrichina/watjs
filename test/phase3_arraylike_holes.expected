@@ -6,3 +6,5 @@ indexOf-undef=-1
 real-filter=2
 from-len=3
 from-fill=|
+flatmap-arraylike=2,42
+flatmap-holes=1,3
