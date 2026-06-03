@@ -2286,9 +2286,9 @@
         (br $fvl)))
       (let $ro i32 (call $obj_new (i32.const 8)))
       (i32.store (local.get $ro) (i32.load (i32.const 324)))  ;; scope parent = RegExp.prototype (source/flags/… getters, test, exec)
-      (call $scope_define (local.get $ro) (cstring "__re_src__") (call $mk_str (local.get $pat)))
-      (call $scope_define (local.get $ro) (cstring "__re_flags__") (call $mk_str (local.get $flg)))
-      (call $scope_define (local.get $ro) (cstring "lastIndex") (call $num (f64.const 0)))
+      (call $scope_define_attr (local.get $ro) (cstring "__re_src__") (call $mk_str (local.get $pat)) (i32.const 0))   ;; internal, DontEnum
+      (call $scope_define_attr (local.get $ro) (cstring "__re_flags__") (call $mk_str (local.get $flg)) (i32.const 0)) ;; internal, DontEnum
+      (call $scope_define_attr (local.get $ro) (cstring "lastIndex") (call $num (f64.const 0)) (i32.const 8))         ;; {W:true,E:false,C:false}
       (return (call $mk_obj (local.get $ro)))))
   ;; RegExp.prototype accessor getters (this = regex). 290 source, 291 flags,
   ;; 292-298 global/ignoreCase/multiline/sticky/unicode/dotAll/hasIndices.
