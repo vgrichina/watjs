@@ -585,6 +585,9 @@
 (func $js_instanceof (param $x i64) (param $f i64) (result i64) (effects)
   (if (i32.eqz (call $is_function (local.get $f)))
     (then (call $throw_type (cstring "TypeError") (cstring "right operand of instanceof is not callable")) (return (call $v_false))))
+  ;; bound function: follows [[BoundTargetFunction]] → x instanceof target
+  (if (i32.eq (i32.load (call $val_payload (local.get $f))) (i32.const 1448232540))
+    (then (return (call $js_instanceof (local.get $x) (i64.load (i32.add (call $val_payload (local.get $f)) (i32.const 24)))))))
   ;; functions: [[Prototype]] chain is Function.prototype → Object.prototype, so
   ;; `fn instanceof f` holds when f.prototype is one of those.
   (if (call $is_function (local.get $x))

@@ -2882,6 +2882,9 @@
   ;; the RHS must be callable; a non-callable RHS is a TypeError
   (if (i32.eqz (call $is_function (local.get $f)))
     (then (call $throw_type (cstring "TypeError") (cstring "Right-hand side of 'instanceof' is not callable")) (return (call $v_false))))
+  ;; bound function: instanceof follows [[BoundTargetFunction]] → x instanceof target
+  (if (i32.eq (i32.load (call $val_payload (local.get $f))) (i32.const 1448232540))
+    (then (return (call $vm_instanceof (local.get $x) (i64.load (i32.add (call $val_payload (local.get $f)) (i32.const 24)))))))
   (if (i32.or (call $is_array (local.get $x)) (call $is_function (local.get $x))) (then (return (call $js_instanceof (local.get $x) (local.get $f)))))  ;; arrays/functions → general path
   (if (i32.eqz (call $is_object (local.get $x))) (then (return (call $v_false))))
   (let $fp i32 (call $val_payload (local.get $f)))

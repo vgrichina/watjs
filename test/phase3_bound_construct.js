@@ -19,3 +19,7 @@ p("return-obj", ob.z);    // 5
 var AB = Array.bind(null);
 var arr = new AB(1,2,3);
 p("native-array", arr.length); // 3
+// instanceof a bound function follows the target
+p("inst-bound", o instanceof BF);          // true
+p("plain-inst-bound", (new Foo()) instanceof BF); // true
+p("non-inst-bound", ({}) instanceof BF);   // false
