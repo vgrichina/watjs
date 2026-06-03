@@ -1,0 +1,6 @@
+indices=[99,2,3,null,7] len=5
+resize=[99,2]
+range-neg=true
+range-undef=true
+named=5
+single-length=3

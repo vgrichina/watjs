@@ -648,6 +648,29 @@
   (call $scope_define (local.get $r) (cstring "configurable") (call $mk_bool (call $entry_configurable (local.get $slot))))
   (call $mk_obj (local.get $r)))
 
+;; define ONE property on an array (used by Object.defineProperty + defineProperties).
+;; canonical index → element write; "length" {value} → resize (RangeError on invalid);
+;; other named → @12 scope via apply_descriptor. RangeError surfaces via the err flag.
+(func $array_define_one (param $arrv i64) (param $ky i64) (param $de i64) (effects)
+  (let $dpk i32 (call $to_str (local.get $ky)))
+  (let $dpa i32 (call $val_payload (local.get $arrv)))
+  (let $dpidx i32 (call $str_array_index (local.get $dpk)))
+  (if (i32.ge_s (local.get $dpidx) (i32.const 0))
+    (then
+      (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
+        (then (call $arr_set (local.get $dpa) (local.get $dpidx) (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
+        (else (call $arr_set (local.get $dpa) (local.get $dpidx) (call $v_undef)))))
+    (else (if (call $str_eq (local.get $dpk) (cstring "length"))
+      (then
+        (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
+          (then
+            (let $dlnv f64 (call $to_num (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
+            (let $dln i32 (call $to_int_idx (local.get $dlnv)))
+            (if (i32.or (f64.ne (local.get $dlnv) (f64.convert_i32_s (local.get $dln))) (f64.lt (local.get $dlnv) (f64.const 0)))
+              (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return)))
+            (call $arr_set_length (local.get $dpa) (local.get $dln)))))
+      (else (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de)))))))
+
 ;; ToObject(v): objects/arrays/functions pass through; primitives → boxed wrapper.
 ;; null/undefined are the caller's responsibility (they must pre-check); here they
 ;; degrade to a fresh empty object rather than trapping.
@@ -2547,25 +2570,7 @@
       ;; descriptors at indices aren't supported by the dense store — left as-is);
       ;; named props go to the @12 scope via apply_descriptor.
       (if (call $is_array (local.get $ob))
-        (then
-          (let $dpk i32 (call $to_str (local.get $ky)))
-          (let $dpa i32 (call $val_payload (local.get $ob)))
-          (let $dpidx i32 (call $str_array_index (local.get $dpk)))
-          (if (i32.ge_s (local.get $dpidx) (i32.const 0))
-            (then
-              (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
-                (then (call $arr_set (local.get $dpa) (local.get $dpidx) (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
-                (else (call $arr_set (local.get $dpa) (local.get $dpidx) (call $v_undef)))))
-            (else (if (call $str_eq (local.get $dpk) (cstring "length"))  ;; defineProperty(arr,"length",{value:n}) → resize
-              (then
-                (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
-                  (then
-                    (let $dlnv f64 (call $to_num (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
-                    (let $dln i32 (call $to_int_idx (local.get $dlnv)))
-                    (if (i32.or (f64.ne (local.get $dlnv) (f64.convert_i32_s (local.get $dln))) (f64.lt (local.get $dlnv) (f64.const 0)))
-                      (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
-                    (call $arr_set_length (local.get $dpa) (local.get $dln)))))
-              (else (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de))))))))
+        (then (call $array_define_one (local.get $ob) (local.get $ky) (local.get $de))))
       (return (local.get $ob))))
   ;; Object.defineProperties(obj, descs)
   (if (i32.eq (local.get $id) (i32.const 248))  ;; Object.getOwnPropertySymbols(o)
@@ -2615,6 +2620,26 @@
                 (call $apply_descriptor (local.get $os) (i32.load (local.get $ent)) (local.get $dv))))))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $dpl)))))
+      ;; array target: route each (key, descriptor) through array_define_one
+      (if (i32.and (call $is_array (local.get $ob)) (call $is_object (local.get $de)))
+        (then
+          (let $aps i32 (call $val_payload (local.get $de)))
+          (let $acnt i32 (call $scope_count (local.get $aps)))
+          (let $ai i32 (i32.const 0))
+          (block $ade (loop $adl
+            (br_if $ade (i32.ge_s (local.get $ai) (local.get $acnt)))
+            (let $aent i32 (call $scope_entry (local.get $aps) (local.get $ai)))
+            (if (call $entry_enumerable (i32.add (local.get $aent) (i32.const 8)))
+              (then (if (i32.eqz (call $is_internal_key (i32.load (local.get $aent))))
+                (then
+                  (let $adv i64 (call $get_prop (local.get $de) (call $mk_str (i32.load (local.get $aent)))))
+                  (if (call $err) (then (return (call $v_undef))))
+                  (if (i32.eqz (i32.or (call $is_object (local.get $adv)) (i32.or (call $is_function (local.get $adv)) (call $is_array (local.get $adv)))))
+                    (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
+                  (call $array_define_one (local.get $ob) (call $mk_str (i32.load (local.get $aent))) (local.get $adv))
+                  (if (call $err) (then (return (call $v_undef))))))))
+            (set! $ai (i32.add (local.get $ai) (i32.const 1)))
+            (br $adl)))))
       (return (local.get $ob))))
   ;; Object.getOwnPropertyDescriptors(obj)
   (if (i32.eq (local.get $id) (i32.const 161))
