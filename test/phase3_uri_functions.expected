@@ -1,0 +1,9 @@
+euc=a%20b%26c%3Dd%2Fe
+eu=a%20b/c?d=e
+duc=a b&c
+du=a b%2Fc
+roundtrip=héllo +!
+unreserved=-_.!~*'()
+len=1,1
+type=function,function
+malformed=true

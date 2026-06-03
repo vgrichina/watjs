@@ -676,6 +676,75 @@
             (call $arr_set_length (local.get $dpa) (local.get $dln)))))
       (else (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de)))))))
 
+;; URI unreserved: A-Za-z 0-9 - _ . ! ~ * ' ( )
+(func $uri_unreserved (param $c i32) (result i32) (effects)
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 90))) (then (return (i32.const 1))))   ;; A-Z
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 122))) (then (return (i32.const 1))))  ;; a-z
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))) (then (return (i32.const 1))))   ;; 0-9
+  ;; - _ . ! ~ = 45 95 46 33 126
+  (if (i32.or (i32.eq (local.get $c) (i32.const 45)) (i32.or (i32.eq (local.get $c) (i32.const 95)) (i32.or (i32.eq (local.get $c) (i32.const 46)) (i32.or (i32.eq (local.get $c) (i32.const 33)) (i32.eq (local.get $c) (i32.const 126)))))) (then (return (i32.const 1))))
+  ;; * ' ( ) = 42 39 40 41
+  (if (i32.or (i32.eq (local.get $c) (i32.const 42)) (i32.or (i32.eq (local.get $c) (i32.const 39)) (i32.or (i32.eq (local.get $c) (i32.const 40)) (i32.eq (local.get $c) (i32.const 41))))) (then (return (i32.const 1))))
+  (i32.const 0))
+;; URI reserved (kept literal by encodeURI, kept %-encoded by decodeURI): ; , / ? : @ & = + $ #
+(func $uri_reserved (param $c i32) (result i32) (effects)
+  ;; ; , / ? : @ = 59 44 47 63 58 64
+  (if (i32.or (i32.eq (local.get $c) (i32.const 59)) (i32.or (i32.eq (local.get $c) (i32.const 44)) (i32.or (i32.eq (local.get $c) (i32.const 47)) (i32.or (i32.eq (local.get $c) (i32.const 63)) (i32.or (i32.eq (local.get $c) (i32.const 58)) (i32.eq (local.get $c) (i32.const 64))))))) (then (return (i32.const 1))))
+  ;; & = + $ # = 38 61 43 36 35
+  (if (i32.or (i32.eq (local.get $c) (i32.const 38)) (i32.or (i32.eq (local.get $c) (i32.const 61)) (i32.or (i32.eq (local.get $c) (i32.const 43)) (i32.or (i32.eq (local.get $c) (i32.const 36)) (i32.eq (local.get $c) (i32.const 35)))))) (then (return (i32.const 1))))
+  (i32.const 0))
+(func $hexdig (param $n i32) (result i32) (effects)
+  (if i32 (i32.lt_s (local.get $n) (i32.const 10)) (then (i32.add (local.get $n) (i32.const 48))) (else (i32.add (local.get $n) (i32.const 55)))))  ;; 0-9 / A-F
+;; encode: copy unreserved (+ reserved when $full); others → %XX (uppercase) per byte
+(func $uri_encode (param $s i32) (param $full i32) (result i32) (effects)
+  (let $n i32 (call $str_len (local.get $s)))
+  (let $out i32 (call $str_alloc (i32.mul (local.get $n) (i32.const 3))))
+  (let $o i32 (i32.const 0)) (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
+    (if (i32.or (call $uri_unreserved (local.get $c)) (i32.and (local.get $full) (call $uri_reserved (local.get $c))))
+      (then (call $str_set_byte (local.get $out) (local.get $o) (local.get $c)) (set! $o (i32.add (local.get $o) (i32.const 1))))
+      (else
+        (call $str_set_byte (local.get $out) (local.get $o) (i32.const 37))  ;; '%'
+        (call $str_set_byte (local.get $out) (i32.add (local.get $o) (i32.const 1)) (call $hexdig (i32.shr_u (local.get $c) (i32.const 4))))
+        (call $str_set_byte (local.get $out) (i32.add (local.get $o) (i32.const 2)) (call $hexdig (i32.and (local.get $c) (i32.const 15))))
+        (set! $o (i32.add (local.get $o) (i32.const 3)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i32.store (local.get $out) (local.get $o))
+  (local.get $out))
+;; decode: %XX → byte; if $keepres and the byte is reserved, keep the literal %XX. Malformed % → URIError.
+(func $uri_decode (param $s i32) (param $keepres i32) (result i32) (effects)
+  (let $n i32 (call $str_len (local.get $s)))
+  (let $out i32 (call $str_alloc (local.get $n)))
+  (let $o i32 (i32.const 0)) (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
+    (if (i32.eq (local.get $c) (i32.const 37))  ;; '%'
+      (then
+        (if (i32.gt_s (i32.add (local.get $i) (i32.const 2)) (i32.sub (local.get $n) (i32.const 1)))
+          (then (call $throw_type (cstring "URIError") (cstring "URI malformed")) (return (local.get $out))))
+        (let $h1 i32 (call $hexval (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1)))))
+        (let $h2 i32 (call $hexval (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2)))))
+        (if (i32.or (i32.lt_s (local.get $h1) (i32.const 0)) (i32.lt_s (local.get $h2) (i32.const 0)))
+          (then (call $throw_type (cstring "URIError") (cstring "URI malformed")) (return (local.get $out))))
+        (let $b i32 (i32.add (i32.mul (local.get $h1) (i32.const 16)) (local.get $h2)))
+        (if (i32.and (local.get $keepres) (call $uri_reserved (local.get $b)))
+          (then  ;; keep literal "%XX"
+            (call $str_set_byte (local.get $out) (local.get $o) (i32.const 37))
+            (call $str_set_byte (local.get $out) (i32.add (local.get $o) (i32.const 1)) (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))))
+            (call $str_set_byte (local.get $out) (i32.add (local.get $o) (i32.const 2)) (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2))))
+            (set! $o (i32.add (local.get $o) (i32.const 3))))
+          (else (call $str_set_byte (local.get $out) (local.get $o) (local.get $b)) (set! $o (i32.add (local.get $o) (i32.const 1)))))
+        (set! $i (i32.add (local.get $i) (i32.const 3))))
+      (else
+        (call $str_set_byte (local.get $out) (local.get $o) (local.get $c)) (set! $o (i32.add (local.get $o) (i32.const 1)))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))))
+    (br $l)))
+  (i32.store (local.get $out) (local.get $o))
+  (local.get $out))
+
 ;; [[GetPrototypeOf]]: array → Array.prototype; function → Function.prototype
 ;; (Function.prototype itself → Object.prototype); object → its scope parent (or null).
 (func $js_get_prototype (param $ov i64) (result i64) (effects)
@@ -811,6 +880,14 @@
       (let $tls i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "toString"))))
       (if (call $is_function (local.get $tls)) (then (return (call $call_fn0 (local.get $tls) (local.get $thisv)))))
       (return (call $mk_str (call $to_str (local.get $thisv))))))
+  ;; encodeURIComponent(306)/decodeURIComponent(307)/encodeURI(308)/decodeURI(309)
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 306)) (i32.le_s (local.get $id) (i32.const 309)))
+    (then
+      (let $uris i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (i32.eq (local.get $id) (i32.const 306)) (then (return (call $mk_str (call $uri_encode (local.get $uris) (i32.const 0))))))
+      (if (i32.eq (local.get $id) (i32.const 308)) (then (return (call $mk_str (call $uri_encode (local.get $uris) (i32.const 1))))))
+      (if (i32.eq (local.get $id) (i32.const 307)) (then (return (call $mk_str (call $uri_decode (local.get $uris) (i32.const 0))))))
+      (return (call $mk_str (call $uri_decode (local.get $uris) (i32.const 1))))))  ;; 309 decodeURI (keep reserved encoded)
   ;; Object.prototype.__proto__ getter (303) — returns this's [[Prototype]]
   (if (i32.eq (local.get $id) (i32.const 303))
     (then (return (call $js_get_prototype (local.get $thisv)))))
@@ -3621,6 +3698,8 @@
   ;; Date.now(179), Symbol.toString(199), Number/Boolean valueOf(220), Boolean.toString(221)
   (if (i32.or (i32.eq (local.get $id) (i32.const 18)) (i32.or (i32.eq (local.get $id) (i32.const 155)) (i32.or (i32.eq (local.get $id) (i32.const 179)) (i32.or (i32.eq (local.get $id) (i32.const 199)) (i32.or (i32.eq (local.get $id) (i32.const 220)) (i32.eq (local.get $id) (i32.const 221)))))))
     (then (return (i32.const 0))))
+  ;; encodeURIComponent/decodeURIComponent/encodeURI/decodeURI = length 1
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 306)) (i32.le_s (local.get $id) (i32.const 309))) (then (return (i32.const 1))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
@@ -3990,6 +4069,10 @@
   (drop (call $def_native (local.get $g) (cstring "isNaN") (i32.const 7)))
   (drop (call $def_native (local.get $g) (cstring "isFinite") (i32.const 8)))
   (drop (call $def_native (local.get $g) (cstring "parseInt") (i32.const 50)))
+  (drop (call $def_native (local.get $g) (cstring "encodeURIComponent") (i32.const 306)))
+  (drop (call $def_native (local.get $g) (cstring "decodeURIComponent") (i32.const 307)))
+  (drop (call $def_native (local.get $g) (cstring "encodeURI") (i32.const 308)))
+  (drop (call $def_native (local.get $g) (cstring "decodeURI") (i32.const 309)))
   (drop (call $def_native (local.get $g) (cstring "parseFloat") (i32.const 51)))
   (let $ref i64 (call $def_native (local.get $g) (cstring "RegExp") (i32.const 100)))
   ;; RegExp.prototype with accessor getters (source/flags/global/…) — reg 324 holds
