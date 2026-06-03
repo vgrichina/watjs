@@ -200,20 +200,56 @@
   (local.get $p))
 
 ;; trim ASCII whitespace from both ends
+;; byte-length (1/2/3) of a JS WhiteSpace/LineTerminator char starting at byte $i,
+;; else 0. Covers ASCII (\t\n\v\f\r space) + UTF-8 NBSP(C2A0),  ,  -200A,
+;;  /9,  ,  , 　, BOM ﻿.
+(func $ws_fwd_len (param $s i32) (param $i i32) (result i32) (effects)
+  (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
+  (if (i32.or (i32.and (i32.ge_s (local.get $c) (i32.const 9)) (i32.le_s (local.get $c) (i32.const 13))) (i32.eq (local.get $c) (i32.const 32))) (then (return (i32.const 1))))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 194)) (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))) (i32.const 160))) (then (return (i32.const 2))))  ;; C2 A0
+  (if (i32.eq (local.get $c) (i32.const 225))  ;; E1 9A 80 = U+1680
+    (then (if (i32.and (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))) (i32.const 154)) (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2))) (i32.const 128))) (then (return (i32.const 3))))))
+  (if (i32.eq (local.get $c) (i32.const 226))  ;; E2 8x xx
+    (then
+      (let $b1 i32 (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))))
+      (let $b2 i32 (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2))))
+      (if (i32.eq (local.get $b1) (i32.const 128))  ;; E2 80 xx
+        (then (if (i32.or (i32.and (i32.ge_s (local.get $b2) (i32.const 128)) (i32.le_s (local.get $b2) (i32.const 138))) (i32.or (i32.eq (local.get $b2) (i32.const 168)) (i32.or (i32.eq (local.get $b2) (i32.const 169)) (i32.eq (local.get $b2) (i32.const 175))))) (then (return (i32.const 3))))))  ;; 2000-200A, 2028, 2029, 202F
+      (if (i32.and (i32.eq (local.get $b1) (i32.const 129)) (i32.eq (local.get $b2) (i32.const 159))) (then (return (i32.const 3))))))  ;; E2 81 9F = U+205F
+  (if (i32.eq (local.get $c) (i32.const 227))  ;; E3 80 80 = U+3000
+    (then (if (i32.and (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))) (i32.const 128)) (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2))) (i32.const 128))) (then (return (i32.const 3))))))
+  (if (i32.eq (local.get $c) (i32.const 239))  ;; EF BB BF = U+FEFF (BOM)
+    (then (if (i32.and (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))) (i32.const 187)) (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2))) (i32.const 191))) (then (return (i32.const 3))))))
+  (i32.const 0))
+;; byte-length of a whitespace char ENDING at byte $b (i.e. just before $b), else 0.
+(func $ws_bwd_len (param $s i32) (param $b i32) (result i32) (effects)
+  (if (i32.le_s (local.get $b) (i32.const 0)) (then (return (i32.const 0))))
+  (let $last i32 (call $str_byte (local.get $s) (i32.sub (local.get $b) (i32.const 1))))
+  (if (i32.lt_s (local.get $last) (i32.const 128)) (then (return (call $ws_fwd_len (local.get $s) (i32.sub (local.get $b) (i32.const 1))))))  ;; ASCII
+  ;; multibyte: walk back over continuation bytes (0x80-0xBF) to the lead byte
+  (let $st i32 (i32.sub (local.get $b) (i32.const 1)))
+  (block $we (loop $wl
+    (br_if $we (i32.le_s (local.get $st) (i32.const 0)))
+    (br_if $we (i32.ge_s (call $str_byte (local.get $s) (local.get $st)) (i32.const 192)))  ;; found lead byte (>=0xC0) → stop
+    (set! $st (i32.sub (local.get $st) (i32.const 1)))  ;; continuation byte → keep walking back
+    (br $wl)))
+  (let $w i32 (call $ws_fwd_len (local.get $s) (local.get $st)))
+  (if (i32.eq (i32.add (local.get $st) (local.get $w)) (local.get $b)) (then (return (local.get $w))))
+  (i32.const 0))
 (func $str_trim (param $s i32) (result i32) (effects)
   (let $n i32 (call $str_len (local.get $s)))
   (let $a i32 (i32.const 0))
   (let $b i32 (local.get $n))
   (block $l1 (loop $c1
     (br_if $l1 (i32.ge_s (local.get $a) (local.get $b)))
-    (let $c i32 (call $str_byte (local.get $s) (local.get $a)))
-    (br_if $l1 (i32.eqz (i32.or (i32.eq (local.get $c) (i32.const 32)) (i32.or (i32.eq (local.get $c) (i32.const 9)) (i32.or (i32.eq (local.get $c) (i32.const 10)) (i32.eq (local.get $c) (i32.const 13)))))))
-    (set! $a (i32.add (local.get $a) (i32.const 1))) (br $c1)))
+    (let $w i32 (call $ws_fwd_len (local.get $s) (local.get $a)))
+    (br_if $l1 (i32.eqz (local.get $w)))
+    (set! $a (i32.add (local.get $a) (local.get $w))) (br $c1)))
   (block $l2 (loop $c2
     (br_if $l2 (i32.le_s (local.get $b) (local.get $a)))
-    (let $c i32 (call $str_byte (local.get $s) (i32.sub (local.get $b) (i32.const 1))))
-    (br_if $l2 (i32.eqz (i32.or (i32.eq (local.get $c) (i32.const 32)) (i32.or (i32.eq (local.get $c) (i32.const 9)) (i32.or (i32.eq (local.get $c) (i32.const 10)) (i32.eq (local.get $c) (i32.const 13)))))))
-    (set! $b (i32.sub (local.get $b) (i32.const 1))) (br $c2)))
+    (let $w2 i32 (call $ws_bwd_len (local.get $s) (local.get $b)))
+    (br_if $l2 (i32.eqz (local.get $w2)))
+    (set! $b (i32.sub (local.get $b) (local.get $w2))) (br $c2)))
   (call $substr (local.get $s) (local.get $a) (i32.sub (local.get $b) (local.get $a))))
 
 ;; split string `s` on separator `sep` -> array of substrings.

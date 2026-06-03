@@ -1330,17 +1330,17 @@
           (let $tst i32 (i32.const 0))
           (block $tse (loop $tsl
             (br_if $tse (i32.ge_s (local.get $tst) (local.get $ttn)))
-            (let $tc i32 (call $str_byte (local.get $tts) (local.get $tst)))
-            (br_if $tse (i32.eqz (i32.or (i32.eq (local.get $tc) (i32.const 32)) (i32.or (i32.eq (local.get $tc) (i32.const 9)) (i32.or (i32.eq (local.get $tc) (i32.const 10)) (i32.eq (local.get $tc) (i32.const 13)))))))
-            (set! $tst (i32.add (local.get $tst) (i32.const 1)))
+            (let $tw i32 (call $ws_fwd_len (local.get $tts) (local.get $tst)))
+            (br_if $tse (i32.eqz (local.get $tw)))
+            (set! $tst (i32.add (local.get $tst) (local.get $tw)))
             (br $tsl)))
           (return (call $mk_str (call $substr (local.get $tts) (local.get $tst) (i32.sub (local.get $ttn) (local.get $tst)))))))
       (let $ten i32 (local.get $ttn))  ;; trimEnd
       (block $tee (loop $tel
         (br_if $tee (i32.le_s (local.get $ten) (i32.const 0)))
-        (let $tc2 i32 (call $str_byte (local.get $tts) (i32.sub (local.get $ten) (i32.const 1))))
-        (br_if $tee (i32.eqz (i32.or (i32.eq (local.get $tc2) (i32.const 32)) (i32.or (i32.eq (local.get $tc2) (i32.const 9)) (i32.or (i32.eq (local.get $tc2) (i32.const 10)) (i32.eq (local.get $tc2) (i32.const 13)))))))
-        (set! $ten (i32.sub (local.get $ten) (i32.const 1)))
+        (let $tw2 i32 (call $ws_bwd_len (local.get $tts) (local.get $ten)))
+        (br_if $tee (i32.eqz (local.get $tw2)))
+        (set! $ten (i32.sub (local.get $ten) (local.get $tw2)))
         (br $tel)))
       (return (call $mk_str (call $substr (local.get $tts) (i32.const 0) (local.get $ten))))))
   (if (i32.eq (local.get $id) (i32.const 115))  ;; Object.fromEntries(iterable)
