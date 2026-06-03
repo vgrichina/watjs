@@ -1,0 +1,9 @@
+new-num=TypeError
+new-str=TypeError
+new-true=TypeError
+new-null=TypeError
+new-obj=TypeError
+new-wrapper=TypeError
+new-math=TypeError
+valid=1
+valid-new-num-ctor=5

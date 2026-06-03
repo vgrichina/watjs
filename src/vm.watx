@@ -547,9 +547,19 @@
               (call $next_token)  ;; '('
               (call $vm_c_expr (local.get $code))  ;; callee value on stack
               (call $next_token))  ;; ')'
-            (else
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; LOADVAR ctor
-              (call $next_token)))
+            (else (if (i32.and (i32.eq (call $tok_kind) (i32.const 3))  ;; plain identifier callee (not a keyword-literal)
+                        (i32.eqz (i32.or (call $tok_is_kw (cstring "new"))
+                                 (i32.or (call $tok_is_kw (cstring "true"))
+                                 (i32.or (call $tok_is_kw (cstring "false"))
+                                 (i32.or (call $tok_is_kw (cstring "null"))
+                                 (i32.or (call $tok_is_kw (cstring "this"))
+                                 (i32.or (call $tok_is_kw (cstring "function")) (call $tok_is_kw (cstring "class"))))))))))
+              (then
+                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; LOADVAR ctor
+                (call $next_token))
+              ;; literal / nested-new / true/false/null / fn-expr / other primary → parse it
+              ;; (the NEW op's is-function guard then throws TypeError for `new 1`, `new {}`, …)
+              (else (call $vm_c_primary (local.get $code))))))
           (block $nme (loop $nml  ;; member path on the constructor (no call)
             (br_if $nme (i32.ne (call $tok_kind) (i32.const 23)))  ;; '.'
             (call $next_token)
@@ -3139,6 +3149,9 @@
         (let $argc i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))
+        ;; the callee must be a function; `new 1` / `new {}` / `new "s"` → TypeError
+        (if (i32.eqz (call $is_function (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
+          (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (set! $sp (local.get $cbase)) (br $disp)))
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
         ;; bound function: [[Construct]] the target with bound args prepended
         (if (i32.eq (i32.load (local.get $cfn)) (i32.const 1448232540))
