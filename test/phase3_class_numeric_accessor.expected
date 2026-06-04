@@ -1,0 +1,8 @@
+hex=hex
+exp=exp
+dec=50
+hex-name=get 16
+str-get=s
+str-name=get str
+on-proto=true
+non-enum=true
