@@ -2021,8 +2021,12 @@
   ;; per-instance field initializers: a flat array [name1, thunk1, ...] stored on the
   ;; proto as @@fieldinits and replayed by NEW/NEWSPREAD onto each instance.
   (let $fieldsT i32 (call $vm_tmpname))
-  (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+  (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0 (instance fields)
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fieldsT))
+  (let $staticT i32 (call $vm_tmpname))
+  (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0 (static fields)
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $staticT))
+  (let $hasstatic i32 (i32.const 0))  ;; any static FIELD seen? (only then emit APPLYSTATIC, so SETPROTO stays the last op for name inference)
   (if (local.get $superT)
     (then
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
@@ -2056,12 +2060,19 @@
             (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync))
             (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; → [proto, key, fn]
             (call $vm_emit_op (local.get $code) (i32.const 87)))  ;; DEFMETH_KEY (pops all three)
-          (else
-            (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = field initializer (enumerable data)
-              (then (call $next_token) (call $vm_c_expr (local.get $code)))
+          (else  ;; computed field [k] = v (stack: [proto, key]) → append [key, thunk] to static/instance array
+            (let $ck i32 (call $vm_tmpname))
+            (if (local.get $isstatic) (then (set! $hasstatic (i32.const 1))))
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; STOREVAR key → [proto]
+            (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP proto → []
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (if i32 (local.get $isstatic) (then (local.get $staticT)) (else (local.get $fieldsT))))  ;; LOADVAR target array
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; LOADVAR key
+            (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND key
+            (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = initializer
+              (then (call $next_token) (call $vm_emit_field_thunk (local.get $code)))
               (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))
-            (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [val]
-            (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP
+            (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk/undef
+            (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP array
         (drop (call $eat (i32.const 21)))
         (br $cml)))
     ;; getter/setter:  get NAME(){}  |  set NAME(arg){}
@@ -2091,25 +2102,17 @@
     (let $mn i32 (if i32 (i32.eq (call $tok_kind) (i32.const 2)) (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)))
       (else (if i32 (i32.eq (call $tok_kind) (i32.const 1)) (then (call $num_to_str (call $tok_num))) (else (call $ident_name))))))
     (call $next_token)
-    (if (i32.ne (call $tok_kind) (i32.const 15))  ;; not '(' → class field
+    (if (i32.ne (call $tok_kind) (i32.const 15))  ;; not '(' → class field → append [name, thunk] to the static or instance array
       (then
-        (if (local.get $isstatic)
-          (then  ;; static field: set on the constructor's prototype (own static via the VM-fn @16 lookup) — kept as-is
-            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
-            (if (i32.eq (call $tok_kind) (i32.const 24))
-              (then (call $next_token) (call $vm_c_expr (local.get $code)))
-              (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))
-            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; SETPROP
-            (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP
-          (else  ;; per-instance field: append [name, initThunk-or-undefined] to the field-inits array
-            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $fieldsT))  ;; LOADVAR fieldsT
-            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $mn)))  ;; PUSH name
-            (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND name → [fieldsT]
-            (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = initializer
-              (then (call $next_token) (call $vm_emit_field_thunk (local.get $code)))  ;; → [fieldsT, thunk]
-              (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))  ;; no init → undefined sentinel
-            (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk/undef → [fieldsT]
-            (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP fieldsT
+        (if (local.get $isstatic) (then (set! $hasstatic (i32.const 1))))
+        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (if i32 (local.get $isstatic) (then (local.get $staticT)) (else (local.get $fieldsT))))  ;; LOADVAR target array
+        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $mn)))  ;; PUSH name
+        (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND name
+        (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = initializer
+          (then (call $next_token) (call $vm_emit_field_thunk (local.get $code)))
+          (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))  ;; no init → undefined sentinel
+        (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk/undef
+        (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP array
         (drop (call $eat (i32.const 21))))  ;; optional ';'
       (else (if (call $str_eq (local.get $mn) (cstring "constructor"))
         (then
@@ -2140,6 +2143,11 @@
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ctorT))   ;; LOADVAR ctor
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
   (call $vm_emit_op (local.get $code) (i32.const 51))  ;; SETPROTO → [ctor]
+  ;; run static field initializers on the constructor (this=ctor) — only when present, so SETPROTO stays the terminal op for class-expression name inference
+  (if (local.get $hasstatic)
+    (then
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $staticT))
+      (call $vm_emit_op (local.get $code) (i32.const 88))))
   ;; a binding-name class (class Foo {} / class Named {}) names its constructor
   (if (local.get $clsname)
     (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $clsname))))
@@ -2992,14 +3000,10 @@
     (else (call $to_str (local.get $keyval)))))
   (i32.store (local.get $noff) (if i32 (local.get $prefix) (then (call $str_concat (local.get $prefix) (local.get $kn))) (else (local.get $kn)))))
 
-;; replay a class's per-instance field initializers onto a fresh instance: read the
-;; prototype's @@fieldinits flat array [name, thunk-or-undefined, ...]; for each, the
-;; value is thunk.call(thisobj) (or the undefined sentinel) → set as an own prop.
-(func $vm_run_field_inits (param $thisobj i64) (param $protoval i64) (effects)
-  (if (i32.eqz (call $is_object (local.get $protoval))) (then (return)))
-  (let $fislot i32 (call $scope_find_local (call $val_payload (local.get $protoval)) (cstring "@@fieldinits")))
-  (if (i32.eqz (local.get $fislot)) (then (return)))
-  (let $fiv i64 (i64.load (local.get $fislot)))
+;; apply a flat field-inits array [name, thunk-or-undefined, ...] to a target object:
+;; for each, the value is thunk.call(target) (or the undefined sentinel) → own prop.
+;; Used for per-instance fields (target=instance) and static fields (target=constructor).
+(func $vm_apply_fields (param $thisobj i64) (param $fiv i64) (effects)
   (if (i32.eqz (call $is_array (local.get $fiv))) (then (return)))
   (let $fa i32 (call $val_payload (local.get $fiv)))
   (let $fln i32 (call $arr_len (local.get $fa)))
@@ -3016,6 +3020,11 @@
     (set! $fi (i32.add (local.get $fi) (i32.const 2)))
     (br $fl)))
   )
+;; per-instance fields: read the prototype's @@fieldinits and apply to the instance.
+(func $vm_run_field_inits (param $thisobj i64) (param $protoval i64) (effects)
+  (if (i32.eqz (call $is_object (local.get $protoval))) (then (return)))
+  (let $fislot i32 (call $scope_find_local (call $val_payload (local.get $protoval)) (cstring "@@fieldinits")))
+  (if (local.get $fislot) (then (call $vm_apply_fields (local.get $thisobj) (i64.load (local.get $fislot))))))
 
 ;; run from the context's saved (ip, sp) until the next YIELD or HALT.
 ;; YIELD → returns the yielded value, state saved for the next call (done=0).
@@ -3835,6 +3844,13 @@
         (call $vm_infer_name (local.get $mkfn) (local.get $mkk) (i32.const 0))
         (if (call $is_object (local.get $mkobj))
           (then (call $scope_define_attr (call $val_payload (local.get $mkobj)) (call $to_prop_key (local.get $mkk)) (local.get $mkfn) (i32.const 12))))  ;; W|C, non-enumerable
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 88))  ;; APPLYSTATIC — [ctor, staticArray] → run static field inits on the ctor (this=ctor)
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $asarr i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $asctor i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left in place
+        (call $vm_apply_fields (local.get $asctor) (local.get $asarr))
         (br $disp)))
     (if (i32.or (i32.eq (local.get $op) (i32.const 74)) (i32.eq (local.get $op) (i32.const 75)))  ;; CLOSEITER: 74 break (propagate return's throw) / 75 throw (suppress it)
       (then

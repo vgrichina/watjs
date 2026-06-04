@@ -1,0 +1,9 @@
+static-on-class=10
+instance-field=20
+instance-not-static=undefined
+static-computed=2
+instance-computed=3
+inst-computed-own=true
+static-multi=3
+mix=1x
+method+fields=9,undefined,7
