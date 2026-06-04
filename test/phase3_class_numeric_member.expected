@@ -1,0 +1,8 @@
+hex-method=hex
+exp-method=exp
+dec-method=5
+str-method=s
+hex-name=16
+hex-field=f
+dec-field=50
+str-field=s

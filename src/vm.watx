@@ -2085,7 +2085,10 @@
         (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP proto
         (br $cml)))
     (call $cursor_restore (local.get $gsc))  ;; not an accessor
-    (let $mn i32 (call $ident_name)) (call $next_token)
+    ;; member key: string → decoded; numeric literal → canonical ToString; else identifier
+    (let $mn i32 (if i32 (i32.eq (call $tok_kind) (i32.const 2)) (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)))
+      (else (if i32 (i32.eq (call $tok_kind) (i32.const 1)) (then (call $num_to_str (call $tok_num))) (else (call $ident_name))))))
+    (call $next_token)
     (if (i32.ne (call $tok_kind) (i32.const 15))  ;; not '(' → per-instance class field
       (then
         ;; append [name, initThunk-or-undefined] to the field-inits array
