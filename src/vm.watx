@@ -2038,12 +2038,14 @@
     ;; (async methods/generators unsupported — handling them flips accidental passes).
     (let $isgen i32 (i32.const 0))
     (let $isasync i32 (i32.const 0))
+    (let $isstatic i32 (i32.const 0))
     (if (call $str_eq (call $ident_name) (cstring "static"))  ;; `static` modifier (unless member named "static")
       (then
         (let $stc i32 (call $cursor_save))
         (call $next_token)
         (if (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.eq (call $tok_kind) (i32.const 18))))
-          (then (call $cursor_restore (local.get $stc))))))
+          (then (call $cursor_restore (local.get $stc)))
+          (else (set! $isstatic (i32.const 1))))))  ;; confirmed `static` modifier
     (if (i32.eq (call $tok_kind) (i32.const 12)) (then (set! $isgen (i32.const 1)) (call $next_token)))  ;; `*` generator method
     (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed](){} method  |  [computed] = field
       (then
@@ -2089,17 +2091,25 @@
     (let $mn i32 (if i32 (i32.eq (call $tok_kind) (i32.const 2)) (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)))
       (else (if i32 (i32.eq (call $tok_kind) (i32.const 1)) (then (call $num_to_str (call $tok_num))) (else (call $ident_name))))))
     (call $next_token)
-    (if (i32.ne (call $tok_kind) (i32.const 15))  ;; not '(' → per-instance class field
+    (if (i32.ne (call $tok_kind) (i32.const 15))  ;; not '(' → class field
       (then
-        ;; append [name, initThunk-or-undefined] to the field-inits array
-        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $fieldsT))  ;; LOADVAR fieldsT
-        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $mn)))  ;; PUSH name
-        (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND name → [fieldsT]
-        (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = initializer
-          (then (call $next_token) (call $vm_emit_field_thunk (local.get $code)))  ;; → [fieldsT, thunk]
-          (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))  ;; no init → undefined sentinel
-        (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk/undef → [fieldsT]
-        (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP fieldsT
+        (if (local.get $isstatic)
+          (then  ;; static field: set on the constructor's prototype (own static via the VM-fn @16 lookup) — kept as-is
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
+            (if (i32.eq (call $tok_kind) (i32.const 24))
+              (then (call $next_token) (call $vm_c_expr (local.get $code)))
+              (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))
+            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; SETPROP
+            (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP
+          (else  ;; per-instance field: append [name, initThunk-or-undefined] to the field-inits array
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $fieldsT))  ;; LOADVAR fieldsT
+            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $mn)))  ;; PUSH name
+            (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND name → [fieldsT]
+            (if (i32.eq (call $tok_kind) (i32.const 24))  ;; = initializer
+              (then (call $next_token) (call $vm_emit_field_thunk (local.get $code)))  ;; → [fieldsT, thunk]
+              (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))  ;; no init → undefined sentinel
+            (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk/undef → [fieldsT]
+            (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP fieldsT
         (drop (call $eat (i32.const 21))))  ;; optional ';'
       (else (if (call $str_eq (local.get $mn) (cstring "constructor"))
         (then

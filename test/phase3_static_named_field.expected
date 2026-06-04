@@ -1,0 +1,6 @@
+static-on-class=10
+instance-field=20
+instance-not-on-class=undefined
+static-multi=6
+static+instance=SI
+static-expr=42
