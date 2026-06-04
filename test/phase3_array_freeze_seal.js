@@ -17,3 +17,8 @@ p("sealed-isSealed", Object.isSealed(s));   // true
 var p2=[1]; Object.preventExtensions(p2); p2[0]=8; p2[1]=9;
 p("noext-write", p2[0]);         // 8
 p("noext-noadd", p2[1]);         // undefined
+// push on frozen/sealed/non-extensible throws
+p("push-frozen", (function(){ var x=[1]; Object.freeze(x); try{ x.push(2); return "no"; }catch(e){ return e.constructor.name; } })()); // TypeError
+p("push-sealed", (function(){ var x=[1]; Object.seal(x); try{ x.push(2); return "no"; }catch(e){ return e.constructor.name; } })()); // TypeError
+p("push-empty-frozen-ok", (function(){ var x=[1]; Object.freeze(x); return x.push(); })()); // 1 (no items → no-op)
+p("push-normal", (function(){ var x=[1]; x.push(2); return x.length; })()); // 2

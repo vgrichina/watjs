@@ -11,3 +11,7 @@ sealed-noadd=undefined
 sealed-isSealed=true
 noext-write=8
 noext-noadd=undefined
+push-frozen=TypeError
+push-sealed=TypeError
+push-empty-frozen-ok=1
+push-normal=2

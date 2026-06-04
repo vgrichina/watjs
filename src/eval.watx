@@ -3313,6 +3313,13 @@
           (return (call $num (f64.convert_i32_s (i32.add (local.get $n) (local.get $argc)))))))
       (if (i32.eq (local.get $id) (i32.const 20))  ;; push(...args)
         (then
+          ;; frozen / non-extensible array: pushing adds an index → TypeError (only if there are items)
+          (if (i32.gt_s (local.get $argc) (i32.const 0))
+            (then
+              (let $pp12 i32 (i32.load (i32.add (local.get $arr) (i32.const 12))))
+              (if (local.get $pp12)
+                (then (if (i32.or (call $scope_find_local (local.get $pp12) (cstring "@@frozen")) (call $scope_find_local (local.get $pp12) (cstring "@@noext")))
+                  (then (call $throw_type (cstring "TypeError") (cstring "Cannot add property, object is not extensible")) (return (call $v_undef))))))))
           (let $k i32 (i32.const 0))
           (block $pe (loop $pl
             (br_if $pe (i32.ge_s (local.get $k) (local.get $argc)))
