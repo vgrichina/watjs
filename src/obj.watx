@@ -688,6 +688,11 @@
   (if (call $is_array (local.get $cont))
     (then
       (let $a i32 (call $val_payload (local.get $cont)))
+      ;; frozen / non-extensible enforcement (markers parked in the @12 named-prop scope)
+      (let $ap12 i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
+      (let $afroz i32 (if i32 (local.get $ap12) (then (i32.ne (call $scope_find_local (local.get $ap12) (cstring "@@frozen")) (i32.const 0))) (else (i32.const 0))))
+      (let $anoext i32 (if i32 (local.get $ap12) (then (i32.ne (call $scope_find_local (local.get $ap12) (cstring "@@noext")) (i32.const 0))) (else (i32.const 0))))
+      (if (local.get $afroz) (then (call $set_fail) (return)))  ;; frozen → refuse all writes
       (if (call $is_number (local.get $key))
         (then
           ;; finite integer in i32 range → element; else (NaN/>=2^31/fractional)
@@ -697,11 +702,17 @@
                 (i32.and (f64.ge (local.get $aset) (f64.const 0))
                   (i32.and (f64.lt (local.get $aset) (f64.const 2147483648))
                            (f64.eq (local.get $aset) (f64.floor (local.get $aset))))))
-            (then (call $arr_set (local.get $a) (i32.trunc_f64_s (local.get $aset)) (local.get $val)) (return)))))
+            (then
+              ;; non-extensible: refuse a write that would ADD a new index (>= length)
+              (if (i32.and (local.get $anoext) (i32.ge_s (i32.trunc_f64_s (local.get $aset)) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
+              (call $arr_set (local.get $a) (i32.trunc_f64_s (local.get $aset)) (local.get $val)) (return)))))
       (let $askey i32 (call $to_prop_key (local.get $key)))
       ;; a string key that's a canonical index (a["3"]=…) writes an element
       (let $ssidx i32 (call $str_array_index (local.get $askey)))
-      (if (i32.ge_s (local.get $ssidx) (i32.const 0)) (then (call $arr_set (local.get $a) (local.get $ssidx) (local.get $val)) (return)))
+      (if (i32.ge_s (local.get $ssidx) (i32.const 0))
+        (then
+          (if (i32.and (local.get $anoext) (i32.ge_s (local.get $ssidx) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
+          (call $arr_set (local.get $a) (local.get $ssidx) (local.get $val)) (return)))
       ;; `length` assignment resizes the array (truncate / extend with holes);
       ;; a non-integer / negative / out-of-i32-range value → RangeError.
       (if (call $str_eq (local.get $askey) (cstring "length"))
@@ -710,9 +721,14 @@
           (let $ln i32 (call $to_int_idx (local.get $lnv)))
           (if (i32.or (f64.ne (local.get $lnv) (f64.convert_i32_s (local.get $ln))) (f64.lt (local.get $lnv) (f64.const 0)))
             (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return)))
+          ;; non-extensible: a length increase would add (hole) indices → refuse
+          (if (i32.and (local.get $anoext) (i32.gt_s (local.get $ln) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
           (call $arr_set_length (local.get $a) (local.get $ln))
           (return)))
-      ;; named property on an array (a.foo, a[2**32-1], …) → @12 scope.
+      ;; named property on an array (a.foo, a[2**32-1], …) → @12 scope. Non-extensible
+      ;; refuses adding a NOT-already-present named property.
+      (if (i32.and (local.get $anoext) (i32.eqz (i32.ne (call $scope_find_local (call $arr_props (local.get $a)) (local.get $askey)) (i32.const 0))))
+        (then (call $set_fail) (return)))
       (call $scope_define (call $arr_props (local.get $a)) (local.get $askey) (local.get $val))
       (return)))
   (if (call $is_object (local.get $cont))

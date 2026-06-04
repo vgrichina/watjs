@@ -1,0 +1,13 @@
+frozen-elem=1
+frozen-len=3
+frozen-noadd=undefined
+isFrozen=true
+frozen-notExt=false
+fresh-isFrozen=false
+fresh-isExtensible=true
+fresh-isSealed=false
+sealed-write=9
+sealed-noadd=undefined
+sealed-isSealed=true
+noext-write=8
+noext-noadd=undefined
