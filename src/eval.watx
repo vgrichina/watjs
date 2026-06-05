@@ -1799,15 +1799,16 @@
   ;; ── lazy Iterator Helpers: map(343) filter(344) take(345) drop(346) flatMap(347) ──
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 343)) (i32.le_s (local.get $id) (i32.const 347)))
     (then
-      (let $ihsn i64 (call $iter_direct_next (local.get $thisv)))
-      (if (call $err) (then (return (call $v_undef))))
+      ;; `this` must be an object (checked before reading .next, per spec order)
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator method called on a non-object")) (return (call $v_undef))))
       (let $iha0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $ihn f64 (f64.const 0))
       ;; map/filter/flatMap need a callable fn
       (if (i32.or (i32.eq (local.get $id) (i32.const 343)) (i32.or (i32.eq (local.get $id) (i32.const 344)) (i32.eq (local.get $id) (i32.const 347))))
         (then (if (i32.eqz (call $is_function (local.get $iha0)))
           (then (call $throw_type (cstring "TypeError") (cstring "Iterator helper callback is not a function")) (return (call $v_undef))))))
-      ;; take/drop need a non-negative integer count (NaN/neg → RangeError)
+      ;; take/drop need a non-negative integer count (NaN/neg → RangeError) — validated BEFORE GetIteratorDirect
       (if (i32.or (i32.eq (local.get $id) (i32.const 345)) (i32.eq (local.get $id) (i32.const 346)))
         (then
           (let $ihd f64 (call $to_num (local.get $iha0)))
@@ -1818,6 +1819,9 @@
           (if (f64.lt (local.get $ihd) (f64.const 0))
             (then (call $throw_type (cstring "RangeError") (cstring "Iterator take/drop count is negative")) (return (call $v_undef))))
           (set! $ihn (local.get $ihd))))
+      ;; GetIteratorDirect (reads .next) happens last
+      (let $ihsn i64 (call $iter_direct_next (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
       (return (call $iter_helper_new (local.get $thisv) (local.get $ihsn) (i32.sub (local.get $id) (i32.const 343)) (local.get $iha0) (local.get $ihn)))))
   ;; lazy Iterator Helper .next() (id 348) — drives the pull based on @@ikind
   (if (i32.eq (local.get $id) (i32.const 348))
