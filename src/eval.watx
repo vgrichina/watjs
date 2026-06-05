@@ -3134,6 +3134,9 @@
     (then
       (let $s i32 (call $to_str (local.get $thisv)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; includes/startsWith/endsWith reject a RegExp search argument (IsRegExp → TypeError)
+      (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 63)) (i32.le_s (local.get $id) (i32.const 65))) (call $is_regexp (local.get $a0)))
+        (then (call $throw_type (cstring "TypeError") (cstring "First argument to String.prototype.includes/startsWith/endsWith must not be a regular expression")) (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 61)) (then (return (call $mk_str (call $str_trim (local.get $s))))))
       (if (i32.eq (local.get $id) (i32.const 63))  ;; includes(sub[, fromIndex])
         (then

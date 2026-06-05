@@ -703,6 +703,11 @@
   (let $t i64 (call $get_prop (local.get $h) (call $mk_str (local.get $name))))
   (if (i32.or (call $is_undefined (local.get $t)) (call $is_null (local.get $t))) (then (return (call $v_undef))))
   (local.get $t))
+;; IsRegExp-ish: an object carrying the RegExp internal source slot
+(func $is_regexp (param $v i64) (result i32) (effects)
+  (if i32 (call $is_object (local.get $v))
+    (then (i32.ne (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__re_src__")) (i32.const 0)))
+    (else (i32.const 0))))
 ;; 1-element argv buffer (for forwarding a single value to a native)
 (func $argv1 (param $v i64) (result i32) (effects)
   (let $b i32 (call $heap_alloc (i32.const 8)))
