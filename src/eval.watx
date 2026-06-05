@@ -811,6 +811,53 @@
       (if (i32.eq (local.get $tte) (i32.const 8)) (then (return (call $mk_str (cstring "Float64Array")))))
       (if (i32.eq (local.get $tte) (i32.const 9)) (then (return (call $mk_str (cstring "BigInt64Array")))))
       (return (call $mk_str (cstring "BigUint64Array")))))
+  ;; %TypedArray%.from(source[, mapfn]) (398) — this = the per-type constructor
+  (if (i32.eq (local.get $id) (i32.const 398))
+    (then
+      (let $tfelem i32 (call $ta_ctor_elem (local.get $thisv)))
+      (if (i32.lt_s (local.get $tfelem) (i32.const 0)) (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from called on a non-TypedArray constructor")) (return (call $v_undef))))
+      (let $tfsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_null (local.get $tfsrc)) (call $is_undefined (local.get $tfsrc)))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from source is null or undefined")) (return (call $v_undef))))
+      (let $tfmap i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.and (i32.eqz (call $is_undefined (local.get $tfmap))) (i32.eqz (call $is_function (local.get $tfmap))))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from mapfn is not callable")) (return (call $v_undef))))
+      ;; materialize source (iterable → spread, else array-like)
+      (let $tfa i32 (call $arr_new (i32.const 4)))
+      (if (i32.or (call $is_string (local.get $tfsrc)) (i32.or (call $is_array (local.get $tfsrc))
+                  (i32.and (call $is_object (local.get $tfsrc)) (call $is_function (call $get_prop (local.get $tfsrc) (call $mk_str (cstring "@@iterator")))))))
+        (then (call $spread_into (local.get $tfa) (local.get $tfsrc)))
+        (else (set! $tfa (call $alike_arr (local.get $tfsrc)))))
+      (if (call $err) (then (return (call $v_undef))))
+      ;; apply mapfn(value, index)
+      (if (call $is_function (local.get $tfmap))
+        (then
+          (let $tfi i32 (i32.const 0))
+          (let $tfb i32 (call $heap_alloc (i32.const 16)))
+          (block $tfe (loop $tfl
+            (br_if $tfe (i32.ge_s (local.get $tfi) (call $arr_len (local.get $tfa))))
+            (i64.store (local.get $tfb) (call $arr_get (local.get $tfa) (local.get $tfi)))
+            (i64.store (i32.add (local.get $tfb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $tfi))))
+            (call $arr_set (local.get $tfa) (local.get $tfi) (call $call_val (local.get $tfmap) (i32.const 2) (local.get $tfb) (call $v_undef)))
+            (if (call $err) (then (return (call $v_undef))))
+            (set! $tfi (i32.add (local.get $tfi) (i32.const 1))) (br $tfl)))))
+      (let $tfbuf i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $tfbuf) (call $mk_arr (local.get $tfa)))
+      (return (call $ta_make (local.get $tfelem) (i32.const 1) (local.get $tfbuf)))))
+  ;; %TypedArray%.of(...items) (399)
+  (if (i32.eq (local.get $id) (i32.const 399))
+    (then
+      (let $toelem i32 (call $ta_ctor_elem (local.get $thisv)))
+      (if (i32.lt_s (local.get $toelem) (i32.const 0)) (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.of called on a non-TypedArray constructor")) (return (call $v_undef))))
+      (let $toa i32 (call $arr_new (i32.const 4)))
+      (let $toi i32 (i32.const 0))
+      (block $toe (loop $tol
+        (br_if $toe (i32.ge_s (local.get $toi) (local.get $argc)))
+        (call $arr_push (local.get $toa) (call $argn (local.get $argv) (local.get $argc) (local.get $toi)))
+        (set! $toi (i32.add (local.get $toi) (i32.const 1))) (br $tol)))
+      (let $tobuf i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $tobuf) (call $mk_arr (local.get $toa)))
+      (return (call $ta_make (local.get $toelem) (i32.const 1) (local.get $tobuf)))))
   ;; TypedArray.prototype.subarray(begin, end) (397) — a view sharing the same buffer
   (if (i32.eq (local.get $id) (i32.const 397))
     (then
@@ -986,7 +1033,17 @@
   (call $scope_define_attr (local.get $p) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (call $ta_bpe (local.get $elem)))) (i32.const 0))
   (call $scope_clear_enum (local.get $p))
   (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "prototype") (call $mk_obj (local.get $p)) (i32.const 0))
-  (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (call $ta_bpe (local.get $elem)))) (i32.const 0)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (call $ta_bpe (local.get $elem)))) (i32.const 0))
+  (call $set_prop (local.get $ctor) (call $mk_str (cstring "from")) (call $mk_native (i32.const 398) (cstring "from")))
+  (call $set_prop (local.get $ctor) (call $mk_str (cstring "of")) (call $mk_native (i32.const 399) (cstring "of"))))
+
+;; element code for a TypedArray constructor value (native ids 210-218,394,395); -1 if not one
+(func $ta_ctor_elem (param $ctor i64) (result i32) (effects)
+  (if (i32.eqz (call $is_function (local.get $ctor))) (then (return (i32.const -1))))
+  (let $cid i32 (i32.load (call $val_payload (local.get $ctor))))
+  (if i32 (i32.and (i32.ge_s (local.get $cid) (i32.const 210)) (i32.le_s (local.get $cid) (i32.const 218))) (then (i32.sub (local.get $cid) (i32.const 210)))
+    (else (if i32 (i32.eq (local.get $cid) (i32.const 394)) (then (i32.const 9))
+      (else (if i32 (i32.eq (local.get $cid) (i32.const 395)) (then (i32.const 10)) (else (i32.const -1))))))))
 
 (func $ta_make (param $elem i32) (param $argc i32) (param $argv i32) (result i64) (effects)
   (let $bpe i32 (call $ta_bpe (local.get $elem)))
@@ -2726,7 +2783,7 @@
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
     (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 393)))
-              (i32.or (i32.eq (local.get $id) (i32.const 396)) (i32.eq (local.get $id) (i32.const 397))))  ;; DataView/SAB/ArrayBuffer.proto/TA toStringTag/set/subarray
+              (i32.and (i32.ge_s (local.get $id) (i32.const 396)) (i32.le_s (local.get $id) (i32.const 399))))  ;; DataView/SAB/ArrayBuffer.proto/TA toStringTag/set/subarray/from/of
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
@@ -5403,6 +5460,7 @@
   (if (i32.eq (local.get $id) (i32.const 392)) (then (return (i32.const 1))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395))) (then (return (i32.const 3))))  ;; BigInt64Array/BigUint64Array ctor length 3
   (if (i32.or (i32.eq (local.get $id) (i32.const 396)) (i32.eq (local.get $id) (i32.const 397))) (then (return (i32.const 1))))  ;; TA set/subarray length 1
+  (if (i32.or (i32.eq (local.get $id) (i32.const 398)) (i32.eq (local.get $id) (i32.const 399))) (then (return (i32.const 1))))  ;; TA from/of length 1
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
