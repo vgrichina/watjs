@@ -172,6 +172,14 @@
     (then (call $throw_type (cstring "TypeError") (cstring "iterator.next is not a function")) (return (call $v_undef))))
   (local.get $nf))
 
+;; IteratorClose(O): if O has a callable `return`, call it (errors from it surface)
+(func $iter_close (param $o i64) (effects)
+  (if (call $is_object (local.get $o))
+    (then
+      (let $rm i64 (call $get_prop (local.get $o) (call $mk_str (cstring "return"))))
+      (if (i32.and (i32.eqz (call $err)) (call $is_function (local.get $rm)))
+        (then (drop (call $call_val (local.get $rm) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $o))))))))
+
 ;; build a lazy Iterator Helper object (kind: map0 filter1 take2 drop3 flatMap4)
 (func $iter_helper_new (param $src i64) (param $srcnext i64) (param $kind i32) (param $fn i64) (param $n f64) (result i64) (effects)
   (let $h i32 (call $obj_new (i32.const 12)))
@@ -185,6 +193,7 @@
   (call $scope_define (local.get $h) (cstring "@@idone") (call $v_false))
   (call $scope_define (local.get $h) (cstring "@@iinner") (call $v_undef))
   (call $scope_define (local.get $h) (cstring "next") (call $mk_native (i32.const 348) (cstring "next")))
+  (call $scope_define (local.get $h) (cstring "return") (call $mk_native (i32.const 354) (cstring "return")))
   (call $mk_obj (local.get $h)))
 
 ;; CanBeHeldWeakly: objects, functions, arrays, and symbols may be weak keys
@@ -1696,6 +1705,15 @@
       (return (local.get $thisv))))
   (if (i32.eq (local.get $id) (i32.const 342))  ;; Iterator.prototype[@@iterator] → this
     (then (return (local.get $thisv))))
+  (if (i32.eq (local.get $id) (i32.const 354))  ;; Iterator Helper .return() → close source, mark done
+    (then
+      (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@idone") (call $v_true))
+      (call $iter_close (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@isrc"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $hrr i32 (call $obj_new (i32.const 2)))
+      (call $scope_define (local.get $hrr) (cstring "value") (call $v_undef))
+      (call $scope_define (local.get $hrr) (cstring "done") (call $v_true))
+      (return (call $mk_obj (local.get $hrr)))))
   (if (i32.eq (local.get $id) (i32.const 352))  ;; get Iterator.prototype[@@toStringTag] → "Iterator"
     (then (return (call $mk_str (cstring "Iterator")))))
   (if (i32.eq (local.get $id) (i32.const 353))  ;; set [@@toStringTag] — SetterThatIgnoresPrototypeProperties
@@ -1749,9 +1767,9 @@
             (i64.store (i32.add (local.get $itcb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $itcnt))))
             (let $itrv i64 (call $call_val (local.get $itfn0) (i32.const 2) (local.get $itcb) (call $v_undef)))
             (if (call $err) (then (return (call $v_undef))))
-            (if (i32.eq (local.get $id) (i32.const 339)) (then (if (call $truthy (local.get $itrv)) (then (return (call $v_true))))))   ;; some
-            (if (i32.eq (local.get $id) (i32.const 340)) (then (if (i32.eqz (call $truthy (local.get $itrv))) (then (return (call $v_false))))))  ;; every
-            (if (i32.eq (local.get $id) (i32.const 341)) (then (if (call $truthy (local.get $itrv)) (then (return (local.get $itv))))))))  ;; find
+            (if (i32.eq (local.get $id) (i32.const 339)) (then (if (call $truthy (local.get $itrv)) (then (call $iter_close (local.get $thisv)) (return (call $v_true))))))   ;; some
+            (if (i32.eq (local.get $id) (i32.const 340)) (then (if (i32.eqz (call $truthy (local.get $itrv))) (then (call $iter_close (local.get $thisv)) (return (call $v_false))))))  ;; every
+            (if (i32.eq (local.get $id) (i32.const 341)) (then (if (call $truthy (local.get $itrv)) (then (call $iter_close (local.get $thisv)) (return (local.get $itv))))))))  ;; find
         ;; reduce (338): acc = reducer(acc, value, counter)
         (if (i32.eq (local.get $id) (i32.const 338))
           (then
@@ -1823,11 +1841,13 @@
                     (return (call $mk_obj (local.get $hr)))))
             (call $scope_define (local.get $hself) (cstring "@@in") (call $num (f64.sub (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@in")))) (f64.const 1))))
             (br $ddl)))))
-      ;; take (kind 2): stop when @@in exhausted
+      ;; take (kind 2): stop when @@in exhausted (closing the source)
       (if (i32.eq (local.get $hkind) (i32.const 2))
         (then
           (if (f64.le (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@in")))) (f64.const 0))
             (then (call $scope_define (local.get $hself) (cstring "@@idone") (call $v_true))
+                  (call $iter_close (local.get $hsrc))
+                  (if (call $err) (then (return (call $v_undef))))
                   (call $scope_define (local.get $hr) (cstring "value") (call $v_undef))
                   (call $scope_define (local.get $hr) (cstring "done") (call $v_true))
                   (return (call $mk_obj (local.get $hr)))))
