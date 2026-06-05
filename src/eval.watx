@@ -180,6 +180,15 @@
       (if (i32.and (i32.eqz (call $err)) (call $is_function (local.get $rm)))
         (then (drop (call $call_val (local.get $rm) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $o))))))))
 
+;; IteratorClose during an abrupt completion: call return() but keep the pending
+;; error (the original throw wins even if return() also throws).
+(func $iter_close_throw (param $o i64) (effects)
+  (let $sv i64 (call $err_val))
+  (call $set_err (i32.const 0))
+  (call $iter_close (local.get $o))
+  (call $set_err (i32.const 1))
+  (call $set_err_val (local.get $sv)))
+
 ;; build a lazy Iterator Helper object (kind: map0 filter1 take2 drop3 flatMap4)
 (func $iter_helper_new (param $src i64) (param $srcnext i64) (param $kind i32) (param $fn i64) (param $n f64) (result i64) (effects)
   (let $h i32 (call $obj_new (i32.const 12)))
@@ -1766,7 +1775,7 @@
             (i64.store (local.get $itcb) (local.get $itv))
             (i64.store (i32.add (local.get $itcb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $itcnt))))
             (let $itrv i64 (call $call_val (local.get $itfn0) (i32.const 2) (local.get $itcb) (call $v_undef)))
-            (if (call $err) (then (return (call $v_undef))))
+            (if (call $err) (then (call $iter_close_throw (local.get $thisv)) (return (call $v_undef))))
             (if (i32.eq (local.get $id) (i32.const 339)) (then (if (call $truthy (local.get $itrv)) (then (call $iter_close (local.get $thisv)) (return (call $v_true))))))   ;; some
             (if (i32.eq (local.get $id) (i32.const 340)) (then (if (i32.eqz (call $truthy (local.get $itrv))) (then (call $iter_close (local.get $thisv)) (return (call $v_false))))))  ;; every
             (if (i32.eq (local.get $id) (i32.const 341)) (then (if (call $truthy (local.get $itrv)) (then (call $iter_close (local.get $thisv)) (return (local.get $itv))))))))  ;; find
@@ -1777,7 +1786,7 @@
             (i64.store (i32.add (local.get $itcb) (i32.const 8)) (local.get $itv))
             (i64.store (i32.add (local.get $itcb) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $itcnt))))
             (set! $itacc (call $call_val (local.get $itfn0) (i32.const 3) (local.get $itcb) (call $v_undef)))
-            (if (call $err) (then (return (call $v_undef))))))
+            (if (call $err) (then (call $iter_close_throw (local.get $thisv)) (return (call $v_undef))))))
         (set! $itcnt (i32.add (local.get $itcnt) (i32.const 1)))
         (br $itl)))
       ;; loop ended (iterator done)
@@ -1885,7 +1894,7 @@
             (i64.store (local.get $hcbuf) (local.get $hval))
             (i64.store (i32.add (local.get $hcbuf) (i32.const 8)) (call $num (local.get $hctr)))
             (let $hm i64 (call $call_val (local.get $hfn) (i32.const 2) (local.get $hcbuf) (call $v_undef)))
-            (if (call $err) (then (return (call $v_undef))))
+            (if (call $err) (then (call $iter_close_throw (local.get $hsrc)) (return (call $v_undef))))
             (call $scope_define (local.get $hself) (cstring "@@ictr") (call $num (f64.add (local.get $hctr) (f64.const 1))))
             (call $scope_define (local.get $hr) (cstring "value") (local.get $hm))
             (call $scope_define (local.get $hr) (cstring "done") (call $v_false))
@@ -1902,7 +1911,7 @@
             (i64.store (local.get $hcbuf) (local.get $hval))
             (i64.store (i32.add (local.get $hcbuf) (i32.const 8)) (call $num (local.get $hctr)))
             (let $hk i64 (call $call_val (local.get $hfn) (i32.const 2) (local.get $hcbuf) (call $v_undef)))
-            (if (call $err) (then (return (call $v_undef))))
+            (if (call $err) (then (call $iter_close_throw (local.get $hsrc)) (return (call $v_undef))))
             (call $scope_define (local.get $hself) (cstring "@@ictr") (call $num (f64.add (local.get $hctr) (f64.const 1))))
             (if (call $truthy (local.get $hk))
               (then
@@ -1916,7 +1925,7 @@
             (i64.store (local.get $hcbuf) (local.get $hval))
             (i64.store (i32.add (local.get $hcbuf) (i32.const 8)) (call $num (local.get $hctr)))
             (let $hmapped i64 (call $call_val (local.get $hfn) (i32.const 2) (local.get $hcbuf) (call $v_undef)))
-            (if (call $err) (then (return (call $v_undef))))
+            (if (call $err) (then (call $iter_close_throw (local.get $hsrc)) (return (call $v_undef))))
             (call $scope_define (local.get $hself) (cstring "@@ictr") (call $num (f64.add (local.get $hctr) (f64.const 1))))
             (call $scope_define (local.get $hself) (cstring "@@iinner") (call $vm_get_iter (local.get $hmapped)))
             (if (call $err) (then (return (call $v_undef))))
