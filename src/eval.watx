@@ -4661,6 +4661,9 @@
   (call $scope_define_attr (local.get $symp) (cstring "search") (call $make_symbol (cstring "@@search") (cstring "Symbol.search")) (i32.const 0))
   (call $scope_define_attr (local.get $symp) (cstring "split") (call $make_symbol (cstring "@@split") (cstring "Symbol.split")) (i32.const 0))
   (call $scope_define_attr (local.get $symp) (cstring "unscopables") (call $make_symbol (cstring "@@unscopables") (cstring "Symbol.unscopables")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "matchAll") (call $make_symbol (cstring "@@matchAll") (cstring "Symbol.matchAll")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "dispose") (call $make_symbol (cstring "@@dispose") (cstring "Symbol.dispose")) (i32.const 0))
+  (call $scope_define_attr (local.get $symp) (cstring "asyncDispose") (call $make_symbol (cstring "@@asyncDispose") (cstring "Symbol.asyncDispose")) (i32.const 0))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "for")) (call $mk_native (i32.const 197) (cstring "for")))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "keyFor")) (call $mk_native (i32.const 198) (cstring "keyFor")))
   ;; Reflect — static facade over the internal property operations
