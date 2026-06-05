@@ -5619,7 +5619,7 @@
   (call $scope_define_attr (local.get $mapproto) (cstring "@@toStringTag") (call $mk_str (cstring "Map")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $mapproto) (cstring "constructor") (local.get $mapf))
   (call $scope_clear_enum (local.get $mapproto))
-  (call $set_prop (local.get $mapf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $mapproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $mapf)) (cstring "prototype") (call $mk_obj (local.get $mapproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
   ;; Set.prototype (reg 348)
   (let $setproto i32 (call $obj_new (i32.const 16)))
   (i32.store (i32.const 348) (local.get $setproto))
@@ -5642,7 +5642,7 @@
   (call $scope_define_attr (local.get $setproto) (cstring "@@toStringTag") (call $mk_str (cstring "Set")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $setproto) (cstring "constructor") (local.get $setf))
   (call $scope_clear_enum (local.get $setproto))
-  (call $set_prop (local.get $setf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $setproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $setf)) (cstring "prototype") (call $mk_obj (local.get $setproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
   (call $set_prop (local.get $mapf) (call $mk_str (cstring "groupBy")) (call $mk_native (i32.const 331) (cstring "groupBy")))
   ;; Map[Symbol.species] / Set[Symbol.species] — accessor getter returning the receiver
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $mapf))) (cstring "@@species")
@@ -5660,7 +5660,7 @@
   (call $scope_define_attr (local.get $wmproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakMap")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $wmproto) (cstring "constructor") (local.get $wmapf))
   (call $scope_clear_enum (local.get $wmproto))
-  (call $set_prop (local.get $wmapf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $wmproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $wmapf)) (cstring "prototype") (call $mk_obj (local.get $wmproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
   ;; WeakSet.prototype (reg 484)
   (let $wsetf i64 (call $def_native (local.get $g) (cstring "WeakSet") (i32.const 325)))
   (let $wsproto i32 (call $obj_new (i32.const 8)))
@@ -5671,7 +5671,7 @@
   (call $scope_define_attr (local.get $wsproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakSet")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $wsproto) (cstring "constructor") (local.get $wsetf))
   (call $scope_clear_enum (local.get $wsproto))
-  (call $set_prop (local.get $wsetf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $wsproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $wsetf)) (cstring "prototype") (call $mk_obj (local.get $wsproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
   ;; WeakRef (reg 500) — strong-ref implementation (deref always returns the target)
   (let $wreff i64 (call $def_native (local.get $g) (cstring "WeakRef") (i32.const 358)))
   (let $wrproto i32 (call $obj_new (i32.const 8)))
@@ -5680,7 +5680,7 @@
   (call $scope_define_attr (local.get $wrproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakRef")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $wrproto) (cstring "constructor") (local.get $wreff))
   (call $scope_clear_enum (local.get $wrproto))
-  (call $set_prop (local.get $wreff) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $wrproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $wreff)) (cstring "prototype") (call $mk_obj (local.get $wrproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
   ;; FinalizationRegistry (reg 504) — cleanup never runs (no GC)
   (let $freg i64 (call $def_native (local.get $g) (cstring "FinalizationRegistry") (i32.const 360)))
   (let $frproto i32 (call $obj_new (i32.const 8)))
@@ -5690,7 +5690,7 @@
   (call $scope_define_attr (local.get $frproto) (cstring "@@toStringTag") (call $mk_str (cstring "FinalizationRegistry")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $frproto) (cstring "constructor") (local.get $freg))
   (call $scope_clear_enum (local.get $frproto))
-  (call $set_prop (local.get $freg) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $frproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $freg)) (cstring "prototype") (call $mk_obj (local.get $frproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
   ;; Iterator (abstract ctor) + %Iterator.prototype% (reg 488) — eager helper methods
   (let $iterf i64 (call $def_native (local.get $g) (cstring "Iterator") (i32.const 335)))
   (let $iterproto i32 (call $obj_new (i32.const 12)))
@@ -5711,7 +5711,7 @@
     (call $mk_native (i32.const 352) (cstring "get [Symbol.toStringTag]")) (call $mk_native (i32.const 353) (cstring "set [Symbol.toStringTag]")) (i32.const 5))
   (call $scope_define (local.get $iterproto) (cstring "constructor") (local.get $iterf))
   (call $scope_clear_enum (local.get $iterproto))
-  (call $set_prop (local.get $iterf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $iterproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $iterf)) (cstring "prototype") (call $mk_obj (local.get $iterproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 349) (cstring "from")))
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "concat")) (call $mk_native (i32.const 350) (cstring "concat")))
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "zip")) (call $mk_native (i32.const 355) (cstring "zip")))

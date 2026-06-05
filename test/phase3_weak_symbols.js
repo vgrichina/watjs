@@ -11,3 +11,11 @@ print(wm.set(Symbol(), 1) === wm);
 print(thr(function(){ wm.set(Symbol.for("y"), 1); }));
 print(thr(function(){ new WeakSet().add(Symbol.for("z")); }));
 print(thr(function(){ new FinalizationRegistry(function(){}).register(Symbol.for("w"), "h"); }));
+// constructor.prototype is {W:false,E:false,C:false}
+function dp(o){ var x=Object.getOwnPropertyDescriptor(o,"prototype"); return x.writable+","+x.enumerable+","+x.configurable; }
+print(dp(Set));
+print(dp(Map));
+print(dp(WeakRef));
+print(dp(Iterator));
+print(new Set([1]) instanceof Set);
+print(typeof Set.prototype.add);
