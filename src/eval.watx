@@ -2204,6 +2204,19 @@
       (call $scope_define (local.get $pxo) (cstring "@@ptarget") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (call $scope_define (local.get $pxo) (cstring "@@phandler") (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (return (call $mk_obj (local.get $pxo)))))
+  ;; Reflect property-operation methods require Type(target) is Object
+  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 200)) (i32.le_s (local.get $id) (i32.const 207)))
+              (i32.and (i32.ge_s (local.get $id) (i32.const 332)) (i32.le_s (local.get $id) (i32.const 334))))
+    (then
+      (let $rtg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $rtg)) (i32.or (call $is_function (local.get $rtg)) (call $is_array (local.get $rtg)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Reflect target must be an object")) (return (call $v_undef))))))
+  (if (i32.eq (local.get $id) (i32.const 332))  ;; Reflect.isExtensible(target)
+    (then (return (call $call_native (i32.const 163) (local.get $argc) (local.get $argv) (call $v_undef)))))
+  (if (i32.eq (local.get $id) (i32.const 333))  ;; Reflect.preventExtensions(target) → true
+    (then (drop (call $call_native (i32.const 164) (local.get $argc) (local.get $argv) (call $v_undef))) (return (call $v_true))))
+  (if (i32.eq (local.get $id) (i32.const 334))  ;; Reflect.setPrototypeOf(target, proto) → true
+    (then (drop (call $call_native (i32.const 243) (local.get $argc) (local.get $argv) (call $v_undef))) (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 200))  ;; Reflect.get(target, key)
     (then (return (call $get_prop (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
   (if (i32.eq (local.get $id) (i32.const 201))  ;; Reflect.set(target, key, value) → true
@@ -2233,6 +2246,8 @@
   (if (i32.eq (local.get $id) (i32.const 208))  ;; Reflect.apply(fn, thisArg, argsArray)
     (then
       (let $raf i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_function (local.get $raf)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Reflect.apply target is not callable")) (return (call $v_undef))))
       (let $rath i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (let $raa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
       (let $ran i32 (i32.const 0))
@@ -4151,12 +4166,13 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 105)) (i32.or (i32.eq (local.get $id) (i32.const 201)) (i32.or (i32.eq (local.get $id) (i32.const 206)) (i32.eq (local.get $id) (i32.const 208)))))
     (then (return (i32.const 3))))
   ;; JSON.parse(106)=2, Reflect get(200)/has(202)/deleteProperty(203)/getOwnPropertyDescriptor(207)/construct(222)=2, Function.prototype.apply(195)=2
-  (if (i32.or (i32.eq (local.get $id) (i32.const 106)) (i32.or (i32.eq (local.get $id) (i32.const 200)) (i32.or (i32.eq (local.get $id) (i32.const 202)) (i32.or (i32.eq (local.get $id) (i32.const 203)) (i32.or (i32.eq (local.get $id) (i32.const 207)) (i32.or (i32.eq (local.get $id) (i32.const 222)) (i32.eq (local.get $id) (i32.const 195))))))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 106)) (i32.or (i32.eq (local.get $id) (i32.const 200)) (i32.or (i32.eq (local.get $id) (i32.const 202)) (i32.or (i32.eq (local.get $id) (i32.const 203)) (i32.or (i32.eq (local.get $id) (i32.const 207)) (i32.or (i32.eq (local.get $id) (i32.const 222)) (i32.or (i32.eq (local.get $id) (i32.const 195)) (i32.eq (local.get $id) (i32.const 334)))))))))
     (then (return (i32.const 2))))
   ;; Number isNaN(84)/isInteger(85)/isFinite(86)/isSafeInteger(98)=1, Array.isArray(83)/from(111)=1,
   ;; Reflect ownKeys(204)/getPrototypeOf(205)=1, Function.prototype.call(194)=1
   (if (i32.or (i32.eq (local.get $id) (i32.const 84)) (i32.or (i32.eq (local.get $id) (i32.const 85)) (i32.or (i32.eq (local.get $id) (i32.const 86)) (i32.or (i32.eq (local.get $id) (i32.const 98)) (i32.or (i32.eq (local.get $id) (i32.const 83)) (i32.or (i32.eq (local.get $id) (i32.const 111)) (i32.or (i32.eq (local.get $id) (i32.const 204)) (i32.or (i32.eq (local.get $id) (i32.const 205)) (i32.eq (local.get $id) (i32.const 194))))))))))
     (then (return (i32.const 1))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 332)) (i32.eq (local.get $id) (i32.const 333))) (then (return (i32.const 1))))  ;; Reflect isExtensible/preventExtensions
   (i32.const 0))
 
 ;; 1 if a native id is a constructor (valid with `new`). Everything else native
@@ -4678,6 +4694,9 @@
   (call $scope_define (local.get $refo) (cstring "getOwnPropertyDescriptor") (call $mk_native (i32.const 207) (cstring "getOwnPropertyDescriptor")))
   (call $scope_define (local.get $refo) (cstring "apply") (call $mk_native (i32.const 208) (cstring "apply")))
   (call $scope_define (local.get $refo) (cstring "construct") (call $mk_native (i32.const 222) (cstring "construct")))
+  (call $scope_define (local.get $refo) (cstring "isExtensible") (call $mk_native (i32.const 332) (cstring "isExtensible")))
+  (call $scope_define (local.get $refo) (cstring "preventExtensions") (call $mk_native (i32.const 333) (cstring "preventExtensions")))
+  (call $scope_define (local.get $refo) (cstring "setPrototypeOf") (call $mk_native (i32.const 334) (cstring "setPrototypeOf")))
   (call $scope_define_attr (local.get $refo) (cstring "@@toStringTag") (call $mk_str (cstring "Reflect")) (i32.const 4))  ;; toString → [object Reflect]; {W:false,E:false,C:true}
   (call $scope_define (local.get $g) (cstring "Reflect") (call $mk_obj (local.get $refo)))
   (drop (call $def_native (local.get $g) (cstring "Proxy") (i32.const 209)))
