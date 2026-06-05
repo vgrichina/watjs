@@ -903,6 +903,18 @@
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
 
 ;; construct a TypedArray of element type `elem` from the constructor arguments.
+;; per-type TypedArray prototype: parent = %TypedArray.prototype% (reg 528); pointer
+;; stored at 532 + elem*4. Sets constructor + BYTES_PER_ELEMENT and links ctor.prototype.
+(func $ta_type_setup (param $ctor i64) (param $elem i32) (effects)
+  (let $p i32 (call $obj_new (i32.const 8)))
+  (if (i32.load (i32.const 528)) (then (i32.store (local.get $p) (i32.load (i32.const 528)))))
+  (i32.store (i32.add (i32.const 532) (i32.mul (local.get $elem) (i32.const 4))) (local.get $p))
+  (call $scope_define (local.get $p) (cstring "constructor") (local.get $ctor))
+  (call $scope_define_attr (local.get $p) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (call $ta_bpe (local.get $elem)))) (i32.const 0))
+  (call $scope_clear_enum (local.get $p))
+  (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "prototype") (call $mk_obj (local.get $p)) (i32.const 0))
+  (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (call $ta_bpe (local.get $elem)))) (i32.const 0)))
+
 (func $ta_make (param $elem i32) (param $argc i32) (param $argv i32) (result i64) (effects)
   (let $bpe i32 (call $ta_bpe (local.get $elem)))
   (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -942,7 +954,10 @@
                 (set! $ti2 (i32.add (local.get $ti2) (i32.const 1))) (br $tl2))))))
         (else (set! $buf (call $heap_alloc (i32.const 8)))))))))
   (let $to i32 (call $obj_new (i32.const 8)))
-  (if (i32.load (i32.const 528)) (then (i32.store (local.get $to) (i32.load (i32.const 528)))))  ;; link %TypedArray.prototype%
+  ;; link the per-type prototype (Int8Array.prototype …) → %TypedArray.prototype%
+  (let $taproto i32 (i32.load (i32.add (i32.const 532) (i32.mul (local.get $elem) (i32.const 4)))))
+  (if (local.get $taproto) (then (i32.store (local.get $to) (local.get $taproto)))
+    (else (if (i32.load (i32.const 528)) (then (i32.store (local.get $to) (i32.load (i32.const 528)))))))
   (call $scope_define (local.get $to) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $elem))))
   (call $scope_define (local.get $to) (cstring "@@tabuf") (call $num (f64.convert_i32_s (local.get $buf))))
   (call $scope_define (local.get $to) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $len))))
@@ -5916,16 +5931,19 @@
   (call $scope_define_attr (local.get $refo) (cstring "@@toStringTag") (call $mk_str (cstring "Reflect")) (i32.const 4))  ;; toString → [object Reflect]; {W:false,E:false,C:true}
   (call $scope_define (local.get $g) (cstring "Reflect") (call $mk_obj (local.get $refo)))
   (drop (call $def_native (local.get $g) (cstring "Proxy") (i32.const 209)))
-  ;; TypedArrays + ArrayBuffer (elem type = id-210)
-  (drop (call $def_native (local.get $g) (cstring "Int8Array") (i32.const 210)))
-  (drop (call $def_native (local.get $g) (cstring "Uint8Array") (i32.const 211)))
-  (drop (call $def_native (local.get $g) (cstring "Uint8ClampedArray") (i32.const 212)))
-  (drop (call $def_native (local.get $g) (cstring "Int16Array") (i32.const 213)))
-  (drop (call $def_native (local.get $g) (cstring "Uint16Array") (i32.const 214)))
-  (drop (call $def_native (local.get $g) (cstring "Int32Array") (i32.const 215)))
-  (drop (call $def_native (local.get $g) (cstring "Uint32Array") (i32.const 216)))
-  (drop (call $def_native (local.get $g) (cstring "Float32Array") (i32.const 217)))
-  (drop (call $def_native (local.get $g) (cstring "Float64Array") (i32.const 218)))
+  ;; DataView/SharedArrayBuffer/%TypedArray.prototype% (reg 528) must exist before the
+  ;; per-type TA prototypes chain to it
+  (call $setup_dataview)
+  ;; TypedArrays + ArrayBuffer (elem type = id-210); each gets a per-type prototype
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Int8Array") (i32.const 210)) (i32.const 0))
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Uint8Array") (i32.const 211)) (i32.const 1))
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Uint8ClampedArray") (i32.const 212)) (i32.const 2))
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Int16Array") (i32.const 213)) (i32.const 3))
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Uint16Array") (i32.const 214)) (i32.const 4))
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Int32Array") (i32.const 215)) (i32.const 5))
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Uint32Array") (i32.const 216)) (i32.const 6))
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Float32Array") (i32.const 217)) (i32.const 7))
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Float64Array") (i32.const 218)) (i32.const 8))
   (let $abf i64 (call $def_native (local.get $g) (cstring "ArrayBuffer") (i32.const 219)))
   (call $set_prop (local.get $abf) (call $mk_str (cstring "isView")) (call $mk_native (i32.const 392) (cstring "isView")))
   (let $abproto i32 (call $obj_new (i32.const 8)))
@@ -6033,7 +6051,6 @@
   (call $scope_define (local.get $frproto) (cstring "constructor") (local.get $freg))
   (call $scope_clear_enum (local.get $frproto))
   (call $scope_define_attr (call $fn_def_scope (local.get $freg)) (cstring "prototype") (call $mk_obj (local.get $frproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
-  (call $setup_dataview)
   ;; Iterator (abstract ctor) + %Iterator.prototype% (reg 488) — eager helper methods
   (let $iterf i64 (call $def_native (local.get $g) (cstring "Iterator") (i32.const 335)))
   (let $iterproto i32 (call $obj_new (i32.const 12)))

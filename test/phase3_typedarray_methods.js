@@ -22,3 +22,13 @@ print("0" in b);
 print(2 in b);
 print(5 in b);
 print(Array.prototype.map.call(b, function(x){return x+1;}).join(","));
+// per-type prototypes: instanceof, constructor, BYTES_PER_ELEMENT
+var a = new Int8Array(2);
+print(a instanceof Int8Array);
+print(a instanceof Uint8Array);
+print(a.constructor === Int8Array);
+print(Object.getPrototypeOf(a) === Int8Array.prototype);
+print(Object.getPrototypeOf(Int8Array.prototype) === Object.getPrototypeOf(Uint8Array.prototype));
+print(Int8Array.BYTES_PER_ELEMENT + "," + Float64Array.BYTES_PER_ELEMENT + "," + Int32Array.BYTES_PER_ELEMENT);
+print(a.BYTES_PER_ELEMENT);
+print(new Uint16Array([1,2]).constructor === Uint16Array);
