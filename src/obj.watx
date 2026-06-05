@@ -452,15 +452,21 @@
               (i64.store (i32.add (local.get $gbuf) (i32.const 16)) (local.get $cont))
               (return (call $call_val (local.get $gtrap) (i32.const 3) (local.get $gbuf) (i64.load (local.get $phsl))))))
           (return (call $get_prop (local.get $ptgt) (local.get $key)))))
-      ;; TypedArray: numeric index → read from the byte buffer
+      ;; TypedArray: numeric index (number OR canonical numeric-string) → read from the byte buffer
       (let $tael i32 (call $scope_find_local (local.get $o) (cstring "@@taelem")))
-      (if (i32.and (i32.ne (local.get $tael) (i32.const 0)) (call $is_number (local.get $key)))
+      (if (local.get $tael)
         (then
-          (let $tidx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
-          (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
-          (if (i32.and (i32.ge_s (local.get $tidx) (i32.const 0)) (i32.lt_s (local.get $tidx) (local.get $tln)))
-            (then (return (call $num (call $ta_read (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))))))))
-          (return (call $v_undef))))
+          (let $tidx i32 (if i32 (call $is_number (local.get $key)) (then (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
+            (else (if i32 (call $is_string (local.get $key)) (then (call $str_array_index (call $val_payload (local.get $key)))) (else (i32.const -1))))))
+          ;; only treat genuine integer indices here (a number key that isn't an integer → undefined per spec)
+          (if (i32.and (call $is_number (local.get $key)) (f64.ne (call $tonum_raw (local.get $key)) (f64.convert_i32_s (local.get $tidx))))
+            (then (return (call $v_undef))))
+          (if (i32.ge_s (local.get $tidx) (i32.const 0))
+            (then
+              (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
+              (if (i32.lt_s (local.get $tidx) (local.get $tln))
+                (then (return (call $num (call $ta_read (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))))))
+                (else (return (call $v_undef)))))))))
       ;; mapped arguments: a numeric index < @@anp aliases a parameter slot
       (if (call $is_number (local.get $key))
         (then
@@ -729,6 +735,15 @@
       (if (call $is_function (local.get $pt))
         (then (return (call $mk_bool (call $truthy (call $proxy_call2 (local.get $pt) (call $proxy_target (local.get $obj)) (call $mk_str (call $to_prop_key (local.get $key))) (call $proxy_handler (local.get $obj)))))))
         (else (return (call $js_in (local.get $key) (call $proxy_target (local.get $obj))))))))
+  ;; TypedArray: a valid integer index is an own property (read from the byte buffer)
+  (if (call $is_object (local.get $obj))
+    (then
+      (let $tisl i32 (call $scope_find_local (call $val_payload (local.get $obj)) (cstring "@@taelem")))
+      (if (local.get $tisl)
+        (then
+          (let $tik i32 (call $str_array_index (call $to_prop_key (local.get $key))))
+          (if (i32.ge_s (local.get $tik) (i32.const 0))
+            (then (return (call $mk_bool (i32.lt_s (local.get $tik) (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (call $val_payload (local.get $obj)) (cstring "@@talen"))))))))))))))
   (if (call $is_object (local.get $obj))
     (then (return (call $mk_bool (i32.ne (call $scope_find (call $val_payload (local.get $obj)) (call $to_prop_key (local.get $key))) (i32.const 0))))))
   (if (call $is_array (local.get $obj))

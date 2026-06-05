@@ -684,6 +684,39 @@
   (call $scope_define (local.get $sabproto) (cstring "constructor") (local.get $sabf))
   (call $scope_clear_enum (local.get $sabproto))
   (call $scope_define_attr (call $fn_def_scope (local.get $sabf)) (cstring "prototype") (call $mk_obj (local.get $sabproto)) (i32.const 0))
+  ;; %TypedArray.prototype% (reg 528) — array methods reused (they handle TA via alike).
+  ;; Methods returning a collection (map/filter/slice/…) yield a plain Array (no species).
+  (let $tap i32 (call $obj_new (i32.const 16)))
+  (i32.store (i32.const 528) (local.get $tap))
+  (call $scope_define (local.get $tap) (cstring "forEach") (call $mk_native (i32.const 25) (cstring "forEach")))
+  (call $scope_define (local.get $tap) (cstring "map") (call $mk_native (i32.const 26) (cstring "map")))
+  (call $scope_define (local.get $tap) (cstring "filter") (call $mk_native (i32.const 72) (cstring "filter")))
+  (call $scope_define (local.get $tap) (cstring "reduce") (call $mk_native (i32.const 73) (cstring "reduce")))
+  (call $scope_define (local.get $tap) (cstring "reduceRight") (call $mk_native (i32.const 137) (cstring "reduceRight")))
+  (call $scope_define (local.get $tap) (cstring "indexOf") (call $mk_native (i32.const 22) (cstring "indexOf")))
+  (call $scope_define (local.get $tap) (cstring "lastIndexOf") (call $mk_native (i32.const 30) (cstring "lastIndexOf")))
+  (call $scope_define (local.get $tap) (cstring "join") (call $mk_native (i32.const 23) (cstring "join")))
+  (call $scope_define (local.get $tap) (cstring "includes") (call $mk_native (i32.const 27) (cstring "includes")))
+  (call $scope_define (local.get $tap) (cstring "find") (call $mk_native (i32.const 74) (cstring "find")))
+  (call $scope_define (local.get $tap) (cstring "findIndex") (call $mk_native (i32.const 75) (cstring "findIndex")))
+  (call $scope_define (local.get $tap) (cstring "findLast") (call $mk_native (i32.const 33) (cstring "findLast")))
+  (call $scope_define (local.get $tap) (cstring "findLastIndex") (call $mk_native (i32.const 34) (cstring "findLastIndex")))
+  (call $scope_define (local.get $tap) (cstring "some") (call $mk_native (i32.const 76) (cstring "some")))
+  (call $scope_define (local.get $tap) (cstring "every") (call $mk_native (i32.const 77) (cstring "every")))
+  (call $scope_define (local.get $tap) (cstring "at") (call $mk_native (i32.const 28) (cstring "at")))
+  (call $scope_define (local.get $tap) (cstring "fill") (call $mk_native (i32.const 29) (cstring "fill")))
+  (call $scope_define (local.get $tap) (cstring "reverse") (call $mk_native (i32.const 71) (cstring "reverse")))
+  (call $scope_define (local.get $tap) (cstring "sort") (call $mk_native (i32.const 78) (cstring "sort")))
+  (call $scope_define (local.get $tap) (cstring "slice") (call $mk_native (i32.const 24) (cstring "slice")))
+  (call $scope_define (local.get $tap) (cstring "copyWithin") (call $mk_native (i32.const 168) (cstring "copyWithin")))
+  (call $scope_define (local.get $tap) (cstring "toLocaleString") (call $mk_native (i32.const 305) (cstring "toLocaleString")))
+  (call $scope_define (local.get $tap) (cstring "toString") (call $mk_native (i32.const 23) (cstring "toString")))
+  (call $scope_define (local.get $tap) (cstring "keys") (call $mk_native (i32.const 96) (cstring "keys")))
+  (call $scope_define (local.get $tap) (cstring "values") (call $mk_native (i32.const 97) (cstring "values")))
+  (call $scope_define (local.get $tap) (cstring "entries") (call $mk_native (i32.const 95) (cstring "entries")))
+  (call $scope_define (local.get $tap) (cstring "@@iterator") (call $mk_native (i32.const 97) (cstring "values")))
+  (call $scope_define_accessor_attr (local.get $tap) (cstring "@@toStringTag") (call $mk_native (i32.const 393) (cstring "get [Symbol.toStringTag]")) (call $v_undef) (i32.const 5))
+  (call $scope_clear_enum (local.get $tap))
   )
 
 (func $native_dataview (param $id i32) (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
@@ -743,6 +776,21 @@
         (i32.store8 (i32.add (local.get $sdst) (local.get $si)) (i32.load8_u (i32.add (i32.add (local.get $ssrc) (local.get $sbeg)) (local.get $si))))
         (set! $si (i32.add (local.get $si) (i32.const 1))) (br $scl)))
       (return (local.get $snab))))
+  (if (i32.eq (local.get $id) (i32.const 393))  ;; get %TypedArray.prototype%[@@toStringTag] → the type name (or undefined)
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_undef))))
+      (let $ttsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
+      (if (i32.eqz (local.get $ttsl)) (then (return (call $v_undef))))
+      (let $tte i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $ttsl)))))
+      (if (i32.eq (local.get $tte) (i32.const 0)) (then (return (call $mk_str (cstring "Int8Array")))))
+      (if (i32.eq (local.get $tte) (i32.const 1)) (then (return (call $mk_str (cstring "Uint8Array")))))
+      (if (i32.eq (local.get $tte) (i32.const 2)) (then (return (call $mk_str (cstring "Uint8ClampedArray")))))
+      (if (i32.eq (local.get $tte) (i32.const 3)) (then (return (call $mk_str (cstring "Int16Array")))))
+      (if (i32.eq (local.get $tte) (i32.const 4)) (then (return (call $mk_str (cstring "Uint16Array")))))
+      (if (i32.eq (local.get $tte) (i32.const 5)) (then (return (call $mk_str (cstring "Int32Array")))))
+      (if (i32.eq (local.get $tte) (i32.const 6)) (then (return (call $mk_str (cstring "Uint32Array")))))
+      (if (i32.eq (local.get $tte) (i32.const 7)) (then (return (call $mk_str (cstring "Float32Array")))))
+      (return (call $mk_str (cstring "Float64Array")))))
   (if (i32.eq (local.get $id) (i32.const 392))  ;; ArrayBuffer.isView(arg)
     (then
       (let $iva i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -894,6 +942,7 @@
                 (set! $ti2 (i32.add (local.get $ti2) (i32.const 1))) (br $tl2))))))
         (else (set! $buf (call $heap_alloc (i32.const 8)))))))))
   (let $to i32 (call $obj_new (i32.const 8)))
+  (if (i32.load (i32.const 528)) (then (i32.store (local.get $to) (i32.load (i32.const 528)))))  ;; link %TypedArray.prototype%
   (call $scope_define (local.get $to) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $elem))))
   (call $scope_define (local.get $to) (cstring "@@tabuf") (call $num (f64.convert_i32_s (local.get $buf))))
   (call $scope_define (local.get $to) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $len))))
@@ -2588,7 +2637,7 @@
   ;; WeakRef / FinalizationRegistry (358-362) — handled in a separate fn to keep call_native small
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
     (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 392)))  ;; DataView/SharedArrayBuffer/ArrayBuffer.proto
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 393)))  ;; DataView/SharedArrayBuffer/ArrayBuffer.proto/TA-toStringTag
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
@@ -2758,11 +2807,16 @@
     (then
       (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "Array.prototype values/keys/entries called on null or undefined")) (return (call $v_undef))))
+      ;; TypedArray (or other array-like): materialize into a real array to iterate
+      (let $itsrc i64 (local.get $thisv))
+      (if (i32.eqz (call $is_array (local.get $thisv)))
+        (then (if (call $is_object (local.get $thisv))
+          (then (set! $itsrc (call $mk_arr (call $alike_arr (local.get $thisv))))))))
       (let $itobj i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 488)) (then (i32.store (local.get $itobj) (i32.load (i32.const 488)))))  ;; inherit %Iterator.prototype%
-      (call $scope_define (local.get $itobj) (cstring "@@arr") (local.get $thisv))
+      (call $scope_define (local.get $itobj) (cstring "@@arr") (local.get $itsrc))
       (call $scope_define (local.get $itobj) (cstring "@@i") (call $num (f64.const 0)))
-      (call $scope_define (local.get $itobj) (cstring "@@len") (call $num (f64.convert_i32_s (call $arr_len (call $val_payload (local.get $thisv))))))  ;; snapshot length
+      (call $scope_define (local.get $itobj) (cstring "@@len") (call $num (f64.convert_i32_s (call $arr_len (call $val_payload (local.get $itsrc))))))  ;; snapshot length
       (call $scope_define (local.get $itobj) (cstring "@@kind")
         (call $num (f64.convert_i32_s (if i32 (i32.eq (local.get $id) (i32.const 95)) (then (i32.const 2))
           (else (if i32 (i32.eq (local.get $id) (i32.const 96)) (then (i32.const 0)) (else (i32.const 1))))))))

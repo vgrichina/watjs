@@ -1,0 +1,24 @@
+// TypedArray: inherited array methods, iteration, @@toStringTag
+var b = new Uint8Array([10,20,30]);
+print(b.length);
+print(b[0] + "," + b["1"] + "," + b[2]);
+print([...b].join(","));
+print(b.map(function(x){return x*2;}).join(","));
+print(b.filter(function(x){return x>15;}).join(","));
+print(b.reduce(function(a,x){return a+x;}, 0));
+print(b.indexOf(20));
+print(b.includes(30));
+print(b.join("-"));
+print(b.find(function(x){return x>15;}));
+print(b.some(function(x){return x===20;}));
+print(b.every(function(x){return x<100;}));
+print(b.at(-1));
+print(Object.prototype.toString.call(b));
+print(Object.prototype.toString.call(new Int16Array(1)));
+print(Object.prototype.toString.call(new Float64Array(0)));
+var it = b.values();
+print(it.next().value + "," + it.next().value);
+print("0" in b);
+print(2 in b);
+print(5 in b);
+print(Array.prototype.map.call(b, function(x){return x+1;}).join(","));
