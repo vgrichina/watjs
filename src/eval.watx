@@ -172,6 +172,21 @@
     (then (call $throw_type (cstring "TypeError") (cstring "iterator.next is not a function")) (return (call $v_undef))))
   (local.get $nf))
 
+;; build a lazy Iterator Helper object (kind: map0 filter1 take2 drop3 flatMap4)
+(func $iter_helper_new (param $src i64) (param $srcnext i64) (param $kind i32) (param $fn i64) (param $n f64) (result i64) (effects)
+  (let $h i32 (call $obj_new (i32.const 12)))
+  (if (i32.load (i32.const 488)) (then (i32.store (local.get $h) (i32.load (i32.const 488)))))  ;; inherit %Iterator.prototype%
+  (call $scope_define (local.get $h) (cstring "@@isrc") (local.get $src))
+  (call $scope_define (local.get $h) (cstring "@@isn") (local.get $srcnext))
+  (call $scope_define (local.get $h) (cstring "@@ikind") (call $num (f64.convert_i32_s (local.get $kind))))
+  (call $scope_define (local.get $h) (cstring "@@ifn") (local.get $fn))
+  (call $scope_define (local.get $h) (cstring "@@in") (call $num (local.get $n)))
+  (call $scope_define (local.get $h) (cstring "@@ictr") (call $num (f64.const 0)))
+  (call $scope_define (local.get $h) (cstring "@@idone") (call $v_false))
+  (call $scope_define (local.get $h) (cstring "@@iinner") (call $v_undef))
+  (call $scope_define (local.get $h) (cstring "next") (call $mk_native (i32.const 348) (cstring "next")))
+  (call $mk_obj (local.get $h)))
+
 ;; CanBeHeldWeakly: objects, functions, arrays, and symbols may be weak keys
 (func $weakly_holdable (param $v i64) (result i32) (effects)
   (i32.or (call $is_object (local.get $v))
@@ -1736,6 +1751,140 @@
       (if (i32.eq (local.get $id) (i32.const 340)) (then (return (call $v_true))))                      ;; every → all truthy
       (if (i32.eq (local.get $id) (i32.const 341)) (then (return (call $v_undef))))                     ;; find → none
       (return (call $v_undef))))   ;; forEach
+  ;; ── lazy Iterator Helpers: map(343) filter(344) take(345) drop(346) flatMap(347) ──
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 343)) (i32.le_s (local.get $id) (i32.const 347)))
+    (then
+      (let $ihsn i64 (call $iter_direct_next (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $iha0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $ihn f64 (f64.const 0))
+      ;; map/filter/flatMap need a callable fn
+      (if (i32.or (i32.eq (local.get $id) (i32.const 343)) (i32.or (i32.eq (local.get $id) (i32.const 344)) (i32.eq (local.get $id) (i32.const 347))))
+        (then (if (i32.eqz (call $is_function (local.get $iha0)))
+          (then (call $throw_type (cstring "TypeError") (cstring "Iterator helper callback is not a function")) (return (call $v_undef))))))
+      ;; take/drop need a non-negative integer count (NaN/neg → RangeError)
+      (if (i32.or (i32.eq (local.get $id) (i32.const 345)) (i32.eq (local.get $id) (i32.const 346)))
+        (then
+          (let $ihd f64 (call $to_num (local.get $iha0)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (f64.ne (local.get $ihd) (local.get $ihd))
+            (then (call $throw_type (cstring "RangeError") (cstring "Iterator take/drop count is NaN")) (return (call $v_undef))))
+          (set! $ihd (f64.trunc (local.get $ihd)))
+          (if (f64.lt (local.get $ihd) (f64.const 0))
+            (then (call $throw_type (cstring "RangeError") (cstring "Iterator take/drop count is negative")) (return (call $v_undef))))
+          (set! $ihn (local.get $ihd))))
+      (return (call $iter_helper_new (local.get $thisv) (local.get $ihsn) (i32.sub (local.get $id) (i32.const 343)) (local.get $iha0) (local.get $ihn)))))
+  ;; lazy Iterator Helper .next() (id 348) — drives the pull based on @@ikind
+  (if (i32.eq (local.get $id) (i32.const 348))
+    (then
+      (let $hr i32 (call $obj_new (i32.const 2)))   ;; result {value,done}
+      (let $hself i32 (call $val_payload (local.get $thisv)))
+      ;; already-done helper → {undefined,true}
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@idone"))))
+        (then
+          (call $scope_define (local.get $hr) (cstring "value") (call $v_undef))
+          (call $scope_define (local.get $hr) (cstring "done") (call $v_true))
+          (return (call $mk_obj (local.get $hr)))))
+      (let $hkind i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ikind"))))))
+      (let $hsrc i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@isrc"))))
+      (let $hsn i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@isn"))))
+      (let $hfn i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ifn"))))
+      (let $hbuf i32 (call $heap_alloc (i32.const 8)))
+      (let $hcbuf i32 (call $heap_alloc (i32.const 16)))
+      ;; drop (kind 3): consume @@in items first
+      (if (i32.eq (local.get $hkind) (i32.const 3))
+        (then
+          (block $dde (loop $ddl
+            (br_if $dde (f64.le (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@in")))) (f64.const 0)))
+            (let $dr i64 (call $call_val (local.get $hsn) (i32.const 0) (local.get $hbuf) (local.get $hsrc)))
+            (if (call $err) (then (return (call $v_undef))))
+            (if (call $truthy (call $get_prop (local.get $dr) (call $mk_str (cstring "done"))))
+              (then (call $scope_define (local.get $hself) (cstring "@@idone") (call $v_true))
+                    (call $scope_define (local.get $hr) (cstring "value") (call $v_undef))
+                    (call $scope_define (local.get $hr) (cstring "done") (call $v_true))
+                    (return (call $mk_obj (local.get $hr)))))
+            (call $scope_define (local.get $hself) (cstring "@@in") (call $num (f64.sub (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@in")))) (f64.const 1))))
+            (br $ddl)))))
+      ;; take (kind 2): stop when @@in exhausted
+      (if (i32.eq (local.get $hkind) (i32.const 2))
+        (then
+          (if (f64.le (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@in")))) (f64.const 0))
+            (then (call $scope_define (local.get $hself) (cstring "@@idone") (call $v_true))
+                  (call $scope_define (local.get $hr) (cstring "value") (call $v_undef))
+                  (call $scope_define (local.get $hr) (cstring "done") (call $v_true))
+                  (return (call $mk_obj (local.get $hr)))))
+          (call $scope_define (local.get $hself) (cstring "@@in") (call $num (f64.sub (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@in")))) (f64.const 1))))))
+      ;; main pull loop (filter/flatMap may iterate; map/take/drop pull once)
+      (block $hpe (loop $hpl
+        ;; flatMap (kind 4): drain the inner iterator first
+        (if (i32.eq (local.get $hkind) (i32.const 4))
+          (then
+            (let $hinner i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@iinner"))))
+            (if (call $is_object (local.get $hinner))
+              (then
+                (let $hin i64 (call $get_prop (local.get $hinner) (call $mk_str (cstring "next"))))
+                (let $hir i64 (call $call_val (local.get $hin) (i32.const 0) (local.get $hbuf) (local.get $hinner)))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (call $truthy (call $get_prop (local.get $hir) (call $mk_str (cstring "done"))))
+                  (then (call $scope_define (local.get $hself) (cstring "@@iinner") (call $v_undef)) (br $hpl))
+                  (else
+                    (call $scope_define (local.get $hr) (cstring "value") (call $get_prop (local.get $hir) (call $mk_str (cstring "value"))))
+                    (call $scope_define (local.get $hr) (cstring "done") (call $v_false))
+                    (return (call $mk_obj (local.get $hr)))))))))
+        ;; pull one from the source
+        (let $hsr i64 (call $call_val (local.get $hsn) (i32.const 0) (local.get $hbuf) (local.get $hsrc)))
+        (if (call $err) (then (return (call $v_undef))))
+        (if (call $truthy (call $get_prop (local.get $hsr) (call $mk_str (cstring "done"))))
+          (then (call $scope_define (local.get $hself) (cstring "@@idone") (call $v_true))
+                (call $scope_define (local.get $hr) (cstring "value") (call $v_undef))
+                (call $scope_define (local.get $hr) (cstring "done") (call $v_true))
+                (return (call $mk_obj (local.get $hr)))))
+        (let $hval i64 (call $get_prop (local.get $hsr) (call $mk_str (cstring "value"))))
+        (let $hctr f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ictr")))))
+        ;; map (0): value = fn(v, ctr)
+        (if (i32.eq (local.get $hkind) (i32.const 0))
+          (then
+            (i64.store (local.get $hcbuf) (local.get $hval))
+            (i64.store (i32.add (local.get $hcbuf) (i32.const 8)) (call $num (local.get $hctr)))
+            (let $hm i64 (call $call_val (local.get $hfn) (i32.const 2) (local.get $hcbuf) (call $v_undef)))
+            (if (call $err) (then (return (call $v_undef))))
+            (call $scope_define (local.get $hself) (cstring "@@ictr") (call $num (f64.add (local.get $hctr) (f64.const 1))))
+            (call $scope_define (local.get $hr) (cstring "value") (local.get $hm))
+            (call $scope_define (local.get $hr) (cstring "done") (call $v_false))
+            (return (call $mk_obj (local.get $hr)))))
+        ;; take(2)/drop(3): pass the value through
+        (if (i32.or (i32.eq (local.get $hkind) (i32.const 2)) (i32.eq (local.get $hkind) (i32.const 3)))
+          (then
+            (call $scope_define (local.get $hr) (cstring "value") (local.get $hval))
+            (call $scope_define (local.get $hr) (cstring "done") (call $v_false))
+            (return (call $mk_obj (local.get $hr)))))
+        ;; filter (1): keep when fn(v,ctr) truthy, else loop
+        (if (i32.eq (local.get $hkind) (i32.const 1))
+          (then
+            (i64.store (local.get $hcbuf) (local.get $hval))
+            (i64.store (i32.add (local.get $hcbuf) (i32.const 8)) (call $num (local.get $hctr)))
+            (let $hk i64 (call $call_val (local.get $hfn) (i32.const 2) (local.get $hcbuf) (call $v_undef)))
+            (if (call $err) (then (return (call $v_undef))))
+            (call $scope_define (local.get $hself) (cstring "@@ictr") (call $num (f64.add (local.get $hctr) (f64.const 1))))
+            (if (call $truthy (local.get $hk))
+              (then
+                (call $scope_define (local.get $hr) (cstring "value") (local.get $hval))
+                (call $scope_define (local.get $hr) (cstring "done") (call $v_false))
+                (return (call $mk_obj (local.get $hr))))
+              (else (br $hpl)))))
+        ;; flatMap (4): mapped = fn(v,ctr); open the inner iterator and loop
+        (if (i32.eq (local.get $hkind) (i32.const 4))
+          (then
+            (i64.store (local.get $hcbuf) (local.get $hval))
+            (i64.store (i32.add (local.get $hcbuf) (i32.const 8)) (call $num (local.get $hctr)))
+            (let $hmapped i64 (call $call_val (local.get $hfn) (i32.const 2) (local.get $hcbuf) (call $v_undef)))
+            (if (call $err) (then (return (call $v_undef))))
+            (call $scope_define (local.get $hself) (cstring "@@ictr") (call $num (f64.add (local.get $hctr) (f64.const 1))))
+            (call $scope_define (local.get $hself) (cstring "@@iinner") (call $vm_get_iter (local.get $hmapped)))
+            (if (call $err) (then (return (call $v_undef))))
+            (br $hpl)))
+        (br $hpl)))
+      (return (call $v_undef))))
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
     (then
@@ -4312,6 +4461,8 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331))) (then (return (i32.const 2))))
   ;; Iterator helper methods forEach/reduce/some/every/find = length 1 (toArray 336 = 0)
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 337)) (i32.le_s (local.get $id) (i32.const 341))) (then (return (i32.const 1))))
+  ;; lazy helpers map/filter/take/drop/flatMap (343-347) = length 1; helper next(348) = 0
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 343)) (i32.le_s (local.get $id) (i32.const 347))) (then (return (i32.const 1))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
@@ -4966,6 +5117,11 @@
   (call $scope_define (local.get $iterproto) (cstring "some") (call $mk_native (i32.const 339) (cstring "some")))
   (call $scope_define (local.get $iterproto) (cstring "every") (call $mk_native (i32.const 340) (cstring "every")))
   (call $scope_define (local.get $iterproto) (cstring "find") (call $mk_native (i32.const 341) (cstring "find")))
+  (call $scope_define (local.get $iterproto) (cstring "map") (call $mk_native (i32.const 343) (cstring "map")))
+  (call $scope_define (local.get $iterproto) (cstring "filter") (call $mk_native (i32.const 344) (cstring "filter")))
+  (call $scope_define (local.get $iterproto) (cstring "take") (call $mk_native (i32.const 345) (cstring "take")))
+  (call $scope_define (local.get $iterproto) (cstring "drop") (call $mk_native (i32.const 346) (cstring "drop")))
+  (call $scope_define (local.get $iterproto) (cstring "flatMap") (call $mk_native (i32.const 347) (cstring "flatMap")))
   (call $scope_define (local.get $iterproto) (cstring "@@iterator") (call $mk_native (i32.const 342) (cstring "[Symbol.iterator]")))
   (call $scope_define (local.get $iterproto) (cstring "@@toStringTag") (call $mk_str (cstring "Iterator")))
   (call $scope_define (local.get $iterproto) (cstring "constructor") (local.get $iterf))
