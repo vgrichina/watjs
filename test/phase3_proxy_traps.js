@@ -24,3 +24,14 @@ print(log.join("|"));
 var t2 = {a:1}; var p2 = new Proxy(t2, {});
 print("a" in p2);
 print(delete p2.a, "a" in t2);
+// ownKeys / getOwnPropertyDescriptor / defineProperty traps
+var t3={a:1,b:2};
+var p3 = new Proxy(t3, {
+  ownKeys(tg){ return ["x","y"]; },
+  getOwnPropertyDescriptor(tg,k){ return {value:42,enumerable:true,configurable:true,writable:true}; },
+  defineProperty(tg,k,d){ log.push("defP:"+k); return true; }
+});
+print(Object.getOwnPropertyNames(p3).join(","));
+print(Object.getOwnPropertyDescriptor(p3,"q").value);
+Object.defineProperty(p3, "z", {value:1});
+print(Object.getOwnPropertyNames(new Proxy({m:1,n:2},{})).join(","));

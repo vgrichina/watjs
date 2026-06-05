@@ -346,6 +346,18 @@
 ;; Arrays yield "0".."len-1" then their @12 named-property keys.
 (func $own_enum_keys (param $a i64) (param $allNames i32) (result i32) (effects)
   (let $out i32 (call $arr_new (i32.const 16)))
+  ;; Proxy: ownKeys trap returns the key list (else forward to target)
+  (if (call $is_proxy (local.get $a))
+    (then
+      (let $okt i64 (call $proxy_trap (local.get $a) (cstring "ownKeys")))
+      (if (call $err) (then (return (local.get $out))))
+      (if (call $is_function (local.get $okt))
+        (then
+          (let $okr i64 (call $call_val (local.get $okt) (i32.const 1) (call $argv1 (call $proxy_target (local.get $a))) (call $v_undef)))
+          (if (call $err) (then (return (local.get $out))))
+          (if (call $is_array (local.get $okr)) (then (return (call $val_payload (local.get $okr)))))
+          (return (local.get $out)))
+        (else (return (call $own_enum_keys (call $proxy_target (local.get $a)) (local.get $allNames)))))))
   (if (call $is_array (local.get $a))
     (then
       (let $aa i32 (call $val_payload (local.get $a)))
@@ -3724,6 +3736,27 @@
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $ky i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (let $de i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      ;; Proxy: defineProperty trap (else forward to target)
+      (if (call $is_proxy (local.get $ob))
+        (then
+          (let $dppt i64 (call $proxy_trap (local.get $ob) (cstring "defineProperty")))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_function (local.get $dppt))
+            (then
+              (let $dpb i32 (call $heap_alloc (i32.const 24)))
+              (i64.store (local.get $dpb) (call $proxy_target (local.get $ob)))
+              (i64.store (i32.add (local.get $dpb) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $ky))))
+              (i64.store (i32.add (local.get $dpb) (i32.const 16)) (local.get $de))
+              (drop (call $call_val (local.get $dppt) (i32.const 3) (local.get $dpb) (call $v_undef)))
+              (if (call $err) (then (return (call $v_undef)))))
+            (else
+              (let $dpb2 i32 (call $heap_alloc (i32.const 24)))
+              (i64.store (local.get $dpb2) (call $proxy_target (local.get $ob)))
+              (i64.store (i32.add (local.get $dpb2) (i32.const 8)) (local.get $ky))
+              (i64.store (i32.add (local.get $dpb2) (i32.const 16)) (local.get $de))
+              (drop (call $call_native (i32.const 90) (i32.const 3) (local.get $dpb2) (call $v_undef)))
+              (if (call $err) (then (return (call $v_undef))))))
+          (return (local.get $ob))))
       ;; target must be an object/array/function; primitives → TypeError
       (if (i32.eqz (i32.or (call $is_object (local.get $ob)) (i32.or (call $is_array (local.get $ob)) (call $is_function (local.get $ob)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object.defineProperty called on non-object")) (return (call $v_undef))))
@@ -3875,6 +3908,18 @@
     (then
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $ky i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      ;; Proxy: getOwnPropertyDescriptor trap (else forward to target)
+      (if (call $is_proxy (local.get $ob))
+        (then
+          (let $gdpt i64 (call $proxy_trap (local.get $ob) (cstring "getOwnPropertyDescriptor")))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_function (local.get $gdpt))
+            (then (return (call $proxy_call2 (local.get $gdpt) (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))) (call $v_undef))))
+            (else
+              (let $gdb i32 (call $heap_alloc (i32.const 16)))
+              (i64.store (local.get $gdb) (call $proxy_target (local.get $ob)))
+              (i64.store (i32.add (local.get $gdb) (i32.const 8)) (local.get $ky))
+              (return (call $call_native (i32.const 156) (i32.const 2) (local.get $gdb) (call $v_undef)))))))
       ;; arrays: indices are {W:true,E:true,C:true}; length is {W:true,E:false,C:false}
       (if (call $is_array (local.get $ob))
         (then

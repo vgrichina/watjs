@@ -9,3 +9,6 @@ false
 has:x|has:p|del:x|gpo|spo|isExt|prevExt
 true
 true
+x,y
+42
+m,n
