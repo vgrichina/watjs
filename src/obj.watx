@@ -619,6 +619,22 @@
     (then (if (call $scope_find_local (local.get $p) (local.get $ks)) (then (return (i32.const 1))))))
   (i32.const 0))
 
+;; scope that holds a function's own (static) properties, for defineProperty.
+;; VM fns: the @16 prototype scope (statics not yet isolated from .prototype —
+;; the documented quirk); native fns: the @12 props scope.
+(func $fn_def_scope (param $fnval i64) (result i32) (effects)
+  (let $fn i32 (call $val_payload (local.get $fnval)))
+  (if i32 (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
+    (then
+      (let $vp i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
+      (if (i32.eqz (call $is_object (local.get $vp)))
+        (then
+          (set! $vp (call $mk_obj (call $obj_new (i32.const 8))))
+          (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vp))
+          (call $scope_define_attr (call $val_payload (local.get $vp)) (cstring "constructor") (local.get $fnval) (i32.const 12))))
+      (call $val_payload (local.get $vp)))
+    (else (call $fn_props (local.get $fn)))))
+
 ;; get-or-create a function's .prototype object value
 (func $fn_get_prototype (param $fn i32) (result i64) (effects)
   (let $props i32 (call $fn_props (local.get $fn)))
