@@ -652,9 +652,39 @@
   (call $scope_define (local.get $dvproto) (cstring "constructor") (local.get $dvf))
   (call $scope_clear_enum (local.get $dvproto))
   (call $scope_define_attr (call $fn_def_scope (local.get $dvf)) (cstring "prototype") (call $mk_obj (local.get $dvproto)) (i32.const 0))
+  ;; SharedArrayBuffer (reg 516) — structurally like ArrayBuffer
+  (let $sabf i64 (call $def_native (local.get $g) (cstring "SharedArrayBuffer") (i32.const 383)))
+  (let $sabproto i32 (call $obj_new (i32.const 8)))
+  (i32.store (i32.const 516) (local.get $sabproto))
+  (call $scope_define_accessor_attr (local.get $sabproto) (cstring "byteLength") (call $mk_native (i32.const 384) (cstring "get byteLength")) (call $v_undef) (i32.const 5))
+  (call $scope_define_attr (local.get $sabproto) (cstring "@@toStringTag") (call $mk_str (cstring "SharedArrayBuffer")) (i32.const 4))
+  (call $scope_define (local.get $sabproto) (cstring "constructor") (local.get $sabf))
+  (call $scope_clear_enum (local.get $sabproto))
+  (call $scope_define_attr (call $fn_def_scope (local.get $sabf)) (cstring "prototype") (call $mk_obj (local.get $sabproto)) (i32.const 0))
   )
 
 (func $native_dataview (param $id i32) (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
+  ;; SharedArrayBuffer (383 ctor, 384 byteLength getter) — structurally like ArrayBuffer
+  (if (i32.eq (local.get $id) (i32.const 383))  ;; new SharedArrayBuffer(byteLength)
+    (then
+      (let $sabn i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $sabd i32 (call $heap_alloc (i32.add (local.get $sabn) (i32.const 8))))
+      (call $ta_zero (local.get $sabd) (local.get $sabn))
+      (let $sabo i32 (call $obj_new (i32.const 4)))
+      (if (i32.load (i32.const 516)) (then (i32.store (local.get $sabo) (i32.load (i32.const 516)))))
+      (call $scope_define (local.get $sabo) (cstring "@@abdata") (call $num (f64.convert_i32_s (local.get $sabd))))
+      (call $scope_define (local.get $sabo) (cstring "@@ablen") (call $num (f64.convert_i32_s (local.get $sabn))))
+      (call $scope_define (local.get $sabo) (cstring "byteLength") (call $num (f64.convert_i32_s (local.get $sabn))))
+      (call $scope_define (local.get $sabo) (cstring "@@shared") (call $v_true))
+      (return (call $mk_obj (local.get $sabo)))))
+  (if (i32.eq (local.get $id) (i32.const 384))  ;; get SharedArrayBuffer.prototype.byteLength
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@shared")))
+        (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on incompatible receiver")) (return (call $v_undef))))
+      (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
   (if (i32.eq (local.get $id) (i32.const 363))  ;; new DataView(buffer[, byteOffset[, byteLength]])
     (then
       (let $dvb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -684,7 +714,9 @@
   ;; accessors (brand-checked)
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 380)) (i32.le_s (local.get $id) (i32.const 382)))
     (then
-      (if (i32.or (i32.eqz (call $is_object (local.get $thisv))) (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab"))))
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView accessor called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab")))
         (then (call $throw_type (cstring "TypeError") (cstring "DataView accessor called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 380)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))))
       (if (i32.eq (local.get $id) (i32.const 381)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
@@ -692,7 +724,9 @@
   ;; get/set
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 364)) (i32.le_s (local.get $id) (i32.const 379)))
     (then
-      (if (i32.or (i32.eqz (call $is_object (local.get $thisv))) (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab"))))
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab")))
         (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
       (let $isget i32 (i32.lt_s (local.get $id) (i32.const 372)))
       (let $elem i32 (call $dv_elem (i32.sub (local.get $id) (if i32 (local.get $isget) (then (i32.const 364)) (else (i32.const 372))))))
@@ -2460,7 +2494,7 @@
   ;; WeakRef / FinalizationRegistry (358-362) — handled in a separate fn to keep call_native small
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
     (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 382)))  ;; DataView
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 384)))  ;; DataView + SharedArrayBuffer
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
@@ -5116,7 +5150,8 @@
   ;; WeakRef ctor(358)=1, FinalizationRegistry ctor(360)=1, register(361)=2, unregister(362)=1
   (if (i32.or (i32.eq (local.get $id) (i32.const 358)) (i32.or (i32.eq (local.get $id) (i32.const 360)) (i32.eq (local.get $id) (i32.const 362)))) (then (return (i32.const 1))))
   (if (i32.eq (local.get $id) (i32.const 361)) (then (return (i32.const 2))))
-  ;; DataView getX(364-371)=1, setX(372-379)=2
+  ;; DataView ctor(363)=1, SharedArrayBuffer ctor(383)=1, getX(364-371)=1, setX(372-379)=2
+  (if (i32.or (i32.eq (local.get $id) (i32.const 363)) (i32.eq (local.get $id) (i32.const 383))) (then (return (i32.const 1))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 364)) (i32.le_s (local.get $id) (i32.const 371))) (then (return (i32.const 1))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 372)) (i32.le_s (local.get $id) (i32.const 379))) (then (return (i32.const 2))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
@@ -5161,7 +5196,7 @@
     (then (return (i32.const 1))))  ;; WeakMap, WeakSet
   (if (i32.eq (local.get $id) (i32.const 335)) (then (return (i32.const 1))))  ;; Iterator (abstract, but a constructor)
   (if (i32.or (i32.eq (local.get $id) (i32.const 358)) (i32.eq (local.get $id) (i32.const 360))) (then (return (i32.const 1))))  ;; WeakRef, FinalizationRegistry
-  (if (i32.eq (local.get $id) (i32.const 363)) (then (return (i32.const 1))))  ;; DataView
+  (if (i32.or (i32.eq (local.get $id) (i32.const 363)) (i32.eq (local.get $id) (i32.const 383))) (then (return (i32.const 1))))  ;; DataView, SharedArrayBuffer
   (if (i32.eq (local.get $id) (i32.const 157)) (then (return (i32.const 1))))  ;; Function
   (i32.const 0))
 
