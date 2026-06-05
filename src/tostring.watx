@@ -210,14 +210,20 @@
     (set! $t (f64.div (local.get $t) (f64.const 10))) (set! $e (i32.add (local.get $e) (i32.const 1))) (br $gl)))
   (block $le (loop $ll (br_if $le (f64.ge (local.get $t) (f64.const 1)))
     (set! $t (f64.mul (local.get $t) (f64.const 10))) (set! $e (i32.sub (local.get $e) (i32.const 1))) (br $ll)))
-  (let $scale i32 (i32.sub (i32.sub (local.get $p) (i32.const 1)) (local.get $e)))
+  ;; f64 carries only ~17 significant digits; extracting more via i64 overflows
+  ;; (ax*10^scale can exceed 2^64). Extract pdig=min(p,17) digits, then zero-pad to p.
+  (let $pdig i32 (if i32 (i32.gt_s (local.get $p) (i32.const 17)) (then (i32.const 17)) (else (local.get $p))))
+  (let $scale i32 (i32.sub (i32.sub (local.get $pdig) (i32.const 1)) (local.get $e)))
   (let $m i64 (i64.trunc_f64_u (f64.add (f64.mul (local.get $ax) (call $pow10 (f64.convert_i32_s (local.get $scale)))) (f64.const 0.5))))
-  ;; rounding carry pushed it to p+1 digits → shift back, bump exponent
-  (if (i64.ge_u (local.get $m) (call $pow10u (local.get $p)))
+  ;; rounding carry pushed it to pdig+1 digits → shift back, bump exponent
+  (if (i64.ge_u (local.get $m) (call $pow10u (local.get $pdig)))
     (then (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $e (i32.add (local.get $e) (i32.const 1)))))
-  ;; write p digits of m (zero-padded) into db = scratch+400
+  ;; write the pdig digits of m (zero-padded) into db = scratch+400, then '0'-fill to p
   (let $db i32 (i32.add (call $scratch) (i32.const 400)))
-  (let $k i32 (i32.sub (local.get $p) (i32.const 1)))
+  (let $kf i32 (local.get $pdig))
+  (block $fe (loop $fl (br_if $fe (i32.ge_s (local.get $kf) (local.get $p)))
+    (i32.store8 (i32.add (local.get $db) (local.get $kf)) (i32.const 48)) (set! $kf (i32.add (local.get $kf) (i32.const 1))) (br $fl)))
+  (let $k i32 (i32.sub (local.get $pdig) (i32.const 1)))
   (block $we (loop $wl (br_if $we (i32.lt_s (local.get $k) (i32.const 0)))
     (i32.store8 (i32.add (local.get $db) (local.get $k)) (i32.add (i32.const 48) (i32.wrap_i64 (i64.rem_u (local.get $m) (i64.const 10)))))
     (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $k (i32.sub (local.get $k) (i32.const 1))) (br $wl)))
