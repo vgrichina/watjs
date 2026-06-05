@@ -161,6 +161,69 @@
 (func $coll_arr (param $obj i64) (param $name i32) (result i32) (effects)
   (call $val_payload (call $get_prop (local.get $obj) (call $mk_str (local.get $name)))))
 
+;; ── helpers for the ES2024 Set methods (union/intersection/…) ──
+;; one-argument method call (caller must check $err afterwards)
+(func $call1 (param $fn i64) (param $thisv i64) (param $a0 i64) (result i64) (effects)
+  (let $b i32 (call $heap_alloc (i32.const 8)))
+  (i64.store (local.get $b) (local.get $a0))
+  (call $call_val (local.get $fn) (i32.const 1) (local.get $b) (local.get $thisv)))
+
+;; normalize -0 → +0 (CanonicalizeKeyedCollectionKey)
+(func $norm_zero (param $v i64) (result i64) (effects)
+  (if (call $is_number (local.get $v))
+    (then
+      (let $d f64 (call $to_num (local.get $v)))
+      (if (i32.and (f64.eq (local.get $d) (f64.const 0))
+                   (f64.eq (f64.div (f64.const 1) (local.get $d)) (f64.div (f64.const -1) (f64.const 0))))
+        (then (return (call $num (f64.const 0)))))))
+  (local.get $v))
+
+;; push v into set-data array `sk` only if absent (SameValueZero via map_find)
+(func $set_add1 (param $sk i32) (param $v i64) (effects)
+  (if (i32.lt_s (call $map_find (local.get $sk) (local.get $v)) (i32.const 0))
+    (then (call $arr_push (local.get $sk) (local.get $v)))))
+
+;; GetSetRecord(other): validate set-like; store has@464 keys@472 size@456 (i32, Inf→MAX).
+;; returns 1 on success; 0 on error (with $err set).
+(func $gsr (param $other i64) (result i32) (effects)
+  (if (i32.eqz (call $is_object (local.get $other)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Set-like argument must be an object")) (return (i32.const 0))))
+  (let $d f64 (call $to_num (call $get_prop (local.get $other) (call $mk_str (cstring "size")))))
+  (if (call $err) (then (return (i32.const 0))))
+  (if (f64.ne (local.get $d) (local.get $d))  ;; NaN (covers undefined size)
+    (then (call $throw_type (cstring "TypeError") (cstring "Set-like size is NaN")) (return (i32.const 0))))
+  (let $ti f64 (f64.trunc (local.get $d)))
+  (if (f64.lt (local.get $ti) (f64.const 0))
+    (then (call $throw_type (cstring "RangeError") (cstring "Set-like size is negative")) (return (i32.const 0))))
+  (if (f64.ge (local.get $ti) (f64.const 2147483647))
+    (then (i32.store (i32.const 456) (i32.const 2147483647)))
+    (else (i32.store (i32.const 456) (i32.trunc_f64_s (local.get $ti)))))
+  (let $has i64 (call $get_prop (local.get $other) (call $mk_str (cstring "has"))))
+  (if (i32.eqz (call $is_function (local.get $has)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Set-like has is not callable")) (return (i32.const 0))))
+  (i64.store (i32.const 464) (local.get $has))
+  (let $keys i64 (call $get_prop (local.get $other) (call $mk_str (cstring "keys"))))
+  (if (i32.eqz (call $is_function (local.get $keys)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Set-like keys is not callable")) (return (i32.const 0))))
+  (i64.store (i32.const 472) (local.get $keys))
+  (i32.const 1))
+
+;; call keys-iterator function (this=other) and collect normalized values into a fresh array
+(func $iter_collect (param $itfn i64) (param $itthis i64) (result i32) (effects)
+  (let $arr i32 (call $arr_new (i32.const 4)))
+  (let $it i64 (call $call_val (local.get $itfn) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $itthis)))
+  (if (call $err) (then (return (local.get $arr))))
+  (let $nf i64 (call $get_prop (local.get $it) (call $mk_str (cstring "next"))))
+  (if (i32.eqz (call $is_function (local.get $nf))) (then (return (local.get $arr))))
+  (let $nbuf i32 (call $heap_alloc (i32.const 8)))
+  (block $e (loop $l
+    (let $r i64 (call $call_val (local.get $nf) (i32.const 0) (local.get $nbuf) (local.get $it)))
+    (if (call $err) (then (br $e)))
+    (br_if $e (call $truthy (call $get_prop (local.get $r) (call $mk_str (cstring "done")))))
+    (call $arr_push (local.get $arr) (call $norm_zero (call $get_prop (local.get $r) (call $mk_str (cstring "value")))))
+    (br $l)))
+  (local.get $arr))
+
 (func $loose_eq (param $a i64) (param $b i64) (result i32) (effects)
   (if i32 (call $strict_eq (local.get $a) (local.get $b)) (then (i32.const 1))
   (else
@@ -1312,6 +1375,158 @@
         (then
           (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@sk") (call $mk_arr (call $arr_new (i32.const 4))))
           (return (call $v_undef))))
+      (return (call $v_undef))))
+  ;; ── ES2024 Set methods: union(310) intersection(311) difference(312)
+  ;;    symmetricDifference(313) isSubsetOf(314) isSupersetOf(315) isDisjointFrom(316) ──
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316)))
+    (then
+      ;; RequireInternalSlot([[SetData]]) on this (short-circuit)
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@sk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (let $other i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $gsr (local.get $other))) (then (return (call $v_undef))))
+      (let $osk i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
+      (let $thisSize i32 (call $arr_len (local.get $osk)))
+      (let $otherSize i32 (i32.load (i32.const 456)))
+      (let $hasf i64 (i64.load (i32.const 464)))
+      (let $keysf i64 (i64.load (i32.const 472)))
+      (let $i i32 (i32.const 0))
+      ;; ----- union (310) -----
+      (if (i32.eq (local.get $id) (i32.const 310))
+        (then
+          (let $resu i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
+          (let $rsk i32 (call $coll_arr (local.get $resu) (cstring "@@sk")))
+          (block $ue1 (loop $ul1
+            (br_if $ue1 (i32.ge_s (local.get $i) (local.get $thisSize)))
+            (call $set_add1 (local.get $rsk) (call $arr_get (local.get $osk) (local.get $i)))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ul1)))
+          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+          (if (call $err) (then (return (call $v_undef))))
+          (set! $i (i32.const 0))
+          (block $ue2 (loop $ul2
+            (br_if $ue2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+            (call $set_add1 (local.get $rsk) (call $arr_get (local.get $ka) (local.get $i)))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ul2)))
+          (return (local.get $resu))))
+      ;; ----- intersection (311) -----
+      (if (i32.eq (local.get $id) (i32.const 311))
+        (then
+          (let $resi i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
+          (let $rsk i32 (call $coll_arr (local.get $resi) (cstring "@@sk")))
+          (if (i32.le_s (local.get $thisSize) (local.get $otherSize))
+            (then  ;; iterate O, keep those other.has(e)
+              (block $ie1 (loop $il1
+                (br_if $ie1 (i32.ge_s (local.get $i) (local.get $thisSize)))
+                (let $e i64 (call $arr_get (local.get $osk) (local.get $i)))
+                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (local.get $e)))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (call $truthy (local.get $shv)) (then (call $set_add1 (local.get $rsk) (local.get $e))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $il1))))
+            (else  ;; iterate other.keys(), keep those in O
+              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+              (if (call $err) (then (return (call $v_undef))))
+              (block $ie2 (loop $il2
+                (br_if $ie2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+                (let $v i64 (call $arr_get (local.get $ka) (local.get $i)))
+                (if (i32.ge_s (call $map_find (local.get $osk) (local.get $v)) (i32.const 0))
+                  (then (call $set_add1 (local.get $rsk) (local.get $v))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $il2)))))
+          (return (local.get $resi))))
+      ;; ----- difference (312) -----
+      (if (i32.eq (local.get $id) (i32.const 312))
+        (then
+          (let $resd i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
+          (let $rsk i32 (call $coll_arr (local.get $resd) (cstring "@@sk")))
+          (if (i32.le_s (local.get $thisSize) (local.get $otherSize))
+            (then  ;; keep O elements NOT in other
+              (block $de1 (loop $dl1
+                (br_if $de1 (i32.ge_s (local.get $i) (local.get $thisSize)))
+                (let $e i64 (call $arr_get (local.get $osk) (local.get $i)))
+                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (local.get $e)))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (i32.eqz (call $truthy (local.get $shv))) (then (call $set_add1 (local.get $rsk) (local.get $e))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl1))))
+            (else  ;; clone O, remove each other key
+              (block $dc (loop $dcl
+                (br_if $dc (i32.ge_s (local.get $i) (local.get $thisSize)))
+                (call $arr_push (local.get $rsk) (call $arr_get (local.get $osk) (local.get $i)))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dcl)))
+              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+              (if (call $err) (then (return (call $v_undef))))
+              (set! $i (i32.const 0))
+              (block $de2 (loop $dl2
+                (br_if $de2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+                (let $ridx i32 (call $map_find (local.get $rsk) (call $arr_get (local.get $ka) (local.get $i))))
+                (if (i32.ge_s (local.get $ridx) (i32.const 0)) (then (call $arr_remove (local.get $rsk) (local.get $ridx))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl2)))))
+          (return (local.get $resd))))
+      ;; ----- symmetricDifference (313) -----
+      (if (i32.eq (local.get $id) (i32.const 313))
+        (then
+          (let $ress i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
+          (let $rsk i32 (call $coll_arr (local.get $ress) (cstring "@@sk")))
+          (block $sc (loop $scl
+            (br_if $sc (i32.ge_s (local.get $i) (local.get $thisSize)))
+            (call $arr_push (local.get $rsk) (call $arr_get (local.get $osk) (local.get $i)))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $scl)))
+          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+          (if (call $err) (then (return (call $v_undef))))
+          (set! $i (i32.const 0))
+          (block $se (loop $sl
+            (br_if $se (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+            (let $v i64 (call $arr_get (local.get $ka) (local.get $i)))
+            (if (i32.ge_s (call $map_find (local.get $osk) (local.get $v)) (i32.const 0))
+              (then  ;; in O → remove from result if present
+                (let $ridx i32 (call $map_find (local.get $rsk) (local.get $v)))
+                (if (i32.ge_s (local.get $ridx) (i32.const 0)) (then (call $arr_remove (local.get $rsk) (local.get $ridx)))))
+              (else (call $set_add1 (local.get $rsk) (local.get $v))))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $sl)))
+          (return (local.get $ress))))
+      ;; ----- isSubsetOf (314) -----
+      (if (i32.eq (local.get $id) (i32.const 314))
+        (then
+          (if (i32.gt_s (local.get $thisSize) (local.get $otherSize)) (then (return (call $v_false))))
+          (block $sube (loop $subl
+            (br_if $sube (i32.ge_s (local.get $i) (local.get $thisSize)))
+            (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (call $arr_get (local.get $osk) (local.get $i))))
+            (if (call $err) (then (return (call $v_undef))))
+            (if (i32.eqz (call $truthy (local.get $shv))) (then (return (call $v_false))))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $subl)))
+          (return (call $v_true))))
+      ;; ----- isSupersetOf (315) -----
+      (if (i32.eq (local.get $id) (i32.const 315))
+        (then
+          (if (i32.lt_s (local.get $thisSize) (local.get $otherSize)) (then (return (call $v_false))))
+          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+          (if (call $err) (then (return (call $v_undef))))
+          (block $supe (loop $supl
+            (br_if $supe (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+            (if (i32.lt_s (call $map_find (local.get $osk) (call $arr_get (local.get $ka) (local.get $i))) (i32.const 0))
+              (then (return (call $v_false))))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $supl)))
+          (return (call $v_true))))
+      ;; ----- isDisjointFrom (316) -----
+      (if (i32.eq (local.get $id) (i32.const 316))
+        (then
+          (if (i32.le_s (local.get $thisSize) (local.get $otherSize))
+            (then
+              (block $dje1 (loop $djl1
+                (br_if $dje1 (i32.ge_s (local.get $i) (local.get $thisSize)))
+                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (call $arr_get (local.get $osk) (local.get $i))))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (call $truthy (local.get $shv)) (then (return (call $v_false))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $djl1))))
+            (else
+              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+              (if (call $err) (then (return (call $v_undef))))
+              (block $dje2 (loop $djl2
+                (br_if $dje2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+                (if (i32.ge_s (call $map_find (local.get $osk) (call $arr_get (local.get $ka) (local.get $i))) (i32.const 0))
+                  (then (return (call $v_false))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $djl2)))))
+          (return (call $v_true))))
       (return (call $v_undef))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 113)) (i32.eq (local.get $id) (i32.const 114)))  ;; trimStart / trimEnd
     (then
@@ -4317,6 +4532,13 @@
   (call $scope_define (local.get $setproto) (cstring "values") (call $mk_native (i32.const 175) (cstring "values")))
   (call $scope_define (local.get $setproto) (cstring "keys") (call $mk_native (i32.const 175) (cstring "keys")))
   (call $scope_define (local.get $setproto) (cstring "@@iterator") (call $mk_native (i32.const 175) (cstring "values")))
+  (call $scope_define (local.get $setproto) (cstring "union") (call $mk_native (i32.const 310) (cstring "union")))
+  (call $scope_define (local.get $setproto) (cstring "intersection") (call $mk_native (i32.const 311) (cstring "intersection")))
+  (call $scope_define (local.get $setproto) (cstring "difference") (call $mk_native (i32.const 312) (cstring "difference")))
+  (call $scope_define (local.get $setproto) (cstring "symmetricDifference") (call $mk_native (i32.const 313) (cstring "symmetricDifference")))
+  (call $scope_define (local.get $setproto) (cstring "isSubsetOf") (call $mk_native (i32.const 314) (cstring "isSubsetOf")))
+  (call $scope_define (local.get $setproto) (cstring "isSupersetOf") (call $mk_native (i32.const 315) (cstring "isSupersetOf")))
+  (call $scope_define (local.get $setproto) (cstring "isDisjointFrom") (call $mk_native (i32.const 316) (cstring "isDisjointFrom")))
   (call $scope_define (local.get $setproto) (cstring "@@toStringTag") (call $mk_str (cstring "Set")))
   (call $scope_define (local.get $setproto) (cstring "constructor") (local.get $setf))
   (call $scope_clear_enum (local.get $setproto))
