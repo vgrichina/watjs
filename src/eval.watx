@@ -1910,6 +1910,75 @@
       (let $ifn i64 (call $iter_direct_next (local.get $ifit)))
       (if (call $err) (then (return (call $v_undef))))
       (return (call $iter_helper_new (local.get $ifit) (local.get $ifn) (i32.const 5) (call $v_undef) (f64.const 0)))))
+  ;; Iterator.concat(...items) (350) — eagerly validate each item (object + callable
+  ;; @@iterator), then lazily yield all values of each in order
+  (if (i32.eq (local.get $id) (i32.const 350))
+    (then
+      (let $ccit i32 (call $arr_new (i32.const 4)))   ;; items
+      (let $ccm i32 (call $arr_new (i32.const 4)))     ;; their @@iterator methods
+      (let $cck i32 (i32.const 0))
+      (block $cce (loop $ccl
+        (br_if $cce (i32.ge_s (local.get $cck) (local.get $argc)))
+        (let $cca i64 (call $argn (local.get $argv) (local.get $argc) (local.get $cck)))
+        (if (i32.eqz (i32.or (call $is_object (local.get $cca)) (i32.or (call $is_array (local.get $cca)) (call $is_function (local.get $cca)))))
+          (then (call $throw_type (cstring "TypeError") (cstring "Iterator.concat argument is not an object")) (return (call $v_undef))))
+        (let $ccmeth i64 (call $get_prop (local.get $cca) (call $mk_str (cstring "@@iterator"))))
+        (if (call $err) (then (return (call $v_undef))))
+        (if (i32.eqz (call $is_function (local.get $ccmeth)))
+          (then (call $throw_type (cstring "TypeError") (cstring "Iterator.concat argument is not iterable")) (return (call $v_undef))))
+        (call $arr_push (local.get $ccit) (local.get $cca))
+        (call $arr_push (local.get $ccm) (local.get $ccmeth))
+        (set! $cck (i32.add (local.get $cck) (i32.const 1))) (br $ccl)))
+      (let $cco i32 (call $obj_new (i32.const 8)))
+      (if (i32.load (i32.const 488)) (then (i32.store (local.get $cco) (i32.load (i32.const 488)))))
+      (call $scope_define (local.get $cco) (cstring "@@citems") (call $mk_arr (local.get $ccit)))
+      (call $scope_define (local.get $cco) (cstring "@@cmeth") (call $mk_arr (local.get $ccm)))
+      (call $scope_define (local.get $cco) (cstring "@@cidx") (call $num (f64.const 0)))
+      (call $scope_define (local.get $cco) (cstring "@@cinner") (call $v_undef))
+      (call $scope_define (local.get $cco) (cstring "@@cdone") (call $v_false))
+      (call $scope_define (local.get $cco) (cstring "next") (call $mk_native (i32.const 351) (cstring "next")))
+      (return (call $mk_obj (local.get $cco)))))
+  ;; Iterator.concat helper .next() (351)
+  (if (i32.eq (local.get $id) (i32.const 351))
+    (then
+      (let $cnr i32 (call $obj_new (i32.const 2)))
+      (let $cnself i32 (call $val_payload (local.get $thisv)))
+      (let $cnbuf i32 (call $heap_alloc (i32.const 8)))
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cdone"))))
+        (then (call $scope_define (local.get $cnr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $cnr) (cstring "done") (call $v_true)) (return (call $mk_obj (local.get $cnr)))))
+      (block $cne (loop $cnl
+        (let $cninner i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cinner"))))
+        (if (call $is_object (local.get $cninner))
+          (then
+            (let $cnnext i64 (call $get_prop (local.get $cninner) (call $mk_str (cstring "next"))))
+            (let $cnir i64 (call $call_val (local.get $cnnext) (i32.const 0) (local.get $cnbuf) (local.get $cninner)))
+            (if (call $err) (then (return (call $v_undef))))
+            (if (i32.eqz (call $is_object (local.get $cnir)))
+              (then (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (return (call $v_undef))))
+            (if (call $truthy (call $get_prop (local.get $cnir) (call $mk_str (cstring "done"))))
+              (then (call $scope_define (local.get $cnself) (cstring "@@cinner") (call $v_undef)) (br $cnl))
+              (else
+                (call $scope_define (local.get $cnr) (cstring "value") (call $get_prop (local.get $cnir) (call $mk_str (cstring "value"))))
+                (call $scope_define (local.get $cnr) (cstring "done") (call $v_false))
+                (return (call $mk_obj (local.get $cnr))))))
+          (else
+            (let $cnidx i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cidx"))))))
+            (let $cnitems i32 (call $coll_arr (local.get $thisv) (cstring "@@citems")))
+            (if (i32.ge_s (local.get $cnidx) (call $arr_len (local.get $cnitems)))
+              (then (call $scope_define (local.get $cnself) (cstring "@@cdone") (call $v_true))
+                    (call $scope_define (local.get $cnr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $cnr) (cstring "done") (call $v_true))
+                    (return (call $mk_obj (local.get $cnr)))))
+            (let $cnmeth i32 (call $coll_arr (local.get $thisv) (cstring "@@cmeth")))
+            (let $cnitem i64 (call $arr_get (local.get $cnitems) (local.get $cnidx)))
+            (let $cnm i64 (call $arr_get (local.get $cnmeth) (local.get $cnidx)))
+            (let $cnnewi i64 (call $call_val (local.get $cnm) (i32.const 0) (local.get $cnbuf) (local.get $cnitem)))
+            (if (call $err) (then (return (call $v_undef))))
+            (if (i32.eqz (call $is_object (local.get $cnnewi)))
+              (then (call $throw_type (cstring "TypeError") (cstring "[Symbol.iterator] did not return an object")) (return (call $v_undef))))
+            (call $scope_define (local.get $cnself) (cstring "@@cinner") (local.get $cnnewi))
+            (call $scope_define (local.get $cnself) (cstring "@@cidx") (call $num (f64.convert_i32_s (i32.add (local.get $cnidx) (i32.const 1)))))
+            (br $cnl)))))
+      (return (call $v_undef))))
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
     (then
@@ -5154,6 +5223,7 @@
   (call $scope_clear_enum (local.get $iterproto))
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $iterproto)))
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 349) (cstring "from")))
+  (call $set_prop (local.get $iterf) (call $mk_str (cstring "concat")) (call $mk_native (i32.const 350) (cstring "concat")))
   (let $datef i64 (call $def_native (local.get $g) (cstring "Date") (i32.const 180)))
   (call $set_prop (local.get $datef) (call $mk_str (cstring "now")) (call $mk_native (i32.const 179) (cstring "now")))
   ;; Date.prototype (reg 308) — instances link to it for instanceof/getPrototypeOf/inheritance
