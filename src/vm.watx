@@ -4075,6 +4075,7 @@
   ;; calling frame's loop unwinds — i.e. the generator call throws, per spec.
   (drop (call $vm_step (local.get $ctx) (call $v_undef)))
   (let $g i32 (call $obj_new (i32.const 4)))
+  (if (i32.load (i32.const 488)) (then (i32.store (local.get $g) (i32.load (i32.const 488)))))  ;; inherit %Iterator.prototype%
   (call $scope_define (local.get $g) (cstring "@@ctx") (call $num (f64.convert_i32_s (local.get $ctx))))
   (call $scope_define (local.get $g) (cstring "next") (call $mk_native (i32.const 150) (cstring "next")))
   (call $mk_obj (local.get $g)))

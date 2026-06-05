@@ -161,6 +161,17 @@
 (func $coll_arr (param $obj i64) (param $name i32) (result i32) (effects)
   (call $val_payload (call $get_prop (local.get $obj) (call $mk_str (local.get $name)))))
 
+;; GetIteratorDirect(O): O must be an object; returns its (callable) next method.
+;; On error sets $err and returns undefined (caller checks $err).
+(func $iter_direct_next (param $o i64) (result i64) (effects)
+  (if (i32.eqz (call $is_object (local.get $o)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Iterator method called on a non-object")) (return (call $v_undef))))
+  (let $nf i64 (call $get_prop (local.get $o) (call $mk_str (cstring "next"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_function (local.get $nf)))
+    (then (call $throw_type (cstring "TypeError") (cstring "iterator.next is not a function")) (return (call $v_undef))))
+  (local.get $nf))
+
 ;; CanBeHeldWeakly: objects, functions, arrays, and symbols may be weak keys
 (func $weakly_holdable (param $v i64) (result i32) (effects)
   (i32.or (call $is_object (local.get $v))
@@ -1659,6 +1670,72 @@
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
+  ;; ── Iterator: abstract ctor (335) + %Iterator.prototype% eager methods ──
+  (if (i32.eq (local.get $id) (i32.const 335))  ;; new Iterator() — abstract
+    (then (call $throw_type (cstring "TypeError") (cstring "Abstract class Iterator not directly constructable")) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 342))  ;; Iterator.prototype[@@iterator] → this
+    (then (return (local.get $thisv))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 336)) (i32.le_s (local.get $id) (i32.const 341)))
+    (then
+      (let $itnf i64 (call $iter_direct_next (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      ;; methods 337-341 take a callable fn/predicate/reducer as arg0
+      (let $itfn0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.and (i32.ge_s (local.get $id) (i32.const 337)) (i32.le_s (local.get $id) (i32.const 341)))
+        (then (if (i32.eqz (call $is_function (local.get $itfn0)))
+          (then (call $throw_type (cstring "TypeError") (cstring "Iterator helper callback is not a function")) (return (call $v_undef))))))
+      (let $itnb i32 (call $heap_alloc (i32.const 8)))     ;; next() arg buffer (empty)
+      (let $itcb i32 (call $heap_alloc (i32.const 24)))    ;; callback arg buffer [a,b,c]
+      (let $itcnt i32 (i32.const 0))
+      (let $itacc i64 (call $v_undef))                     ;; reduce accumulator / toArray result
+      (let $itarr i32 (call $arr_new (i32.const 8)))        ;; toArray
+      ;; reduce: seed accumulator (arg1 init, or first value; empty+no-init → TypeError)
+      (if (i32.eq (local.get $id) (i32.const 338))
+        (then
+          (if (i32.ge_s (local.get $argc) (i32.const 2))
+            (then (set! $itacc (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+            (else
+              (let $itr0 i64 (call $call_val (local.get $itnf) (i32.const 0) (local.get $itnb) (local.get $thisv)))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (call $truthy (call $get_prop (local.get $itr0) (call $mk_str (cstring "done"))))
+                (then (call $throw_type (cstring "TypeError") (cstring "Reduce of empty iterator with no initial value")) (return (call $v_undef))))
+              (set! $itacc (call $get_prop (local.get $itr0) (call $mk_str (cstring "value"))))
+              (set! $itcnt (i32.const 1))))))
+      (block $ite (loop $itl
+        (let $itr i64 (call $call_val (local.get $itnf) (i32.const 0) (local.get $itnb) (local.get $thisv)))
+        (if (call $err) (then (return (call $v_undef))))
+        (br_if $ite (call $truthy (call $get_prop (local.get $itr) (call $mk_str (cstring "done")))))
+        (let $itv i64 (call $get_prop (local.get $itr) (call $mk_str (cstring "value"))))
+        (if (call $err) (then (return (call $v_undef))))
+        ;; toArray (336): collect
+        (if (i32.eq (local.get $id) (i32.const 336)) (then (call $arr_push (local.get $itarr) (local.get $itv))))
+        ;; forEach/some/every/find: call fn(value, counter)
+        (if (i32.and (i32.ge_s (local.get $id) (i32.const 337)) (i32.ne (local.get $id) (i32.const 338)))
+          (then
+            (i64.store (local.get $itcb) (local.get $itv))
+            (i64.store (i32.add (local.get $itcb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $itcnt))))
+            (let $itrv i64 (call $call_val (local.get $itfn0) (i32.const 2) (local.get $itcb) (call $v_undef)))
+            (if (call $err) (then (return (call $v_undef))))
+            (if (i32.eq (local.get $id) (i32.const 339)) (then (if (call $truthy (local.get $itrv)) (then (return (call $v_true))))))   ;; some
+            (if (i32.eq (local.get $id) (i32.const 340)) (then (if (i32.eqz (call $truthy (local.get $itrv))) (then (return (call $v_false))))))  ;; every
+            (if (i32.eq (local.get $id) (i32.const 341)) (then (if (call $truthy (local.get $itrv)) (then (return (local.get $itv))))))))  ;; find
+        ;; reduce (338): acc = reducer(acc, value, counter)
+        (if (i32.eq (local.get $id) (i32.const 338))
+          (then
+            (i64.store (local.get $itcb) (local.get $itacc))
+            (i64.store (i32.add (local.get $itcb) (i32.const 8)) (local.get $itv))
+            (i64.store (i32.add (local.get $itcb) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $itcnt))))
+            (set! $itacc (call $call_val (local.get $itfn0) (i32.const 3) (local.get $itcb) (call $v_undef)))
+            (if (call $err) (then (return (call $v_undef))))))
+        (set! $itcnt (i32.add (local.get $itcnt) (i32.const 1)))
+        (br $itl)))
+      ;; loop ended (iterator done)
+      (if (i32.eq (local.get $id) (i32.const 336)) (then (return (call $mk_arr (local.get $itarr)))))   ;; toArray
+      (if (i32.eq (local.get $id) (i32.const 338)) (then (return (local.get $itacc))))                  ;; reduce
+      (if (i32.eq (local.get $id) (i32.const 339)) (then (return (call $v_false))))                     ;; some → none truthy
+      (if (i32.eq (local.get $id) (i32.const 340)) (then (return (call $v_true))))                      ;; every → all truthy
+      (if (i32.eq (local.get $id) (i32.const 341)) (then (return (call $v_undef))))                     ;; find → none
+      (return (call $v_undef))))   ;; forEach
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
     (then
@@ -1823,6 +1900,7 @@
       (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "Array.prototype values/keys/entries called on null or undefined")) (return (call $v_undef))))
       (let $itobj i32 (call $obj_new (i32.const 8)))
+      (if (i32.load (i32.const 488)) (then (i32.store (local.get $itobj) (i32.load (i32.const 488)))))  ;; inherit %Iterator.prototype%
       (call $scope_define (local.get $itobj) (cstring "@@arr") (local.get $thisv))
       (call $scope_define (local.get $itobj) (cstring "@@i") (call $num (f64.const 0)))
       (call $scope_define (local.get $itobj) (cstring "@@len") (call $num (f64.convert_i32_s (call $arr_len (call $val_payload (local.get $thisv))))))  ;; snapshot length
@@ -4232,6 +4310,8 @@
   ;; WeakMap/WeakSet constructors = length 0 (handled by default)
   ;; Object.groupBy / Map.groupBy = length 2
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331))) (then (return (i32.const 2))))
+  ;; Iterator helper methods forEach/reduce/some/every/find = length 1 (toArray 336 = 0)
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 337)) (i32.le_s (local.get $id) (i32.const 341))) (then (return (i32.const 1))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
@@ -4272,6 +4352,7 @@
     (then (return (i32.const 1))))  ;; TypedArrays + ArrayBuffer
   (if (i32.or (i32.eq (local.get $id) (i32.const 320)) (i32.eq (local.get $id) (i32.const 325)))
     (then (return (i32.const 1))))  ;; WeakMap, WeakSet
+  (if (i32.eq (local.get $id) (i32.const 335)) (then (return (i32.const 1))))  ;; Iterator (abstract, but a constructor)
   (if (i32.eq (local.get $id) (i32.const 157)) (then (return (i32.const 1))))  ;; Function
   (i32.const 0))
 
@@ -4875,6 +4956,21 @@
   (call $scope_define (local.get $wsproto) (cstring "constructor") (local.get $wsetf))
   (call $scope_clear_enum (local.get $wsproto))
   (call $set_prop (local.get $wsetf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $wsproto)))
+  ;; Iterator (abstract ctor) + %Iterator.prototype% (reg 488) — eager helper methods
+  (let $iterf i64 (call $def_native (local.get $g) (cstring "Iterator") (i32.const 335)))
+  (let $iterproto i32 (call $obj_new (i32.const 12)))
+  (i32.store (i32.const 488) (local.get $iterproto))
+  (call $scope_define (local.get $iterproto) (cstring "toArray") (call $mk_native (i32.const 336) (cstring "toArray")))
+  (call $scope_define (local.get $iterproto) (cstring "forEach") (call $mk_native (i32.const 337) (cstring "forEach")))
+  (call $scope_define (local.get $iterproto) (cstring "reduce") (call $mk_native (i32.const 338) (cstring "reduce")))
+  (call $scope_define (local.get $iterproto) (cstring "some") (call $mk_native (i32.const 339) (cstring "some")))
+  (call $scope_define (local.get $iterproto) (cstring "every") (call $mk_native (i32.const 340) (cstring "every")))
+  (call $scope_define (local.get $iterproto) (cstring "find") (call $mk_native (i32.const 341) (cstring "find")))
+  (call $scope_define (local.get $iterproto) (cstring "@@iterator") (call $mk_native (i32.const 342) (cstring "[Symbol.iterator]")))
+  (call $scope_define (local.get $iterproto) (cstring "@@toStringTag") (call $mk_str (cstring "Iterator")))
+  (call $scope_define (local.get $iterproto) (cstring "constructor") (local.get $iterf))
+  (call $scope_clear_enum (local.get $iterproto))
+  (call $set_prop (local.get $iterf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $iterproto)))
   (let $datef i64 (call $def_native (local.get $g) (cstring "Date") (i32.const 180)))
   (call $set_prop (local.get $datef) (call $mk_str (cstring "now")) (call $mk_native (i32.const 179) (cstring "now")))
   ;; Date.prototype (reg 308) — instances link to it for instanceof/getPrototypeOf/inheritance
