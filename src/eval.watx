@@ -705,8 +705,8 @@
   (let $tap i32 (call $obj_new (i32.const 16)))
   (i32.store (i32.const 528) (local.get $tap))
   (call $scope_define (local.get $tap) (cstring "forEach") (call $mk_native (i32.const 25) (cstring "forEach")))
-  (call $scope_define (local.get $tap) (cstring "map") (call $mk_native (i32.const 26) (cstring "map")))
-  (call $scope_define (local.get $tap) (cstring "filter") (call $mk_native (i32.const 72) (cstring "filter")))
+  (call $scope_define (local.get $tap) (cstring "map") (call $mk_native (i32.const 400) (cstring "map")))
+  (call $scope_define (local.get $tap) (cstring "filter") (call $mk_native (i32.const 401) (cstring "filter")))
   (call $scope_define (local.get $tap) (cstring "reduce") (call $mk_native (i32.const 73) (cstring "reduce")))
   (call $scope_define (local.get $tap) (cstring "reduceRight") (call $mk_native (i32.const 137) (cstring "reduceRight")))
   (call $scope_define (local.get $tap) (cstring "indexOf") (call $mk_native (i32.const 22) (cstring "indexOf")))
@@ -723,7 +723,10 @@
   (call $scope_define (local.get $tap) (cstring "fill") (call $mk_native (i32.const 29) (cstring "fill")))
   (call $scope_define (local.get $tap) (cstring "reverse") (call $mk_native (i32.const 71) (cstring "reverse")))
   (call $scope_define (local.get $tap) (cstring "sort") (call $mk_native (i32.const 78) (cstring "sort")))
-  (call $scope_define (local.get $tap) (cstring "slice") (call $mk_native (i32.const 24) (cstring "slice")))
+  (call $scope_define (local.get $tap) (cstring "slice") (call $mk_native (i32.const 402) (cstring "slice")))
+  (call $scope_define (local.get $tap) (cstring "toReversed") (call $mk_native (i32.const 403) (cstring "toReversed")))
+  (call $scope_define (local.get $tap) (cstring "toSorted") (call $mk_native (i32.const 404) (cstring "toSorted")))
+  (call $scope_define (local.get $tap) (cstring "with") (call $mk_native (i32.const 405) (cstring "with")))
   (call $scope_define (local.get $tap) (cstring "copyWithin") (call $mk_native (i32.const 168) (cstring "copyWithin")))
   (call $scope_define (local.get $tap) (cstring "toLocaleString") (call $mk_native (i32.const 305) (cstring "toLocaleString")))
   (call $scope_define (local.get $tap) (cstring "toString") (call $mk_native (i32.const 23) (cstring "toString")))
@@ -811,6 +814,25 @@
       (if (i32.eq (local.get $tte) (i32.const 8)) (then (return (call $mk_str (cstring "Float64Array")))))
       (if (i32.eq (local.get $tte) (i32.const 9)) (then (return (call $mk_str (cstring "BigInt64Array")))))
       (return (call $mk_str (cstring "BigUint64Array")))))
+  ;; typed-result TA methods: map(400)/filter(401)/slice(402)/toReversed(403)/
+  ;; toSorted(404)/with(405) — run the Array native on `this`, then re-type the result
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 400)) (i32.le_s (local.get $id) (i32.const 405)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "method called on incompatible receiver")) (return (call $v_undef))))
+      (let $tmsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
+      (if (i32.eqz (local.get $tmsl)) (then (call $throw_type (cstring "TypeError") (cstring "method called on a non-TypedArray")) (return (call $v_undef))))
+      (let $tmelem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tmsl)))))
+      (let $tmaid i32 (i32.const 275))  ;; default = with(275); else the matching Array native
+      (if (i32.eq (local.get $id) (i32.const 400)) (then (set! $tmaid (i32.const 26))))    ;; map
+      (if (i32.eq (local.get $id) (i32.const 401)) (then (set! $tmaid (i32.const 72))))    ;; filter
+      (if (i32.eq (local.get $id) (i32.const 402)) (then (set! $tmaid (i32.const 24))))    ;; slice
+      (if (i32.eq (local.get $id) (i32.const 403)) (then (set! $tmaid (i32.const 273))))   ;; toReversed
+      (if (i32.eq (local.get $id) (i32.const 404)) (then (set! $tmaid (i32.const 274))))   ;; toSorted
+      (let $tmres i64 (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $tmbuf i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $tmbuf) (local.get $tmres))
+      (return (call $ta_make (local.get $tmelem) (i32.const 1) (local.get $tmbuf)))))
   ;; %TypedArray%.from(source[, mapfn]) (398) — this = the per-type constructor
   (if (i32.eq (local.get $id) (i32.const 398))
     (then
@@ -2783,7 +2805,7 @@
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
     (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 393)))
-              (i32.and (i32.ge_s (local.get $id) (i32.const 396)) (i32.le_s (local.get $id) (i32.const 399))))  ;; DataView/SAB/ArrayBuffer.proto/TA toStringTag/set/subarray/from/of
+              (i32.and (i32.ge_s (local.get $id) (i32.const 396)) (i32.le_s (local.get $id) (i32.const 405))))  ;; DataView/SAB/ArrayBuffer.proto/TA methods
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
@@ -4876,7 +4898,8 @@
   ;; object case is bounded to ids 20-36 (the array-method range) so unrelated
   ;; object-receiver natives (Date getters 182+, Reflect 200+, …) don't land here.
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 20))
-        (i32.or (call $is_array (local.get $thisv)) (i32.and (call $is_object (local.get $thisv)) (i32.le_s (local.get $id) (i32.const 36)))))
+        (i32.or (call $is_array (local.get $thisv)) (i32.and (call $is_object (local.get $thisv))
+          (i32.or (i32.le_s (local.get $id) (i32.const 36)) (i32.and (i32.ge_s (local.get $id) (i32.const 273)) (i32.le_s (local.get $id) (i32.const 276)))))))
     (then
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
@@ -5461,6 +5484,9 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395))) (then (return (i32.const 3))))  ;; BigInt64Array/BigUint64Array ctor length 3
   (if (i32.or (i32.eq (local.get $id) (i32.const 396)) (i32.eq (local.get $id) (i32.const 397))) (then (return (i32.const 1))))  ;; TA set/subarray length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 398)) (i32.eq (local.get $id) (i32.const 399))) (then (return (i32.const 1))))  ;; TA from/of length 1
+  ;; typed map/filter/with(400/401/405)=1, slice(402)=2, toReversed(403)=0, toSorted(404)=1
+  (if (i32.or (i32.eq (local.get $id) (i32.const 400)) (i32.or (i32.eq (local.get $id) (i32.const 401)) (i32.eq (local.get $id) (i32.const 404)))) (then (return (i32.const 1))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 402)) (i32.eq (local.get $id) (i32.const 405))) (then (return (i32.const 2))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
