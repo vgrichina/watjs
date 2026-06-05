@@ -1,0 +1,8 @@
+[object Set]
+[object Map]
+[object WeakMap]
+[object WeakSet]
+[object Array]
+[object Function]
+[object Object]
+[object Custom]

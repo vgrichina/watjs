@@ -1002,14 +1002,13 @@
       (if (call $is_string (local.get $thisv)) (then (return (call $mk_str (cstring "[object String]")))))
       (if (call $is_boolean (local.get $thisv)) (then (return (call $mk_str (cstring "[object Boolean]")))))
       ;; a string Symbol.toStringTag (@@toStringTag) overrides the builtin tag
-      (if (call $is_object (local.get $thisv))
+      ;; (Get walks the prototype chain, so built-ins tag via their prototype)
+      (if (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv))))
         (then
-          (let $tts i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@toStringTag")))
-          (if (local.get $tts)
-            (then
-              (let $ttv i64 (i64.load (local.get $tts)))
-              (if (call $is_string (local.get $ttv))
-                (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "[object ") (call $val_payload (local.get $ttv))) (cstring "]"))))))))))
+          (let $ttv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@toStringTag"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_string (local.get $ttv))
+            (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "[object ") (call $val_payload (local.get $ttv))) (cstring "]"))))))))
       (if (call $is_array (local.get $thisv)) (then (return (call $mk_str (cstring "[object Array]")))))
       (if (call $is_function (local.get $thisv)) (then (return (call $mk_str (cstring "[object Function]")))))
       ;; wrapper objects + Date get their builtin tags
