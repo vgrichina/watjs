@@ -3202,6 +3202,26 @@
                   (if (call $err) (then (return (call $v_undef))))))))
             (set! $ai (i32.add (local.get $ai) (i32.const 1)))
             (br $adl)))))
+      ;; function target: define into the function's own-prop scope
+      (if (i32.and (call $is_function (local.get $ob)) (call $is_object (local.get $de)))
+        (then
+          (let $fos i32 (call $fn_def_scope (local.get $ob)))
+          (let $fps i32 (call $val_payload (local.get $de)))
+          (let $fcnt i32 (call $scope_count (local.get $fps)))
+          (let $fi i32 (i32.const 0))
+          (block $fde (loop $fdl
+            (br_if $fde (i32.ge_s (local.get $fi) (local.get $fcnt)))
+            (let $fent i32 (call $scope_entry (local.get $fps) (local.get $fi)))
+            (if (call $entry_enumerable (i32.add (local.get $fent) (i32.const 8)))
+              (then (if (i32.eqz (call $is_internal_key (i32.load (local.get $fent))))
+                (then
+                  (let $fdv i64 (call $get_prop (local.get $de) (call $mk_str (i32.load (local.get $fent)))))
+                  (if (call $err) (then (return (call $v_undef))))
+                  (if (i32.eqz (i32.or (call $is_object (local.get $fdv)) (i32.or (call $is_function (local.get $fdv)) (call $is_array (local.get $fdv)))))
+                    (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
+                  (call $apply_descriptor (local.get $fos) (i32.load (local.get $fent)) (local.get $fdv))))))
+            (set! $fi (i32.add (local.get $fi) (i32.const 1)))
+            (br $fdl)))))
       (return (local.get $ob))))
   ;; Object.getOwnPropertyDescriptors(obj)
   (if (i32.eq (local.get $id) (i32.const 161))
