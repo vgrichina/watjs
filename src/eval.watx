@@ -609,6 +609,25 @@
       (i32.load8_u (i32.add (i32.const 520) (local.get $i))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
 
+;; read 8 bytes at `src` as i64, honoring endianness (via scratch @520)
+(func $dv_read_i64 (param $src i32) (param $little i32) (result i64) (effects)
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (i32.const 8)))
+    (i32.store8 (i32.add (i32.const 520) (local.get $i))
+      (i32.load8_u (i32.add (local.get $src) (if i32 (local.get $little) (then (local.get $i)) (else (i32.sub (i32.const 7) (local.get $i)))))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i64.load (i32.const 520)))
+;; write i64 `val` to 8 bytes at `dst`, honoring endianness
+(func $dv_write_i64 (param $dst i32) (param $little i32) (param $val i64) (effects)
+  (i64.store (i32.const 520) (local.get $val))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (i32.const 8)))
+    (i32.store8 (i32.add (local.get $dst) (if i32 (local.get $little) (then (local.get $i)) (else (i32.sub (i32.const 7) (local.get $i)))))
+      (i32.load8_u (i32.add (i32.const 520) (local.get $i))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
+
 ;; ToIndex(v): ToIntegerOrInfinity; <0 or >2^53-1 → RangeError (sets $err, returns 0)
 (func $to_index (param $v i64) (result i32) (effects)
   (let $d f64 (call $to_num (local.get $v)))
@@ -645,6 +664,10 @@
   (call $scope_define (local.get $dvproto) (cstring "setUint32") (call $mk_native (i32.const 377) (cstring "setUint32")))
   (call $scope_define (local.get $dvproto) (cstring "setFloat32") (call $mk_native (i32.const 378) (cstring "setFloat32")))
   (call $scope_define (local.get $dvproto) (cstring "setFloat64") (call $mk_native (i32.const 379) (cstring "setFloat64")))
+  (call $scope_define (local.get $dvproto) (cstring "getBigInt64") (call $mk_native (i32.const 386) (cstring "getBigInt64")))
+  (call $scope_define (local.get $dvproto) (cstring "getBigUint64") (call $mk_native (i32.const 387) (cstring "getBigUint64")))
+  (call $scope_define (local.get $dvproto) (cstring "setBigInt64") (call $mk_native (i32.const 388) (cstring "setBigInt64")))
+  (call $scope_define (local.get $dvproto) (cstring "setBigUint64") (call $mk_native (i32.const 389) (cstring "setBigUint64")))
   (call $scope_define_accessor_attr (local.get $dvproto) (cstring "buffer") (call $mk_native (i32.const 380) (cstring "get buffer")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $dvproto) (cstring "byteLength") (call $mk_native (i32.const 381) (cstring "get byteLength")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $dvproto) (cstring "byteOffset") (call $mk_native (i32.const 382) (cstring "get byteOffset")) (call $v_undef) (i32.const 5))
@@ -685,6 +708,35 @@
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@shared")))
         (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on incompatible receiver")) (return (call $v_undef))))
       (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
+  ;; getBigInt64(386)/getBigUint64(387)/setBigInt64(388)/setBigUint64(389) — 8-byte i64
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 386)) (i32.le_s (local.get $id) (i32.const 389)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab")))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
+      (let $bisget i32 (i32.lt_s (local.get $id) (i32.const 388)))
+      (let $biboff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
+      ;; setBigInt64/setBigUint64: value must be a BigInt (read it BEFORE the bounds check per spec)
+      (let $bival i64 (i64.const 0))
+      (if (i32.eqz (local.get $bisget))
+        (then
+          (let $biarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (if (i32.eqz (call $is_bigint (local.get $biarg)))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert value to a BigInt")) (return (call $v_undef))))
+          (set! $bival (call $bigint_val (local.get $biarg)))))
+      (let $bivlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
+      (let $bivoff i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
+      (let $biabptr i32 (call $to_int_idx (call $to_num (call $get_prop (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))) (call $mk_str (cstring "@@abdata"))))))
+      (if (i32.gt_s (i32.add (local.get $biboff) (i32.const 8)) (local.get $bivlen))
+        (then (call $throw_type (cstring "RangeError") (cstring "DataView BigInt: out of bounds")) (return (call $v_undef))))
+      (let $bidst i32 (i32.add (i32.add (local.get $biabptr) (local.get $bivoff)) (local.get $biboff)))
+      (if (local.get $bisget)
+        (then (return (call $mk_bigint (call $dv_read_i64 (local.get $bidst) (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+        (else
+          (call $dv_write_i64 (local.get $bidst) (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 2))) (local.get $bival))
+          (return (call $v_undef))))))
   (if (i32.eq (local.get $id) (i32.const 363))  ;; new DataView(buffer[, byteOffset[, byteLength]])
     (then
       (let $dvb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -2494,7 +2546,7 @@
   ;; WeakRef / FinalizationRegistry (358-362) — handled in a separate fn to keep call_native small
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
     (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 384)))  ;; DataView + SharedArrayBuffer
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 389)))  ;; DataView + SharedArrayBuffer
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
@@ -5154,6 +5206,9 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 363)) (i32.eq (local.get $id) (i32.const 383))) (then (return (i32.const 1))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 364)) (i32.le_s (local.get $id) (i32.const 371))) (then (return (i32.const 1))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 372)) (i32.le_s (local.get $id) (i32.const 379))) (then (return (i32.const 2))))
+  ;; getBigInt64/getBigUint64(386-387)=1, setBigInt64/setBigUint64(388-389)=2
+  (if (i32.or (i32.eq (local.get $id) (i32.const 386)) (i32.eq (local.get $id) (i32.const 387))) (then (return (i32.const 1))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 388)) (i32.eq (local.get $id) (i32.const 389))) (then (return (i32.const 2))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))

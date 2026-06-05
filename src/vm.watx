@@ -3467,11 +3467,14 @@
         (set! $ip (i32.add (local.get $ip) (i32.const 8)))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 6))  ;; NEG (ToNumber, then negate)
+    (if (i32.eq (local.get $op) (i32.const 6))  ;; NEG (ToNumber, then negate; BigInt stays BigInt)
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $nv i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
         (i64.store (i32.add (local.get $stack) (local.get $t))
-                   (call $num (f64.neg (call $to_num (i64.load (i32.add (local.get $stack) (local.get $t)))))))
+          (if i64 (call $is_bigint (local.get $nv))
+            (then (call $mk_bigint (i64.sub (i64.const 0) (call $bigint_val (local.get $nv)))))
+            (else (call $num (f64.neg (call $to_num (local.get $nv)))))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 23))  ;; NOT (unary, in place)
       (then
