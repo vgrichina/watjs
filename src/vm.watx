@@ -3184,6 +3184,9 @@
             (br $disp)))
         (if (i32.ne (i32.load (local.get $cfn)) (i32.const 1448232526))  ;; not a VM-fn → native built-in
           (then
+            ;; a native constructor that requires `new` (Map/Set/typed array/…) invoked as a plain function → TypeError
+            (if (call $native_requires_new (i32.load (local.get $cfn)))
+              (then (call $throw_type (cstring "TypeError") (cstring "Constructor requires 'new'")) (set! $sp (local.get $rbase)) (br $disp)))
             (let $thisv i64 (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef))))
             (call $set_cur_scope (local.get $scope))  ;; so a native eval()/Function() runs in the VM's current scope
             (let $res i64 (call $call_native (i32.load (local.get $cfn)) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8))) (local.get $thisv)))
