@@ -1686,8 +1686,14 @@
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
   ;; ── Iterator: abstract ctor (335) + %Iterator.prototype% eager methods ──
-  (if (i32.eq (local.get $id) (i32.const 335))  ;; new Iterator() — abstract
-    (then (call $throw_type (cstring "TypeError") (cstring "Abstract class Iterator not directly constructable")) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 335))  ;; Iterator — abstract: throw only on DIRECT construction
+    (then
+      ;; subclass super() passes an instance whose [[Prototype]] is the subclass's
+      ;; prototype (≠ %Iterator.prototype%); direct new Iterator() has proto === reg488.
+      (if (i32.or (i32.eqz (call $is_object (local.get $thisv)))
+                  (i32.eq (i32.load (call $val_payload (local.get $thisv))) (i32.load (i32.const 488))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Abstract class Iterator not directly constructable")) (return (call $v_undef))))
+      (return (local.get $thisv))))
   (if (i32.eq (local.get $id) (i32.const 342))  ;; Iterator.prototype[@@iterator] → this
     (then (return (local.get $thisv))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 336)) (i32.le_s (local.get $id) (i32.const 341)))

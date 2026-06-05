@@ -3241,7 +3241,8 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $superc i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $protos i32 (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
-        (let $sproto i64 (i64.load (i32.add (call $val_payload (local.get $superc)) (i32.const 16))))  ;; superCtor's prototype value
+        ;; superCtor's .prototype — via get_prop so it works for native AND VM superclasses
+        (let $sproto i64 (call $get_prop (local.get $superc) (call $mk_str (cstring "prototype"))))
         (if (call $is_object (local.get $sproto)) (then (i32.store (local.get $protos) (call $val_payload (local.get $sproto)))))  ;; proto chain → super.prototype
         (call $scope_define (local.get $protos) (cstring "@@super") (local.get $superc))
         (call $scope_define (local.get $protos) (cstring "@@superproto") (local.get $sproto))
