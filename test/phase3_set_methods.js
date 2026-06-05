@@ -25,3 +25,11 @@ print(thr(function(){ a.union({size:undefined,has:function(){},keys:function(){}
 print(thr(function(){ a.union({size:1,has:1,keys:function(){}}); }));
 print(thr(function(){ a.union({size:1,has:function(){},keys:1}); }));
 print(thr(function(){ Set.prototype.union.call(0, b); }));
+// constructors accept any iterable
+print([...new Set("abc")].join(","));
+function* g(){ yield 1; yield 2; }
+print([...new Set(g())].join(","));
+var mm = new Map(new Map([["a",1],["b",2]]));
+print(mm.get("a")+","+mm.get("b"));
+print(thr(function(){ new Set(5); }));
+print(thr(function(){ new Map([1,2]); }));

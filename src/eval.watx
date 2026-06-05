@@ -1243,23 +1243,26 @@
       (if (i32.load (i32.const 344)) (then (i32.store (local.get $mo) (i32.load (i32.const 344)))))  ;; [[Prototype]] = Map.prototype
       (call $scope_define (local.get $mo) (cstring "@@mk") (call $mk_arr (call $arr_new (i32.const 4))))
       (call $scope_define (local.get $mo) (cstring "@@mv") (call $mk_arr (call $arr_new (i32.const 4))))
-      ;; new Map(iterable of [k,v]): set each pair
+      ;; new Map(iterable of [k,v]): set each entry (any iterable; entries read via [0]/[1])
       (let $mov i64 (call $mk_obj (local.get $mo)))
       (let $marg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $is_array (local.get $marg))
+      (if (i32.eqz (i32.or (call $is_null (local.get $marg)) (call $is_undefined (local.get $marg))))
         (then
-          (let $mav i32 (call $val_payload (local.get $marg)))
+          (let $mav i32 (call $arr_new (i32.const 4)))
+          (call $spread_into (local.get $mav) (local.get $marg))
+          (if (call $err) (then (return (call $v_undef))))
           (let $man i32 (call $arr_len (local.get $mav)))
           (let $mbuf i32 (call $heap_alloc (i32.const 16)))
           (let $mi i32 (i32.const 0))
           (block $mce (loop $mcl
             (br_if $mce (i32.ge_s (local.get $mi) (local.get $man)))
             (let $mpair i64 (call $arr_get (local.get $mav) (local.get $mi)))
-            (if (call $is_array (local.get $mpair))
-              (then
-                (i64.store (local.get $mbuf) (call $arr_get (call $val_payload (local.get $mpair)) (i32.const 0)))
-                (i64.store (i32.add (local.get $mbuf) (i32.const 8)) (call $arr_get (call $val_payload (local.get $mpair)) (i32.const 1)))
-                (drop (call $call_native (i32.const 121) (i32.const 2) (local.get $mbuf) (local.get $mov)))))
+            (if (i32.eqz (i32.or (call $is_array (local.get $mpair)) (call $is_object (local.get $mpair))))
+              (then (call $throw_type (cstring "TypeError") (cstring "Map entry is not an object")) (return (call $v_undef))))
+            (i64.store (local.get $mbuf) (call $get_prop (local.get $mpair) (call $mk_str (cstring "0"))))
+            (i64.store (i32.add (local.get $mbuf) (i32.const 8)) (call $get_prop (local.get $mpair) (call $mk_str (cstring "1"))))
+            (if (call $err) (then (return (call $v_undef))))
+            (drop (call $call_native (i32.const 121) (i32.const 2) (local.get $mbuf) (local.get $mov)))
             (set! $mi (i32.add (local.get $mi) (i32.const 1)))
             (br $mcl)))))
       (return (local.get $mov))))
@@ -1319,12 +1322,14 @@
       (let $so i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 348)) (then (i32.store (local.get $so) (i32.load (i32.const 348)))))  ;; [[Prototype]] = Set.prototype
       (call $scope_define (local.get $so) (cstring "@@sk") (call $mk_arr (call $arr_new (i32.const 4))))
-      ;; new Set(iterable): add each element
+      ;; new Set(iterable): add each element (any iterable, not just arrays)
       (let $sov i64 (call $mk_obj (local.get $so)))
       (let $sarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $is_array (local.get $sarg))
+      (if (i32.eqz (i32.or (call $is_null (local.get $sarg)) (call $is_undefined (local.get $sarg))))
         (then
-          (let $sav i32 (call $val_payload (local.get $sarg)))
+          (let $sav i32 (call $arr_new (i32.const 4)))
+          (call $spread_into (local.get $sav) (local.get $sarg))
+          (if (call $err) (then (return (call $v_undef))))
           (let $san i32 (call $arr_len (local.get $sav)))
           (let $sbuf i32 (call $heap_alloc (i32.const 8)))
           (let $si i32 (i32.const 0))
