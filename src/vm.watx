@@ -3148,6 +3148,17 @@
         (let $isM i32 (i32.or (i32.eq (local.get $op) (i32.const 33)) (i32.eq (local.get $op) (i32.const 86))))  ;; method call (or super-call) → receiver below the callee
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))  ;; callee slot
         (let $rbase i32 (if i32 (local.get $isM) (then (i32.sub (local.get $cbase) (i32.const 8))) (else (local.get $cbase))))  ;; result base
+        ;; function Proxy callee → dispatch through call_val (handles the apply trap)
+        (if (call $is_proxy (i64.load (i32.add (local.get $stack) (local.get $cbase))))
+          (then
+            (call $set_cur_scope (local.get $scope))
+            (let $pxres i64 (call $call_val (i64.load (i32.add (local.get $stack) (local.get $cbase))) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8)))
+              (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (i32.sub (local.get $cbase) (i32.const 8))))) (else (call $v_undef)))))
+            (if (call $err) (then (set! $sp (local.get $rbase)) (br $disp)))
+            (set! $sp (local.get $rbase))
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $pxres))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
         (if (i32.eq (i32.load (local.get $cfn)) (i32.const 1448232527))  ;; generator function → return an iterator
           (then
@@ -3262,6 +3273,16 @@
         (let $argc i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))
+        ;; Proxy callee → vm_construct (handles the construct trap)
+        (if (call $is_proxy (i64.load (i32.add (local.get $stack) (local.get $cbase))))
+          (then
+            (call $set_cur_scope (local.get $scope))
+            (let $pxcres i64 (call $vm_construct (i64.load (i32.add (local.get $stack) (local.get $cbase))) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8)))))
+            (if (call $err) (then (set! $sp (local.get $cbase)) (br $disp)))
+            (set! $sp (local.get $cbase))
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $pxcres))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
         ;; the callee must be a function; `new 1` / `new {}` / `new "s"` → TypeError
         (if (i32.eqz (call $is_function (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
           (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (set! $sp (local.get $cbase)) (br $disp)))
@@ -3575,7 +3596,7 @@
             (let $dpt i64 (call $proxy_trap (local.get $dobj) (cstring "deleteProperty")))
             (if (call $err) (then (br $disp)))
             (if (call $is_function (local.get $dpt))
-              (then (set! $dres (call $mk_bool (call $truthy (call $proxy_call2 (local.get $dpt) (call $proxy_target (local.get $dobj)) (call $mk_str (call $to_prop_key (local.get $dkey))) (call $v_undef))))))
+              (then (set! $dres (call $mk_bool (call $truthy (call $proxy_call2 (local.get $dpt) (call $proxy_target (local.get $dobj)) (call $mk_str (call $to_prop_key (local.get $dkey))) (call $proxy_handler (local.get $dobj)))))))
               (else
                 (let $dtg i64 (call $proxy_target (local.get $dobj)))
                 (if (call $is_object (local.get $dtg)) (then (drop (call $scope_delete (call $val_payload (local.get $dtg)) (call $to_prop_key (local.get $dkey))))))))

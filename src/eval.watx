@@ -353,7 +353,7 @@
       (if (call $err) (then (return (local.get $out))))
       (if (call $is_function (local.get $okt))
         (then
-          (let $okr i64 (call $call_val (local.get $okt) (i32.const 1) (call $argv1 (call $proxy_target (local.get $a))) (call $v_undef)))
+          (let $okr i64 (call $call_val (local.get $okt) (i32.const 1) (call $argv1 (call $proxy_target (local.get $a))) (call $proxy_handler (local.get $a))))
           (if (call $err) (then (return (local.get $out))))
           (if (call $is_array (local.get $okr)) (then (return (call $val_payload (local.get $okr)))))
           (return (local.get $out)))
@@ -890,7 +890,7 @@
       (let $pt i64 (call $proxy_trap (local.get $ov) (cstring "getPrototypeOf")))
       (if (call $err) (then (return (call $v_null))))
       (if (call $is_function (local.get $pt))
-        (then (return (call $proxy_call2 (local.get $pt) (call $proxy_target (local.get $ov)) (call $v_undef) (call $v_undef))))
+        (then (return (call $proxy_call2 (local.get $pt) (call $proxy_target (local.get $ov)) (call $v_undef) (call $proxy_handler (local.get $ov)))))
         (else (return (call $js_get_prototype (call $proxy_target (local.get $ov))))))))
   (if (call $is_array (local.get $ov)) (then (return (call $mk_obj (i32.load (i32.const 160))))))
   (if (call $is_function (local.get $ov))
@@ -931,7 +931,7 @@
   ;; Function.prototype.call(thisArg, ...args) — this = the function
   (if (i32.eq (local.get $id) (i32.const 194))
     (then
-      (if (i32.eqz (call $is_function (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.call called on non-function")) (return (call $v_undef))))
+      (if (i32.eqz (i32.or (call $is_function (local.get $thisv)) (call $is_proxy (local.get $thisv)))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.call called on non-function")) (return (call $v_undef))))
       (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $n i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
       (let $buf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $n) (i32.const 0)) (then (local.get $n)) (else (i32.const 1))) (i32.const 8))))
@@ -944,7 +944,7 @@
   ;; Function.prototype.apply(thisArg, argArray) — this = the function
   (if (i32.eq (local.get $id) (i32.const 195))
     (then
-      (if (i32.eqz (call $is_function (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.apply called on non-function")) (return (call $v_undef))))
+      (if (i32.eqz (i32.or (call $is_function (local.get $thisv)) (call $is_proxy (local.get $thisv)))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.apply called on non-function")) (return (call $v_undef))))
       (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $aa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (let $n i32 (i32.const 0))
@@ -2631,7 +2631,7 @@
           (let $xpt i64 (call $proxy_trap (local.get $xo) (cstring "preventExtensions")))
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_function (local.get $xpt))
-            (then (drop (call $proxy_call2 (local.get $xpt) (call $proxy_target (local.get $xo)) (call $v_undef) (call $v_undef))) (if (call $err) (then (return (call $v_undef)))))
+            (then (drop (call $proxy_call2 (local.get $xpt) (call $proxy_target (local.get $xo)) (call $v_undef) (call $proxy_handler (local.get $xo)))) (if (call $err) (then (return (call $v_undef)))))
             (else (drop (call $call_native (i32.const 162) (i32.const 1) (call $argv1 (call $proxy_target (local.get $xo))) (call $v_undef)))))
           (return (local.get $xo))))
       (if (call $is_object (local.get $xo))
@@ -2665,7 +2665,7 @@
           (if (call $err) (then (return (call $v_undef))))
           (let $xtg i64 (call $proxy_target (local.get $xo)))
           (if (call $is_function (local.get $xpt))
-            (then (return (call $mk_bool (call $truthy (call $proxy_call2 (local.get $xpt) (local.get $xtg) (call $v_undef) (call $v_undef))))))
+            (then (return (call $mk_bool (call $truthy (call $proxy_call2 (local.get $xpt) (local.get $xtg) (call $v_undef) (call $proxy_handler (local.get $xo)))))))
             (else (return (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $xtg)) (call $v_undef)))))))
       (if (call $is_array (local.get $xo))
         (then (let $xap i32 (i32.load (i32.add (call $val_payload (local.get $xo)) (i32.const 12)))) (return (call $mk_bool (i32.eqz (if i32 (local.get $xap) (then (call $scope_find_local (local.get $xap) (cstring "@@noext"))) (else (i32.const 0))))))))
@@ -2868,7 +2868,7 @@
   (if (i32.eq (local.get $id) (i32.const 208))  ;; Reflect.apply(fn, thisArg, argsArray)
     (then
       (let $raf i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (call $is_function (local.get $raf)))
+      (if (i32.eqz (i32.or (call $is_function (local.get $raf)) (call $is_proxy (local.get $raf))))
         (then (call $throw_type (cstring "TypeError") (cstring "Reflect.apply target is not callable")) (return (call $v_undef))))
       (let $rath i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (let $raa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
@@ -2907,6 +2907,9 @@
             (br_if $rce (i32.ge_s (local.get $rci) (local.get $rcn)))
             (i64.store (i32.add (local.get $rcbuf) (i32.mul (local.get $rci) (i32.const 8))) (call $arr_get (local.get $rcp) (local.get $rci)))
             (set! $rci (i32.add (local.get $rci) (i32.const 1))) (br $rcl)))))
+      ;; Proxy target → [[Construct]] via vm_construct (construct trap)
+      (if (call $is_proxy (local.get $rcf))
+        (then (return (call $vm_construct (local.get $rcf) (local.get $rcn) (local.get $rcbuf)))))
       (let $rcfn i32 (call $val_payload (local.get $rcf)))
       ;; native constructor → use its own return value
       (if (i32.lt_s (i32.load (local.get $rcfn)) (i32.const 1448232526))
@@ -3747,7 +3750,7 @@
               (i64.store (local.get $dpb) (call $proxy_target (local.get $ob)))
               (i64.store (i32.add (local.get $dpb) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $ky))))
               (i64.store (i32.add (local.get $dpb) (i32.const 16)) (local.get $de))
-              (drop (call $call_val (local.get $dppt) (i32.const 3) (local.get $dpb) (call $v_undef)))
+              (drop (call $call_val (local.get $dppt) (i32.const 3) (local.get $dpb) (call $proxy_handler (local.get $ob))))
               (if (call $err) (then (return (call $v_undef)))))
             (else
               (let $dpb2 i32 (call $heap_alloc (i32.const 24)))
@@ -3914,7 +3917,7 @@
           (let $gdpt i64 (call $proxy_trap (local.get $ob) (cstring "getOwnPropertyDescriptor")))
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_function (local.get $gdpt))
-            (then (return (call $proxy_call2 (local.get $gdpt) (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))) (call $v_undef))))
+            (then (return (call $proxy_call2 (local.get $gdpt) (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))) (call $proxy_handler (local.get $ob)))))
             (else
               (let $gdb i32 (call $heap_alloc (i32.const 16)))
               (i64.store (local.get $gdb) (call $proxy_target (local.get $ob)))
@@ -4162,7 +4165,7 @@
           (let $sppt i64 (call $proxy_trap (local.get $spo) (cstring "setPrototypeOf")))
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_function (local.get $sppt))
-            (then (drop (call $proxy_call2 (local.get $sppt) (call $proxy_target (local.get $spo)) (local.get $spp) (call $v_undef))) (if (call $err) (then (return (call $v_undef)))))
+            (then (drop (call $proxy_call2 (local.get $sppt) (call $proxy_target (local.get $spo)) (local.get $spp) (call $proxy_handler (local.get $spo)))) (if (call $err) (then (return (call $v_undef)))))
             (else
               (let $spb i32 (call $heap_alloc (i32.const 16)))
               (i64.store (local.get $spb) (call $proxy_target (local.get $spo)))
@@ -4935,6 +4938,8 @@
 ;; functions are treated as constructors (arrow/method non-constructibility isn't
 ;; tracked — a minor over-approximation); non-functions are not.
 (func $is_constructor (param $v i64) (result i32) (effects)
+  ;; a Proxy is a constructor iff its target is a constructor
+  (if (call $is_proxy (local.get $v)) (then (return (call $is_constructor (call $proxy_target (local.get $v))))))
   (if (i32.eqz (call $is_function (local.get $v))) (then (return (i32.const 0))))
   (let $m i32 (i32.load (call $val_payload (local.get $v))))
   (if (i32.ge_s (local.get $m) (i32.const 1448232526)) (then (return (i32.const 1))))  ;; VM (526-528) / bound (540) fn
@@ -4988,6 +4993,26 @@
 
 ;; call a function value with args + this
 (func $call_val (param $fnval i64) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
+  ;; function Proxy: apply trap (target, thisArg, argsArray) else call the target
+  (if (call $is_proxy (local.get $fnval))
+    (then
+      (let $apt i64 (call $proxy_trap (local.get $fnval) (cstring "apply")))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $atgt i64 (call $proxy_target (local.get $fnval)))
+      (if (call $is_function (local.get $apt))
+        (then
+          (let $aarr i32 (call $arr_new (i32.const 4)))
+          (let $ai i32 (i32.const 0))
+          (block $aae (loop $aal
+            (br_if $aae (i32.ge_s (local.get $ai) (local.get $argc)))
+            (call $arr_push (local.get $aarr) (i64.load (i32.add (local.get $argv) (i32.mul (local.get $ai) (i32.const 8)))))
+            (set! $ai (i32.add (local.get $ai) (i32.const 1))) (br $aal)))
+          (let $ab i32 (call $heap_alloc (i32.const 24)))
+          (i64.store (local.get $ab) (local.get $atgt))
+          (i64.store (i32.add (local.get $ab) (i32.const 8)) (local.get $thisv))
+          (i64.store (i32.add (local.get $ab) (i32.const 16)) (call $mk_arr (local.get $aarr)))
+          (return (call $call_val (local.get $apt) (i32.const 3) (local.get $ab) (call $proxy_handler (local.get $fnval)))))
+        (else (return (call $call_val (local.get $atgt) (local.get $argc) (local.get $argv) (local.get $thisv)))))))
   (if (i32.eqz (call $is_function (local.get $fnval))) (then (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $fnval)))
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232540))  ;; bound function
@@ -5014,6 +5039,31 @@
 ;; Boolean wrappers), and VM-fn ctors (fresh object, proto = cf.prototype, run
 ;; body, use a returned object else the new object). Throws on a non-constructor.
 (func $vm_construct (param $cf i64) (param $argc i32) (param $argbuf i32) (result i64) (effects)
+  ;; Proxy: construct trap (target, argsArray, newTarget) else [[Construct]] the target
+  (if (call $is_proxy (local.get $cf))
+    (then
+      (let $cpt i64 (call $proxy_trap (local.get $cf) (cstring "construct")))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $ctgt i64 (call $proxy_target (local.get $cf)))
+      (if (call $is_function (local.get $cpt))
+        (then
+          (let $carr i32 (call $arr_new (i32.const 4)))
+          (let $ci i32 (i32.const 0))
+          (block $cae (loop $cal
+            (br_if $cae (i32.ge_s (local.get $ci) (local.get $argc)))
+            (call $arr_push (local.get $carr) (i64.load (i32.add (local.get $argbuf) (i32.mul (local.get $ci) (i32.const 8)))))
+            (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $cal)))
+          (let $cb i32 (call $heap_alloc (i32.const 24)))
+          (i64.store (local.get $cb) (local.get $ctgt))
+          (i64.store (i32.add (local.get $cb) (i32.const 8)) (call $mk_arr (local.get $carr)))
+          (i64.store (i32.add (local.get $cb) (i32.const 16)) (local.get $cf))  ;; newTarget = the proxy
+          (let $cres i64 (call $call_val (local.get $cpt) (i32.const 3) (local.get $cb) (call $proxy_handler (local.get $cf))))
+          (if (call $err) (then (return (call $v_undef))))
+          ;; invariant: a construct trap must return an Object
+          (if (i32.eqz (i32.or (call $is_object (local.get $cres)) (i32.or (call $is_array (local.get $cres)) (call $is_function (local.get $cres)))))
+            (then (call $throw_type (cstring "TypeError") (cstring "proxy [[Construct]] must return an object")) (return (call $v_undef))))
+          (return (local.get $cres)))
+        (else (return (call $vm_construct (local.get $ctgt) (local.get $argc) (local.get $argbuf)))))))
   (if (i32.eqz (call $is_function (local.get $cf)))
     (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $cf)))
@@ -5090,6 +5140,8 @@
   (if (call $is_function (local.get $v)) (then (return (call $mk_str (cstring "function")))))
   (if (call $is_symbol (local.get $v)) (then (return (call $mk_str (cstring "symbol")))))
   (if (call $is_bigint (local.get $v)) (then (return (call $mk_str (cstring "bigint")))))
+  ;; a Proxy whose target is callable is itself callable → typeof "function"
+  (if (i32.and (call $is_proxy (local.get $v)) (call $is_function (call $proxy_target (local.get $v)))) (then (return (call $mk_str (cstring "function")))))
   (call $mk_str (cstring "object")))  ;; null, object, array
 
 ;; ── primary ──
