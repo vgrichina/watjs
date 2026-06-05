@@ -1858,8 +1858,8 @@
             (call $scope_define (local.get $hr) (cstring "value") (local.get $hm))
             (call $scope_define (local.get $hr) (cstring "done") (call $v_false))
             (return (call $mk_obj (local.get $hr)))))
-        ;; take(2)/drop(3): pass the value through
-        (if (i32.or (i32.eq (local.get $hkind) (i32.const 2)) (i32.eq (local.get $hkind) (i32.const 3)))
+        ;; take(2)/drop(3)/wrap(5): pass the value through
+        (if (i32.or (i32.eq (local.get $hkind) (i32.const 2)) (i32.or (i32.eq (local.get $hkind) (i32.const 3)) (i32.eq (local.get $hkind) (i32.const 5))))
           (then
             (call $scope_define (local.get $hr) (cstring "value") (local.get $hval))
             (call $scope_define (local.get $hr) (cstring "done") (call $v_false))
@@ -1891,6 +1891,25 @@
             (br $hpl)))
         (br $hpl)))
       (return (call $v_undef))))
+  ;; Iterator.from(O) (349) — wrap a raw iterator/iterable so the helpers are available
+  (if (i32.eq (local.get $id) (i32.const 349))
+    (then
+      (let $ifo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $ifit i64 (call $vm_get_iter (local.get $ifo)))   ;; throws for non-iterables/primitives
+      (if (call $err) (then (return (call $v_undef))))
+      ;; already an Iterator (proto chain reaches %Iterator.prototype%) → return as-is
+      (if (call $is_object (local.get $ifit))
+        (then
+          (let $ifp i32 (i32.load (call $val_payload (local.get $ifit))))
+          (block $ifpe (loop $ifpl
+            (br_if $ifpe (i32.eqz (local.get $ifp)))
+            (if (i32.eq (local.get $ifp) (i32.load (i32.const 488))) (then (return (local.get $ifit))))
+            (set! $ifp (i32.load (local.get $ifp)))  ;; parent scope = next prototype link
+            (br $ifpl)))))
+      ;; else wrap (kind 5 passthrough)
+      (let $ifn i64 (call $iter_direct_next (local.get $ifit)))
+      (if (call $err) (then (return (call $v_undef))))
+      (return (call $iter_helper_new (local.get $ifit) (local.get $ifn) (i32.const 5) (call $v_undef) (f64.const 0)))))
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
     (then
@@ -4469,6 +4488,7 @@
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 337)) (i32.le_s (local.get $id) (i32.const 341))) (then (return (i32.const 1))))
   ;; lazy helpers map/filter/take/drop/flatMap (343-347) = length 1; helper next(348) = 0
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 343)) (i32.le_s (local.get $id) (i32.const 347))) (then (return (i32.const 1))))
+  (if (i32.eq (local.get $id) (i32.const 349)) (then (return (i32.const 1))))  ;; Iterator.from
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
@@ -5133,6 +5153,7 @@
   (call $scope_define (local.get $iterproto) (cstring "constructor") (local.get $iterf))
   (call $scope_clear_enum (local.get $iterproto))
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $iterproto)))
+  (call $set_prop (local.get $iterf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 349) (cstring "from")))
   (let $datef i64 (call $def_native (local.get $g) (cstring "Date") (i32.const 180)))
   (call $set_prop (local.get $datef) (call $mk_str (cstring "now")) (call $mk_native (i32.const 179) (cstring "now")))
   ;; Date.prototype (reg 308) — instances link to it for instanceof/getPrototypeOf/inheritance
