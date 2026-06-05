@@ -1696,6 +1696,18 @@
       (return (local.get $thisv))))
   (if (i32.eq (local.get $id) (i32.const 342))  ;; Iterator.prototype[@@iterator] → this
     (then (return (local.get $thisv))))
+  (if (i32.eq (local.get $id) (i32.const 352))  ;; get Iterator.prototype[@@toStringTag] → "Iterator"
+    (then (return (call $mk_str (cstring "Iterator")))))
+  (if (i32.eq (local.get $id) (i32.const 353))  ;; set [@@toStringTag] — SetterThatIgnoresPrototypeProperties
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.prototype[Symbol.toStringTag] setter called on non-object")) (return (call $v_undef))))
+      ;; setting on the home object (%Iterator.prototype%) itself is rejected
+      (if (i32.eq (call $val_payload (local.get $thisv)) (i32.load (i32.const 488)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot set Symbol.toStringTag on Iterator.prototype")) (return (call $v_undef))))
+      ;; otherwise create an own data property on the receiver
+      (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@toStringTag") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (return (call $v_undef))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 336)) (i32.le_s (local.get $id) (i32.const 341)))
     (then
       (let $itnf i64 (call $iter_direct_next (local.get $thisv)))
@@ -5218,7 +5230,8 @@
   (call $scope_define (local.get $iterproto) (cstring "drop") (call $mk_native (i32.const 346) (cstring "drop")))
   (call $scope_define (local.get $iterproto) (cstring "flatMap") (call $mk_native (i32.const 347) (cstring "flatMap")))
   (call $scope_define (local.get $iterproto) (cstring "@@iterator") (call $mk_native (i32.const 342) (cstring "[Symbol.iterator]")))
-  (call $scope_define (local.get $iterproto) (cstring "@@toStringTag") (call $mk_str (cstring "Iterator")))
+  (call $scope_define_accessor_attr (local.get $iterproto) (cstring "@@toStringTag")
+    (call $mk_native (i32.const 352) (cstring "get [Symbol.toStringTag]")) (call $mk_native (i32.const 353) (cstring "set [Symbol.toStringTag]")) (i32.const 5))
   (call $scope_define (local.get $iterproto) (cstring "constructor") (local.get $iterf))
   (call $scope_clear_enum (local.get $iterproto))
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $iterproto)))
