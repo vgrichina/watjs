@@ -190,6 +190,67 @@
   (call $set_err_val (local.get $sv)))
 
 ;; build a lazy Iterator Helper object (kind: map0 filter1 take2 drop3 flatMap4)
+;; WeakRef (358 ctor / 359 deref) + FinalizationRegistry (360 ctor / 361 register /
+;; 362 unregister) — strong-ref, cleanup never runs (GC not observable from script)
+(func $native_weakref_fr (param $id i32) (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
+  (if (i32.eq (local.get $id) (i32.const 358))  ;; new WeakRef(target)
+    (then
+      (let $wrt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $weakly_holdable (local.get $wrt)))
+        (then (call $throw_type (cstring "TypeError") (cstring "WeakRef: target cannot be held weakly")) (return (call $v_undef))))
+      (let $wro i32 (call $obj_new (i32.const 8)))
+      (if (i32.load (i32.const 500)) (then (i32.store (local.get $wro) (i32.load (i32.const 500)))))
+      (call $scope_define (local.get $wro) (cstring "@@wrt") (local.get $wrt))
+      (return (call $mk_obj (local.get $wro)))))
+  (if (i32.eq (local.get $id) (i32.const 359))  ;; WeakRef.prototype.deref()
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "WeakRef.prototype.deref called on incompatible receiver")) (return (call $v_undef))))
+      (let $wrsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@wrt")))
+      (if (i32.eqz (local.get $wrsl))
+        (then (call $throw_type (cstring "TypeError") (cstring "WeakRef.prototype.deref called on incompatible receiver")) (return (call $v_undef))))
+      (return (i64.load (local.get $wrsl)))))
+  (if (i32.eq (local.get $id) (i32.const 360))  ;; new FinalizationRegistry(cleanupCallback)
+    (then
+      (let $frcb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_function (local.get $frcb)))
+        (then (call $throw_type (cstring "TypeError") (cstring "FinalizationRegistry: cleanup callback is not callable")) (return (call $v_undef))))
+      (let $fro i32 (call $obj_new (i32.const 8)))
+      (if (i32.load (i32.const 504)) (then (i32.store (local.get $fro) (i32.load (i32.const 504)))))
+      (call $scope_define (local.get $fro) (cstring "@@frcb") (local.get $frcb))
+      (call $scope_define (local.get $fro) (cstring "@@frtok") (call $mk_arr (call $arr_new (i32.const 4))))
+      (return (call $mk_obj (local.get $fro)))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 361)) (i32.le_s (local.get $id) (i32.const 362)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "FinalizationRegistry method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@frcb")))
+        (then (call $throw_type (cstring "TypeError") (cstring "FinalizationRegistry method called on incompatible receiver")) (return (call $v_undef))))
+      (let $frtok i32 (call $coll_arr (local.get $thisv) (cstring "@@frtok")))
+      (if (i32.eq (local.get $id) (i32.const 361))  ;; register(target, heldValue[, unregisterToken])
+        (then
+          (let $frt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (let $frh i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (let $frtk i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+          (if (i32.eqz (call $weakly_holdable (local.get $frt)))
+            (then (call $throw_type (cstring "TypeError") (cstring "FinalizationRegistry.register: target cannot be held weakly")) (return (call $v_undef))))
+          (if (call $strict_eq (local.get $frt) (local.get $frh))
+            (then (call $throw_type (cstring "TypeError") (cstring "FinalizationRegistry.register: target and held value must not be the same")) (return (call $v_undef))))
+          (if (i32.and (i32.eqz (call $is_undefined (local.get $frtk))) (i32.eqz (call $weakly_holdable (local.get $frtk))))
+            (then (call $throw_type (cstring "TypeError") (cstring "FinalizationRegistry.register: unregister token cannot be held weakly")) (return (call $v_undef))))
+          (call $arr_push (local.get $frtok) (local.get $frtk))
+          (return (call $v_undef))))
+      (if (i32.eq (local.get $id) (i32.const 362))  ;; unregister(unregisterToken)
+        (then
+          (let $frut i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (if (i32.eqz (call $weakly_holdable (local.get $frut)))
+            (then (call $throw_type (cstring "TypeError") (cstring "FinalizationRegistry.unregister: token cannot be held weakly")) (return (call $v_undef))))
+          (let $fridx i32 (call $map_find (local.get $frtok) (local.get $frut)))
+          (if (i32.lt_s (local.get $fridx) (i32.const 0)) (then (return (call $v_false))))
+          (call $arr_remove (local.get $frtok) (local.get $fridx))
+          (return (call $v_true))))))
+  (call $v_undef))
+
 (func $iter_helper_new (param $src i64) (param $srcnext i64) (param $kind i32) (param $fn i64) (param $n f64) (result i64) (effects)
   (let $h i32 (call $obj_new (i32.const 12)))
   (if (i32.load (i32.const 488)) (then (i32.store (local.get $h) (i32.load (i32.const 488)))))  ;; inherit %Iterator.prototype%
@@ -916,813 +977,9 @@
   (call $mk_obj (call $obj_new (i32.const 8))))
 
 ;; native dispatch by id (1 = print, 2 = assert)
-(func $call_native (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
-  (if (i32.eq (local.get $id) (i32.const 1))  ;; print (console.log style)
-    (then
-      (let $i i32 (i32.const 0))
-      (block $e (loop $c
-        (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
-        (if (i32.gt_s (local.get $i) (i32.const 0)) (then (call $print_str (cstring " "))))
-        (call $print_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $i))))
-        (set! $i (i32.add (local.get $i) (i32.const 1)))
-        (br $c)))
-      (call $print_str (cstring "\n"))
-      (return (call $v_undef))))
-  ;; Function.prototype.call(thisArg, ...args) — this = the function
-  (if (i32.eq (local.get $id) (i32.const 194))
-    (then
-      (if (i32.eqz (i32.or (call $is_function (local.get $thisv)) (call $is_proxy (local.get $thisv)))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.call called on non-function")) (return (call $v_undef))))
-      (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (let $n i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
-      (let $buf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $n) (i32.const 0)) (then (local.get $n)) (else (i32.const 1))) (i32.const 8))))
-      (let $i i32 (i32.const 0))
-      (block $cae (loop $cal
-        (br_if $cae (i32.ge_s (local.get $i) (local.get $n)))
-        (i64.store (i32.add (local.get $buf) (i32.mul (local.get $i) (i32.const 8))) (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $i) (i32.const 1))))
-        (set! $i (i32.add (local.get $i) (i32.const 1))) (br $cal)))
-      (return (call $call_val (local.get $thisv) (local.get $n) (local.get $buf) (local.get $ta)))))
-  ;; Function.prototype.apply(thisArg, argArray) — this = the function
-  (if (i32.eq (local.get $id) (i32.const 195))
-    (then
-      (if (i32.eqz (i32.or (call $is_function (local.get $thisv)) (call $is_proxy (local.get $thisv)))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.apply called on non-function")) (return (call $v_undef))))
-      (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (let $aa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-      (let $n i32 (i32.const 0))
-      (let $buf i32 (call $heap_alloc (i32.const 8)))
-      (if (call $is_array (local.get $aa))
-        (then
-          (let $arr i32 (call $val_payload (local.get $aa)))
-          (set! $n (call $arr_len (local.get $arr)))
-          (set! $buf (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $n) (i32.const 0)) (then (local.get $n)) (else (i32.const 1))) (i32.const 8))))
-          (let $i i32 (i32.const 0))
-          (block $aae (loop $aal
-            (br_if $aae (i32.ge_s (local.get $i) (local.get $n)))
-            (i64.store (i32.add (local.get $buf) (i32.mul (local.get $i) (i32.const 8))) (call $arr_get (local.get $arr) (local.get $i)))
-            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $aal)))))
-      (return (call $call_val (local.get $thisv) (local.get $n) (local.get $buf) (local.get $ta)))))
-  ;; Function.prototype.bind(thisArg, ...bound) — this = the function to bind
-  (if (i32.eq (local.get $id) (i32.const 153))
-    (then
-      (if (i32.eqz (call $is_function (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.bind called on non-function")) (return (call $v_undef))))
-      (let $bthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (let $bargc i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
-      (let $bbuf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $bargc) (i32.const 0)) (then (local.get $bargc)) (else (i32.const 1))) (i32.const 8))))
-      (let $bi i32 (i32.const 0))
-      (block $bbe (loop $bbl
-        (br_if $bbe (i32.ge_s (local.get $bi) (local.get $bargc)))
-        (i64.store (i32.add (local.get $bbuf) (i32.mul (local.get $bi) (i32.const 8))) (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $bi) (i32.const 1))))
-        (set! $bi (i32.add (local.get $bi) (i32.const 1))) (br $bbl)))
-      (let $bf i32 (call $heap_alloc (i32.const 40)))
-      (i32.store (local.get $bf) (i32.const 1448232540))           ;; bound magic
-      ;; bound .length = max(0, target.length − boundArgsCount)
-      (let $btlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
-      (let $bnp i32 (i32.sub (local.get $btlen) (local.get $bargc)))
-      (if (i32.lt_s (local.get $bnp) (i32.const 0)) (then (set! $bnp (i32.const 0))))
-      (i32.store (i32.add (local.get $bf) (i32.const 8)) (local.get $bnp))   ;; .length (NOT used by call_bound)
-      (i32.store (i32.add (local.get $bf) (i32.const 12)) (i32.const 0))  ;; props
-      (i64.store (i32.add (local.get $bf) (i32.const 16)) (local.get $bthis))
-      (i64.store (i32.add (local.get $bf) (i32.const 24)) (local.get $thisv))
-      (i32.store (i32.add (local.get $bf) (i32.const 32)) (local.get $bargc))
-      (i32.store (i32.add (local.get $bf) (i32.const 36)) (local.get $bbuf))
-      ;; bound fn .name = "bound " + target.name  {W:false,E:false,C:true}
-      (call $scope_define_attr (call $fn_props (local.get $bf)) (cstring "name")
-        (call $mk_str (call $str_concat (cstring "bound ") (call $to_str (call $get_prop (local.get $thisv) (call $mk_str (cstring "name")))))) (i32.const 4))
-      (return (call $mk_fn (local.get $bf)))))
-  ;; Object.prototype.propertyIsEnumerable(key) — this = the object
-  (if (i32.eq (local.get $id) (i32.const 159))
-    (then
-      (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
-      (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
-      (if (i32.eqz (local.get $pslot)) (then (return (call $v_false))))
-      (return (call $mk_bool (call $entry_enumerable (local.get $pslot))))))
-  ;; Object.prototype.isPrototypeOf(v) — is `this` anywhere in v's prototype chain?
-  (if (i32.eq (local.get $id) (i32.const 300))
-    (then
-      (let $ipv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv))))) (then (return (call $v_false))))
-      (let $ipthis i32 (call $val_payload (local.get $thisv)))
-      ;; v is a function: its chain is Function.prototype → Object.prototype. If `this`
-      ;; IS Function.prototype, it's in the chain; else continue from Object.prototype.
-      (if (call $is_function (local.get $ipv))
-        (then
-          (if (call $strict_eq (local.get $thisv) (i64.load (i32.const 336))) (then (return (call $v_true))))))
-      (let $ipp i32 (i32.const 0))
-      (if (call $is_array (local.get $ipv)) (then (set! $ipp (i32.load (i32.const 160))))
-        (else (if (call $is_object (local.get $ipv)) (then (set! $ipp (call $scope_parent (call $val_payload (local.get $ipv)))))
-          (else (if (call $is_function (local.get $ipv)) (then (set! $ipp (i32.load (i32.const 328)))))))))  ;; fn → continue from Object.prototype
-      (block $ipe (loop $ipl
-        (br_if $ipe (i32.eqz (local.get $ipp)))
-        (if (i32.eq (local.get $ipp) (local.get $ipthis)) (then (return (call $v_true))))
-        (set! $ipp (call $scope_parent (local.get $ipp)))
-        (br $ipl)))
-      (return (call $v_false))))
-  ;; Object/Number/Array.prototype.toLocaleString (305) — default locale: delegate to this.toString()
-  (if (i32.eq (local.get $id) (i32.const 305))
-    (then
-      (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
-      (let $tls i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "toString"))))
-      (if (call $is_function (local.get $tls)) (then (return (call $call_fn0 (local.get $tls) (local.get $thisv)))))
-      (return (call $mk_str (call $to_str (local.get $thisv))))))
-  ;; encodeURIComponent(306)/decodeURIComponent(307)/encodeURI(308)/decodeURI(309)
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 306)) (i32.le_s (local.get $id) (i32.const 309)))
-    (then
-      (let $uris i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-      (if (i32.eq (local.get $id) (i32.const 306)) (then (return (call $mk_str (call $uri_encode (local.get $uris) (i32.const 0))))))
-      (if (i32.eq (local.get $id) (i32.const 308)) (then (return (call $mk_str (call $uri_encode (local.get $uris) (i32.const 1))))))
-      (if (i32.eq (local.get $id) (i32.const 307)) (then (return (call $mk_str (call $uri_decode (local.get $uris) (i32.const 0))))))
-      (return (call $mk_str (call $uri_decode (local.get $uris) (i32.const 1))))))  ;; 309 decodeURI (keep reserved encoded)
-  ;; Object.prototype.__proto__ getter (303) — returns this's [[Prototype]]
-  (if (i32.eq (local.get $id) (i32.const 303))
-    (then (return (call $js_get_prototype (local.get $thisv)))))
-  ;; Object.prototype.__proto__ setter (304) — SetPrototypeOf if value is Object/Null, else no-op
-  (if (i32.eq (local.get $id) (i32.const 304))
-    (then
-      (let $ppv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.and (i32.or (call $is_object (local.get $ppv)) (call $is_null (local.get $ppv))) (call $is_object (local.get $thisv)))
-        (then
-          (let $ppbuf i32 (call $heap_alloc (i32.const 16)))
-          (i64.store (local.get $ppbuf) (local.get $thisv))
-          (i64.store (i32.add (local.get $ppbuf) (i32.const 8)) (local.get $ppv))
-          (drop (call $call_native (i32.const 243) (i32.const 2) (local.get $ppbuf) (call $v_undef)))))  ;; delegate to setPrototypeOf (cycle check)
-      (return (call $v_undef))))
-  ;; Function(p1, …, pN, body)  |  new Function(…)  — build source and eval it,
-  ;; returning the resulting function. Params are the all-but-last args (joined by
-  ;; ','), the body is the last arg. The name is "anonymous" per spec.
-  (if (i32.eq (local.get $id) (i32.const 157))
-    (then
-      (let $fsrc i32 (cstring "(function anonymous("))
-      (let $fnp i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
-      (let $fi i32 (i32.const 0))
-      (block $ffe (loop $ffl
-        (br_if $ffe (i32.ge_s (local.get $fi) (local.get $fnp)))
-        (if (i32.gt_s (local.get $fi) (i32.const 0)) (then (set! $fsrc (call $str_concat (local.get $fsrc) (cstring ",")))))
-        (set! $fsrc (call $str_concat (local.get $fsrc) (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $fi)))))
-        (set! $fi (i32.add (local.get $fi) (i32.const 1)))
-        (br $ffl)))
-      (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "){\n")))
-      (if (i32.gt_s (local.get $argc) (i32.const 0))
-        (then (set! $fsrc (call $str_concat (local.get $fsrc) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.sub (local.get $argc) (i32.const 1))))))))
-      (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "\n})")))
-      (return (call $vm_eval_str (local.get $fsrc)))))
-  (if (i32.eq (local.get $id) (i32.const 158))  ;; Function.prototype empty fn: no-op
-    (then (return (call $v_undef))))
-  ;; Object.prototype.toString — the [[Class]] brand check (this = the value)
-  (if (i32.eq (local.get $id) (i32.const 155))
-    (then
-      (if (call $is_undefined (local.get $thisv)) (then (return (call $mk_str (cstring "[object Undefined]")))))
-      (if (call $is_null (local.get $thisv)) (then (return (call $mk_str (cstring "[object Null]")))))
-      ;; primitive number/string/boolean brands (per OrdinaryToPrimitive ToObject)
-      (if (call $is_number (local.get $thisv)) (then (return (call $mk_str (cstring "[object Number]")))))
-      (if (call $is_string (local.get $thisv)) (then (return (call $mk_str (cstring "[object String]")))))
-      (if (call $is_boolean (local.get $thisv)) (then (return (call $mk_str (cstring "[object Boolean]")))))
-      ;; a string Symbol.toStringTag (@@toStringTag) overrides the builtin tag
-      ;; (Get walks the prototype chain, so built-ins tag via their prototype)
-      (if (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv))))
-        (then
-          (let $ttv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@toStringTag"))))
-          (if (call $err) (then (return (call $v_undef))))
-          (if (call $is_string (local.get $ttv))
-            (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "[object ") (call $val_payload (local.get $ttv))) (cstring "]"))))))))
-      (if (call $is_array (local.get $thisv)) (then (return (call $mk_str (cstring "[object Array]")))))
-      (if (call $is_function (local.get $thisv)) (then (return (call $mk_str (cstring "[object Function]")))))
-      ;; wrapper objects + Date get their builtin tags
-      (if (call $is_object (local.get $thisv))
-        (then
-          (let $tpr i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
-          (if (local.get $tpr)
-            (then
-              (let $pv i64 (i64.load (local.get $tpr)))
-              (if (call $is_number (local.get $pv)) (then (return (call $mk_str (cstring "[object Number]")))))
-              (if (call $is_string (local.get $pv)) (then (return (call $mk_str (cstring "[object String]")))))
-              (if (call $is_boolean (local.get $pv)) (then (return (call $mk_str (cstring "[object Boolean]")))))))
-          (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time")) (then (return (call $mk_str (cstring "[object Date]")))))))
-      (return (call $mk_str (cstring "[object Object]")))))
-  (if (i32.eq (local.get $id) (i32.const 2))  ;; assert(cond[, message])
-    (then
-      (let $cond i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (call $truthy (local.get $cond)))
-        (then
-          (let $m i32
-            (if i32 (i32.ge_s (local.get $argc) (i32.const 2))
-              (then (call $str_concat (cstring "assert failed: ")
-                          (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
-              (else (cstring "assert failed"))))
-          (call $set_err (i32.const 1)) (call $set_err_val (call $mk_str (local.get $m)))))
-      (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 3))  ;; eval(src)
-    (then
-      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $is_string (local.get $a))
-        (then (return (call $vm_eval_str (call $val_payload (local.get $a))))))
-      (return (local.get $a))))
-  (if (i32.eq (local.get $id) (i32.const 4))  ;; Number(x)
-    (then
-      (if (i32.eqz (local.get $argc)) (then (return (call $num (f64.const 0)))))
-      (let $nbv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $is_bigint (local.get $nbv)) (then (return (call $num (f64.convert_i64_s (call $bigint_val (local.get $nbv)))))))  ;; Number(bigint)
-      (return (call $num (call $to_num (local.get $nbv))))))
-  (if (i32.eq (local.get $id) (i32.const 247))  ;; BigInt(x)
-    (then
-      (let $bgv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $is_bigint (local.get $bgv)) (then (return (local.get $bgv))))
-      (if (call $is_boolean (local.get $bgv)) (then (return (call $mk_bigint (i64.extend_i32_u (call $val_payload (local.get $bgv)))))))
-      (if (call $is_number (local.get $bgv))
-        (then
-          (let $bgf f64 (call $tonum_raw (local.get $bgv)))
-          (if (i32.or (f64.ne (local.get $bgf) (local.get $bgf)) (f64.ne (local.get $bgf) (f64.nearest (local.get $bgf))))
-            (then (call $throw_type (cstring "RangeError") (cstring "The number is not a safe integer")) (return (call $v_undef))))
-          (return (call $mk_bigint (i64.trunc_f64_s (local.get $bgf))))))
-      (if (call $is_string (local.get $bgv)) (then (return (call $mk_bigint (i64.trunc_f64_s (call $str_to_num (call $val_payload (local.get $bgv))))))))
-      (call $throw_type (cstring "TypeError") (cstring "Cannot convert to a BigInt")) (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 5))  ;; String(x)
-    (then
-      (if (i32.eqz (local.get $argc)) (then (return (call $mk_str (cstring "")))))
-      (return (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
-  (if (i32.eq (local.get $id) (i32.const 6))  ;; Boolean(x)
-    (then (return (call $mk_bool (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
-  (if (i32.eq (local.get $id) (i32.const 220))  ;; Number/Boolean.prototype.valueOf — unwrap a wrapper to its primitive
-    (then
-      (if (call $is_object (local.get $thisv))
-        (then
-          (let $vo220 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
-          (if (local.get $vo220) (then (return (i64.load (local.get $vo220)))))
-          ;; object without a __prim__ wrapper slot → not a Number/Boolean → TypeError
-          (call $throw_type (cstring "TypeError") (cstring "valueOf called on incompatible receiver")) (return (call $v_undef))))
-      ;; primitive receiver: only number/boolean are valid for these valueOf's
-      (if (i32.or (call $is_number (local.get $thisv)) (call $is_boolean (local.get $thisv))) (then (return (local.get $thisv))))
-      (call $throw_type (cstring "TypeError") (cstring "valueOf called on incompatible receiver")) (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 221))  ;; Boolean.prototype.toString → "true"/"false"
-    (then
-      (let $bv221 i64 (local.get $thisv))
-      (if (call $is_object (local.get $thisv))
-        (then
-          (let $bo221 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
-          (if (local.get $bo221) (then (set! $bv221 (i64.load (local.get $bo221)))))))
-      (return (call $mk_str (if i32 (call $truthy (local.get $bv221)) (then (cstring "true")) (else (cstring "false")))))))
-  (if (i32.eq (local.get $id) (i32.const 7))  ;; isNaN(x)
-    (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-          (return (call $mk_bool (f64.ne (local.get $d) (local.get $d))))))
-  (if (i32.eq (local.get $id) (i32.const 8))  ;; isFinite(x)
-    (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-          (return (call $mk_bool (i32.and (f64.eq (local.get $d) (local.get $d))
-            (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0)))))))))
-  (if (i32.eq (local.get $id) (i32.const 9))  ;; Object(x) → ToObject(x)
-    (then
-      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      ;; already an object/array/function → returned unchanged
-      (if (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a))))
-        (then (return (local.get $a))))
-      ;; primitive → boxed wrapper linked to the matching prototype
-      (if (call $is_number (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 164))))))
-      (if (call $is_string (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 156))))))
-      (if (call $is_boolean (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 184))))))
-      (return (call $mk_obj (call $obj_new (i32.const 8))))))
-  (if (i32.or (i32.eq (local.get $id) (i32.const 10)) (i32.eq (local.get $id) (i32.const 112)))  ;; Object.keys / getOwnPropertyNames
-    (then
-      (let $kob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.or (call $is_null (local.get $kob)) (call $is_undefined (local.get $kob)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
-      (return (call $mk_arr (call $own_enum_keys (local.get $kob) (i32.eq (local.get $id) (i32.const 112)))))))
-  (if (i32.or (i32.eq (local.get $id) (i32.const 91)) (i32.eq (local.get $id) (i32.const 92)))  ;; Object.values/entries
-    (then
-      (if (i32.or (call $is_null (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
-      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (let $keys i32 (call $own_enum_keys (local.get $a) (i32.const 0)))
-      (let $arr i32 (call $arr_new (i32.const 16)))
-      (let $i i32 (i32.const 0))
-      (block $ke (loop $kl
-        (br_if $ke (i32.ge_s (local.get $i) (call $arr_len (local.get $keys))))
-        (let $nm i64 (call $arr_get (local.get $keys) (local.get $i)))
-        (let $vv i64 (call $get_prop (local.get $a) (local.get $nm)))
-        (if (i32.eq (local.get $id) (i32.const 91))
-          (then (call $arr_push (local.get $arr) (local.get $vv)))
-          (else  ;; entries → [key, value]
-            (let $pair i32 (call $arr_new (i32.const 2)))
-            (call $arr_push (local.get $pair) (local.get $nm))
-            (call $arr_push (local.get $pair) (local.get $vv))
-            (call $arr_push (local.get $arr) (call $mk_arr (local.get $pair)))))
-        (set! $i (i32.add (local.get $i) (i32.const 1)))
-        (br $kl)))
-      (return (call $mk_arr (local.get $arr)))))
-  (if (i32.eq (local.get $id) (i32.const 109))  ;; str.replaceAll(search, repl)
-    (then
-      (let $rals i32 (call $to_str (local.get $thisv)))
-      (let $rasearch i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-      (let $rarepl i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-      (if (i32.eqz (call $str_len (local.get $rasearch))) (then (return (call $mk_str (local.get $rals)))))
-      (let $raparts i32 (call $str_split (local.get $rals) (local.get $rasearch)))
-      (let $raout i32 (cstring ""))
-      (let $rai i32 (i32.const 0))
-      (block $rae (loop $ral
-        (br_if $rae (i32.ge_s (local.get $rai) (call $arr_len (local.get $raparts))))
-        (if (i32.gt_s (local.get $rai) (i32.const 0)) (then (set! $raout (call $str_concat (local.get $raout) (local.get $rarepl)))))
-        (set! $raout (call $str_concat (local.get $raout) (call $val_payload (call $arr_get (local.get $raparts) (local.get $rai)))))
-        (set! $rai (i32.add (local.get $rai) (i32.const 1)))
-        (br $ral)))
-      (return (call $mk_str (local.get $raout)))))
-  (if (i32.eq (local.get $id) (i32.const 110))  ;; Array.of(...args)
-    (then
-      (let $ofa i32 (call $arr_new (i32.const 4)))
-      (let $ofi i32 (i32.const 0))
-      (block $ofe (loop $ofl
-        (br_if $ofe (i32.ge_s (local.get $ofi) (local.get $argc)))
-        (call $arr_push (local.get $ofa) (call $argn (local.get $argv) (local.get $argc) (local.get $ofi)))
-        (set! $ofi (i32.add (local.get $ofi) (i32.const 1)))
-        (br $ofl)))
-      (return (call $mk_arr (local.get $ofa)))))
-  (if (i32.eq (local.get $id) (i32.const 111))  ;; Array.from(src[, mapFn])
-    (then
-      (let $frs i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (let $frm i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-      ;; items = null/undefined → ToObject throws TypeError
-      (if (i32.or (call $is_null (local.get $frs)) (call $is_undefined (local.get $frs)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
-      ;; a supplied mapfn must be callable
-      (if (i32.and (i32.gt_s (local.get $argc) (i32.const 1)) (i32.and (i32.eqz (call $is_undefined (local.get $frm))) (i32.eqz (call $is_function (local.get $frm)))))
-        (then (call $throw_type (cstring "TypeError") (cstring "Array.from: mapping function is not callable")) (return (call $v_undef))))
-      (let $fra i32 (call $arr_new (i32.const 4)))
-      (if (call $is_array (local.get $frs))
-        (then
-          (let $frp i32 (call $val_payload (local.get $frs)))
-          (let $fri i32 (i32.const 0))
-          (block $fre (loop $frl
-            (br_if $fre (i32.ge_s (local.get $fri) (call $arr_len (local.get $frp))))
-            (call $arr_push (local.get $fra) (call $arr_get (local.get $frp) (local.get $fri)))
-            (set! $fri (i32.add (local.get $fri) (i32.const 1)))
-            (br $frl)))))
-      (if (call $is_string (local.get $frs))
-        (then
-          (let $frsp i32 (call $val_payload (local.get $frs)))
-          (let $frj i32 (i32.const 0))
-          (block $frse (loop $frsl
-            (br_if $frse (i32.ge_s (local.get $frj) (call $str_len (local.get $frsp))))
-            (call $arr_push (local.get $fra) (call $str_char_at (local.get $frsp) (local.get $frj)))
-            (set! $frj (i32.add (local.get $frj) (i32.const 1)))
-            (br $frsl)))))
-      (if (call $is_object (local.get $frs))
-        (then
-          ;; resolve an iterator: @@iterator() if present, else the object itself
-          (let $frit i64 (local.get $frs))
-          (let $frifn i64 (call $get_prop (local.get $frs) (call $mk_str (cstring "@@iterator"))))
-          (if (call $is_function (local.get $frifn)) (then (set! $frit (call $call_fn0 (local.get $frifn) (local.get $frs)))))
-          (let $frnx i64 (call $get_prop (local.get $frit) (call $mk_str (cstring "next"))))
-          (if (call $is_function (local.get $frnx))
-            (then  ;; iterator protocol
-              (block $frie (loop $fril
-                (let $frr i64 (call $call_fn0 (local.get $frnx) (local.get $frit)))
-                (br_if $frie (call $err))
-                (br_if $frie (call $truthy (call $get_prop (local.get $frr) (call $mk_str (cstring "done")))))
-                (call $arr_push (local.get $fra) (call $get_prop (local.get $frr) (call $mk_str (cstring "value"))))
-                (br $fril))))
-            (else  ;; array-like: indices 0..length-1 (NaN/negative length → 0)
-              (let $frlnf f64 (call $to_num (call $get_prop (local.get $frs) (call $mk_str (cstring "length")))))
-              (let $frln i32 (if i32 (i32.and (f64.eq (local.get $frlnf) (local.get $frlnf)) (i32.and (f64.ge (local.get $frlnf) (f64.const 0)) (f64.lt (local.get $frlnf) (f64.const 2147483647)))) (then (i32.trunc_f64_s (local.get $frlnf))) (else (i32.const 0))))
-              (let $frk i32 (i32.const 0))
-              (block $frle (loop $frll
-                (br_if $frle (i32.ge_s (local.get $frk) (local.get $frln)))
-                (call $arr_push (local.get $fra) (call $get_prop (local.get $frs) (call $num (f64.convert_i32_s (local.get $frk)))))
-                (set! $frk (i32.add (local.get $frk) (i32.const 1)))
-                (br $frll)))))))
-      (if (call $is_function (local.get $frm))  ;; apply mapFn(elem, i)
-        (then
-          (let $frmi i32 (i32.const 0))
-          (let $frmlen i32 (call $arr_len (local.get $fra)))
-          (block $frme (loop $frmlp
-            (br_if $frme (i32.ge_s (local.get $frmi) (local.get $frmlen)))
-            (let $frav i32 (call $heap_alloc (i32.const 16)))
-            (i64.store (local.get $frav) (call $arr_get (local.get $fra) (local.get $frmi)))
-            (i64.store (i32.add (local.get $frav) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $frmi))))
-            (call $arr_set (local.get $fra) (local.get $frmi) (call $call_val (local.get $frm) (i32.const 2) (local.get $frav) (call $v_undef)))
-            (set! $frmi (i32.add (local.get $frmi) (i32.const 1)))
-            (br $frmlp)))))
-      (return (call $mk_arr (local.get $fra)))))
-  (if (i32.eq (local.get $id) (i32.const 98))  ;; Number.isSafeInteger(x)
-    (then
-      (let $siv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (call $is_number (local.get $siv))) (then (return (call $v_false))))
-      (let $sid f64 (call $tonum_raw (local.get $siv)))
-      (return (call $mk_bool (i32.and (f64.eq (local.get $sid) (f64.trunc (local.get $sid)))
-        (i32.and (f64.eq (local.get $sid) (local.get $sid)) (f64.le (f64.abs (local.get $sid)) (f64.const 9007199254740991))))))))
-  (if (i32.eq (local.get $id) (i32.const 52))  ;; Math.hypot(...args)
-    (then
-      (let $hs f64 (f64.const 0))
-      (let $hi i32 (i32.const 0))
-      (block $he (loop $hl
-        (br_if $he (i32.ge_s (local.get $hi) (local.get $argc)))
-        (let $hv f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (local.get $hi))))
-        (set! $hs (f64.add (local.get $hs) (f64.mul (local.get $hv) (local.get $hv))))
-        (set! $hi (i32.add (local.get $hi) (i32.const 1)))
-        (br $hl)))
-      (return (call $num (f64.sqrt (local.get $hs))))))
-  ;; ── Map (id 120 ctor, 121 set, 122 get, 123 has, 124 delete, 125 forEach, 126 size, 127 clear) ──
-  (if (i32.eq (local.get $id) (i32.const 120))  ;; new Map()
-    (then
-      (let $mo i32 (call $obj_new (i32.const 8)))
-      (if (i32.load (i32.const 344)) (then (i32.store (local.get $mo) (i32.load (i32.const 344)))))  ;; [[Prototype]] = Map.prototype
-      (call $scope_define (local.get $mo) (cstring "@@mk") (call $mk_arr (call $arr_new (i32.const 4))))
-      (call $scope_define (local.get $mo) (cstring "@@mv") (call $mk_arr (call $arr_new (i32.const 4))))
-      ;; new Map(iterable of [k,v]): set each entry (any iterable; entries read via [0]/[1])
-      (let $mov i64 (call $mk_obj (local.get $mo)))
-      (let $marg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (i32.or (call $is_null (local.get $marg)) (call $is_undefined (local.get $marg))))
-        (then
-          (let $mav i32 (call $arr_new (i32.const 4)))
-          (call $spread_into (local.get $mav) (local.get $marg))
-          (if (call $err) (then (return (call $v_undef))))
-          (let $man i32 (call $arr_len (local.get $mav)))
-          (let $mbuf i32 (call $heap_alloc (i32.const 16)))
-          (let $mi i32 (i32.const 0))
-          (block $mce (loop $mcl
-            (br_if $mce (i32.ge_s (local.get $mi) (local.get $man)))
-            (let $mpair i64 (call $arr_get (local.get $mav) (local.get $mi)))
-            (if (i32.eqz (i32.or (call $is_array (local.get $mpair)) (call $is_object (local.get $mpair))))
-              (then (call $throw_type (cstring "TypeError") (cstring "Map entry is not an object")) (return (call $v_undef))))
-            (i64.store (local.get $mbuf) (call $get_prop (local.get $mpair) (call $mk_str (cstring "0"))))
-            (i64.store (i32.add (local.get $mbuf) (i32.const 8)) (call $get_prop (local.get $mpair) (call $mk_str (cstring "1"))))
-            (if (call $err) (then (return (call $v_undef))))
-            (drop (call $call_native (i32.const 121) (i32.const 2) (local.get $mbuf) (local.get $mov)))
-            (set! $mi (i32.add (local.get $mi) (i32.const 1)))
-            (br $mcl)))))
-      (return (local.get $mov))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 121)) (i32.le_s (local.get $id) (i32.const 127)))
-    (then
-      ;; receiver must be an object carrying the [[MapData]] internal slot.
-      ;; nest the checks — i32.or would eval scope_find_local on a non-object payload.
-      (if (i32.eqz (call $is_object (local.get $thisv)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@mk")))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (let $mk i32 (call $coll_arr (local.get $thisv) (cstring "@@mk")))
-      (let $mv i32 (call $coll_arr (local.get $thisv) (cstring "@@mv")))
-      (let $mkey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (let $midx i32 (call $map_find (local.get $mk) (local.get $mkey)))
-      (if (i32.eq (local.get $id) (i32.const 121))  ;; set(k,v)
-        (then
-          (let $mval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-          (if (i32.ge_s (local.get $midx) (i32.const 0))
-            (then (call $arr_set (local.get $mv) (local.get $midx) (local.get $mval)))
-            (else (call $arr_push (local.get $mk) (local.get $mkey)) (call $arr_push (local.get $mv) (local.get $mval))))
-          (return (local.get $thisv))))
-      (if (i32.eq (local.get $id) (i32.const 122))  ;; get(k)
-        (then (if (i32.lt_s (local.get $midx) (i32.const 0)) (then (return (call $v_undef)))) (return (call $arr_get (local.get $mv) (local.get $midx)))))
-      (if (i32.eq (local.get $id) (i32.const 123))  ;; has(k)
-        (then (return (call $mk_bool (i32.ge_s (local.get $midx) (i32.const 0))))))
-      (if (i32.eq (local.get $id) (i32.const 124))  ;; delete(k)
-        (then
-          (if (i32.lt_s (local.get $midx) (i32.const 0)) (then (return (call $v_false))))
-          (call $arr_remove (local.get $mk) (local.get $midx)) (call $arr_remove (local.get $mv) (local.get $midx))
-          (return (call $v_true))))
-      (if (i32.eq (local.get $id) (i32.const 125))  ;; forEach(cb)
-        (then
-          (let $mcb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-          (let $mi i32 (i32.const 0))
-          (block $mfe (loop $mfl
-            (br_if $mfe (i32.ge_s (local.get $mi) (call $arr_len (local.get $mk))))
-            (let $cba i32 (call $heap_alloc (i32.const 24)))
-            (i64.store (local.get $cba) (call $arr_get (local.get $mv) (local.get $mi)))
-            (i64.store (i32.add (local.get $cba) (i32.const 8)) (call $arr_get (local.get $mk) (local.get $mi)))
-            (i64.store (i32.add (local.get $cba) (i32.const 16)) (local.get $thisv))
-            (drop (call $call_val (local.get $mcb) (i32.const 3) (local.get $cba) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-            (set! $mi (i32.add (local.get $mi) (i32.const 1)))
-            (br $mfl)))
-          (return (call $v_undef))))
-      (if (i32.eq (local.get $id) (i32.const 126))  ;; size getter
-        (then (return (call $num (f64.convert_i32_s (call $arr_len (local.get $mk)))))))
-      (if (i32.eq (local.get $id) (i32.const 127))  ;; clear()
-        (then
-          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@mk") (call $mk_arr (call $arr_new (i32.const 4))))
-          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@mv") (call $mk_arr (call $arr_new (i32.const 4))))
-          (return (call $v_undef))))
-      (return (call $v_undef))))
-  ;; ── Set (id 130 ctor, 131 add, 132 has, 133 delete, 134 forEach, 135 size, 136 clear) ──
-  (if (i32.eq (local.get $id) (i32.const 130))  ;; new Set()
-    (then
-      (let $so i32 (call $obj_new (i32.const 8)))
-      (if (i32.load (i32.const 348)) (then (i32.store (local.get $so) (i32.load (i32.const 348)))))  ;; [[Prototype]] = Set.prototype
-      (call $scope_define (local.get $so) (cstring "@@sk") (call $mk_arr (call $arr_new (i32.const 4))))
-      ;; new Set(iterable): add each element (any iterable, not just arrays)
-      (let $sov i64 (call $mk_obj (local.get $so)))
-      (let $sarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (i32.or (call $is_null (local.get $sarg)) (call $is_undefined (local.get $sarg))))
-        (then
-          (let $sav i32 (call $arr_new (i32.const 4)))
-          (call $spread_into (local.get $sav) (local.get $sarg))
-          (if (call $err) (then (return (call $v_undef))))
-          (let $san i32 (call $arr_len (local.get $sav)))
-          (let $sbuf i32 (call $heap_alloc (i32.const 8)))
-          (let $si i32 (i32.const 0))
-          (block $sce (loop $scl
-            (br_if $sce (i32.ge_s (local.get $si) (local.get $san)))
-            (i64.store (local.get $sbuf) (call $arr_get (local.get $sav) (local.get $si)))
-            (drop (call $call_native (i32.const 131) (i32.const 1) (local.get $sbuf) (local.get $sov)))
-            (set! $si (i32.add (local.get $si) (i32.const 1)))
-            (br $scl)))))
-      (return (local.get $sov))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 131)) (i32.le_s (local.get $id) (i32.const 136)))
-    (then
-      ;; receiver must be an object carrying the [[SetData]] internal slot.
-      ;; nest the checks — i32.or would eval scope_find_local on a non-object payload.
-      (if (i32.eqz (call $is_object (local.get $thisv)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@sk")))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (let $sk i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
-      (let $skey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (let $sidx i32 (call $map_find (local.get $sk) (local.get $skey)))
-      (if (i32.eq (local.get $id) (i32.const 131))  ;; add(v)
-        (then (if (i32.lt_s (local.get $sidx) (i32.const 0)) (then (call $arr_push (local.get $sk) (local.get $skey)))) (return (local.get $thisv))))
-      (if (i32.eq (local.get $id) (i32.const 132))  ;; has(v)
-        (then (return (call $mk_bool (i32.ge_s (local.get $sidx) (i32.const 0))))))
-      (if (i32.eq (local.get $id) (i32.const 133))  ;; delete(v)
-        (then
-          (if (i32.lt_s (local.get $sidx) (i32.const 0)) (then (return (call $v_false))))
-          (call $arr_remove (local.get $sk) (local.get $sidx))
-          (return (call $v_true))))
-      (if (i32.eq (local.get $id) (i32.const 134))  ;; forEach(cb)
-        (then
-          (let $scb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-          (let $si i32 (i32.const 0))
-          (block $sfe (loop $sfl
-            (br_if $sfe (i32.ge_s (local.get $si) (call $arr_len (local.get $sk))))
-            (let $scba i32 (call $heap_alloc (i32.const 24)))
-            (i64.store (local.get $scba) (call $arr_get (local.get $sk) (local.get $si)))
-            (i64.store (i32.add (local.get $scba) (i32.const 8)) (call $arr_get (local.get $sk) (local.get $si)))
-            (i64.store (i32.add (local.get $scba) (i32.const 16)) (local.get $thisv))
-            (drop (call $call_val (local.get $scb) (i32.const 3) (local.get $scba) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-            (set! $si (i32.add (local.get $si) (i32.const 1)))
-            (br $sfl)))
-          (return (call $v_undef))))
-      (if (i32.eq (local.get $id) (i32.const 135))  ;; size getter
-        (then (return (call $num (f64.convert_i32_s (call $arr_len (local.get $sk)))))))
-      (if (i32.eq (local.get $id) (i32.const 136))  ;; clear()
-        (then
-          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@sk") (call $mk_arr (call $arr_new (i32.const 4))))
-          (return (call $v_undef))))
-      (return (call $v_undef))))
-  ;; ── ES2024 Set methods: union(310) intersection(311) difference(312)
-  ;;    symmetricDifference(313) isSubsetOf(314) isSupersetOf(315) isDisjointFrom(316) ──
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316)))
-    (then
-      ;; RequireInternalSlot([[SetData]]) on this (short-circuit)
-      (if (i32.eqz (call $is_object (local.get $thisv)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@sk")))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (let $other i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (call $gsr (local.get $other))) (then (return (call $v_undef))))
-      (let $osk i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
-      (let $thisSize i32 (call $arr_len (local.get $osk)))
-      (let $otherSize i32 (i32.load (i32.const 456)))
-      (let $hasf i64 (i64.load (i32.const 464)))
-      (let $keysf i64 (i64.load (i32.const 472)))
-      (let $i i32 (i32.const 0))
-      ;; ----- union (310) -----
-      (if (i32.eq (local.get $id) (i32.const 310))
-        (then
-          (let $resu i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
-          (let $rsk i32 (call $coll_arr (local.get $resu) (cstring "@@sk")))
-          (block $ue1 (loop $ul1
-            (br_if $ue1 (i32.ge_s (local.get $i) (local.get $thisSize)))
-            (call $set_add1 (local.get $rsk) (call $arr_get (local.get $osk) (local.get $i)))
-            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ul1)))
-          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
-          (if (call $err) (then (return (call $v_undef))))
-          (set! $i (i32.const 0))
-          (block $ue2 (loop $ul2
-            (br_if $ue2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
-            (call $set_add1 (local.get $rsk) (call $arr_get (local.get $ka) (local.get $i)))
-            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ul2)))
-          (return (local.get $resu))))
-      ;; ----- intersection (311) -----
-      (if (i32.eq (local.get $id) (i32.const 311))
-        (then
-          (let $resi i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
-          (let $rsk i32 (call $coll_arr (local.get $resi) (cstring "@@sk")))
-          (if (i32.le_s (local.get $thisSize) (local.get $otherSize))
-            (then  ;; iterate O, keep those other.has(e)
-              (block $ie1 (loop $il1
-                (br_if $ie1 (i32.ge_s (local.get $i) (local.get $thisSize)))
-                (let $e i64 (call $arr_get (local.get $osk) (local.get $i)))
-                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (local.get $e)))
-                (if (call $err) (then (return (call $v_undef))))
-                (if (call $truthy (local.get $shv)) (then (call $set_add1 (local.get $rsk) (local.get $e))))
-                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $il1))))
-            (else  ;; iterate other.keys(), keep those in O
-              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
-              (if (call $err) (then (return (call $v_undef))))
-              (block $ie2 (loop $il2
-                (br_if $ie2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
-                (let $v i64 (call $arr_get (local.get $ka) (local.get $i)))
-                (if (i32.ge_s (call $map_find (local.get $osk) (local.get $v)) (i32.const 0))
-                  (then (call $set_add1 (local.get $rsk) (local.get $v))))
-                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $il2)))))
-          (return (local.get $resi))))
-      ;; ----- difference (312) -----
-      (if (i32.eq (local.get $id) (i32.const 312))
-        (then
-          (let $resd i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
-          (let $rsk i32 (call $coll_arr (local.get $resd) (cstring "@@sk")))
-          (if (i32.le_s (local.get $thisSize) (local.get $otherSize))
-            (then  ;; keep O elements NOT in other
-              (block $de1 (loop $dl1
-                (br_if $de1 (i32.ge_s (local.get $i) (local.get $thisSize)))
-                (let $e i64 (call $arr_get (local.get $osk) (local.get $i)))
-                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (local.get $e)))
-                (if (call $err) (then (return (call $v_undef))))
-                (if (i32.eqz (call $truthy (local.get $shv))) (then (call $set_add1 (local.get $rsk) (local.get $e))))
-                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl1))))
-            (else  ;; clone O, remove each other key
-              (block $dc (loop $dcl
-                (br_if $dc (i32.ge_s (local.get $i) (local.get $thisSize)))
-                (call $arr_push (local.get $rsk) (call $arr_get (local.get $osk) (local.get $i)))
-                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dcl)))
-              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
-              (if (call $err) (then (return (call $v_undef))))
-              (set! $i (i32.const 0))
-              (block $de2 (loop $dl2
-                (br_if $de2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
-                (let $ridx i32 (call $map_find (local.get $rsk) (call $arr_get (local.get $ka) (local.get $i))))
-                (if (i32.ge_s (local.get $ridx) (i32.const 0)) (then (call $arr_remove (local.get $rsk) (local.get $ridx))))
-                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl2)))))
-          (return (local.get $resd))))
-      ;; ----- symmetricDifference (313) -----
-      (if (i32.eq (local.get $id) (i32.const 313))
-        (then
-          (let $ress i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
-          (let $rsk i32 (call $coll_arr (local.get $ress) (cstring "@@sk")))
-          (block $sc (loop $scl
-            (br_if $sc (i32.ge_s (local.get $i) (local.get $thisSize)))
-            (call $arr_push (local.get $rsk) (call $arr_get (local.get $osk) (local.get $i)))
-            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $scl)))
-          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
-          (if (call $err) (then (return (call $v_undef))))
-          (set! $i (i32.const 0))
-          (block $se (loop $sl
-            (br_if $se (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
-            (let $v i64 (call $arr_get (local.get $ka) (local.get $i)))
-            (if (i32.ge_s (call $map_find (local.get $osk) (local.get $v)) (i32.const 0))
-              (then  ;; in O → remove from result if present
-                (let $ridx i32 (call $map_find (local.get $rsk) (local.get $v)))
-                (if (i32.ge_s (local.get $ridx) (i32.const 0)) (then (call $arr_remove (local.get $rsk) (local.get $ridx)))))
-              (else (call $set_add1 (local.get $rsk) (local.get $v))))
-            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $sl)))
-          (return (local.get $ress))))
-      ;; ----- isSubsetOf (314) -----
-      (if (i32.eq (local.get $id) (i32.const 314))
-        (then
-          (if (i32.gt_s (local.get $thisSize) (local.get $otherSize)) (then (return (call $v_false))))
-          (block $sube (loop $subl
-            (br_if $sube (i32.ge_s (local.get $i) (local.get $thisSize)))
-            (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (call $arr_get (local.get $osk) (local.get $i))))
-            (if (call $err) (then (return (call $v_undef))))
-            (if (i32.eqz (call $truthy (local.get $shv))) (then (return (call $v_false))))
-            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $subl)))
-          (return (call $v_true))))
-      ;; ----- isSupersetOf (315) -----
-      (if (i32.eq (local.get $id) (i32.const 315))
-        (then
-          (if (i32.lt_s (local.get $thisSize) (local.get $otherSize)) (then (return (call $v_false))))
-          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
-          (if (call $err) (then (return (call $v_undef))))
-          (block $supe (loop $supl
-            (br_if $supe (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
-            (if (i32.lt_s (call $map_find (local.get $osk) (call $arr_get (local.get $ka) (local.get $i))) (i32.const 0))
-              (then (return (call $v_false))))
-            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $supl)))
-          (return (call $v_true))))
-      ;; ----- isDisjointFrom (316) -----
-      (if (i32.eq (local.get $id) (i32.const 316))
-        (then
-          (if (i32.le_s (local.get $thisSize) (local.get $otherSize))
-            (then
-              (block $dje1 (loop $djl1
-                (br_if $dje1 (i32.ge_s (local.get $i) (local.get $thisSize)))
-                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (call $arr_get (local.get $osk) (local.get $i))))
-                (if (call $err) (then (return (call $v_undef))))
-                (if (call $truthy (local.get $shv)) (then (return (call $v_false))))
-                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $djl1))))
-            (else
-              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
-              (if (call $err) (then (return (call $v_undef))))
-              (block $dje2 (loop $djl2
-                (br_if $dje2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
-                (if (i32.ge_s (call $map_find (local.get $osk) (call $arr_get (local.get $ka) (local.get $i))) (i32.const 0))
-                  (then (return (call $v_false))))
-                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $djl2)))))
-          (return (call $v_true))))
-      (return (call $v_undef))))
-  ;; ── WeakMap (ctor 320, set 321, get 322, has 323, delete 324) ──
-  (if (i32.eq (local.get $id) (i32.const 320))  ;; new WeakMap()
-    (then
-      (let $wmo i32 (call $obj_new (i32.const 8)))
-      (if (i32.load (i32.const 480)) (then (i32.store (local.get $wmo) (i32.load (i32.const 480)))))
-      (call $scope_define (local.get $wmo) (cstring "@@wmk") (call $mk_arr (call $arr_new (i32.const 4))))
-      (call $scope_define (local.get $wmo) (cstring "@@wmv") (call $mk_arr (call $arr_new (i32.const 4))))
-      (let $wmov i64 (call $mk_obj (local.get $wmo)))
-      (let $wmarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (i32.or (call $is_null (local.get $wmarg)) (call $is_undefined (local.get $wmarg))))
-        (then
-          (let $wma i32 (call $arr_new (i32.const 4)))
-          (call $spread_into (local.get $wma) (local.get $wmarg))
-          (if (call $err) (then (return (call $v_undef))))
-          (let $wmn i32 (call $arr_len (local.get $wma)))
-          (let $wmbuf i32 (call $heap_alloc (i32.const 16)))
-          (let $wmi i32 (i32.const 0))
-          (block $wmce (loop $wmcl
-            (br_if $wmce (i32.ge_s (local.get $wmi) (local.get $wmn)))
-            (let $wmp i64 (call $arr_get (local.get $wma) (local.get $wmi)))
-            (if (i32.eqz (i32.or (call $is_array (local.get $wmp)) (call $is_object (local.get $wmp))))
-              (then (call $throw_type (cstring "TypeError") (cstring "WeakMap entry is not an object")) (return (call $v_undef))))
-            (i64.store (local.get $wmbuf) (call $get_prop (local.get $wmp) (call $mk_str (cstring "0"))))
-            (i64.store (i32.add (local.get $wmbuf) (i32.const 8)) (call $get_prop (local.get $wmp) (call $mk_str (cstring "1"))))
-            (if (call $err) (then (return (call $v_undef))))
-            (drop (call $call_native (i32.const 321) (i32.const 2) (local.get $wmbuf) (local.get $wmov)))
-            (if (call $err) (then (return (call $v_undef))))
-            (set! $wmi (i32.add (local.get $wmi) (i32.const 1))) (br $wmcl)))))
-      (return (local.get $wmov))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 321)) (i32.le_s (local.get $id) (i32.const 324)))
-    (then
-      (if (i32.eqz (call $is_object (local.get $thisv)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@wmk")))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (let $wmk i32 (call $coll_arr (local.get $thisv) (cstring "@@wmk")))
-      (let $wmv i32 (call $coll_arr (local.get $thisv) (cstring "@@wmv")))
-      (let $wkey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eq (local.get $id) (i32.const 321))  ;; set(key,val)
-        (then
-          (if (i32.eqz (call $weakly_holdable (local.get $wkey)))
-            (then (call $throw_type (cstring "TypeError") (cstring "Invalid value used as weak map key")) (return (call $v_undef))))
-          (let $wval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-          (let $widx i32 (call $map_find (local.get $wmk) (local.get $wkey)))
-          (if (i32.ge_s (local.get $widx) (i32.const 0))
-            (then (call $arr_set (local.get $wmv) (local.get $widx) (local.get $wval)))
-            (else (call $arr_push (local.get $wmk) (local.get $wkey)) (call $arr_push (local.get $wmv) (local.get $wval))))
-          (return (local.get $thisv))))
-      ;; get/has/delete: non-holdable key never present (no throw)
-      (let $widx2 i32 (if i32 (call $weakly_holdable (local.get $wkey)) (then (call $map_find (local.get $wmk) (local.get $wkey))) (else (i32.const -1))))
-      (if (i32.eq (local.get $id) (i32.const 322))  ;; get(key)
-        (then (if (i32.lt_s (local.get $widx2) (i32.const 0)) (then (return (call $v_undef))) (else (return (call $arr_get (local.get $wmv) (local.get $widx2)))))))
-      (if (i32.eq (local.get $id) (i32.const 323))  ;; has(key)
-        (then (return (call $mk_bool (i32.ge_s (local.get $widx2) (i32.const 0))))))
-      (if (i32.eq (local.get $id) (i32.const 324))  ;; delete(key)
-        (then
-          (if (i32.lt_s (local.get $widx2) (i32.const 0)) (then (return (call $v_false))))
-          (call $arr_remove (local.get $wmk) (local.get $widx2))
-          (call $arr_remove (local.get $wmv) (local.get $widx2))
-          (return (call $v_true))))
-      (return (call $v_undef))))
-  ;; ── WeakSet (ctor 325, add 326, has 327, delete 328) ──
-  (if (i32.eq (local.get $id) (i32.const 325))  ;; new WeakSet()
-    (then
-      (let $wso i32 (call $obj_new (i32.const 8)))
-      (if (i32.load (i32.const 484)) (then (i32.store (local.get $wso) (i32.load (i32.const 484)))))
-      (call $scope_define (local.get $wso) (cstring "@@wsk") (call $mk_arr (call $arr_new (i32.const 4))))
-      (let $wsov i64 (call $mk_obj (local.get $wso)))
-      (let $wsarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (i32.or (call $is_null (local.get $wsarg)) (call $is_undefined (local.get $wsarg))))
-        (then
-          (let $wsa i32 (call $arr_new (i32.const 4)))
-          (call $spread_into (local.get $wsa) (local.get $wsarg))
-          (if (call $err) (then (return (call $v_undef))))
-          (let $wsn i32 (call $arr_len (local.get $wsa)))
-          (let $wsbuf i32 (call $heap_alloc (i32.const 8)))
-          (let $wsi i32 (i32.const 0))
-          (block $wsce (loop $wscl
-            (br_if $wsce (i32.ge_s (local.get $wsi) (local.get $wsn)))
-            (i64.store (local.get $wsbuf) (call $arr_get (local.get $wsa) (local.get $wsi)))
-            (drop (call $call_native (i32.const 326) (i32.const 1) (local.get $wsbuf) (local.get $wsov)))
-            (if (call $err) (then (return (call $v_undef))))
-            (set! $wsi (i32.add (local.get $wsi) (i32.const 1))) (br $wscl)))))
-      (return (local.get $wsov))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 326)) (i32.le_s (local.get $id) (i32.const 328)))
-    (then
-      (if (i32.eqz (call $is_object (local.get $thisv)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@wsk")))
-        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
-      (let $wsk i32 (call $coll_arr (local.get $thisv) (cstring "@@wsk")))
-      (let $wsval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eq (local.get $id) (i32.const 326))  ;; add(v)
-        (then
-          (if (i32.eqz (call $weakly_holdable (local.get $wsval)))
-            (then (call $throw_type (cstring "TypeError") (cstring "Invalid value used in weak set")) (return (call $v_undef))))
-          (if (i32.lt_s (call $map_find (local.get $wsk) (local.get $wsval)) (i32.const 0))
-            (then (call $arr_push (local.get $wsk) (local.get $wsval))))
-          (return (local.get $thisv))))
-      (let $wsidx i32 (if i32 (call $weakly_holdable (local.get $wsval)) (then (call $map_find (local.get $wsk) (local.get $wsval))) (else (i32.const -1))))
-      (if (i32.eq (local.get $id) (i32.const 327))  ;; has(v)
-        (then (return (call $mk_bool (i32.ge_s (local.get $wsidx) (i32.const 0))))))
-      (if (i32.eq (local.get $id) (i32.const 328))  ;; delete(v)
-        (then
-          (if (i32.lt_s (local.get $wsidx) (i32.const 0)) (then (return (call $v_false))))
-          (call $arr_remove (local.get $wsk) (local.get $wsidx))
-          (return (call $v_true))))
-      (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
-    (then (return (local.get $thisv))))
+;; Iterator Helpers (335-357) — extracted from call_native to keep that function
+;; under the compiler's per-statement recursion limit.
+(func $native_iterator (param $id i32) (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
   ;; ── Iterator: abstract ctor (335) + %Iterator.prototype% eager methods ──
   (if (i32.eq (local.get $id) (i32.const 335))  ;; Iterator — abstract: throw only on DIRECT construction
     (then
@@ -2247,6 +1504,829 @@
       (call $scope_define (local.get $zkobj) (cstring "@@zalldone") (call $v_false))
       (call $scope_define (local.get $zkobj) (cstring "next") (call $mk_native (i32.const 356) (cstring "next")))
       (return (call $mk_obj (local.get $zkobj)))))
+  (call $v_undef))
+
+;; Map/Set/ES2024-set-methods/WeakMap/WeakSet (120-136, 310-316, 320-328) — extracted
+;; from call_native to keep that function under the compiler recursion limit.
+(func $native_collections (param $id i32) (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
+  ;; ── Map (id 120 ctor, 121 set, 122 get, 123 has, 124 delete, 125 forEach, 126 size, 127 clear) ──
+  (if (i32.eq (local.get $id) (i32.const 120))  ;; new Map()
+    (then
+      (let $mo i32 (call $obj_new (i32.const 8)))
+      (if (i32.load (i32.const 344)) (then (i32.store (local.get $mo) (i32.load (i32.const 344)))))  ;; [[Prototype]] = Map.prototype
+      (call $scope_define (local.get $mo) (cstring "@@mk") (call $mk_arr (call $arr_new (i32.const 4))))
+      (call $scope_define (local.get $mo) (cstring "@@mv") (call $mk_arr (call $arr_new (i32.const 4))))
+      ;; new Map(iterable of [k,v]): set each entry (any iterable; entries read via [0]/[1])
+      (let $mov i64 (call $mk_obj (local.get $mo)))
+      (let $marg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (i32.or (call $is_null (local.get $marg)) (call $is_undefined (local.get $marg))))
+        (then
+          (let $mav i32 (call $arr_new (i32.const 4)))
+          (call $spread_into (local.get $mav) (local.get $marg))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $man i32 (call $arr_len (local.get $mav)))
+          (let $mbuf i32 (call $heap_alloc (i32.const 16)))
+          (let $mi i32 (i32.const 0))
+          (block $mce (loop $mcl
+            (br_if $mce (i32.ge_s (local.get $mi) (local.get $man)))
+            (let $mpair i64 (call $arr_get (local.get $mav) (local.get $mi)))
+            (if (i32.eqz (i32.or (call $is_array (local.get $mpair)) (call $is_object (local.get $mpair))))
+              (then (call $throw_type (cstring "TypeError") (cstring "Map entry is not an object")) (return (call $v_undef))))
+            (i64.store (local.get $mbuf) (call $get_prop (local.get $mpair) (call $mk_str (cstring "0"))))
+            (i64.store (i32.add (local.get $mbuf) (i32.const 8)) (call $get_prop (local.get $mpair) (call $mk_str (cstring "1"))))
+            (if (call $err) (then (return (call $v_undef))))
+            (drop (call $call_native (i32.const 121) (i32.const 2) (local.get $mbuf) (local.get $mov)))
+            (set! $mi (i32.add (local.get $mi) (i32.const 1)))
+            (br $mcl)))))
+      (return (local.get $mov))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 121)) (i32.le_s (local.get $id) (i32.const 127)))
+    (then
+      ;; receiver must be an object carrying the [[MapData]] internal slot.
+      ;; nest the checks — i32.or would eval scope_find_local on a non-object payload.
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@mk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (let $mk i32 (call $coll_arr (local.get $thisv) (cstring "@@mk")))
+      (let $mv i32 (call $coll_arr (local.get $thisv) (cstring "@@mv")))
+      (let $mkey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $midx i32 (call $map_find (local.get $mk) (local.get $mkey)))
+      (if (i32.eq (local.get $id) (i32.const 121))  ;; set(k,v)
+        (then
+          (let $mval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (if (i32.ge_s (local.get $midx) (i32.const 0))
+            (then (call $arr_set (local.get $mv) (local.get $midx) (local.get $mval)))
+            (else (call $arr_push (local.get $mk) (local.get $mkey)) (call $arr_push (local.get $mv) (local.get $mval))))
+          (return (local.get $thisv))))
+      (if (i32.eq (local.get $id) (i32.const 122))  ;; get(k)
+        (then (if (i32.lt_s (local.get $midx) (i32.const 0)) (then (return (call $v_undef)))) (return (call $arr_get (local.get $mv) (local.get $midx)))))
+      (if (i32.eq (local.get $id) (i32.const 123))  ;; has(k)
+        (then (return (call $mk_bool (i32.ge_s (local.get $midx) (i32.const 0))))))
+      (if (i32.eq (local.get $id) (i32.const 124))  ;; delete(k)
+        (then
+          (if (i32.lt_s (local.get $midx) (i32.const 0)) (then (return (call $v_false))))
+          (call $arr_remove (local.get $mk) (local.get $midx)) (call $arr_remove (local.get $mv) (local.get $midx))
+          (return (call $v_true))))
+      (if (i32.eq (local.get $id) (i32.const 125))  ;; forEach(cb)
+        (then
+          (let $mcb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (let $mi i32 (i32.const 0))
+          (block $mfe (loop $mfl
+            (br_if $mfe (i32.ge_s (local.get $mi) (call $arr_len (local.get $mk))))
+            (let $cba i32 (call $heap_alloc (i32.const 24)))
+            (i64.store (local.get $cba) (call $arr_get (local.get $mv) (local.get $mi)))
+            (i64.store (i32.add (local.get $cba) (i32.const 8)) (call $arr_get (local.get $mk) (local.get $mi)))
+            (i64.store (i32.add (local.get $cba) (i32.const 16)) (local.get $thisv))
+            (drop (call $call_val (local.get $mcb) (i32.const 3) (local.get $cba) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+            (set! $mi (i32.add (local.get $mi) (i32.const 1)))
+            (br $mfl)))
+          (return (call $v_undef))))
+      (if (i32.eq (local.get $id) (i32.const 126))  ;; size getter
+        (then (return (call $num (f64.convert_i32_s (call $arr_len (local.get $mk)))))))
+      (if (i32.eq (local.get $id) (i32.const 127))  ;; clear()
+        (then
+          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@mk") (call $mk_arr (call $arr_new (i32.const 4))))
+          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@mv") (call $mk_arr (call $arr_new (i32.const 4))))
+          (return (call $v_undef))))
+      (return (call $v_undef))))
+  ;; ── Set (id 130 ctor, 131 add, 132 has, 133 delete, 134 forEach, 135 size, 136 clear) ──
+  (if (i32.eq (local.get $id) (i32.const 130))  ;; new Set()
+    (then
+      (let $so i32 (call $obj_new (i32.const 8)))
+      (if (i32.load (i32.const 348)) (then (i32.store (local.get $so) (i32.load (i32.const 348)))))  ;; [[Prototype]] = Set.prototype
+      (call $scope_define (local.get $so) (cstring "@@sk") (call $mk_arr (call $arr_new (i32.const 4))))
+      ;; new Set(iterable): add each element (any iterable, not just arrays)
+      (let $sov i64 (call $mk_obj (local.get $so)))
+      (let $sarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (i32.or (call $is_null (local.get $sarg)) (call $is_undefined (local.get $sarg))))
+        (then
+          (let $sav i32 (call $arr_new (i32.const 4)))
+          (call $spread_into (local.get $sav) (local.get $sarg))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $san i32 (call $arr_len (local.get $sav)))
+          (let $sbuf i32 (call $heap_alloc (i32.const 8)))
+          (let $si i32 (i32.const 0))
+          (block $sce (loop $scl
+            (br_if $sce (i32.ge_s (local.get $si) (local.get $san)))
+            (i64.store (local.get $sbuf) (call $arr_get (local.get $sav) (local.get $si)))
+            (drop (call $call_native (i32.const 131) (i32.const 1) (local.get $sbuf) (local.get $sov)))
+            (set! $si (i32.add (local.get $si) (i32.const 1)))
+            (br $scl)))))
+      (return (local.get $sov))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 131)) (i32.le_s (local.get $id) (i32.const 136)))
+    (then
+      ;; receiver must be an object carrying the [[SetData]] internal slot.
+      ;; nest the checks — i32.or would eval scope_find_local on a non-object payload.
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@sk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (let $sk i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
+      (let $skey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $sidx i32 (call $map_find (local.get $sk) (local.get $skey)))
+      (if (i32.eq (local.get $id) (i32.const 131))  ;; add(v)
+        (then (if (i32.lt_s (local.get $sidx) (i32.const 0)) (then (call $arr_push (local.get $sk) (local.get $skey)))) (return (local.get $thisv))))
+      (if (i32.eq (local.get $id) (i32.const 132))  ;; has(v)
+        (then (return (call $mk_bool (i32.ge_s (local.get $sidx) (i32.const 0))))))
+      (if (i32.eq (local.get $id) (i32.const 133))  ;; delete(v)
+        (then
+          (if (i32.lt_s (local.get $sidx) (i32.const 0)) (then (return (call $v_false))))
+          (call $arr_remove (local.get $sk) (local.get $sidx))
+          (return (call $v_true))))
+      (if (i32.eq (local.get $id) (i32.const 134))  ;; forEach(cb)
+        (then
+          (let $scb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (let $si i32 (i32.const 0))
+          (block $sfe (loop $sfl
+            (br_if $sfe (i32.ge_s (local.get $si) (call $arr_len (local.get $sk))))
+            (let $scba i32 (call $heap_alloc (i32.const 24)))
+            (i64.store (local.get $scba) (call $arr_get (local.get $sk) (local.get $si)))
+            (i64.store (i32.add (local.get $scba) (i32.const 8)) (call $arr_get (local.get $sk) (local.get $si)))
+            (i64.store (i32.add (local.get $scba) (i32.const 16)) (local.get $thisv))
+            (drop (call $call_val (local.get $scb) (i32.const 3) (local.get $scba) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+            (set! $si (i32.add (local.get $si) (i32.const 1)))
+            (br $sfl)))
+          (return (call $v_undef))))
+      (if (i32.eq (local.get $id) (i32.const 135))  ;; size getter
+        (then (return (call $num (f64.convert_i32_s (call $arr_len (local.get $sk)))))))
+      (if (i32.eq (local.get $id) (i32.const 136))  ;; clear()
+        (then
+          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@sk") (call $mk_arr (call $arr_new (i32.const 4))))
+          (return (call $v_undef))))
+      (return (call $v_undef))))
+  ;; ── ES2024 Set methods: union(310) intersection(311) difference(312)
+  ;;    symmetricDifference(313) isSubsetOf(314) isSupersetOf(315) isDisjointFrom(316) ──
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316)))
+    (then
+      ;; RequireInternalSlot([[SetData]]) on this (short-circuit)
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@sk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (let $other i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $gsr (local.get $other))) (then (return (call $v_undef))))
+      (let $osk i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
+      (let $thisSize i32 (call $arr_len (local.get $osk)))
+      (let $otherSize i32 (i32.load (i32.const 456)))
+      (let $hasf i64 (i64.load (i32.const 464)))
+      (let $keysf i64 (i64.load (i32.const 472)))
+      (let $i i32 (i32.const 0))
+      ;; ----- union (310) -----
+      (if (i32.eq (local.get $id) (i32.const 310))
+        (then
+          (let $resu i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
+          (let $rsk i32 (call $coll_arr (local.get $resu) (cstring "@@sk")))
+          (block $ue1 (loop $ul1
+            (br_if $ue1 (i32.ge_s (local.get $i) (local.get $thisSize)))
+            (call $set_add1 (local.get $rsk) (call $arr_get (local.get $osk) (local.get $i)))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ul1)))
+          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+          (if (call $err) (then (return (call $v_undef))))
+          (set! $i (i32.const 0))
+          (block $ue2 (loop $ul2
+            (br_if $ue2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+            (call $set_add1 (local.get $rsk) (call $arr_get (local.get $ka) (local.get $i)))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ul2)))
+          (return (local.get $resu))))
+      ;; ----- intersection (311) -----
+      (if (i32.eq (local.get $id) (i32.const 311))
+        (then
+          (let $resi i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
+          (let $rsk i32 (call $coll_arr (local.get $resi) (cstring "@@sk")))
+          (if (i32.le_s (local.get $thisSize) (local.get $otherSize))
+            (then  ;; iterate O, keep those other.has(e)
+              (block $ie1 (loop $il1
+                (br_if $ie1 (i32.ge_s (local.get $i) (local.get $thisSize)))
+                (let $e i64 (call $arr_get (local.get $osk) (local.get $i)))
+                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (local.get $e)))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (call $truthy (local.get $shv)) (then (call $set_add1 (local.get $rsk) (local.get $e))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $il1))))
+            (else  ;; iterate other.keys(), keep those in O
+              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+              (if (call $err) (then (return (call $v_undef))))
+              (block $ie2 (loop $il2
+                (br_if $ie2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+                (let $v i64 (call $arr_get (local.get $ka) (local.get $i)))
+                (if (i32.ge_s (call $map_find (local.get $osk) (local.get $v)) (i32.const 0))
+                  (then (call $set_add1 (local.get $rsk) (local.get $v))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $il2)))))
+          (return (local.get $resi))))
+      ;; ----- difference (312) -----
+      (if (i32.eq (local.get $id) (i32.const 312))
+        (then
+          (let $resd i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
+          (let $rsk i32 (call $coll_arr (local.get $resd) (cstring "@@sk")))
+          (if (i32.le_s (local.get $thisSize) (local.get $otherSize))
+            (then  ;; keep O elements NOT in other
+              (block $de1 (loop $dl1
+                (br_if $de1 (i32.ge_s (local.get $i) (local.get $thisSize)))
+                (let $e i64 (call $arr_get (local.get $osk) (local.get $i)))
+                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (local.get $e)))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (i32.eqz (call $truthy (local.get $shv))) (then (call $set_add1 (local.get $rsk) (local.get $e))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl1))))
+            (else  ;; clone O, remove each other key
+              (block $dc (loop $dcl
+                (br_if $dc (i32.ge_s (local.get $i) (local.get $thisSize)))
+                (call $arr_push (local.get $rsk) (call $arr_get (local.get $osk) (local.get $i)))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dcl)))
+              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+              (if (call $err) (then (return (call $v_undef))))
+              (set! $i (i32.const 0))
+              (block $de2 (loop $dl2
+                (br_if $de2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+                (let $ridx i32 (call $map_find (local.get $rsk) (call $arr_get (local.get $ka) (local.get $i))))
+                (if (i32.ge_s (local.get $ridx) (i32.const 0)) (then (call $arr_remove (local.get $rsk) (local.get $ridx))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl2)))))
+          (return (local.get $resd))))
+      ;; ----- symmetricDifference (313) -----
+      (if (i32.eq (local.get $id) (i32.const 313))
+        (then
+          (let $ress i64 (call $call_native (i32.const 130) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
+          (let $rsk i32 (call $coll_arr (local.get $ress) (cstring "@@sk")))
+          (block $sc (loop $scl
+            (br_if $sc (i32.ge_s (local.get $i) (local.get $thisSize)))
+            (call $arr_push (local.get $rsk) (call $arr_get (local.get $osk) (local.get $i)))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $scl)))
+          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+          (if (call $err) (then (return (call $v_undef))))
+          (set! $i (i32.const 0))
+          (block $se (loop $sl
+            (br_if $se (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+            (let $v i64 (call $arr_get (local.get $ka) (local.get $i)))
+            (if (i32.ge_s (call $map_find (local.get $osk) (local.get $v)) (i32.const 0))
+              (then  ;; in O → remove from result if present
+                (let $ridx i32 (call $map_find (local.get $rsk) (local.get $v)))
+                (if (i32.ge_s (local.get $ridx) (i32.const 0)) (then (call $arr_remove (local.get $rsk) (local.get $ridx)))))
+              (else (call $set_add1 (local.get $rsk) (local.get $v))))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $sl)))
+          (return (local.get $ress))))
+      ;; ----- isSubsetOf (314) -----
+      (if (i32.eq (local.get $id) (i32.const 314))
+        (then
+          (if (i32.gt_s (local.get $thisSize) (local.get $otherSize)) (then (return (call $v_false))))
+          (block $sube (loop $subl
+            (br_if $sube (i32.ge_s (local.get $i) (local.get $thisSize)))
+            (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (call $arr_get (local.get $osk) (local.get $i))))
+            (if (call $err) (then (return (call $v_undef))))
+            (if (i32.eqz (call $truthy (local.get $shv))) (then (return (call $v_false))))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $subl)))
+          (return (call $v_true))))
+      ;; ----- isSupersetOf (315) -----
+      (if (i32.eq (local.get $id) (i32.const 315))
+        (then
+          (if (i32.lt_s (local.get $thisSize) (local.get $otherSize)) (then (return (call $v_false))))
+          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+          (if (call $err) (then (return (call $v_undef))))
+          (block $supe (loop $supl
+            (br_if $supe (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+            (if (i32.lt_s (call $map_find (local.get $osk) (call $arr_get (local.get $ka) (local.get $i))) (i32.const 0))
+              (then (return (call $v_false))))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $supl)))
+          (return (call $v_true))))
+      ;; ----- isDisjointFrom (316) -----
+      (if (i32.eq (local.get $id) (i32.const 316))
+        (then
+          (if (i32.le_s (local.get $thisSize) (local.get $otherSize))
+            (then
+              (block $dje1 (loop $djl1
+                (br_if $dje1 (i32.ge_s (local.get $i) (local.get $thisSize)))
+                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (call $arr_get (local.get $osk) (local.get $i))))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (call $truthy (local.get $shv)) (then (return (call $v_false))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $djl1))))
+            (else
+              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+              (if (call $err) (then (return (call $v_undef))))
+              (block $dje2 (loop $djl2
+                (br_if $dje2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
+                (if (i32.ge_s (call $map_find (local.get $osk) (call $arr_get (local.get $ka) (local.get $i))) (i32.const 0))
+                  (then (return (call $v_false))))
+                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $djl2)))))
+          (return (call $v_true))))
+      (return (call $v_undef))))
+  ;; ── WeakMap (ctor 320, set 321, get 322, has 323, delete 324) ──
+  (if (i32.eq (local.get $id) (i32.const 320))  ;; new WeakMap()
+    (then
+      (let $wmo i32 (call $obj_new (i32.const 8)))
+      (if (i32.load (i32.const 480)) (then (i32.store (local.get $wmo) (i32.load (i32.const 480)))))
+      (call $scope_define (local.get $wmo) (cstring "@@wmk") (call $mk_arr (call $arr_new (i32.const 4))))
+      (call $scope_define (local.get $wmo) (cstring "@@wmv") (call $mk_arr (call $arr_new (i32.const 4))))
+      (let $wmov i64 (call $mk_obj (local.get $wmo)))
+      (let $wmarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (i32.or (call $is_null (local.get $wmarg)) (call $is_undefined (local.get $wmarg))))
+        (then
+          (let $wma i32 (call $arr_new (i32.const 4)))
+          (call $spread_into (local.get $wma) (local.get $wmarg))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $wmn i32 (call $arr_len (local.get $wma)))
+          (let $wmbuf i32 (call $heap_alloc (i32.const 16)))
+          (let $wmi i32 (i32.const 0))
+          (block $wmce (loop $wmcl
+            (br_if $wmce (i32.ge_s (local.get $wmi) (local.get $wmn)))
+            (let $wmp i64 (call $arr_get (local.get $wma) (local.get $wmi)))
+            (if (i32.eqz (i32.or (call $is_array (local.get $wmp)) (call $is_object (local.get $wmp))))
+              (then (call $throw_type (cstring "TypeError") (cstring "WeakMap entry is not an object")) (return (call $v_undef))))
+            (i64.store (local.get $wmbuf) (call $get_prop (local.get $wmp) (call $mk_str (cstring "0"))))
+            (i64.store (i32.add (local.get $wmbuf) (i32.const 8)) (call $get_prop (local.get $wmp) (call $mk_str (cstring "1"))))
+            (if (call $err) (then (return (call $v_undef))))
+            (drop (call $call_native (i32.const 321) (i32.const 2) (local.get $wmbuf) (local.get $wmov)))
+            (if (call $err) (then (return (call $v_undef))))
+            (set! $wmi (i32.add (local.get $wmi) (i32.const 1))) (br $wmcl)))))
+      (return (local.get $wmov))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 321)) (i32.le_s (local.get $id) (i32.const 324)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@wmk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (let $wmk i32 (call $coll_arr (local.get $thisv) (cstring "@@wmk")))
+      (let $wmv i32 (call $coll_arr (local.get $thisv) (cstring "@@wmv")))
+      (let $wkey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eq (local.get $id) (i32.const 321))  ;; set(key,val)
+        (then
+          (if (i32.eqz (call $weakly_holdable (local.get $wkey)))
+            (then (call $throw_type (cstring "TypeError") (cstring "Invalid value used as weak map key")) (return (call $v_undef))))
+          (let $wval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (let $widx i32 (call $map_find (local.get $wmk) (local.get $wkey)))
+          (if (i32.ge_s (local.get $widx) (i32.const 0))
+            (then (call $arr_set (local.get $wmv) (local.get $widx) (local.get $wval)))
+            (else (call $arr_push (local.get $wmk) (local.get $wkey)) (call $arr_push (local.get $wmv) (local.get $wval))))
+          (return (local.get $thisv))))
+      ;; get/has/delete: non-holdable key never present (no throw)
+      (let $widx2 i32 (if i32 (call $weakly_holdable (local.get $wkey)) (then (call $map_find (local.get $wmk) (local.get $wkey))) (else (i32.const -1))))
+      (if (i32.eq (local.get $id) (i32.const 322))  ;; get(key)
+        (then (if (i32.lt_s (local.get $widx2) (i32.const 0)) (then (return (call $v_undef))) (else (return (call $arr_get (local.get $wmv) (local.get $widx2)))))))
+      (if (i32.eq (local.get $id) (i32.const 323))  ;; has(key)
+        (then (return (call $mk_bool (i32.ge_s (local.get $widx2) (i32.const 0))))))
+      (if (i32.eq (local.get $id) (i32.const 324))  ;; delete(key)
+        (then
+          (if (i32.lt_s (local.get $widx2) (i32.const 0)) (then (return (call $v_false))))
+          (call $arr_remove (local.get $wmk) (local.get $widx2))
+          (call $arr_remove (local.get $wmv) (local.get $widx2))
+          (return (call $v_true))))
+      (return (call $v_undef))))
+  ;; ── WeakSet (ctor 325, add 326, has 327, delete 328) ──
+  (if (i32.eq (local.get $id) (i32.const 325))  ;; new WeakSet()
+    (then
+      (let $wso i32 (call $obj_new (i32.const 8)))
+      (if (i32.load (i32.const 484)) (then (i32.store (local.get $wso) (i32.load (i32.const 484)))))
+      (call $scope_define (local.get $wso) (cstring "@@wsk") (call $mk_arr (call $arr_new (i32.const 4))))
+      (let $wsov i64 (call $mk_obj (local.get $wso)))
+      (let $wsarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (i32.or (call $is_null (local.get $wsarg)) (call $is_undefined (local.get $wsarg))))
+        (then
+          (let $wsa i32 (call $arr_new (i32.const 4)))
+          (call $spread_into (local.get $wsa) (local.get $wsarg))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $wsn i32 (call $arr_len (local.get $wsa)))
+          (let $wsbuf i32 (call $heap_alloc (i32.const 8)))
+          (let $wsi i32 (i32.const 0))
+          (block $wsce (loop $wscl
+            (br_if $wsce (i32.ge_s (local.get $wsi) (local.get $wsn)))
+            (i64.store (local.get $wsbuf) (call $arr_get (local.get $wsa) (local.get $wsi)))
+            (drop (call $call_native (i32.const 326) (i32.const 1) (local.get $wsbuf) (local.get $wsov)))
+            (if (call $err) (then (return (call $v_undef))))
+            (set! $wsi (i32.add (local.get $wsi) (i32.const 1))) (br $wscl)))))
+      (return (local.get $wsov))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 326)) (i32.le_s (local.get $id) (i32.const 328)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@wsk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (let $wsk i32 (call $coll_arr (local.get $thisv) (cstring "@@wsk")))
+      (let $wsval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eq (local.get $id) (i32.const 326))  ;; add(v)
+        (then
+          (if (i32.eqz (call $weakly_holdable (local.get $wsval)))
+            (then (call $throw_type (cstring "TypeError") (cstring "Invalid value used in weak set")) (return (call $v_undef))))
+          (if (i32.lt_s (call $map_find (local.get $wsk) (local.get $wsval)) (i32.const 0))
+            (then (call $arr_push (local.get $wsk) (local.get $wsval))))
+          (return (local.get $thisv))))
+      (let $wsidx i32 (if i32 (call $weakly_holdable (local.get $wsval)) (then (call $map_find (local.get $wsk) (local.get $wsval))) (else (i32.const -1))))
+      (if (i32.eq (local.get $id) (i32.const 327))  ;; has(v)
+        (then (return (call $mk_bool (i32.ge_s (local.get $wsidx) (i32.const 0))))))
+      (if (i32.eq (local.get $id) (i32.const 328))  ;; delete(v)
+        (then
+          (if (i32.lt_s (local.get $wsidx) (i32.const 0)) (then (return (call $v_false))))
+          (call $arr_remove (local.get $wsk) (local.get $wsidx))
+          (return (call $v_true))))
+      (return (call $v_undef))))
+  (call $v_undef))
+
+(func $call_native (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
+  (if (i32.eq (local.get $id) (i32.const 1))  ;; print (console.log style)
+    (then
+      (let $i i32 (i32.const 0))
+      (block $e (loop $c
+        (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
+        (if (i32.gt_s (local.get $i) (i32.const 0)) (then (call $print_str (cstring " "))))
+        (call $print_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $i))))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $c)))
+      (call $print_str (cstring "\n"))
+      (return (call $v_undef))))
+  ;; Function.prototype.call(thisArg, ...args) — this = the function
+  (if (i32.eq (local.get $id) (i32.const 194))
+    (then
+      (if (i32.eqz (i32.or (call $is_function (local.get $thisv)) (call $is_proxy (local.get $thisv)))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.call called on non-function")) (return (call $v_undef))))
+      (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $n i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
+      (let $buf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $n) (i32.const 0)) (then (local.get $n)) (else (i32.const 1))) (i32.const 8))))
+      (let $i i32 (i32.const 0))
+      (block $cae (loop $cal
+        (br_if $cae (i32.ge_s (local.get $i) (local.get $n)))
+        (i64.store (i32.add (local.get $buf) (i32.mul (local.get $i) (i32.const 8))) (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $i) (i32.const 1))))
+        (set! $i (i32.add (local.get $i) (i32.const 1))) (br $cal)))
+      (return (call $call_val (local.get $thisv) (local.get $n) (local.get $buf) (local.get $ta)))))
+  ;; Function.prototype.apply(thisArg, argArray) — this = the function
+  (if (i32.eq (local.get $id) (i32.const 195))
+    (then
+      (if (i32.eqz (i32.or (call $is_function (local.get $thisv)) (call $is_proxy (local.get $thisv)))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.apply called on non-function")) (return (call $v_undef))))
+      (let $ta i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $aa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $n i32 (i32.const 0))
+      (let $buf i32 (call $heap_alloc (i32.const 8)))
+      (if (call $is_array (local.get $aa))
+        (then
+          (let $arr i32 (call $val_payload (local.get $aa)))
+          (set! $n (call $arr_len (local.get $arr)))
+          (set! $buf (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $n) (i32.const 0)) (then (local.get $n)) (else (i32.const 1))) (i32.const 8))))
+          (let $i i32 (i32.const 0))
+          (block $aae (loop $aal
+            (br_if $aae (i32.ge_s (local.get $i) (local.get $n)))
+            (i64.store (i32.add (local.get $buf) (i32.mul (local.get $i) (i32.const 8))) (call $arr_get (local.get $arr) (local.get $i)))
+            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $aal)))))
+      (return (call $call_val (local.get $thisv) (local.get $n) (local.get $buf) (local.get $ta)))))
+  ;; Function.prototype.bind(thisArg, ...bound) — this = the function to bind
+  (if (i32.eq (local.get $id) (i32.const 153))
+    (then
+      (if (i32.eqz (call $is_function (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.bind called on non-function")) (return (call $v_undef))))
+      (let $bthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $bargc i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
+      (let $bbuf i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $bargc) (i32.const 0)) (then (local.get $bargc)) (else (i32.const 1))) (i32.const 8))))
+      (let $bi i32 (i32.const 0))
+      (block $bbe (loop $bbl
+        (br_if $bbe (i32.ge_s (local.get $bi) (local.get $bargc)))
+        (i64.store (i32.add (local.get $bbuf) (i32.mul (local.get $bi) (i32.const 8))) (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $bi) (i32.const 1))))
+        (set! $bi (i32.add (local.get $bi) (i32.const 1))) (br $bbl)))
+      (let $bf i32 (call $heap_alloc (i32.const 40)))
+      (i32.store (local.get $bf) (i32.const 1448232540))           ;; bound magic
+      ;; bound .length = max(0, target.length − boundArgsCount)
+      (let $btlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
+      (let $bnp i32 (i32.sub (local.get $btlen) (local.get $bargc)))
+      (if (i32.lt_s (local.get $bnp) (i32.const 0)) (then (set! $bnp (i32.const 0))))
+      (i32.store (i32.add (local.get $bf) (i32.const 8)) (local.get $bnp))   ;; .length (NOT used by call_bound)
+      (i32.store (i32.add (local.get $bf) (i32.const 12)) (i32.const 0))  ;; props
+      (i64.store (i32.add (local.get $bf) (i32.const 16)) (local.get $bthis))
+      (i64.store (i32.add (local.get $bf) (i32.const 24)) (local.get $thisv))
+      (i32.store (i32.add (local.get $bf) (i32.const 32)) (local.get $bargc))
+      (i32.store (i32.add (local.get $bf) (i32.const 36)) (local.get $bbuf))
+      ;; bound fn .name = "bound " + target.name  {W:false,E:false,C:true}
+      (call $scope_define_attr (call $fn_props (local.get $bf)) (cstring "name")
+        (call $mk_str (call $str_concat (cstring "bound ") (call $to_str (call $get_prop (local.get $thisv) (call $mk_str (cstring "name")))))) (i32.const 4))
+      (return (call $mk_fn (local.get $bf)))))
+  ;; Object.prototype.propertyIsEnumerable(key) — this = the object
+  (if (i32.eq (local.get $id) (i32.const 159))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
+      (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (if (i32.eqz (local.get $pslot)) (then (return (call $v_false))))
+      (return (call $mk_bool (call $entry_enumerable (local.get $pslot))))))
+  ;; Object.prototype.isPrototypeOf(v) — is `this` anywhere in v's prototype chain?
+  (if (i32.eq (local.get $id) (i32.const 300))
+    (then
+      (let $ipv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv))))) (then (return (call $v_false))))
+      (let $ipthis i32 (call $val_payload (local.get $thisv)))
+      ;; v is a function: its chain is Function.prototype → Object.prototype. If `this`
+      ;; IS Function.prototype, it's in the chain; else continue from Object.prototype.
+      (if (call $is_function (local.get $ipv))
+        (then
+          (if (call $strict_eq (local.get $thisv) (i64.load (i32.const 336))) (then (return (call $v_true))))))
+      (let $ipp i32 (i32.const 0))
+      (if (call $is_array (local.get $ipv)) (then (set! $ipp (i32.load (i32.const 160))))
+        (else (if (call $is_object (local.get $ipv)) (then (set! $ipp (call $scope_parent (call $val_payload (local.get $ipv)))))
+          (else (if (call $is_function (local.get $ipv)) (then (set! $ipp (i32.load (i32.const 328)))))))))  ;; fn → continue from Object.prototype
+      (block $ipe (loop $ipl
+        (br_if $ipe (i32.eqz (local.get $ipp)))
+        (if (i32.eq (local.get $ipp) (local.get $ipthis)) (then (return (call $v_true))))
+        (set! $ipp (call $scope_parent (local.get $ipp)))
+        (br $ipl)))
+      (return (call $v_false))))
+  ;; Object/Number/Array.prototype.toLocaleString (305) — default locale: delegate to this.toString()
+  (if (i32.eq (local.get $id) (i32.const 305))
+    (then
+      (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (let $tls i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "toString"))))
+      (if (call $is_function (local.get $tls)) (then (return (call $call_fn0 (local.get $tls) (local.get $thisv)))))
+      (return (call $mk_str (call $to_str (local.get $thisv))))))
+  ;; encodeURIComponent(306)/decodeURIComponent(307)/encodeURI(308)/decodeURI(309)
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 306)) (i32.le_s (local.get $id) (i32.const 309)))
+    (then
+      (let $uris i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (i32.eq (local.get $id) (i32.const 306)) (then (return (call $mk_str (call $uri_encode (local.get $uris) (i32.const 0))))))
+      (if (i32.eq (local.get $id) (i32.const 308)) (then (return (call $mk_str (call $uri_encode (local.get $uris) (i32.const 1))))))
+      (if (i32.eq (local.get $id) (i32.const 307)) (then (return (call $mk_str (call $uri_decode (local.get $uris) (i32.const 0))))))
+      (return (call $mk_str (call $uri_decode (local.get $uris) (i32.const 1))))))  ;; 309 decodeURI (keep reserved encoded)
+  ;; Object.prototype.__proto__ getter (303) — returns this's [[Prototype]]
+  (if (i32.eq (local.get $id) (i32.const 303))
+    (then (return (call $js_get_prototype (local.get $thisv)))))
+  ;; Object.prototype.__proto__ setter (304) — SetPrototypeOf if value is Object/Null, else no-op
+  (if (i32.eq (local.get $id) (i32.const 304))
+    (then
+      (let $ppv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.and (i32.or (call $is_object (local.get $ppv)) (call $is_null (local.get $ppv))) (call $is_object (local.get $thisv)))
+        (then
+          (let $ppbuf i32 (call $heap_alloc (i32.const 16)))
+          (i64.store (local.get $ppbuf) (local.get $thisv))
+          (i64.store (i32.add (local.get $ppbuf) (i32.const 8)) (local.get $ppv))
+          (drop (call $call_native (i32.const 243) (i32.const 2) (local.get $ppbuf) (call $v_undef)))))  ;; delegate to setPrototypeOf (cycle check)
+      (return (call $v_undef))))
+  ;; Function(p1, …, pN, body)  |  new Function(…)  — build source and eval it,
+  ;; returning the resulting function. Params are the all-but-last args (joined by
+  ;; ','), the body is the last arg. The name is "anonymous" per spec.
+  (if (i32.eq (local.get $id) (i32.const 157))
+    (then
+      (let $fsrc i32 (cstring "(function anonymous("))
+      (let $fnp i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
+      (let $fi i32 (i32.const 0))
+      (block $ffe (loop $ffl
+        (br_if $ffe (i32.ge_s (local.get $fi) (local.get $fnp)))
+        (if (i32.gt_s (local.get $fi) (i32.const 0)) (then (set! $fsrc (call $str_concat (local.get $fsrc) (cstring ",")))))
+        (set! $fsrc (call $str_concat (local.get $fsrc) (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $fi)))))
+        (set! $fi (i32.add (local.get $fi) (i32.const 1)))
+        (br $ffl)))
+      (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "){\n")))
+      (if (i32.gt_s (local.get $argc) (i32.const 0))
+        (then (set! $fsrc (call $str_concat (local.get $fsrc) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.sub (local.get $argc) (i32.const 1))))))))
+      (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "\n})")))
+      (return (call $vm_eval_str (local.get $fsrc)))))
+  (if (i32.eq (local.get $id) (i32.const 158))  ;; Function.prototype empty fn: no-op
+    (then (return (call $v_undef))))
+  ;; Object.prototype.toString — the [[Class]] brand check (this = the value)
+  (if (i32.eq (local.get $id) (i32.const 155))
+    (then
+      (if (call $is_undefined (local.get $thisv)) (then (return (call $mk_str (cstring "[object Undefined]")))))
+      (if (call $is_null (local.get $thisv)) (then (return (call $mk_str (cstring "[object Null]")))))
+      ;; primitive number/string/boolean brands (per OrdinaryToPrimitive ToObject)
+      (if (call $is_number (local.get $thisv)) (then (return (call $mk_str (cstring "[object Number]")))))
+      (if (call $is_string (local.get $thisv)) (then (return (call $mk_str (cstring "[object String]")))))
+      (if (call $is_boolean (local.get $thisv)) (then (return (call $mk_str (cstring "[object Boolean]")))))
+      ;; a string Symbol.toStringTag (@@toStringTag) overrides the builtin tag
+      ;; (Get walks the prototype chain, so built-ins tag via their prototype)
+      (if (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv))))
+        (then
+          (let $ttv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@toStringTag"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_string (local.get $ttv))
+            (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "[object ") (call $val_payload (local.get $ttv))) (cstring "]"))))))))
+      (if (call $is_array (local.get $thisv)) (then (return (call $mk_str (cstring "[object Array]")))))
+      (if (call $is_function (local.get $thisv)) (then (return (call $mk_str (cstring "[object Function]")))))
+      ;; wrapper objects + Date get their builtin tags
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $tpr i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $tpr)
+            (then
+              (let $pv i64 (i64.load (local.get $tpr)))
+              (if (call $is_number (local.get $pv)) (then (return (call $mk_str (cstring "[object Number]")))))
+              (if (call $is_string (local.get $pv)) (then (return (call $mk_str (cstring "[object String]")))))
+              (if (call $is_boolean (local.get $pv)) (then (return (call $mk_str (cstring "[object Boolean]")))))))
+          (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time")) (then (return (call $mk_str (cstring "[object Date]")))))))
+      (return (call $mk_str (cstring "[object Object]")))))
+  (if (i32.eq (local.get $id) (i32.const 2))  ;; assert(cond[, message])
+    (then
+      (let $cond i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $truthy (local.get $cond)))
+        (then
+          (let $m i32
+            (if i32 (i32.ge_s (local.get $argc) (i32.const 2))
+              (then (call $str_concat (cstring "assert failed: ")
+                          (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+              (else (cstring "assert failed"))))
+          (call $set_err (i32.const 1)) (call $set_err_val (call $mk_str (local.get $m)))))
+      (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 3))  ;; eval(src)
+    (then
+      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_string (local.get $a))
+        (then (return (call $vm_eval_str (call $val_payload (local.get $a))))))
+      (return (local.get $a))))
+  (if (i32.eq (local.get $id) (i32.const 4))  ;; Number(x)
+    (then
+      (if (i32.eqz (local.get $argc)) (then (return (call $num (f64.const 0)))))
+      (let $nbv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_bigint (local.get $nbv)) (then (return (call $num (f64.convert_i64_s (call $bigint_val (local.get $nbv)))))))  ;; Number(bigint)
+      (return (call $num (call $to_num (local.get $nbv))))))
+  (if (i32.eq (local.get $id) (i32.const 247))  ;; BigInt(x)
+    (then
+      (let $bgv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_bigint (local.get $bgv)) (then (return (local.get $bgv))))
+      (if (call $is_boolean (local.get $bgv)) (then (return (call $mk_bigint (i64.extend_i32_u (call $val_payload (local.get $bgv)))))))
+      (if (call $is_number (local.get $bgv))
+        (then
+          (let $bgf f64 (call $tonum_raw (local.get $bgv)))
+          (if (i32.or (f64.ne (local.get $bgf) (local.get $bgf)) (f64.ne (local.get $bgf) (f64.nearest (local.get $bgf))))
+            (then (call $throw_type (cstring "RangeError") (cstring "The number is not a safe integer")) (return (call $v_undef))))
+          (return (call $mk_bigint (i64.trunc_f64_s (local.get $bgf))))))
+      (if (call $is_string (local.get $bgv)) (then (return (call $mk_bigint (i64.trunc_f64_s (call $str_to_num (call $val_payload (local.get $bgv))))))))
+      (call $throw_type (cstring "TypeError") (cstring "Cannot convert to a BigInt")) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 5))  ;; String(x)
+    (then
+      (if (i32.eqz (local.get $argc)) (then (return (call $mk_str (cstring "")))))
+      (return (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+  (if (i32.eq (local.get $id) (i32.const 6))  ;; Boolean(x)
+    (then (return (call $mk_bool (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+  (if (i32.eq (local.get $id) (i32.const 220))  ;; Number/Boolean.prototype.valueOf — unwrap a wrapper to its primitive
+    (then
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $vo220 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $vo220) (then (return (i64.load (local.get $vo220)))))
+          ;; object without a __prim__ wrapper slot → not a Number/Boolean → TypeError
+          (call $throw_type (cstring "TypeError") (cstring "valueOf called on incompatible receiver")) (return (call $v_undef))))
+      ;; primitive receiver: only number/boolean are valid for these valueOf's
+      (if (i32.or (call $is_number (local.get $thisv)) (call $is_boolean (local.get $thisv))) (then (return (local.get $thisv))))
+      (call $throw_type (cstring "TypeError") (cstring "valueOf called on incompatible receiver")) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 221))  ;; Boolean.prototype.toString → "true"/"false"
+    (then
+      (let $bv221 i64 (local.get $thisv))
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $bo221 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $bo221) (then (set! $bv221 (i64.load (local.get $bo221)))))))
+      (return (call $mk_str (if i32 (call $truthy (local.get $bv221)) (then (cstring "true")) (else (cstring "false")))))))
+  (if (i32.eq (local.get $id) (i32.const 7))  ;; isNaN(x)
+    (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+          (return (call $mk_bool (f64.ne (local.get $d) (local.get $d))))))
+  (if (i32.eq (local.get $id) (i32.const 8))  ;; isFinite(x)
+    (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+          (return (call $mk_bool (i32.and (f64.eq (local.get $d) (local.get $d))
+            (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0)))))))))
+  (if (i32.eq (local.get $id) (i32.const 9))  ;; Object(x) → ToObject(x)
+    (then
+      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; already an object/array/function → returned unchanged
+      (if (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a))))
+        (then (return (local.get $a))))
+      ;; primitive → boxed wrapper linked to the matching prototype
+      (if (call $is_number (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 164))))))
+      (if (call $is_string (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 156))))))
+      (if (call $is_boolean (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 184))))))
+      (return (call $mk_obj (call $obj_new (i32.const 8))))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 10)) (i32.eq (local.get $id) (i32.const 112)))  ;; Object.keys / getOwnPropertyNames
+    (then
+      (let $kob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_null (local.get $kob)) (call $is_undefined (local.get $kob)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (return (call $mk_arr (call $own_enum_keys (local.get $kob) (i32.eq (local.get $id) (i32.const 112)))))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 91)) (i32.eq (local.get $id) (i32.const 92)))  ;; Object.values/entries
+    (then
+      (if (i32.or (call $is_null (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $keys i32 (call $own_enum_keys (local.get $a) (i32.const 0)))
+      (let $arr i32 (call $arr_new (i32.const 16)))
+      (let $i i32 (i32.const 0))
+      (block $ke (loop $kl
+        (br_if $ke (i32.ge_s (local.get $i) (call $arr_len (local.get $keys))))
+        (let $nm i64 (call $arr_get (local.get $keys) (local.get $i)))
+        (let $vv i64 (call $get_prop (local.get $a) (local.get $nm)))
+        (if (i32.eq (local.get $id) (i32.const 91))
+          (then (call $arr_push (local.get $arr) (local.get $vv)))
+          (else  ;; entries → [key, value]
+            (let $pair i32 (call $arr_new (i32.const 2)))
+            (call $arr_push (local.get $pair) (local.get $nm))
+            (call $arr_push (local.get $pair) (local.get $vv))
+            (call $arr_push (local.get $arr) (call $mk_arr (local.get $pair)))))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $kl)))
+      (return (call $mk_arr (local.get $arr)))))
+  (if (i32.eq (local.get $id) (i32.const 109))  ;; str.replaceAll(search, repl)
+    (then
+      (let $rals i32 (call $to_str (local.get $thisv)))
+      (let $rasearch i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (let $rarepl i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (i32.eqz (call $str_len (local.get $rasearch))) (then (return (call $mk_str (local.get $rals)))))
+      (let $raparts i32 (call $str_split (local.get $rals) (local.get $rasearch)))
+      (let $raout i32 (cstring ""))
+      (let $rai i32 (i32.const 0))
+      (block $rae (loop $ral
+        (br_if $rae (i32.ge_s (local.get $rai) (call $arr_len (local.get $raparts))))
+        (if (i32.gt_s (local.get $rai) (i32.const 0)) (then (set! $raout (call $str_concat (local.get $raout) (local.get $rarepl)))))
+        (set! $raout (call $str_concat (local.get $raout) (call $val_payload (call $arr_get (local.get $raparts) (local.get $rai)))))
+        (set! $rai (i32.add (local.get $rai) (i32.const 1)))
+        (br $ral)))
+      (return (call $mk_str (local.get $raout)))))
+  (if (i32.eq (local.get $id) (i32.const 110))  ;; Array.of(...args)
+    (then
+      (let $ofa i32 (call $arr_new (i32.const 4)))
+      (let $ofi i32 (i32.const 0))
+      (block $ofe (loop $ofl
+        (br_if $ofe (i32.ge_s (local.get $ofi) (local.get $argc)))
+        (call $arr_push (local.get $ofa) (call $argn (local.get $argv) (local.get $argc) (local.get $ofi)))
+        (set! $ofi (i32.add (local.get $ofi) (i32.const 1)))
+        (br $ofl)))
+      (return (call $mk_arr (local.get $ofa)))))
+  (if (i32.eq (local.get $id) (i32.const 111))  ;; Array.from(src[, mapFn])
+    (then
+      (let $frs i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $frm i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      ;; items = null/undefined → ToObject throws TypeError
+      (if (i32.or (call $is_null (local.get $frs)) (call $is_undefined (local.get $frs)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      ;; a supplied mapfn must be callable
+      (if (i32.and (i32.gt_s (local.get $argc) (i32.const 1)) (i32.and (i32.eqz (call $is_undefined (local.get $frm))) (i32.eqz (call $is_function (local.get $frm)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Array.from: mapping function is not callable")) (return (call $v_undef))))
+      (let $fra i32 (call $arr_new (i32.const 4)))
+      (if (call $is_array (local.get $frs))
+        (then
+          (let $frp i32 (call $val_payload (local.get $frs)))
+          (let $fri i32 (i32.const 0))
+          (block $fre (loop $frl
+            (br_if $fre (i32.ge_s (local.get $fri) (call $arr_len (local.get $frp))))
+            (call $arr_push (local.get $fra) (call $arr_get (local.get $frp) (local.get $fri)))
+            (set! $fri (i32.add (local.get $fri) (i32.const 1)))
+            (br $frl)))))
+      (if (call $is_string (local.get $frs))
+        (then
+          (let $frsp i32 (call $val_payload (local.get $frs)))
+          (let $frj i32 (i32.const 0))
+          (block $frse (loop $frsl
+            (br_if $frse (i32.ge_s (local.get $frj) (call $str_len (local.get $frsp))))
+            (call $arr_push (local.get $fra) (call $str_char_at (local.get $frsp) (local.get $frj)))
+            (set! $frj (i32.add (local.get $frj) (i32.const 1)))
+            (br $frsl)))))
+      (if (call $is_object (local.get $frs))
+        (then
+          ;; resolve an iterator: @@iterator() if present, else the object itself
+          (let $frit i64 (local.get $frs))
+          (let $frifn i64 (call $get_prop (local.get $frs) (call $mk_str (cstring "@@iterator"))))
+          (if (call $is_function (local.get $frifn)) (then (set! $frit (call $call_fn0 (local.get $frifn) (local.get $frs)))))
+          (let $frnx i64 (call $get_prop (local.get $frit) (call $mk_str (cstring "next"))))
+          (if (call $is_function (local.get $frnx))
+            (then  ;; iterator protocol
+              (block $frie (loop $fril
+                (let $frr i64 (call $call_fn0 (local.get $frnx) (local.get $frit)))
+                (br_if $frie (call $err))
+                (br_if $frie (call $truthy (call $get_prop (local.get $frr) (call $mk_str (cstring "done")))))
+                (call $arr_push (local.get $fra) (call $get_prop (local.get $frr) (call $mk_str (cstring "value"))))
+                (br $fril))))
+            (else  ;; array-like: indices 0..length-1 (NaN/negative length → 0)
+              (let $frlnf f64 (call $to_num (call $get_prop (local.get $frs) (call $mk_str (cstring "length")))))
+              (let $frln i32 (if i32 (i32.and (f64.eq (local.get $frlnf) (local.get $frlnf)) (i32.and (f64.ge (local.get $frlnf) (f64.const 0)) (f64.lt (local.get $frlnf) (f64.const 2147483647)))) (then (i32.trunc_f64_s (local.get $frlnf))) (else (i32.const 0))))
+              (let $frk i32 (i32.const 0))
+              (block $frle (loop $frll
+                (br_if $frle (i32.ge_s (local.get $frk) (local.get $frln)))
+                (call $arr_push (local.get $fra) (call $get_prop (local.get $frs) (call $num (f64.convert_i32_s (local.get $frk)))))
+                (set! $frk (i32.add (local.get $frk) (i32.const 1)))
+                (br $frll)))))))
+      (if (call $is_function (local.get $frm))  ;; apply mapFn(elem, i)
+        (then
+          (let $frmi i32 (i32.const 0))
+          (let $frmlen i32 (call $arr_len (local.get $fra)))
+          (block $frme (loop $frmlp
+            (br_if $frme (i32.ge_s (local.get $frmi) (local.get $frmlen)))
+            (let $frav i32 (call $heap_alloc (i32.const 16)))
+            (i64.store (local.get $frav) (call $arr_get (local.get $fra) (local.get $frmi)))
+            (i64.store (i32.add (local.get $frav) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $frmi))))
+            (call $arr_set (local.get $fra) (local.get $frmi) (call $call_val (local.get $frm) (i32.const 2) (local.get $frav) (call $v_undef)))
+            (set! $frmi (i32.add (local.get $frmi) (i32.const 1)))
+            (br $frmlp)))))
+      (return (call $mk_arr (local.get $fra)))))
+  (if (i32.eq (local.get $id) (i32.const 98))  ;; Number.isSafeInteger(x)
+    (then
+      (let $siv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_number (local.get $siv))) (then (return (call $v_false))))
+      (let $sid f64 (call $tonum_raw (local.get $siv)))
+      (return (call $mk_bool (i32.and (f64.eq (local.get $sid) (f64.trunc (local.get $sid)))
+        (i32.and (f64.eq (local.get $sid) (local.get $sid)) (f64.le (f64.abs (local.get $sid)) (f64.const 9007199254740991))))))))
+  (if (i32.eq (local.get $id) (i32.const 52))  ;; Math.hypot(...args)
+    (then
+      (let $hs f64 (f64.const 0))
+      (let $hi i32 (i32.const 0))
+      (block $he (loop $hl
+        (br_if $he (i32.ge_s (local.get $hi) (local.get $argc)))
+        (let $hv f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (local.get $hi))))
+        (set! $hs (f64.add (local.get $hs) (f64.mul (local.get $hv) (local.get $hv))))
+        (set! $hi (i32.add (local.get $hi) (i32.const 1)))
+        (br $hl)))
+      (return (call $num (f64.sqrt (local.get $hs))))))
+  ;; Map/Set/WeakMap/WeakSet (120-136, 310-316, 320-328) — handled in $native_collections
+  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 120)) (i32.le_s (local.get $id) (i32.const 136))) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316))) (i32.and (i32.ge_s (local.get $id) (i32.const 320)) (i32.le_s (local.get $id) (i32.const 328)))))
+    (then (return (call $native_collections (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
+  ;; WeakRef / FinalizationRegistry (358-362) — handled in a separate fn to keep call_native small
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
+    (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
+  (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
+    (then (return (local.get $thisv))))
+  ;; Iterator Helpers (335-357) — handled in $native_iterator
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357)))
+    (then (return (call $native_iterator (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
     (then
@@ -4893,6 +4973,9 @@
   ;; lazy helpers map/filter/take/drop/flatMap (343-347) = length 1; helper next(348) = 0
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 343)) (i32.le_s (local.get $id) (i32.const 347))) (then (return (i32.const 1))))
   (if (i32.eq (local.get $id) (i32.const 349)) (then (return (i32.const 1))))  ;; Iterator.from
+  ;; WeakRef ctor(358)=1, FinalizationRegistry ctor(360)=1, register(361)=2, unregister(362)=1
+  (if (i32.or (i32.eq (local.get $id) (i32.const 358)) (i32.or (i32.eq (local.get $id) (i32.const 360)) (i32.eq (local.get $id) (i32.const 362)))) (then (return (i32.const 1))))
+  (if (i32.eq (local.get $id) (i32.const 361)) (then (return (i32.const 2))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
@@ -4934,6 +5017,7 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 320)) (i32.eq (local.get $id) (i32.const 325)))
     (then (return (i32.const 1))))  ;; WeakMap, WeakSet
   (if (i32.eq (local.get $id) (i32.const 335)) (then (return (i32.const 1))))  ;; Iterator (abstract, but a constructor)
+  (if (i32.or (i32.eq (local.get $id) (i32.const 358)) (i32.eq (local.get $id) (i32.const 360))) (then (return (i32.const 1))))  ;; WeakRef, FinalizationRegistry
   (if (i32.eq (local.get $id) (i32.const 157)) (then (return (i32.const 1))))  ;; Function
   (i32.const 0))
 
@@ -5586,6 +5670,25 @@
   (call $scope_define (local.get $wsproto) (cstring "constructor") (local.get $wsetf))
   (call $scope_clear_enum (local.get $wsproto))
   (call $set_prop (local.get $wsetf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $wsproto)))
+  ;; WeakRef (reg 500) — strong-ref implementation (deref always returns the target)
+  (let $wreff i64 (call $def_native (local.get $g) (cstring "WeakRef") (i32.const 358)))
+  (let $wrproto i32 (call $obj_new (i32.const 8)))
+  (i32.store (i32.const 500) (local.get $wrproto))
+  (call $scope_define (local.get $wrproto) (cstring "deref") (call $mk_native (i32.const 359) (cstring "deref")))
+  (call $scope_define (local.get $wrproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakRef")))
+  (call $scope_define (local.get $wrproto) (cstring "constructor") (local.get $wreff))
+  (call $scope_clear_enum (local.get $wrproto))
+  (call $set_prop (local.get $wreff) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $wrproto)))
+  ;; FinalizationRegistry (reg 504) — cleanup never runs (no GC)
+  (let $freg i64 (call $def_native (local.get $g) (cstring "FinalizationRegistry") (i32.const 360)))
+  (let $frproto i32 (call $obj_new (i32.const 8)))
+  (i32.store (i32.const 504) (local.get $frproto))
+  (call $scope_define (local.get $frproto) (cstring "register") (call $mk_native (i32.const 361) (cstring "register")))
+  (call $scope_define (local.get $frproto) (cstring "unregister") (call $mk_native (i32.const 362) (cstring "unregister")))
+  (call $scope_define (local.get $frproto) (cstring "@@toStringTag") (call $mk_str (cstring "FinalizationRegistry")))
+  (call $scope_define (local.get $frproto) (cstring "constructor") (local.get $freg))
+  (call $scope_clear_enum (local.get $frproto))
+  (call $set_prop (local.get $freg) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $frproto)))
   ;; Iterator (abstract ctor) + %Iterator.prototype% (reg 488) — eager helper methods
   (let $iterf i64 (call $def_native (local.get $g) (cstring "Iterator") (i32.const 335)))
   (let $iterproto i32 (call $obj_new (i32.const 12)))
