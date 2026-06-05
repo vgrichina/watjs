@@ -1099,7 +1099,8 @@
   (let $buf i32 (i32.const 0))
   (if (call $is_number (local.get $a0))
     (then
-      (set! $len (i32.trunc_f64_s (call $tonum_raw (local.get $a0))))
+      (set! $len (call $to_index (local.get $a0)))  ;; ToIndex: RangeError on negative/Infinity/>2^53 (no trap)
+      (if (call $err) (then (return (call $v_undef))))
       (set! $buf (call $heap_alloc (i32.add (i32.mul (local.get $len) (local.get $bpe)) (i32.const 8))))
       (call $ta_zero (local.get $buf) (i32.mul (local.get $len) (local.get $bpe))))
     (else (if (call $is_array (local.get $a0))
