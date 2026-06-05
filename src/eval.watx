@@ -3400,9 +3400,32 @@
       (block $ae (loop $al
         (br_if $ae (i32.ge_s (local.get $k) (local.get $argc)))
         (let $sv i64 (call $argn (local.get $argv) (local.get $argc) (local.get $k)))
-        (if (call $is_object (local.get $sv))
+        ;; string source: copy own enumerable index chars (ToObject(string))
+        (if (call $is_string (local.get $sv))
           (then
-            (let $ss i32 (call $val_payload (local.get $sv)))
+            (let $sstr i32 (call $val_payload (local.get $sv)))
+            (let $slen i32 (call $str_len (local.get $sstr)))
+            (let $sci i32 (i32.const 0))
+            (block $sce2 (loop $scl2
+              (br_if $sce2 (i32.ge_s (local.get $sci) (local.get $slen)))
+              (call $set_prop (local.get $t) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $sci)))) (call $str_char_at (local.get $sstr) (local.get $sci)))
+              (set! $sci (i32.add (local.get $sci) (i32.const 1))) (br $scl2)))))
+        ;; array source: copy own enumerable indices, then named props (@12 scope)
+        (if (call $is_array (local.get $sv))
+          (then
+            (let $aap i32 (call $val_payload (local.get $sv)))
+            (let $aai i32 (i32.const 0))
+            (block $aae (loop $aal2
+              (br_if $aae (i32.ge_s (local.get $aai) (call $arr_len (local.get $aap))))
+              (if (call $arr_has (local.get $aap) (local.get $aai))
+                (then (call $set_prop (local.get $t) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $aai)))) (call $arr_get (local.get $aap) (local.get $aai)))))
+              (set! $aai (i32.add (local.get $aai) (i32.const 1))) (br $aal2)))))
+        ;; objects / arrays / functions: copy own enumerable named props from the scope
+        (let $ss i32 (if i32 (call $is_object (local.get $sv)) (then (call $val_payload (local.get $sv)))
+          (else (if i32 (call $is_array (local.get $sv)) (then (i32.load (i32.add (call $val_payload (local.get $sv)) (i32.const 12))))
+            (else (if i32 (call $is_function (local.get $sv)) (then (call $fn_def_scope (local.get $sv))) (else (i32.const 0))))))))
+        (if (local.get $ss)
+          (then
             (let $cn i32 (call $scope_count (local.get $ss)))
             (let $i i32 (i32.const 0))
             (block $ce (loop $cl
