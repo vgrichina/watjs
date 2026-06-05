@@ -1202,6 +1202,12 @@
       (return (local.get $mov))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 121)) (i32.le_s (local.get $id) (i32.const 127)))
     (then
+      ;; receiver must be an object carrying the [[MapData]] internal slot.
+      ;; nest the checks — i32.or would eval scope_find_local on a non-object payload.
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@mk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
       (let $mk i32 (call $coll_arr (local.get $thisv) (cstring "@@mk")))
       (let $mv i32 (call $coll_arr (local.get $thisv) (cstring "@@mv")))
       (let $mkey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -1268,6 +1274,12 @@
       (return (local.get $sov))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 131)) (i32.le_s (local.get $id) (i32.const 136)))
     (then
+      ;; receiver must be an object carrying the [[SetData]] internal slot.
+      ;; nest the checks — i32.or would eval scope_find_local on a non-object payload.
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@sk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
       (let $sk i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
       (let $skey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $sidx i32 (call $map_find (local.get $sk) (local.get $skey)))
@@ -1689,6 +1701,14 @@
       (return (call $mk_bool (call $strict_eq (local.get $isa) (local.get $isb))))))
   (if (i32.eq (local.get $id) (i32.const 170))  ;; Math.clz32(x)
     (then (return (call $num (f64.convert_i32_u (i32.clz (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 175)) (i32.le_s (local.get $id) (i32.const 178)))
+    (then
+      ;; iterator methods require the matching internal slot (short-circuit checks)
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv))
+                     (if i32 (i32.eq (local.get $id) (i32.const 175)) (then (cstring "@@sk")) (else (cstring "@@mk")))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))))
   (if (i32.eq (local.get $id) (i32.const 175))  ;; Set @@iterator/values (this = set) → array iterator over @@sk
     (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@sk")))))))
   (if (i32.eq (local.get $id) (i32.const 176))  ;; Map.keys (this = map) → array iterator over @@mk
