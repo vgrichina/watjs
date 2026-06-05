@@ -2024,6 +2024,136 @@
             (call $scope_define (local.get $cnself) (cstring "@@cidx") (call $num (f64.convert_i32_s (i32.add (local.get $cnidx) (i32.const 1)))))
             (br $cnl)))))
       (return (call $v_undef))))
+  ;; Iterator.zip(iterables[, options]) (355) — modes shortest(0)/longest(1)/strict(2)
+  (if (i32.eq (local.get $id) (i32.const 355))
+    (then
+      (let $ziterables i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $zopts i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $ziterables)) (i32.or (call $is_array (local.get $ziterables)) (call $is_string (local.get $ziterables)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip iterables is not iterable")) (return (call $v_undef))))
+      (let $zmode i32 (i32.const 0))
+      (let $zpad i32 (call $arr_new (i32.const 4)))
+      ;; read options (mode then padding) BEFORE iterating the iterables
+      (if (i32.eqz (call $is_undefined (local.get $zopts)))
+        (then
+          (if (i32.eqz (i32.or (call $is_object (local.get $zopts)) (i32.or (call $is_array (local.get $zopts)) (call $is_function (local.get $zopts)))))
+            (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip options is not an object")) (return (call $v_undef))))
+          (let $zmv i64 (call $get_prop (local.get $zopts) (call $mk_str (cstring "mode"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.eqz (call $is_undefined (local.get $zmv)))
+            (then
+              (let $zms i32 (call $to_str (local.get $zmv)))
+              (let $zok i32 (i32.const 0))
+              (if (call $str_eq (local.get $zms) (cstring "shortest")) (then (set! $zmode (i32.const 0)) (set! $zok (i32.const 1))))
+              (if (call $str_eq (local.get $zms) (cstring "longest")) (then (set! $zmode (i32.const 1)) (set! $zok (i32.const 1))))
+              (if (call $str_eq (local.get $zms) (cstring "strict")) (then (set! $zmode (i32.const 2)) (set! $zok (i32.const 1))))
+              (if (i32.eqz (local.get $zok)) (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip mode is invalid")) (return (call $v_undef))))))
+          (if (i32.eq (local.get $zmode) (i32.const 1))
+            (then
+              (let $zpv i64 (call $get_prop (local.get $zopts) (call $mk_str (cstring "padding"))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.eqz (call $is_undefined (local.get $zpv)))
+                (then
+                  (if (i32.eqz (i32.or (call $is_object (local.get $zpv)) (i32.or (call $is_array (local.get $zpv)) (call $is_string (local.get $zpv)))))
+                    (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip padding is not iterable")) (return (call $v_undef))))
+                  (call $spread_into (local.get $zpad) (local.get $zpv))
+                  (if (call $err) (then (return (call $v_undef))))))))))
+      ;; iterate iterables → open each sub-iterator
+      (let $zitems i32 (call $arr_new (i32.const 4)))
+      (call $spread_into (local.get $zitems) (local.get $ziterables))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $ziters i32 (call $arr_new (i32.const 4)))
+      (let $znexts i32 (call $arr_new (i32.const 4)))
+      (let $zdf i32 (call $arr_new (i32.const 4)))
+      (let $zk i32 (i32.const 0))
+      (block $zce (loop $zcl
+        (br_if $zce (i32.ge_s (local.get $zk) (call $arr_len (local.get $zitems))))
+        (let $zit i64 (call $arr_get (local.get $zitems) (local.get $zk)))
+        (if (i32.eqz (i32.or (call $is_object (local.get $zit)) (i32.or (call $is_array (local.get $zit)) (call $is_string (local.get $zit)))))
+          (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip element is not iterable")) (return (call $v_undef))))
+        (let $zsub i64 (call $vm_get_iter (local.get $zit)))
+        (if (call $err) (then (return (call $v_undef))))
+        (call $arr_push (local.get $ziters) (local.get $zsub))
+        (call $arr_push (local.get $znexts) (call $get_prop (local.get $zsub) (call $mk_str (cstring "next"))))
+        (call $arr_push (local.get $zdf) (call $v_false))
+        (set! $zk (i32.add (local.get $zk) (i32.const 1))) (br $zcl)))
+      (let $zo i32 (call $obj_new (i32.const 12)))
+      (if (i32.load (i32.const 488)) (then (i32.store (local.get $zo) (i32.load (i32.const 488)))))
+      (call $scope_define (local.get $zo) (cstring "@@ziters") (call $mk_arr (local.get $ziters)))
+      (call $scope_define (local.get $zo) (cstring "@@znexts") (call $mk_arr (local.get $znexts)))
+      (call $scope_define (local.get $zo) (cstring "@@zmode") (call $num (f64.convert_i32_s (local.get $zmode))))
+      (call $scope_define (local.get $zo) (cstring "@@zpad") (call $mk_arr (local.get $zpad)))
+      (call $scope_define (local.get $zo) (cstring "@@zdf") (call $mk_arr (local.get $zdf)))
+      (call $scope_define (local.get $zo) (cstring "@@zalldone") (call $v_false))
+      (call $scope_define (local.get $zo) (cstring "next") (call $mk_native (i32.const 356) (cstring "next")))
+      (return (call $mk_obj (local.get $zo)))))
+  ;; Iterator.zip helper .next() (356)
+  (if (i32.eq (local.get $id) (i32.const 356))
+    (then
+      (let $znr i32 (call $obj_new (i32.const 2)))
+      (let $znself i32 (call $val_payload (local.get $thisv)))
+      (let $znbuf i32 (call $heap_alloc (i32.const 8)))
+      (let $zniters i32 (call $coll_arr (local.get $thisv) (cstring "@@ziters")))
+      (let $znnexts i32 (call $coll_arr (local.get $thisv) (cstring "@@znexts")))
+      (let $zndf i32 (call $coll_arr (local.get $thisv) (cstring "@@zdf")))
+      (let $znpad i32 (call $coll_arr (local.get $thisv) (cstring "@@zpad")))
+      (let $znmode i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@zmode"))))))
+      (let $znn i32 (call $arr_len (local.get $zniters)))
+      (let $znres i32 (call $arr_new (i32.const 4)))
+      (let $zni i32 (i32.const 0))
+      (let $znactive i32 (i32.const 0))   ;; values produced this round
+      (let $zndone i32 (i32.const 0))     ;; iterators reported done this round
+      (if (i32.or (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@zalldone")))) (i32.eqz (local.get $znn)))
+        (then (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true))
+              (call $scope_define (local.get $znr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $znr) (cstring "done") (call $v_true))
+              (return (call $mk_obj (local.get $znr)))))
+      (block $zne (loop $znl
+        (br_if $zne (i32.ge_s (local.get $zni) (local.get $znn)))
+        ;; longest: an already-finished iterator contributes padding
+        (if (i32.and (i32.eq (local.get $znmode) (i32.const 1)) (call $truthy (call $arr_get (local.get $zndf) (local.get $zni))))
+          (then
+            (call $arr_push (local.get $znres) (if i64 (i32.lt_s (local.get $zni) (call $arr_len (local.get $znpad))) (then (call $arr_get (local.get $znpad) (local.get $zni))) (else (call $v_undef))))
+            (set! $zni (i32.add (local.get $zni) (i32.const 1))) (br $znl)))
+        (let $znx i64 (call $arr_get (local.get $znnexts) (local.get $zni)))
+        (let $znit i64 (call $arr_get (local.get $zniters) (local.get $zni)))
+        (let $znr2 i64 (call $call_val (local.get $znx) (i32.const 0) (local.get $znbuf) (local.get $znit)))
+        (if (call $err) (then (return (call $v_undef))))
+        (if (call $truthy (call $get_prop (local.get $znr2) (call $mk_str (cstring "done"))))
+          (then
+            (set! $zndone (i32.add (local.get $zndone) (i32.const 1)))
+            (if (i32.eq (local.get $znmode) (i32.const 0))   ;; shortest: first done → close the rest, finish
+              (then
+                (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true))
+                (let $zj i32 (i32.add (local.get $zni) (i32.const 1)))
+                (block $zfe (loop $zfl
+                  (br_if $zfe (i32.ge_s (local.get $zj) (local.get $znn)))
+                  (call $iter_close (call $arr_get (local.get $zniters) (local.get $zj)))
+                  (set! $zj (i32.add (local.get $zj) (i32.const 1))) (br $zfl)))
+                (call $scope_define (local.get $znr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $znr) (cstring "done") (call $v_true))
+                (return (call $mk_obj (local.get $znr)))))
+            (call $arr_set (local.get $zndf) (local.get $zni) (call $v_true))   ;; longest/strict: mark this one done
+            (call $arr_push (local.get $znres) (if i64 (i32.lt_s (local.get $zni) (call $arr_len (local.get $znpad))) (then (call $arr_get (local.get $znpad) (local.get $zni))) (else (call $v_undef)))))
+          (else
+            (set! $znactive (i32.add (local.get $znactive) (i32.const 1)))
+            (call $arr_push (local.get $znres) (call $get_prop (local.get $znr2) (call $mk_str (cstring "value"))))))
+        (set! $zni (i32.add (local.get $zni) (i32.const 1))) (br $znl)))
+      ;; strict: lengths must match — mixing done and active in one round is an error
+      (if (i32.and (i32.eq (local.get $znmode) (i32.const 2)) (i32.and (i32.gt_s (local.get $zndone) (i32.const 0)) (i32.gt_s (local.get $znactive) (i32.const 0))))
+        (then
+          (let $zj2 i32 (i32.const 0))
+          (block $zse (loop $zsl
+            (br_if $zse (i32.ge_s (local.get $zj2) (local.get $znn)))
+            (if (i32.eqz (call $truthy (call $arr_get (local.get $zndf) (local.get $zj2)))) (then (call $iter_close (call $arr_get (local.get $zniters) (local.get $zj2)))))
+            (set! $zj2 (i32.add (local.get $zj2) (i32.const 1))) (br $zsl)))
+          (call $throw_type (cstring "TypeError") (cstring "Iterator.zip strict: iterators have different lengths")) (return (call $v_undef))))
+      ;; no active iterators this round → all done
+      (if (i32.eqz (local.get $znactive))
+        (then (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true))
+              (call $scope_define (local.get $znr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $znr) (cstring "done") (call $v_true))
+              (return (call $mk_obj (local.get $znr)))))
+      (call $scope_define (local.get $znr) (cstring "value") (call $mk_arr (local.get $znres)))
+      (call $scope_define (local.get $znr) (cstring "done") (call $v_false))
+      (return (call $mk_obj (local.get $znr)))))
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
     (then
@@ -5270,6 +5400,7 @@
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $iterproto)))
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 349) (cstring "from")))
   (call $set_prop (local.get $iterf) (call $mk_str (cstring "concat")) (call $mk_native (i32.const 350) (cstring "concat")))
+  (call $set_prop (local.get $iterf) (call $mk_str (cstring "zip")) (call $mk_native (i32.const 355) (cstring "zip")))
   (let $datef i64 (call $def_native (local.get $g) (cstring "Date") (i32.const 180)))
   (call $set_prop (local.get $datef) (call $mk_str (cstring "now")) (call $mk_native (i32.const 179) (cstring "now")))
   ;; Date.prototype (reg 308) — instances link to it for instanceof/getPrototypeOf/inheritance
