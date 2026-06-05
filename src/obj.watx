@@ -530,7 +530,14 @@
       (if (local.get $props)
         (then
           (let $slot i32 (call $scope_find (local.get $props) (local.get $ks)))
-          (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
+          (if (local.get $slot)
+            (then
+              (if (call $entry_is_accessor (local.get $slot))  ;; accessor → call getter with this=fn
+                (then
+                  (let $get i64 (i64.load (call $val_payload (i64.load (local.get $slot)))))
+                  (if (call $is_function (local.get $get)) (then (return (call $call_fn0 (local.get $get) (local.get $cont)))))
+                  (return (call $v_undef))))
+              (return (i64.load (local.get $slot)))))))
       (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
       (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
       (let $ninh i32 (call $fn_inherited_slot (local.get $ks)))

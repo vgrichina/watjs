@@ -1646,6 +1646,8 @@
           (call $arr_remove (local.get $wsk) (local.get $wsidx))
           (return (call $v_true))))
       (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
+    (then (return (local.get $thisv))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 113)) (i32.eq (local.get $id) (i32.const 114)))  ;; trimStart / trimEnd
     (then
       (let $tts i32 (call $to_str (local.get $thisv)))
@@ -3174,7 +3176,7 @@
       ;; functions: length / name are non-enumerable, non-writable, configurable
       (if (call $is_function (local.get $ob))
         (then
-          (let $fks i32 (call $to_str (local.get $ky)))
+          (let $fks i32 (call $to_prop_key (local.get $ky)))  ;; symbol keys → internal @@key
           ;; length/name are non-enum, non-writable, configurable — but only while
           ;; still owned (either may have been deleted; fn_own honors that).
           (if (i32.and (i32.or (call $str_eq (local.get $fks) (cstring "length")) (call $str_eq (local.get $fks) (cstring "name")))
@@ -4675,6 +4677,11 @@
   (call $scope_define (local.get $setproto) (cstring "constructor") (local.get $setf))
   (call $scope_clear_enum (local.get $setproto))
   (call $set_prop (local.get $setf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $setproto)))
+  ;; Map[Symbol.species] / Set[Symbol.species] — accessor getter returning the receiver
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $mapf))) (cstring "@@species")
+    (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $setf))) (cstring "@@species")
+    (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
   ;; WeakMap.prototype (reg 480) — strong-ref implementation (GC weakness unobservable)
   (let $wmapf i64 (call $def_native (local.get $g) (cstring "WeakMap") (i32.const 320)))
   (let $wmproto i32 (call $obj_new (i32.const 8)))
