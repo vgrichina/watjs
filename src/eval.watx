@@ -3938,6 +3938,13 @@
     (then (return (i32.const 0))))
   ;; encodeURIComponent/decodeURIComponent/encodeURI/decodeURI = length 1
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 306)) (i32.le_s (local.get $id) (i32.const 309))) (then (return (i32.const 1))))
+  ;; Map.set(121) = length 2
+  (if (i32.eq (local.get $id) (i32.const 121)) (then (return (i32.const 2))))
+  ;; Map get/has/delete/forEach(122-125), Set add/has/delete/forEach(131-134) = length 1
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 122)) (i32.le_s (local.get $id) (i32.const 125))) (then (return (i32.const 1))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 131)) (i32.le_s (local.get $id) (i32.const 134))) (then (return (i32.const 1))))
+  ;; ES2024 Set methods union…isDisjointFrom(310-316) = length 1
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316))) (then (return (i32.const 1))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
