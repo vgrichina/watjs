@@ -422,6 +422,12 @@
                   (i32.and (f64.lt (local.get $kidx) (f64.const 2147483648))
                            (f64.eq (local.get $kidx) (f64.floor (local.get $kidx))))))
             (then (return (call $str_char_at (call $val_payload (local.get $cont)) (i32.trunc_f64_s (local.get $kidx))))))))
+      ;; numeric-string key (e.g. "0") → canonical char index
+      (if (call $is_string (local.get $key))
+        (then
+          (let $skidx i32 (call $str_array_index (call $val_payload (local.get $key))))
+          (if (i32.and (i32.ge_s (local.get $skidx) (i32.const 0)) (i32.lt_s (local.get $skidx) (call $str_len (call $val_payload (local.get $cont)))))
+            (then (return (call $str_char_at (call $val_payload (local.get $cont)) (local.get $skidx)))))))
       ;; methods / constructor from String.prototype (reg 156)
       (let $sp i32 (i32.load (i32.const 156)))
       (if (local.get $sp)

@@ -317,6 +317,17 @@
       (if (local.get $allNames) (then (call $arr_push (local.get $out) (call $mk_str (cstring "length")))))
       (call $push_scope_keys (local.get $out) (i32.load (i32.add (local.get $aa) (i32.const 12))) (local.get $allNames))
       (return (local.get $out))))
+  (if (call $is_string (local.get $a))  ;; string: index chars (enumerable) then length (allNames only)
+    (then
+      (let $sp i32 (call $val_payload (local.get $a)))
+      (let $sn i32 (call $str_len (local.get $sp)))
+      (let $si i32 (i32.const 0))
+      (block $ske (loop $skl
+        (br_if $ske (i32.ge_s (local.get $si) (local.get $sn)))
+        (call $arr_push (local.get $out) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $si)))))
+        (set! $si (i32.add (local.get $si) (i32.const 1))) (br $skl)))
+      (if (local.get $allNames) (then (call $arr_push (local.get $out) (call $mk_str (cstring "length")))))
+      (return (local.get $out))))
   (if (call $is_object (local.get $a))
     (then (call $push_scope_keys (local.get $out) (call $val_payload (local.get $a)) (local.get $allNames))))
   (local.get $out))
