@@ -2,6 +2,17 @@
 // Usage: node tools/build.js [entry.watx] [out.wasm]
 const fs = require('fs');
 const path = require('path');
+
+// The WATX compiler's EMIT stage recurses per top-level statement, so the very
+// large hand-written functions (e.g. $call_native, setup_globals) can overflow
+// the default V8 stack. Re-exec once with a larger stack so the build is reliable.
+if (!process.env.__WATX_BIGSTACK) {
+  const { spawnSync } = require('child_process');
+  const r = spawnSync(process.execPath, ['--stack-size=4000', __filename, ...process.argv.slice(2)],
+    { stdio: 'inherit', env: { ...process.env, __WATX_BIGSTACK: '1' } });
+  process.exit(r.status == null ? 1 : r.status);
+}
+
 const { compile } = require('./watx');
 
 const SRC = path.join(__dirname, '..', 'src');

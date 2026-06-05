@@ -583,6 +583,142 @@
   (if (i32.le_s (local.get $elem) (i32.const 4)) (then (i32.store16 (local.get $a) (local.get $iv)) (return)))
   (i32.store (local.get $a) (local.get $iv)))
 
+;; DataView element-code for a getter/setter index k (Int8,Uint8,Int16,Uint16,Int32,Uint32,Float32,Float64)
+(func $dv_elem (param $k i32) (result i32) (effects)
+  (if i32 (i32.le_s (local.get $k) (i32.const 1)) (then (local.get $k))  ;; 0 Int8, 1 Uint8
+    (else (i32.add (local.get $k) (i32.const 1)))))  ;; 2→3 Int16, 3→4 Uint16, 4→5 Int32, 5→6 Uint32, 6→7 Float32, 7→8 Float64
+;; read an `elem`-typed value at byte pointer `src`, honoring little/big endian.
+;; wasm is little-endian; for big-endian, reverse the bytes through scratch @520.
+(func $dv_read (param $src i32) (param $elem i32) (param $little i32) (result f64) (effects)
+  (let $bpe i32 (call $ta_bpe (local.get $elem)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $bpe)))
+    (i32.store8 (i32.add (i32.const 520) (local.get $i))
+      (i32.load8_u (i32.add (local.get $src) (if i32 (local.get $little) (then (local.get $i)) (else (i32.sub (i32.sub (local.get $bpe) (i32.const 1)) (local.get $i)))))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (call $ta_read (i32.const 520) (i32.const 0) (local.get $elem)))
+;; write an `elem`-typed value to byte pointer `dst`, honoring endianness.
+(func $dv_write (param $dst i32) (param $elem i32) (param $little i32) (param $val f64) (effects)
+  (let $bpe i32 (call $ta_bpe (local.get $elem)))
+  (call $ta_write (i32.const 520) (i32.const 0) (local.get $elem) (local.get $val))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $bpe)))
+    (i32.store8 (i32.add (local.get $dst) (if i32 (local.get $little) (then (local.get $i)) (else (i32.sub (i32.sub (local.get $bpe) (i32.const 1)) (local.get $i)))))
+      (i32.load8_u (i32.add (i32.const 520) (local.get $i))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
+
+;; ToIndex(v): ToIntegerOrInfinity; <0 or >2^53-1 → RangeError (sets $err, returns 0)
+(func $to_index (param $v i64) (result i32) (effects)
+  (let $d f64 (call $to_num (local.get $v)))
+  (if (call $err) (then (return (i32.const 0))))
+  (if (f64.ne (local.get $d) (local.get $d)) (then (return (i32.const 0))))  ;; NaN → 0
+  (set! $d (f64.trunc (local.get $d)))
+  (if (f64.lt (local.get $d) (f64.const 0))
+    (then (call $throw_type (cstring "RangeError") (cstring "index out of range")) (return (i32.const 0))))
+  (if (f64.gt (local.get $d) (f64.const 9007199254740991))
+    (then (call $throw_type (cstring "RangeError") (cstring "index out of range")) (return (i32.const 0))))
+  (if (f64.ge (local.get $d) (f64.const 2147483647)) (then (return (i32.const 2147483647))))
+  (i32.trunc_f64_s (local.get $d)))
+
+;; DataView (363 ctor, 364-371 getX, 372-379 setX, 380 buffer/381 byteLength/382 byteOffset)
+(func $setup_dataview (effects)
+  (let $g i32 (i32.load (i32.const 152)))
+  ;; DataView (reg 508) — get/set typed values into an ArrayBuffer with explicit endianness
+  (let $dvf i64 (call $def_native (local.get $g) (cstring "DataView") (i32.const 363)))
+  (let $dvproto i32 (call $obj_new (i32.const 24)))
+  (i32.store (i32.const 508) (local.get $dvproto))
+  (call $scope_define (local.get $dvproto) (cstring "getInt8") (call $mk_native (i32.const 364) (cstring "getInt8")))
+  (call $scope_define (local.get $dvproto) (cstring "getUint8") (call $mk_native (i32.const 365) (cstring "getUint8")))
+  (call $scope_define (local.get $dvproto) (cstring "getInt16") (call $mk_native (i32.const 366) (cstring "getInt16")))
+  (call $scope_define (local.get $dvproto) (cstring "getUint16") (call $mk_native (i32.const 367) (cstring "getUint16")))
+  (call $scope_define (local.get $dvproto) (cstring "getInt32") (call $mk_native (i32.const 368) (cstring "getInt32")))
+  (call $scope_define (local.get $dvproto) (cstring "getUint32") (call $mk_native (i32.const 369) (cstring "getUint32")))
+  (call $scope_define (local.get $dvproto) (cstring "getFloat32") (call $mk_native (i32.const 370) (cstring "getFloat32")))
+  (call $scope_define (local.get $dvproto) (cstring "getFloat64") (call $mk_native (i32.const 371) (cstring "getFloat64")))
+  (call $scope_define (local.get $dvproto) (cstring "setInt8") (call $mk_native (i32.const 372) (cstring "setInt8")))
+  (call $scope_define (local.get $dvproto) (cstring "setUint8") (call $mk_native (i32.const 373) (cstring "setUint8")))
+  (call $scope_define (local.get $dvproto) (cstring "setInt16") (call $mk_native (i32.const 374) (cstring "setInt16")))
+  (call $scope_define (local.get $dvproto) (cstring "setUint16") (call $mk_native (i32.const 375) (cstring "setUint16")))
+  (call $scope_define (local.get $dvproto) (cstring "setInt32") (call $mk_native (i32.const 376) (cstring "setInt32")))
+  (call $scope_define (local.get $dvproto) (cstring "setUint32") (call $mk_native (i32.const 377) (cstring "setUint32")))
+  (call $scope_define (local.get $dvproto) (cstring "setFloat32") (call $mk_native (i32.const 378) (cstring "setFloat32")))
+  (call $scope_define (local.get $dvproto) (cstring "setFloat64") (call $mk_native (i32.const 379) (cstring "setFloat64")))
+  (call $scope_define_accessor_attr (local.get $dvproto) (cstring "buffer") (call $mk_native (i32.const 380) (cstring "get buffer")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $dvproto) (cstring "byteLength") (call $mk_native (i32.const 381) (cstring "get byteLength")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $dvproto) (cstring "byteOffset") (call $mk_native (i32.const 382) (cstring "get byteOffset")) (call $v_undef) (i32.const 5))
+  (call $scope_define_attr (local.get $dvproto) (cstring "@@toStringTag") (call $mk_str (cstring "DataView")) (i32.const 4))
+  (call $scope_define (local.get $dvproto) (cstring "constructor") (local.get $dvf))
+  (call $scope_clear_enum (local.get $dvproto))
+  (call $scope_define_attr (call $fn_def_scope (local.get $dvf)) (cstring "prototype") (call $mk_obj (local.get $dvproto)) (i32.const 0))
+  )
+
+(func $native_dataview (param $id i32) (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
+  (if (i32.eq (local.get $id) (i32.const 363))  ;; new DataView(buffer[, byteOffset[, byteLength]])
+    (then
+      (let $dvb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_object (local.get $dvb)))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView: buffer is not an object")) (return (call $v_undef))))
+      (let $dvabsl i32 (call $scope_find_local (call $val_payload (local.get $dvb)) (cstring "@@abdata")))
+      (if (i32.eqz (local.get $dvabsl))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView: buffer is not an ArrayBuffer")) (return (call $v_undef))))
+      (let $dvbuflen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $dvb) (call $mk_str (cstring "byteLength"))))))
+      (let $dvoff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.gt_s (local.get $dvoff) (local.get $dvbuflen))
+        (then (call $throw_type (cstring "RangeError") (cstring "DataView: byteOffset is out of bounds")) (return (call $v_undef))))
+      (let $dvlen i32 (i32.sub (local.get $dvbuflen) (local.get $dvoff)))
+      (if (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))
+        (then
+          (set! $dvlen (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.gt_s (i32.add (local.get $dvoff) (local.get $dvlen)) (local.get $dvbuflen))
+            (then (call $throw_type (cstring "RangeError") (cstring "DataView: byteLength is out of bounds")) (return (call $v_undef))))))
+      (let $dvo i32 (call $obj_new (i32.const 8)))
+      (if (i32.load (i32.const 508)) (then (i32.store (local.get $dvo) (i32.load (i32.const 508)))))
+      (call $scope_define (local.get $dvo) (cstring "@@dvab") (local.get $dvb))
+      (call $scope_define (local.get $dvo) (cstring "@@dvoff") (call $num (f64.convert_i32_s (local.get $dvoff))))
+      (call $scope_define (local.get $dvo) (cstring "@@dvlen") (call $num (f64.convert_i32_s (local.get $dvlen))))
+      (return (call $mk_obj (local.get $dvo)))))
+  ;; accessors (brand-checked)
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 380)) (i32.le_s (local.get $id) (i32.const 382)))
+    (then
+      (if (i32.or (i32.eqz (call $is_object (local.get $thisv))) (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab"))))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView accessor called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eq (local.get $id) (i32.const 380)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))))
+      (if (i32.eq (local.get $id) (i32.const 381)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
+      (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
+  ;; get/set
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 364)) (i32.le_s (local.get $id) (i32.const 379)))
+    (then
+      (if (i32.or (i32.eqz (call $is_object (local.get $thisv))) (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab"))))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
+      (let $isget i32 (i32.lt_s (local.get $id) (i32.const 372)))
+      (let $elem i32 (call $dv_elem (i32.sub (local.get $id) (if i32 (local.get $isget) (then (i32.const 364)) (else (i32.const 372))))))
+      (let $bpe i32 (call $ta_bpe (local.get $elem)))
+      (let $boff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $dvab i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
+      (let $vlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
+      (let $voff i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
+      (let $abptr i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $dvab) (call $mk_str (cstring "@@abdata"))))))
+      (if (local.get $isget)
+        (then  ;; getX(byteOffset, littleEndian)
+          (if (i32.gt_s (i32.add (local.get $boff) (local.get $bpe)) (local.get $vlen))
+            (then (call $throw_type (cstring "RangeError") (cstring "DataView get: out of bounds")) (return (call $v_undef))))
+          (return (call $num (call $dv_read (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (local.get $elem)
+            (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+        (else  ;; setX(byteOffset, value, littleEndian)
+          (let $sval f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.gt_s (i32.add (local.get $boff) (local.get $bpe)) (local.get $vlen))
+            (then (call $throw_type (cstring "RangeError") (cstring "DataView set: out of bounds")) (return (call $v_undef))))
+          (call $dv_write (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (local.get $elem)
+            (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 2))) (local.get $sval))
+          (return (call $v_undef))))))
+  (call $v_undef))
+
 ;; zero `n` bytes at `p`.
 (func $ta_zero (param $p i32) (param $n i32) (effects)
   (let $i i32 (i32.const 0))
@@ -2324,6 +2460,8 @@
   ;; WeakRef / FinalizationRegistry (358-362) — handled in a separate fn to keep call_native small
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
     (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 382)))  ;; DataView
+    (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
   ;; Iterator Helpers (335-357) — handled in $native_iterator
@@ -4978,6 +5116,9 @@
   ;; WeakRef ctor(358)=1, FinalizationRegistry ctor(360)=1, register(361)=2, unregister(362)=1
   (if (i32.or (i32.eq (local.get $id) (i32.const 358)) (i32.or (i32.eq (local.get $id) (i32.const 360)) (i32.eq (local.get $id) (i32.const 362)))) (then (return (i32.const 1))))
   (if (i32.eq (local.get $id) (i32.const 361)) (then (return (i32.const 2))))
+  ;; DataView getX(364-371)=1, setX(372-379)=2
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 364)) (i32.le_s (local.get $id) (i32.const 371))) (then (return (i32.const 1))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 372)) (i32.le_s (local.get $id) (i32.const 379))) (then (return (i32.const 2))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
@@ -5020,6 +5161,7 @@
     (then (return (i32.const 1))))  ;; WeakMap, WeakSet
   (if (i32.eq (local.get $id) (i32.const 335)) (then (return (i32.const 1))))  ;; Iterator (abstract, but a constructor)
   (if (i32.or (i32.eq (local.get $id) (i32.const 358)) (i32.eq (local.get $id) (i32.const 360))) (then (return (i32.const 1))))  ;; WeakRef, FinalizationRegistry
+  (if (i32.eq (local.get $id) (i32.const 363)) (then (return (i32.const 1))))  ;; DataView
   (if (i32.eq (local.get $id) (i32.const 157)) (then (return (i32.const 1))))  ;; Function
   (i32.const 0))
 
@@ -5691,6 +5833,7 @@
   (call $scope_define (local.get $frproto) (cstring "constructor") (local.get $freg))
   (call $scope_clear_enum (local.get $frproto))
   (call $scope_define_attr (call $fn_def_scope (local.get $freg)) (cstring "prototype") (call $mk_obj (local.get $frproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
+  (call $setup_dataview)
   ;; Iterator (abstract ctor) + %Iterator.prototype% (reg 488) — eager helper methods
   (let $iterf i64 (call $def_native (local.get $g) (cstring "Iterator") (i32.const 335)))
   (let $iterproto i32 (call $obj_new (i32.const 12)))
