@@ -3230,6 +3230,8 @@
   (if (i32.eq (local.get $id) (i32.const 161))
     (then
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_null (local.get $ob)) (call $is_undefined (local.get $ob)))  ;; ToObject → TypeError
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (let $r i32 (call $obj_new (i32.const 8)))
       (if (call $is_object (local.get $ob))
         (then
@@ -3242,6 +3244,27 @@
             (call $scope_define (local.get $r) (i32.load (local.get $ent)) (call $make_descriptor (i32.add (local.get $ent) (i32.const 8))))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $gdl)))))
+      ;; string source: index chars {W:false,E:true,C:false} then length {W:false,E:false,C:false}
+      (if (call $is_string (local.get $ob))
+        (then
+          (let $gss i32 (call $val_payload (local.get $ob)))
+          (let $gsn i32 (call $str_len (local.get $gss)))
+          (let $gsi i32 (i32.const 0))
+          (block $gse (loop $gsl
+            (br_if $gse (i32.ge_s (local.get $gsi) (local.get $gsn)))
+            (let $cdr i32 (call $obj_new (i32.const 4)))
+            (call $scope_define (local.get $cdr) (cstring "value") (call $str_char_at (local.get $gss) (local.get $gsi)))
+            (call $scope_define (local.get $cdr) (cstring "writable") (call $v_false))
+            (call $scope_define (local.get $cdr) (cstring "enumerable") (call $v_true))
+            (call $scope_define (local.get $cdr) (cstring "configurable") (call $v_false))
+            (call $scope_define (local.get $r) (call $num_to_str (f64.convert_i32_s (local.get $gsi))) (call $mk_obj (local.get $cdr)))
+            (set! $gsi (i32.add (local.get $gsi) (i32.const 1))) (br $gsl)))
+          (let $lcdr i32 (call $obj_new (i32.const 4)))
+          (call $scope_define (local.get $lcdr) (cstring "value") (call $num (f64.convert_i32_s (local.get $gsn))))
+          (call $scope_define (local.get $lcdr) (cstring "writable") (call $v_false))
+          (call $scope_define (local.get $lcdr) (cstring "enumerable") (call $v_false))
+          (call $scope_define (local.get $lcdr) (cstring "configurable") (call $v_false))
+          (call $scope_define (local.get $r) (cstring "length") (call $mk_obj (local.get $lcdr)))))
       (return (call $mk_obj (local.get $r)))))
   ;; Object.getOwnPropertyDescriptor(obj, key)
   (if (i32.eq (local.get $id) (i32.const 156))
