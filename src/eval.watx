@@ -708,6 +708,48 @@
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@shared")))
         (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on incompatible receiver")) (return (call $v_undef))))
       (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
+  ;; ArrayBuffer.prototype.byteLength getter (390), slice (391), ArrayBuffer.isView (392)
+  (if (i32.eq (local.get $id) (i32.const 390))  ;; get ArrayBuffer.prototype.byteLength
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@ablen")))
+        (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on incompatible receiver")) (return (call $v_undef))))
+      (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
+  (if (i32.eq (local.get $id) (i32.const 391))  ;; ArrayBuffer.prototype.slice([begin[, end]])
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "slice called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@abdata")))
+        (then (call $throw_type (cstring "TypeError") (cstring "slice called on a non-ArrayBuffer")) (return (call $v_undef))))
+      (let $slen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
+      (let $sbeg i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (if (i32.lt_s (local.get $sbeg) (i32.const 0)) (then (set! $sbeg (i32.add (local.get $slen) (local.get $sbeg)))))
+      (if (i32.lt_s (local.get $sbeg) (i32.const 0)) (then (set! $sbeg (i32.const 0))))
+      (if (i32.gt_s (local.get $sbeg) (local.get $slen)) (then (set! $sbeg (local.get $slen))))
+      (let $send i32 (if i32 (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (then (local.get $slen)) (else (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+      (if (i32.lt_s (local.get $send) (i32.const 0)) (then (set! $send (i32.add (local.get $slen) (local.get $send)))))
+      (if (i32.lt_s (local.get $send) (i32.const 0)) (then (set! $send (i32.const 0))))
+      (if (i32.gt_s (local.get $send) (local.get $slen)) (then (set! $send (local.get $slen))))
+      (let $snew i32 (i32.sub (local.get $send) (local.get $sbeg)))
+      (if (i32.lt_s (local.get $snew) (i32.const 0)) (then (set! $snew (i32.const 0))))
+      (let $sbuf i32 (call $argv1 (call $num (f64.convert_i32_s (local.get $snew)))))
+      (let $snab i64 (call $call_native (i32.const 219) (i32.const 1) (local.get $sbuf) (call $v_undef)))
+      (let $ssrc i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@abdata"))))))
+      (let $sdst i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $snab) (call $mk_str (cstring "@@abdata"))))))
+      (let $si i32 (i32.const 0))
+      (block $sce (loop $scl
+        (br_if $sce (i32.ge_s (local.get $si) (local.get $snew)))
+        (i32.store8 (i32.add (local.get $sdst) (local.get $si)) (i32.load8_u (i32.add (i32.add (local.get $ssrc) (local.get $sbeg)) (local.get $si))))
+        (set! $si (i32.add (local.get $si) (i32.const 1))) (br $scl)))
+      (return (local.get $snab))))
+  (if (i32.eq (local.get $id) (i32.const 392))  ;; ArrayBuffer.isView(arg)
+    (then
+      (let $iva i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_object (local.get $iva))) (then (return (call $v_false))))  ;; non-object → false (guard before val_payload deref)
+      (return (call $mk_bool
+        (i32.or (i32.ne (call $scope_find_local (call $val_payload (local.get $iva)) (cstring "@@taelem")) (i32.const 0))
+                (i32.ne (call $scope_find_local (call $val_payload (local.get $iva)) (cstring "@@dvab")) (i32.const 0)))))))
   ;; getBigInt64(386)/getBigUint64(387)/setBigInt64(388)/setBigUint64(389) — 8-byte i64
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 386)) (i32.le_s (local.get $id) (i32.const 389)))
     (then
@@ -2546,7 +2588,7 @@
   ;; WeakRef / FinalizationRegistry (358-362) — handled in a separate fn to keep call_native small
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
     (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 389)))  ;; DataView + SharedArrayBuffer
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 392)))  ;; DataView/SharedArrayBuffer/ArrayBuffer.proto
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
@@ -3116,12 +3158,14 @@
     (then (return (call $ta_make (i32.sub (local.get $id) (i32.const 210)) (local.get $argc) (local.get $argv)))))
   (if (i32.eq (local.get $id) (i32.const 219))  ;; new ArrayBuffer(byteLength)
     (then
-      (let $abn i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (let $abn i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $abd i32 (call $heap_alloc (i32.add (local.get $abn) (i32.const 8))))
       (call $ta_zero (local.get $abd) (local.get $abn))
       (let $abo i32 (call $obj_new (i32.const 4)))
+      (if (i32.load (i32.const 524)) (then (i32.store (local.get $abo) (i32.load (i32.const 524)))))  ;; link ArrayBuffer.prototype
       (call $scope_define (local.get $abo) (cstring "@@abdata") (call $num (f64.convert_i32_s (local.get $abd))))
-      (call $scope_define (local.get $abo) (cstring "byteLength") (call $num (f64.convert_i32_s (local.get $abn))))
+      (call $scope_define (local.get $abo) (cstring "@@ablen") (call $num (f64.convert_i32_s (local.get $abn))))
       (return (call $mk_obj (local.get $abo)))))
   (if (i32.eq (local.get $id) (i32.const 209))  ;; new Proxy(target, handler)
     (then
@@ -5209,6 +5253,9 @@
   ;; getBigInt64/getBigUint64(386-387)=1, setBigInt64/setBigUint64(388-389)=2
   (if (i32.or (i32.eq (local.get $id) (i32.const 386)) (i32.eq (local.get $id) (i32.const 387))) (then (return (i32.const 1))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 388)) (i32.eq (local.get $id) (i32.const 389))) (then (return (i32.const 2))))
+  ;; ArrayBuffer.prototype.slice(391)=2, ArrayBuffer.isView(392)=1 (byteLength getter 390=0)
+  (if (i32.eq (local.get $id) (i32.const 391)) (then (return (i32.const 2))))
+  (if (i32.eq (local.get $id) (i32.const 392)) (then (return (i32.const 1))))
   ;; built-in constructors: Date(180)=7; RegExp(100)/Proxy(209)=2; Object(9)/Array(88)/Function(157)/Promise(192)=1
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
@@ -5825,7 +5872,16 @@
   (drop (call $def_native (local.get $g) (cstring "Uint32Array") (i32.const 216)))
   (drop (call $def_native (local.get $g) (cstring "Float32Array") (i32.const 217)))
   (drop (call $def_native (local.get $g) (cstring "Float64Array") (i32.const 218)))
-  (drop (call $def_native (local.get $g) (cstring "ArrayBuffer") (i32.const 219)))
+  (let $abf i64 (call $def_native (local.get $g) (cstring "ArrayBuffer") (i32.const 219)))
+  (call $set_prop (local.get $abf) (call $mk_str (cstring "isView")) (call $mk_native (i32.const 392) (cstring "isView")))
+  (let $abproto i32 (call $obj_new (i32.const 8)))
+  (i32.store (i32.const 524) (local.get $abproto))
+  (call $scope_define_accessor_attr (local.get $abproto) (cstring "byteLength") (call $mk_native (i32.const 390) (cstring "get byteLength")) (call $v_undef) (i32.const 5))
+  (call $scope_define (local.get $abproto) (cstring "slice") (call $mk_native (i32.const 391) (cstring "slice")))
+  (call $scope_define_attr (local.get $abproto) (cstring "@@toStringTag") (call $mk_str (cstring "ArrayBuffer")) (i32.const 4))
+  (call $scope_define (local.get $abproto) (cstring "constructor") (local.get $abf))
+  (call $scope_clear_enum (local.get $abproto))
+  (call $scope_define_attr (call $fn_def_scope (local.get $abf)) (cstring "prototype") (call $mk_obj (local.get $abproto)) (i32.const 0))
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
