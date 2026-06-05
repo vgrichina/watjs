@@ -3569,6 +3569,20 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $dobj i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $dres i64 (call $v_true))
+        ;; Proxy: deleteProperty trap, else delete on the target
+        (if (call $is_proxy (local.get $dobj))
+          (then
+            (let $dpt i64 (call $proxy_trap (local.get $dobj) (cstring "deleteProperty")))
+            (if (call $err) (then (br $disp)))
+            (if (call $is_function (local.get $dpt))
+              (then (set! $dres (call $mk_bool (call $truthy (call $proxy_call2 (local.get $dpt) (call $proxy_target (local.get $dobj)) (call $mk_str (call $to_prop_key (local.get $dkey))) (call $v_undef))))))
+              (else
+                (let $dtg i64 (call $proxy_target (local.get $dobj)))
+                (if (call $is_object (local.get $dtg)) (then (drop (call $scope_delete (call $val_payload (local.get $dtg)) (call $to_prop_key (local.get $dkey))))))))
+            (if (call $err) (then (br $disp)))
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $dres))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
         (if (call $is_array (local.get $dobj))
           (then
             (let $dap i32 (call $val_payload (local.get $dobj)))

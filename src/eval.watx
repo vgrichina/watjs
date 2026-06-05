@@ -872,6 +872,14 @@
 ;; [[GetPrototypeOf]]: array → Array.prototype; function → Function.prototype
 ;; (Function.prototype itself → Object.prototype); object → its scope parent (or null).
 (func $js_get_prototype (param $ov i64) (result i64) (effects)
+  ;; Proxy: getPrototypeOf trap, else target's prototype
+  (if (call $is_proxy (local.get $ov))
+    (then
+      (let $pt i64 (call $proxy_trap (local.get $ov) (cstring "getPrototypeOf")))
+      (if (call $err) (then (return (call $v_null))))
+      (if (call $is_function (local.get $pt))
+        (then (return (call $proxy_call2 (local.get $pt) (call $proxy_target (local.get $ov)) (call $v_undef) (call $v_undef))))
+        (else (return (call $js_get_prototype (call $proxy_target (local.get $ov))))))))
   (if (call $is_array (local.get $ov)) (then (return (call $mk_obj (i32.load (i32.const 160))))))
   (if (call $is_function (local.get $ov))
     (then
@@ -2606,6 +2614,14 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 162)) (i32.eq (local.get $id) (i32.const 164)))
     (then
       (let $xo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 162)) (call $is_proxy (local.get $xo)))
+        (then
+          (let $xpt i64 (call $proxy_trap (local.get $xo) (cstring "preventExtensions")))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_function (local.get $xpt))
+            (then (drop (call $proxy_call2 (local.get $xpt) (call $proxy_target (local.get $xo)) (call $v_undef) (call $v_undef))) (if (call $err) (then (return (call $v_undef)))))
+            (else (drop (call $call_native (i32.const 162) (i32.const 1) (call $argv1 (call $proxy_target (local.get $xo))) (call $v_undef)))))
+          (return (local.get $xo))))
       (if (call $is_object (local.get $xo))
         (then
           (let $xsc i32 (call $val_payload (local.get $xo)))
@@ -2631,6 +2647,14 @@
   (if (i32.eq (local.get $id) (i32.const 163))
     (then
       (let $xo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_proxy (local.get $xo))
+        (then
+          (let $xpt i64 (call $proxy_trap (local.get $xo) (cstring "isExtensible")))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $xtg i64 (call $proxy_target (local.get $xo)))
+          (if (call $is_function (local.get $xpt))
+            (then (return (call $mk_bool (call $truthy (call $proxy_call2 (local.get $xpt) (local.get $xtg) (call $v_undef) (call $v_undef))))))
+            (else (return (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $xtg)) (call $v_undef)))))))
       (if (call $is_array (local.get $xo))
         (then (let $xap i32 (i32.load (i32.add (call $val_payload (local.get $xo)) (i32.const 12)))) (return (call $mk_bool (i32.eqz (if i32 (local.get $xap) (then (call $scope_find_local (local.get $xap) (cstring "@@noext"))) (else (i32.const 0))))))))
       (if (i32.eqz (call $is_object (local.get $xo))) (then (return (call $v_false))))
@@ -2797,7 +2821,7 @@
   (if (i32.eq (local.get $id) (i32.const 332))  ;; Reflect.isExtensible(target)
     (then (return (call $call_native (i32.const 163) (local.get $argc) (local.get $argv) (call $v_undef)))))
   (if (i32.eq (local.get $id) (i32.const 333))  ;; Reflect.preventExtensions(target) → true
-    (then (drop (call $call_native (i32.const 164) (local.get $argc) (local.get $argv) (call $v_undef))) (return (call $v_true))))
+    (then (drop (call $call_native (i32.const 162) (local.get $argc) (local.get $argv) (call $v_undef))) (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 334))  ;; Reflect.setPrototypeOf(target, proto) → true
     (then (drop (call $call_native (i32.const 243) (local.get $argc) (local.get $argv) (call $v_undef))) (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 200))  ;; Reflect.get(target, key)
@@ -4088,6 +4112,18 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Object.setPrototypeOf called on null or undefined")) (return (call $v_undef))))
       (if (i32.eqz (i32.or (call $is_object (local.get $spp)) (call $is_null (local.get $spp))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
+      (if (call $is_proxy (local.get $spo))
+        (then
+          (let $sppt i64 (call $proxy_trap (local.get $spo) (cstring "setPrototypeOf")))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_function (local.get $sppt))
+            (then (drop (call $proxy_call2 (local.get $sppt) (call $proxy_target (local.get $spo)) (local.get $spp) (call $v_undef))) (if (call $err) (then (return (call $v_undef)))))
+            (else
+              (let $spb i32 (call $heap_alloc (i32.const 16)))
+              (i64.store (local.get $spb) (call $proxy_target (local.get $spo)))
+              (i64.store (i32.add (local.get $spb) (i32.const 8)) (local.get $spp))
+              (drop (call $call_native (i32.const 243) (i32.const 2) (local.get $spb) (call $v_undef)))))
+          (return (local.get $spo))))
       (if (call $is_object (local.get $spo))
         (then
           (let $sposc i32 (call $val_payload (local.get $spo)))
