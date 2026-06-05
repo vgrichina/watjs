@@ -465,8 +465,8 @@
             (then
               (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
               (if (i32.lt_s (local.get $tidx) (local.get $tln))
-                (then (return (call $num (call $ta_read (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))))))
-                (else (return (call $v_undef)))))))))
+                (then (return (call $ta_read_val (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))))))
+                (else (return (call $v_undef))))))))
       ;; mapped arguments: a numeric index < @@anp aliases a parameter slot
       (if (call $is_number (local.get $key))
         (then
@@ -844,7 +844,7 @@
           (let $tidx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
           (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
           (if (i32.and (i32.ge_s (local.get $tidx) (i32.const 0)) (i32.lt_s (local.get $tidx) (local.get $tln)))
-            (then (call $ta_write (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))) (call $to_num (local.get $val)))))
+            (then (call $ta_store_val (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))) (local.get $val))))
           (return)))
       (if (call $scope_find_local (local.get $o) (cstring "@@frozen")) (then (call $set_fail) (return)))  ;; Object.freeze: ignore writes (strict: throw)
       ;; mapped arguments: writing a numeric index < @@anp writes the parameter slot

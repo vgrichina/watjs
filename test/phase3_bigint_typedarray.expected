@@ -1,0 +1,15 @@
+3
+100,-50,0
+bigint
+true
+true
+8,8
+[object BigInt64Array]
+3:2
+1,2,3
+2,4,6
+6
+[object BigUint64Array]
+true
+true
+8
