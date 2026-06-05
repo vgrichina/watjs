@@ -268,9 +268,11 @@
 
 ;; CanBeHeldWeakly: objects, functions, arrays, and symbols may be weak keys
 (func $weakly_holdable (param $v i64) (result i32) (effects)
+  ;; a REGISTERED symbol (Symbol.for, key "@@symfor:…") cannot be held weakly
+  (if (call $is_symbol (local.get $v))
+    (then (return (i32.ne (call $str_indexof (call $sym_key (local.get $v)) (cstring "@@symfor:")) (i32.const 0)))))
   (i32.or (call $is_object (local.get $v))
-    (i32.or (call $is_function (local.get $v))
-      (i32.or (call $is_array (local.get $v)) (call $is_symbol (local.get $v))))))
+    (i32.or (call $is_function (local.get $v)) (call $is_array (local.get $v)))))
 
 ;; ── helpers for the ES2024 Set methods (union/intersection/…) ──
 ;; one-argument method call (caller must check $err afterwards)
@@ -5614,7 +5616,7 @@
   (call $scope_define (local.get $mapproto) (cstring "values") (call $mk_native (i32.const 177) (cstring "values")))
   (call $scope_define (local.get $mapproto) (cstring "entries") (call $mk_native (i32.const 178) (cstring "entries")))
   (call $scope_define (local.get $mapproto) (cstring "@@iterator") (call $mk_native (i32.const 178) (cstring "entries")))
-  (call $scope_define (local.get $mapproto) (cstring "@@toStringTag") (call $mk_str (cstring "Map")))
+  (call $scope_define_attr (local.get $mapproto) (cstring "@@toStringTag") (call $mk_str (cstring "Map")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $mapproto) (cstring "constructor") (local.get $mapf))
   (call $scope_clear_enum (local.get $mapproto))
   (call $set_prop (local.get $mapf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $mapproto)))
@@ -5637,7 +5639,7 @@
   (call $scope_define (local.get $setproto) (cstring "isSubsetOf") (call $mk_native (i32.const 314) (cstring "isSubsetOf")))
   (call $scope_define (local.get $setproto) (cstring "isSupersetOf") (call $mk_native (i32.const 315) (cstring "isSupersetOf")))
   (call $scope_define (local.get $setproto) (cstring "isDisjointFrom") (call $mk_native (i32.const 316) (cstring "isDisjointFrom")))
-  (call $scope_define (local.get $setproto) (cstring "@@toStringTag") (call $mk_str (cstring "Set")))
+  (call $scope_define_attr (local.get $setproto) (cstring "@@toStringTag") (call $mk_str (cstring "Set")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $setproto) (cstring "constructor") (local.get $setf))
   (call $scope_clear_enum (local.get $setproto))
   (call $set_prop (local.get $setf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $setproto)))
@@ -5655,7 +5657,7 @@
   (call $scope_define (local.get $wmproto) (cstring "get") (call $mk_native (i32.const 322) (cstring "get")))
   (call $scope_define (local.get $wmproto) (cstring "has") (call $mk_native (i32.const 323) (cstring "has")))
   (call $scope_define (local.get $wmproto) (cstring "delete") (call $mk_native (i32.const 324) (cstring "delete")))
-  (call $scope_define (local.get $wmproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakMap")))
+  (call $scope_define_attr (local.get $wmproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakMap")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $wmproto) (cstring "constructor") (local.get $wmapf))
   (call $scope_clear_enum (local.get $wmproto))
   (call $set_prop (local.get $wmapf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $wmproto)))
@@ -5666,7 +5668,7 @@
   (call $scope_define (local.get $wsproto) (cstring "add") (call $mk_native (i32.const 326) (cstring "add")))
   (call $scope_define (local.get $wsproto) (cstring "has") (call $mk_native (i32.const 327) (cstring "has")))
   (call $scope_define (local.get $wsproto) (cstring "delete") (call $mk_native (i32.const 328) (cstring "delete")))
-  (call $scope_define (local.get $wsproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakSet")))
+  (call $scope_define_attr (local.get $wsproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakSet")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $wsproto) (cstring "constructor") (local.get $wsetf))
   (call $scope_clear_enum (local.get $wsproto))
   (call $set_prop (local.get $wsetf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $wsproto)))
@@ -5675,7 +5677,7 @@
   (let $wrproto i32 (call $obj_new (i32.const 8)))
   (i32.store (i32.const 500) (local.get $wrproto))
   (call $scope_define (local.get $wrproto) (cstring "deref") (call $mk_native (i32.const 359) (cstring "deref")))
-  (call $scope_define (local.get $wrproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakRef")))
+  (call $scope_define_attr (local.get $wrproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakRef")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $wrproto) (cstring "constructor") (local.get $wreff))
   (call $scope_clear_enum (local.get $wrproto))
   (call $set_prop (local.get $wreff) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $wrproto)))
@@ -5685,7 +5687,7 @@
   (i32.store (i32.const 504) (local.get $frproto))
   (call $scope_define (local.get $frproto) (cstring "register") (call $mk_native (i32.const 361) (cstring "register")))
   (call $scope_define (local.get $frproto) (cstring "unregister") (call $mk_native (i32.const 362) (cstring "unregister")))
-  (call $scope_define (local.get $frproto) (cstring "@@toStringTag") (call $mk_str (cstring "FinalizationRegistry")))
+  (call $scope_define_attr (local.get $frproto) (cstring "@@toStringTag") (call $mk_str (cstring "FinalizationRegistry")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $frproto) (cstring "constructor") (local.get $freg))
   (call $scope_clear_enum (local.get $frproto))
   (call $set_prop (local.get $freg) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $frproto)))
