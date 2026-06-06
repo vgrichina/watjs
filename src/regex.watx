@@ -75,7 +75,7 @@
                 (if (i32.eq (local.get $nx) (i32.const 38))  ;; $& whole match
                   (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $ms) (i32.sub (local.get $me) (local.get $ms))))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
                 ;; $<name> named-group reference (only when the pattern has named groups)
-                (if (i32.and (i32.eq (local.get $nx) (i32.const 60)) (i32.load (i32.const 292)))  ;; '<'
+                (if (i32.and (i32.eq (local.get $nx) (i32.const 60)) (i32.load (i32.const 604)))  ;; '<'
                   (then
                     (let $rns i32 (i32.add (local.get $i) (i32.const 2)))
                     (let $rne i32 (local.get $rns))
@@ -441,12 +441,12 @@
 ;; capture store: reg 280 = base (cap[2k]=start, cap[2k+1]=end for group k+1), 284 = ngroups
 (func $re_reset_caps (param $p i32) (param $plen i32) (effects)
   (if (i32.eqz (i32.load (i32.const 280))) (then (i32.store (i32.const 280) (call $heap_alloc (i32.const 512)))))
-  (if (i32.eqz (i32.load (i32.const 288))) (then (i32.store (i32.const 288) (call $heap_alloc (i32.const 512)))))  ;; group-name table (Str ptr per group, 0 = unnamed)
-  (i32.store (i32.const 292) (i32.const 0))  ;; hasNamed flag
+  (if (i32.eqz (i32.load (i32.const 600))) (then (i32.store (i32.const 600) (call $heap_alloc (i32.const 512)))))  ;; group-name table (Str ptr per group, 0 = unnamed)
+  (i32.store (i32.const 604) (i32.const 0))  ;; hasNamed flag
   (let $i i32 (i32.const 0))
   (block $e (loop $l (br_if $e (i32.ge_s (local.get $i) (i32.const 128)))
     (i32.store (i32.add (i32.load (i32.const 280)) (i32.mul (local.get $i) (i32.const 4))) (i32.const -1))
-    (i32.store (i32.add (i32.load (i32.const 288)) (i32.mul (local.get $i) (i32.const 4))) (i32.const 0))
+    (i32.store (i32.add (i32.load (i32.const 600)) (i32.mul (local.get $i) (i32.const 4))) (i32.const 0))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   ;; count capturing groups + record (?<name> names
   (let $j i32 (i32.const 0)) (let $incls i32 (i32.const 0)) (let $g i32 (i32.const 0))
@@ -470,8 +470,8 @@
             (block $nce (loop $ncl (br_if $nce (i32.ge_s (i32.add (local.get $ns) (local.get $nk)) (local.get $ne)))
               (call $str_set_byte (local.get $nstr) (local.get $nk) (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $ns) (local.get $nk)))))
               (set! $nk (i32.add (local.get $nk) (i32.const 1))) (br $ncl)))
-            (i32.store (i32.add (i32.load (i32.const 288)) (i32.mul (local.get $g) (i32.const 4))) (local.get $nstr))
-            (i32.store (i32.const 292) (i32.const 1))))))
+            (i32.store (i32.add (i32.load (i32.const 600)) (i32.mul (local.get $g) (i32.const 4))) (local.get $nstr))
+            (i32.store (i32.const 604) (i32.const 1))))))
     (set! $j (i32.add (local.get $j) (i32.const 1))) (br $l2)))
   (i32.store (i32.const 284) (local.get $g)))
 (func $re_set_cap (param $gidx i32) (param $start i32) (param $end i32) (effects)
@@ -501,7 +501,7 @@
   (let $g i32 (i32.const 1))
   (block $e (loop $l
     (br_if $e (i32.gt_s (local.get $g) (i32.load (i32.const 284))))
-    (let $nm i32 (i32.load (i32.add (i32.load (i32.const 288)) (i32.mul (local.get $g) (i32.const 4)))))
+    (let $nm i32 (i32.load (i32.add (i32.load (i32.const 600)) (i32.mul (local.get $g) (i32.const 4)))))
     (if (local.get $nm)
       (then (if (i32.eq (call $str_len (local.get $nm)) (local.get $nl))
         (then
@@ -516,13 +516,13 @@
 ;; define `groups` on a match-result's @12 scope `rprops`: undefined when the
 ;; pattern has no named groups, else a null-prototype object {name: captureValue}.
 (func $re_set_groups (param $sub i32) (param $off i32) (param $rprops i32) (effects)
-  (if (i32.eqz (i32.load (i32.const 292)))
+  (if (i32.eqz (i32.load (i32.const 604)))
     (then (call $scope_define (local.get $rprops) (cstring "groups") (call $v_undef)) (return)))
   (let $go i32 (call $scope_new (i32.const 0) (i32.const 8)))  ;; null prototype (spec)
   (let $g i32 (i32.const 1))
   (block $ge (loop $gl
     (br_if $ge (i32.gt_s (local.get $g) (i32.load (i32.const 284))))
-    (let $nm i32 (i32.load (i32.add (i32.load (i32.const 288)) (i32.mul (local.get $g) (i32.const 4)))))
+    (let $nm i32 (i32.load (i32.add (i32.load (i32.const 600)) (i32.mul (local.get $g) (i32.const 4)))))
     (if (local.get $nm)
       (then
         (let $cb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $g) (i32.const 1)) (i32.const 8))))
