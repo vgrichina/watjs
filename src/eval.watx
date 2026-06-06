@@ -5132,7 +5132,7 @@
   ;; object-receiver natives (Date getters 182+, Reflect 200+, …) don't land here.
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 20))
         (i32.or (call $is_array (local.get $thisv)) (i32.and (call $is_object (local.get $thisv))
-          (i32.or (i32.le_s (local.get $id) (i32.const 36)) (i32.and (i32.ge_s (local.get $id) (i32.const 273)) (i32.le_s (local.get $id) (i32.const 276)))))))
+          (i32.or (i32.le_s (local.get $id) (i32.const 36)) (i32.or (i32.eq (local.get $id) (i32.const 225)) (i32.and (i32.ge_s (local.get $id) (i32.const 273)) (i32.le_s (local.get $id) (i32.const 276))))))))
     (then
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
@@ -5254,6 +5254,21 @@
           (return (call $mk_arr (local.get $srem)))))
       (if (i32.eq (local.get $id) (i32.const 36))  ;; shift()
         (then
+          ;; generic array-like object receiver
+          (if (i32.eqz (call $is_array (local.get $thisv)))
+            (then
+              (let $hlen i32 (call $alike_len (local.get $thisv)))
+              (if (i32.le_s (local.get $hlen) (i32.const 0))
+                (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.const 0))) (return (call $v_undef))))
+              (let $gshv i64 (call $get_prop (local.get $thisv) (call $num (f64.const 0))))
+              (let $gshk i32 (i32.const 1))
+              (block $he (loop $hl (br_if $he (i32.ge_s (local.get $gshk) (local.get $hlen)))
+                (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (i32.sub (local.get $gshk) (i32.const 1)))) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $gshk)))))
+                (set! $gshk (i32.add (local.get $gshk) (i32.const 1))) (br $hl)))
+              (if (call $is_object (local.get $thisv)) (then (drop (call $scope_delete (call $val_payload (local.get $thisv)) (call $num_to_str (f64.convert_i32_s (i32.sub (local.get $hlen) (i32.const 1))))))))
+              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (i32.sub (local.get $hlen) (i32.const 1)))))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (local.get $gshv))))
           (if (i32.eqz (local.get $n))
             (then (if (call $arr_mut_locked (local.get $arr) (i32.const 0)) (then (return (call $v_undef)))) (return (call $v_undef))))
           (if (call $arr_mut_locked (local.get $arr) (i32.const 0)) (then (return (call $v_undef))))
@@ -5266,6 +5281,24 @@
           (return (local.get $sh0))))
       (if (i32.eq (local.get $id) (i32.const 225))  ;; unshift(...items)
         (then
+          ;; generic array-like object receiver
+          (if (i32.eqz (call $is_array (local.get $thisv)))
+            (then
+              (let $ulen i32 (call $alike_len (local.get $thisv)))
+              (if (i32.gt_s (local.get $argc) (i32.const 0))
+                (then
+                  (let $uk i32 (i32.sub (local.get $ulen) (i32.const 1)))
+                  (block $ue (loop $ul (br_if $ue (i32.lt_s (local.get $uk) (i32.const 0)))
+                    (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (i32.add (local.get $uk) (local.get $argc)))) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $uk)))))
+                    (set! $uk (i32.sub (local.get $uk) (i32.const 1))) (br $ul)))
+                  (set! $uk (i32.const 0))
+                  (block $ue2 (loop $ul2 (br_if $ue2 (i32.ge_s (local.get $uk) (local.get $argc)))
+                    (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $uk))) (call $argn (local.get $argv) (local.get $argc) (local.get $uk)))
+                    (set! $uk (i32.add (local.get $uk) (i32.const 1))) (br $ul2)))))
+              (let $unl i32 (i32.add (local.get $ulen) (local.get $argc)))
+              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (local.get $unl))))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (call $num (f64.convert_i32_s (local.get $unl))))))
           (if (i32.gt_s (local.get $argc) (i32.const 0))
             (then
               (if (call $arr_mut_locked (local.get $arr) (i32.const 1)) (then (return (call $v_undef))))
@@ -5280,6 +5313,20 @@
           (return (call $num (f64.convert_i32_s (i32.add (local.get $n) (local.get $argc)))))))
       (if (i32.eq (local.get $id) (i32.const 20))  ;; push(...args)
         (then
+          ;; generic array-like object receiver: operate on it via [[Set]]/length
+          ;; (the dense path below would mutate a throwaway materialized copy)
+          (if (i32.eqz (call $is_array (local.get $thisv)))
+            (then
+              (let $glen i32 (call $alike_len (local.get $thisv)))
+              (let $gk i32 (i32.const 0))
+              (block $gpe (loop $gpl (br_if $gpe (i32.ge_s (local.get $gk) (local.get $argc)))
+                (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (i32.add (local.get $glen) (local.get $gk)))) (call $argn (local.get $argv) (local.get $argc) (local.get $gk)))
+                (if (call $err) (then (return (call $v_undef))))
+                (set! $gk (i32.add (local.get $gk) (i32.const 1))) (br $gpl)))
+              (let $gnl i32 (i32.add (local.get $glen) (local.get $argc)))
+              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (local.get $gnl))))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (call $num (f64.convert_i32_s (local.get $gnl))))))
           ;; adding indices needs a writable length + extensibility
           (if (i32.gt_s (local.get $argc) (i32.const 0))
             (then (if (call $arr_mut_locked (local.get $arr) (i32.const 1)) (then (return (call $v_undef))))))
@@ -5292,6 +5339,18 @@
           (return (call $num (f64.convert_i32_s (call $arr_len (local.get $arr)))))))
       (if (i32.eq (local.get $id) (i32.const 21))  ;; pop()
         (then
+          ;; generic array-like object receiver
+          (if (i32.eqz (call $is_array (local.get $thisv)))
+            (then
+              (let $plen i32 (call $alike_len (local.get $thisv)))
+              (if (i32.le_s (local.get $plen) (i32.const 0))
+                (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.const 0))) (return (call $v_undef))))
+              (let $pidx i32 (i32.sub (local.get $plen) (i32.const 1)))
+              (let $pv i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $pidx)))))
+              (if (call $is_object (local.get $thisv)) (then (drop (call $scope_delete (call $val_payload (local.get $thisv)) (call $num_to_str (f64.convert_i32_s (local.get $pidx)))))))
+              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (local.get $pidx))))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (local.get $pv))))
           (if (i32.le_s (local.get $n) (i32.const 0))
             (then (if (call $arr_mut_locked (local.get $arr) (i32.const 0)) (then (return (call $v_undef)))) (return (call $v_undef))))  ;; empty: spec still sets length 0 (throws if non-writable)
           (if (call $arr_mut_locked (local.get $arr) (i32.const 0)) (then (return (call $v_undef))))

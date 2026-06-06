@@ -1,0 +1,5 @@
+push=2,2,1,2
+pop=c,2,false
+shift=x,1,y
+unshift=4,4,p,a
+real=4,4,1,3,0,2,3
