@@ -1,0 +1,7 @@
+dup=true
+dup-no=false
+word=hello hello
+cap=a
+ignorecase=true
+two-groups=true
+class-unaffected=true
