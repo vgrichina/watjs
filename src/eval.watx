@@ -502,6 +502,18 @@
         (set! $cj (i32.add (local.get $cj) (i32.const 1))) (br $ccl))))
     (else (call $arr_push (local.get $r) (local.get $item)))))
 
+;; element get/set for the in-place array methods (fill/copyWithin/reverse): a real
+;; array hits the dense store, a generic array-like object goes through get/set_prop
+;; on the receiver (the dense `$arr` is a throwaway copy for non-arrays).
+(func $amut_get (param $thisv i64) (param $arr i32) (param $i i32) (result i64) (effects)
+  (if i64 (call $is_array (local.get $thisv))
+    (then (call $arr_get (local.get $arr) (local.get $i)))
+    (else (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))))
+(func $amut_set (param $thisv i64) (param $arr i32) (param $i i32) (param $v i64) (effects)
+  (if (call $is_array (local.get $thisv))
+    (then (call $arr_set (local.get $arr) (local.get $i) (local.get $v)))
+    (else (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i))) (local.get $v)))))
+
 ;; DeletePropertyOrThrow(O, idx) for the generic splice on an object receiver.
 (func $splice_delete (param $thisv i64) (param $idx i32) (effects)
   (if (call $is_object (local.get $thisv))
@@ -4276,9 +4288,9 @@
           (let $i i32 (i32.const 0))
           (let $j i32 (i32.sub (local.get $n) (i32.const 1)))
           (block $re (loop $rl (br_if $re (i32.ge_s (local.get $i) (local.get $j)))
-            (let $t i64 (call $arr_get (local.get $arr) (local.get $i)))
-            (call $arr_set (local.get $arr) (local.get $i) (call $arr_get (local.get $arr) (local.get $j)))
-            (call $arr_set (local.get $arr) (local.get $j) (local.get $t))
+            (let $t i64 (call $amut_get (local.get $thisv) (local.get $arr) (local.get $i)))
+            (call $amut_set (local.get $thisv) (local.get $arr) (local.get $i) (call $amut_get (local.get $thisv) (local.get $arr) (local.get $j)))
+            (call $amut_set (local.get $thisv) (local.get $arr) (local.get $j) (local.get $t))
             (set! $i (i32.add (local.get $i) (i32.const 1))) (set! $j (i32.sub (local.get $j) (i32.const 1))) (br $rl)))
           (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 72))  ;; filter(fn)
@@ -5241,7 +5253,7 @@
   ;; object-receiver natives (Date getters 182+, Reflect 200+, …) don't land here.
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 20))
         (i32.or (call $is_array (local.get $thisv)) (i32.and (call $is_object (local.get $thisv))
-          (i32.or (i32.le_s (local.get $id) (i32.const 36)) (i32.or (i32.eq (local.get $id) (i32.const 225)) (i32.and (i32.ge_s (local.get $id) (i32.const 273)) (i32.le_s (local.get $id) (i32.const 276))))))))
+          (i32.or (i32.le_s (local.get $id) (i32.const 36)) (i32.or (i32.eq (local.get $id) (i32.const 225)) (i32.or (i32.eq (local.get $id) (i32.const 168)) (i32.and (i32.ge_s (local.get $id) (i32.const 273)) (i32.le_s (local.get $id) (i32.const 276)))))))))
     (then
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
@@ -5491,7 +5503,7 @@
           (let $fk i32 (local.get $fstart))
           (block $fe (loop $fl
             (br_if $fe (i32.ge_s (local.get $fk) (local.get $fend)))
-            (call $arr_set (local.get $arr) (local.get $fk) (local.get $a0))
+            (call $amut_set (local.get $thisv) (local.get $arr) (local.get $fk) (local.get $a0))
             (set! $fk (i32.add (local.get $fk) (i32.const 1)))
             (br $fl)))
           (return (local.get $thisv))))
@@ -5514,12 +5526,12 @@
               (let $ci i32 (i32.const 0))
               (block $cre (loop $crl
                 (br_if $cre (i32.ge_s (local.get $ci) (local.get $ccnt)))
-                (i64.store (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8))) (call $arr_get (local.get $arr) (i32.add (local.get $cs) (local.get $ci))))
+                (i64.store (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8))) (call $amut_get (local.get $thisv) (local.get $arr) (i32.add (local.get $cs) (local.get $ci))))
                 (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $crl)))
               (set! $ci (i32.const 0))
               (block $cwe (loop $cwl
                 (br_if $cwe (i32.ge_s (local.get $ci) (local.get $ccnt)))
-                (call $arr_set (local.get $arr) (i32.add (local.get $ct) (local.get $ci)) (i64.load (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8)))))
+                (call $amut_set (local.get $thisv) (local.get $arr) (i32.add (local.get $ct) (local.get $ci)) (i64.load (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8)))))
                 (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $cwl)))))
           (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 30))  ;; lastIndexOf(x[, fromIndex])

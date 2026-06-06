@@ -1,0 +1,6 @@
+reverse=c,b,a
+fill=a,Z,Z
+copyWithin=3,4,3,4
+real-rev=3,2,1
+real-fill=1,0,0,4
+real-cw=4,5,3,4,5
