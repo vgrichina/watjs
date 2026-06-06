@@ -1,0 +1,6 @@
+before=a[a]c
+after=a[c]c
+both=xx|yzyz
+group=acbd
+amp=a<b>c
+all-before=a[a]b[aXb]c
