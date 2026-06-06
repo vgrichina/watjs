@@ -5707,14 +5707,20 @@
           (if (i32.lt_s (local.get $end) (i32.const 0)) (then (set! $end (i32.add (local.get $n) (local.get $end)))))
           (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.const 0))))
           (if (i32.gt_s (local.get $end) (local.get $n)) (then (set! $end (local.get $n))))
-          (let $r i32 (call $arr_new (i32.const 8)))
+          (let $scount i32 (i32.sub (local.get $end) (local.get $start)))
+          (if (i32.lt_s (local.get $scount) (i32.const 0)) (then (set! $scount (i32.const 0))))
+          (let $rA i64 (call $array_species_create (local.get $thisv) (local.get $scount)))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $sn i32 (i32.const 0))
           (let $i i32 (local.get $start))
           (block $ce (loop $cl
             (br_if $ce (i32.ge_s (local.get $i) (local.get $end)))
-            (call $arr_push (local.get $r) (call $arr_get (local.get $arr) (local.get $i)))
+            (if (call $arr_has (local.get $arr) (local.get $i))  ;; HasProperty → CreateDataProperty; holes stay absent
+              (then (call $cdp (local.get $rA) (local.get $sn) (call $arr_get (local.get $arr) (local.get $i)))))
+            (set! $sn (i32.add (local.get $sn) (i32.const 1)))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $cl)))
-          (return (call $mk_arr (local.get $r)))))
+          (return (local.get $rA))))
       ;; forEach(fn) (25) / map(fn) (26)
       (if (i32.or (i32.eq (local.get $id) (i32.const 25)) (i32.eq (local.get $id) (i32.const 26)))
         (then

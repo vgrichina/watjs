@@ -5,3 +5,6 @@ species-map=S,10,20,30
 species-filter=S,2,3
 map-holes=false
 bad-species=TypeError
+slice=2,3
+slice-holes=false
+species-slice=S,2,3
