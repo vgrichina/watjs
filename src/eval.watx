@@ -4210,6 +4210,9 @@
           (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 72))  ;; filter(fn)
         (then
+          ;; filter ArraySpeciesCreate: source length > 2^32-1 → RangeError
+          (if (f64.gt (call $alike_len_f64 (local.get $thisv)) (f64.const 4294967295))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
           (let $r i32 (call $arr_new (i32.const 8)))
           (let $i i32 (i32.const 0))
           (let $cargv i32 (call $heap_alloc (i32.const 24)))
@@ -5564,6 +5567,11 @@
       ;; forEach(fn) (25) / map(fn) (26)
       (if (i32.or (i32.eq (local.get $id) (i32.const 25)) (i32.eq (local.get $id) (i32.const 26)))
         (then
+          ;; map builds a result array (ArraySpeciesCreate): a source length beyond
+          ;; the max array length (2^32-1) can't be created → RangeError. (forEach,
+          ;; id 25, shares this block but creates no result, so it must NOT throw.)
+          (if (i32.and (i32.eq (local.get $id) (i32.const 26)) (f64.gt (call $alike_len_f64 (local.get $thisv)) (f64.const 4294967295)))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
           (let $r i32 (call $arr_new (i32.const 8)))
           (let $i i32 (i32.const 0))
           (let $cargv i32 (call $heap_alloc (i32.const 24)))

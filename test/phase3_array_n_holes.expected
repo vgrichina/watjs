@@ -7,3 +7,6 @@ reduce-throws=TypeError
 join=,,,,
 mapLen=5
 after-set=true,false
+map-huge=RangeError
+filter-huge=RangeError
+forEach-normal=2
