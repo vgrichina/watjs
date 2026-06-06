@@ -3302,6 +3302,32 @@
     (then (if (i32.eqz (i32.load (i32.const 612))) (then (i32.store (i32.const 612) (i32.const 1)) (i64.store (i32.const 616) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 416))  ;; executor reject(r)
     (then (if (i32.eqz (i32.load (i32.const 612))) (then (i32.store (i32.const 612) (i32.const 2)) (i64.store (i32.const 616) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 417))  ;; BigInt.prototype.toString([radix])
+    (then
+      (if (i32.eqz (call $is_bigint (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "BigInt.prototype.toString requires that 'this' be a BigInt")) (return (call $v_undef))))
+      (let $bgv i64 (call $bigint_val (local.get $thisv)))
+      (let $bgr i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 10))))
+      (if (i32.or (i32.lt_s (local.get $bgr) (i32.const 2)) (i32.gt_s (local.get $bgr) (i32.const 36))) (then (call $throw_type (cstring "RangeError") (cstring "toString() radix must be between 2 and 36")) (return (call $v_undef))))
+      (if (i32.eq (local.get $bgr) (i32.const 10)) (then (return (call $mk_str (call $i64_to_str (local.get $bgv))))))
+      ;; general radix: repeated div/mod on the magnitude, then sign
+      (let $bgneg i32 (i64.lt_s (local.get $bgv) (i64.const 0)))
+      (let $bgu i64 (if i64 (local.get $bgneg) (then (i64.sub (i64.const 0) (local.get $bgv))) (else (local.get $bgv))))
+      (let $bgrl i64 (i64.extend_i32_s (local.get $bgr)))
+      (let $bgn i32 (i32.const 0)) (let $bgt i64 (local.get $bgu))
+      (block $bcde (loop $bcdl (set! $bgn (i32.add (local.get $bgn) (i32.const 1))) (set! $bgt (i64.div_u (local.get $bgt) (local.get $bgrl))) (br_if $bcdl (i64.gt_u (local.get $bgt) (i64.const 0)))))
+      (let $bgtot i32 (i32.add (local.get $bgn) (local.get $bgneg)))
+      (let $bgs i32 (call $str_alloc (local.get $bgtot)))
+      (if (local.get $bgneg) (then (call $str_set_byte (local.get $bgs) (i32.const 0) (i32.const 45))))  ;; '-'
+      (let $bgi i32 (i32.sub (local.get $bgtot) (i32.const 1)))
+      (set! $bgt (local.get $bgu))
+      (block $bfe (loop $bfl
+        (let $bgd i32 (i32.wrap_i64 (i64.rem_u (local.get $bgt) (local.get $bgrl))))
+        (call $str_set_byte (local.get $bgs) (local.get $bgi) (if i32 (i32.lt_s (local.get $bgd) (i32.const 10)) (then (i32.add (local.get $bgd) (i32.const 48))) (else (i32.add (local.get $bgd) (i32.const 87)))))
+        (set! $bgt (i64.div_u (local.get $bgt) (local.get $bgrl)))
+        (br_if $bfe (i32.le_s (local.get $bgi) (local.get $bgneg)))
+        (set! $bgi (i32.sub (local.get $bgi) (i32.const 1)))
+        (br $bfl)))
+      (return (call $mk_str (local.get $bgs)))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 410)) (i32.le_s (local.get $id) (i32.const 413)))  ;; Promise.all/race/allSettled/any
     (then
       (let $pitems i32 (call $arr_new (i32.const 8)))
@@ -6749,7 +6775,16 @@
   (call $scope_define (local.get $ap) (cstring "constructor") (local.get $arrf))  ;; Array.prototype.constructor === Array
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $arrf))) (cstring "@@species")  ;; Array[Symbol.species] === Array
     (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
-  (drop (call $def_native (local.get $g) (cstring "BigInt") (i32.const 247)))
+  (let $bigf i64 (call $def_native (local.get $g) (cstring "BigInt") (i32.const 247)))
+  ;; BigInt.prototype (reg 624) — methods for property access on a BigInt primitive
+  (let $bigproto i32 (call $obj_new (i32.const 6)))
+  (i32.store (i32.const 624) (local.get $bigproto))
+  (call $scope_define_attr (local.get $bigproto) (cstring "toString") (call $mk_native (i32.const 417) (cstring "toString")) (i32.const 12))
+  (call $scope_define_attr (local.get $bigproto) (cstring "toLocaleString") (call $mk_native (i32.const 417) (cstring "toLocaleString")) (i32.const 12))
+  (call $scope_define_attr (local.get $bigproto) (cstring "valueOf") (call $mk_native (i32.const 302) (cstring "valueOf")) (i32.const 12))
+  (call $scope_define_attr (local.get $bigproto) (cstring "@@toStringTag") (call $mk_str (cstring "BigInt")) (i32.const 4))
+  (call $scope_define_attr (local.get $bigproto) (cstring "constructor") (local.get $bigf) (i32.const 12))
+  (call $set_prop (local.get $bigf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $bigproto)))
   (let $mapf i64 (call $def_native (local.get $g) (cstring "Map") (i32.const 120)))
   (let $setf i64 (call $def_native (local.get $g) (cstring "Set") (i32.const 130)))
   ;; Map.prototype (reg 344) — methods shared via the prototype; instances hold only @@mk/@@mv

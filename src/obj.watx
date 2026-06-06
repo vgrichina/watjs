@@ -451,6 +451,14 @@
           (let $bslot i32 (call $scope_find_local (local.get $bp) (call $to_prop_key (local.get $key))))
           (if (local.get $bslot) (then (return (i64.load (local.get $bslot)))))))
       (return (call $v_undef))))
+  (if (call $is_bigint (local.get $cont))  ;; BigInt methods via BigInt.prototype (reg 624)
+    (then
+      (let $gbp i32 (i32.load (i32.const 624)))
+      (if (local.get $gbp)
+        (then
+          (let $gbslot i32 (call $scope_find_local (local.get $gbp) (call $to_prop_key (local.get $key))))
+          (if (local.get $gbslot) (then (return (i64.load (local.get $gbslot)))))))
+      (return (call $v_undef))))
   (if (call $is_string (local.get $cont))
     (then
       (if (call $key_is_length (local.get $key))

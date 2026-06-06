@@ -1,0 +1,8 @@
+toString=100
+hex=ff
+bin=101
+neg=-ff
+zero=0
+valueOf=5
+radix-range=RangeError
+brand=TypeError
