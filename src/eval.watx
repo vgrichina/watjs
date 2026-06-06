@@ -6484,6 +6484,8 @@
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $ap)))  ;; Array.prototype
   (call $scope_define (local.get $ap) (cstring "constructor") (local.get $arrf))  ;; Array.prototype.constructor === Array
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $arrf))) (cstring "@@species")  ;; Array[Symbol.species] === Array
+    (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
   (drop (call $def_native (local.get $g) (cstring "BigInt") (i32.const 247)))
   (let $mapf i64 (call $def_native (local.get $g) (cstring "Map") (i32.const 120)))
   (let $setf i64 (call $def_native (local.get $g) (cstring "Set") (i32.const 130)))
