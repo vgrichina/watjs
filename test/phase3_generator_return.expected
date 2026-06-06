@@ -1,0 +1,4 @@
+return={"value":9,"done":true}
+after-return={"done":true}
+throw=boom
+normal=1,2,3
