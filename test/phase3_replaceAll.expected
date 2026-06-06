@@ -1,0 +1,8 @@
+basic=bbb
+none=xyz
+dollar-amp=[a]-[a]
+regex-global=X1X2
+regex-nonglobal=TypeError
+callback=a_b
+empty-sep=-a-b-c-
+overlap=ba
