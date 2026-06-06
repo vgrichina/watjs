@@ -5394,11 +5394,13 @@
           (let $sic i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.sub (local.get $argc) (i32.const 2))) (else (i32.const 0))))
           (if (i32.ne (local.get $sic) (local.get $sdc))
             (then (if (call $arr_mut_locked (local.get $arr) (i32.gt_s (local.get $sic) (local.get $sdc))) (then (return (call $v_undef))))))
-          (let $srem i32 (call $arr_new (i32.const 8)))
+          (let $sremA i64 (call $array_species_create (local.get $thisv) (local.get $sdc)))  ;; removed = ArraySpeciesCreate(O, deleteCount)
+          (if (call $err) (then (return (call $v_undef))))
           (let $si i32 (i32.const 0))
           (block $sre (loop $srl
             (br_if $sre (i32.ge_s (local.get $si) (local.get $sdc)))
-            (call $arr_push (local.get $srem) (call $arr_get (local.get $arr) (i32.add (local.get $ss) (local.get $si))))
+            (if (call $arr_has (local.get $arr) (i32.add (local.get $ss) (local.get $si)))  ;; HasProperty → CreateDataProperty (holes stay absent)
+              (then (call $cdp (local.get $sremA) (local.get $si) (call $arr_get (local.get $arr) (i32.add (local.get $ss) (local.get $si))))))
             (set! $si (i32.add (local.get $si) (i32.const 1))) (br $srl)))
           (let $stmp i32 (call $arr_new (i32.const 8)))
           (set! $si (i32.const 0))
@@ -5419,7 +5421,7 @@
             (call $arr_set (local.get $arr) (local.get $si) (call $arr_get (local.get $stmp) (local.get $si)))
             (set! $si (i32.add (local.get $si) (i32.const 1))) (br $scl)))
           (i32.store (local.get $arr) (local.get $sm))
-          (return (call $mk_arr (local.get $srem)))))
+          (return (local.get $sremA))))
       (if (i32.eq (local.get $id) (i32.const 36))  ;; shift()
         (then
           ;; generic array-like object receiver
