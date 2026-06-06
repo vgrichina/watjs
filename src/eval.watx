@@ -1361,12 +1361,42 @@
 ;; define ONE property on an array (used by Object.defineProperty + defineProperties).
 ;; canonical index → element write; "length" {value} → resize (RangeError on invalid);
 ;; other named → @12 scope via apply_descriptor. RangeError surfaces via the err flag.
+;; a property descriptor needs to "deopt" an array index out of the dense store
+;; (into the @12 named scope) when it's an accessor OR carries non-default data
+;; attributes (writable/enumerable/configurable:false). The dense store can't
+;; carry per-index attributes or accessor pairs; the deopted entry lives in @12
+;; and arr_get/arr_has/get_prop/set_prop consult @12 for hole indices so the
+;; iteration builtins still observe it correctly.
+(func $desc_needs_deopt (param $de i64) (result i32) (effects)
+  (if (i32.or (call $truthy (call $js_in (call $mk_str (cstring "get")) (local.get $de)))
+              (call $truthy (call $js_in (call $mk_str (cstring "set")) (local.get $de)))) (then (return (i32.const 1))))
+  (if (i32.eqz (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "writable"))))) (then (return (i32.const 1))))
+  (if (i32.eqz (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "enumerable"))))) (then (return (i32.const 1))))
+  (if (i32.eqz (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "configurable"))))) (then (return (i32.const 1))))
+  (i32.const 0))
+
 (func $array_define_one (param $arrv i64) (param $ky i64) (param $de i64) (effects)
   (let $dpk i32 (call $to_str (local.get $ky)))
   (let $dpa i32 (call $val_payload (local.get $arrv)))
   (let $dpidx i32 (call $str_array_index (local.get $dpk)))
   (if (i32.ge_s (local.get $dpidx) (i32.const 0))
     (then
+      ;; if the index already lives in the @12 scope (previously deopted), redefine it there
+      (let $dpp i32 (i32.load (i32.add (local.get $dpa) (i32.const 12))))
+      (if (local.get $dpp)
+        (then (if (call $scope_find_local (local.get $dpp) (local.get $dpk))
+          (then (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de)) (return)))))
+      ;; accessor or non-default attributes → move this index to the @12 scope and
+      ;; leave a hole in the dense store so it isn't double-counted
+      (if (call $desc_needs_deopt (local.get $de))
+        (then
+          (if (i32.lt_s (local.get $dpidx) (call $arr_len (local.get $dpa)))
+            (then (i64.store (call $arr_slot (local.get $dpa) (local.get $dpidx)) (call $v_hole))))
+          (if (i32.ge_s (local.get $dpidx) (call $arr_len (local.get $dpa)))
+            (then (call $arr_set_length (local.get $dpa) (i32.add (local.get $dpidx) (i32.const 1)))
+                  (i64.store (call $arr_slot (local.get $dpa) (local.get $dpidx)) (call $v_hole))))
+          (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de))
+          (return)))
       (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
         (then (call $arr_set (local.get $dpa) (local.get $dpidx) (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
         (else (call $arr_set (local.get $dpa) (local.get $dpidx) (call $v_undef)))))
@@ -4540,14 +4570,22 @@
               (call $scope_define (local.get $ldr) (cstring "configurable") (call $v_false))
               (return (call $mk_obj (local.get $ldr)))))
           (let $aidx i32 (call $str_array_index (local.get $aks)))
-          (if (i32.and (i32.ge_s (local.get $aidx) (i32.const 0)) (call $arr_has (local.get $aobj) (local.get $aidx)))
+          ;; a deopted index (accessor / non-default-attr data) describes from its @12 slot
+          (let $apsi i32 (i32.load (i32.add (local.get $aobj) (i32.const 12))))
+          (if (i32.ge_s (local.get $aidx) (i32.const 0))
             (then
-              (let $edr i32 (call $obj_new (i32.const 4)))
-              (call $scope_define (local.get $edr) (cstring "value") (call $arr_get (local.get $aobj) (local.get $aidx)))
-              (call $scope_define (local.get $edr) (cstring "writable") (call $v_true))
-              (call $scope_define (local.get $edr) (cstring "enumerable") (call $v_true))
-              (call $scope_define (local.get $edr) (cstring "configurable") (call $v_true))
-              (return (call $mk_obj (local.get $edr)))))
+              (if (local.get $apsi)
+                (then (let $aisl i32 (call $scope_find_local (local.get $apsi) (local.get $aks)))
+                  (if (local.get $aisl) (then (return (call $make_descriptor (local.get $aisl)))))))
+              ;; plain dense element → {W:true,E:true,C:true}
+              (if (call $arr_has (local.get $aobj) (local.get $aidx))
+                (then
+                  (let $edr i32 (call $obj_new (i32.const 4)))
+                  (call $scope_define (local.get $edr) (cstring "value") (call $arr_get (local.get $aobj) (local.get $aidx)))
+                  (call $scope_define (local.get $edr) (cstring "writable") (call $v_true))
+                  (call $scope_define (local.get $edr) (cstring "enumerable") (call $v_true))
+                  (call $scope_define (local.get $edr) (cstring "configurable") (call $v_true))
+                  (return (call $mk_obj (local.get $edr)))))))
           ;; named property in the @12 scope
           (let $aps i32 (i32.load (i32.add (local.get $aobj) (i32.const 12))))
           (if (local.get $aps)

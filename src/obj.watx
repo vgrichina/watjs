@@ -76,15 +76,38 @@
     (br $cont)))
   (i32.store (i32.add (local.get $a) (i32.const 4)) (local.get $nc))
   (i32.store (i32.add (local.get $a) (i32.const 8)) (local.get $nd)))
+;; 1 if dense-hole index $i is actually a "deopted" accessor index parked in @12.
+(func $arr_idx_deopted (param $a i32) (param $i i32) (result i32) (effects)
+  (let $p i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
+  (if (i32.eqz (local.get $p)) (then (return (i32.const 0))))
+  (i32.ne (call $scope_find_local (local.get $p) (call $num_to_str (f64.convert_i32_s (local.get $i)))) (i32.const 0)))
+;; value of a deopted accessor/data index in @12 (invokes the getter); v_hole if
+;; the index is NOT deopted (caller then treats it as a genuine hole → undefined).
+(func $arr_hole_deopt (param $a i32) (param $i i32) (result i64) (effects)
+  (let $p i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
+  (if (i32.eqz (local.get $p)) (then (return (call $v_hole))))
+  (let $slot i32 (call $scope_find_local (local.get $p) (call $num_to_str (f64.convert_i32_s (local.get $i)))))
+  (if (i32.eqz (local.get $slot)) (then (return (call $v_hole))))
+  (if (call $entry_is_accessor (local.get $slot))
+    (then
+      (let $g i64 (i64.load (call $val_payload (i64.load (local.get $slot)))))
+      (if (call $is_function (local.get $g)) (then (return (call $call_fn0 (local.get $g) (call $mk_arr (local.get $a))))))
+      (return (call $v_undef))))
+  (i64.load (local.get $slot)))
 (func $arr_get (param $a i32) (param $i i32) (result i64) (effects)
   (if (i32.or (i32.lt_s (local.get $i) (i32.const 0)) (i32.ge_s (local.get $i) (call $arr_len (local.get $a)))) (then (return (call $v_undef))))
   (let $e i64 (i64.load (call $arr_slot (local.get $a) (local.get $i))))
-  (if (call $is_hole (local.get $e)) (then (return (call $v_undef))))  ;; a hole reads as undefined
+  (if (call $is_hole (local.get $e))
+    (then  ;; a hole reads as undefined — unless it's a deopted accessor/data index
+      (let $d i64 (call $arr_hole_deopt (local.get $a) (local.get $i)))
+      (if (call $is_hole (local.get $d)) (then (return (call $v_undef))))
+      (return (local.get $d))))
   (local.get $e))
 ;; 1 if index $i is a present (non-hole, in-bounds) element
 (func $arr_has (param $a i32) (param $i i32) (result i32) (effects)
   (if (i32.or (i32.lt_s (local.get $i) (i32.const 0)) (i32.ge_s (local.get $i) (call $arr_len (local.get $a)))) (then (return (i32.const 0))))
-  (i32.eqz (call $is_hole (i64.load (call $arr_slot (local.get $a) (local.get $i))))))
+  (if (i32.eqz (call $is_hole (i64.load (call $arr_slot (local.get $a) (local.get $i))))) (then (return (i32.const 1))))
+  (call $arr_idx_deopted (local.get $a) (local.get $i)))
 (func $arr_set (param $a i32) (param $i i32) (param $v i64) (effects)
   (if (i32.lt_s (local.get $i) (i32.const 0)) (then (return)))
   (if (i32.ge_s (local.get $i) (call $arr_cap (local.get $a))) (then (call $arr_grow (local.get $a) (i32.add (local.get $i) (i32.const 1)))))
@@ -367,13 +390,34 @@
                 (i32.and (f64.ge (local.get $aget) (f64.const 0))
                   (i32.and (f64.lt (local.get $aget) (f64.const 2147483648))
                            (f64.eq (local.get $aget) (f64.floor (local.get $aget))))))
-            (then (return (call $arr_get (local.get $a) (i32.trunc_f64_s (local.get $aget))))))))
+            (then
+              (let $nidx i32 (i32.trunc_f64_s (local.get $aget)))
+              ;; a deopted index (accessor / attributed) lives in the @12 scope
+              (let $adp i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
+              (if (local.get $adp)
+                (then (let $dsl i32 (call $scope_find_local (local.get $adp) (call $num_to_str (f64.convert_i32_s (local.get $nidx)))))
+                  (if (local.get $dsl)
+                    (then
+                      (if (call $entry_is_accessor (local.get $dsl))
+                        (then (let $dg i64 (i64.load (call $val_payload (i64.load (local.get $dsl))))) (if (call $is_function (local.get $dg)) (then (return (call $call_fn0 (local.get $dg) (local.get $cont))))) (return (call $v_undef))))
+                      (return (i64.load (local.get $dsl)))))))
+              (return (call $arr_get (local.get $a) (local.get $nidx)))))))
             ;; non-index numeric falls through to the lookups below
       (let $akey i32 (call $to_prop_key (local.get $key)))
       (if (call $str_eq (local.get $akey) (cstring "__proto__")) (then (return (call $js_get_prototype (local.get $cont)))))  ;; → Array.prototype
-      ;; a string key that's a canonical index ("0", a["3"]) is an element
+      ;; a string key that's a canonical index ("0", a["3"]) is an element (check @12 deopt first)
       (let $asidx i32 (call $str_array_index (local.get $akey)))
-      (if (i32.ge_s (local.get $asidx) (i32.const 0)) (then (return (call $arr_get (local.get $a) (local.get $asidx)))))
+      (if (i32.ge_s (local.get $asidx) (i32.const 0))
+        (then
+          (let $adp2 i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
+          (if (local.get $adp2)
+            (then (let $dsl2 i32 (call $scope_find_local (local.get $adp2) (local.get $akey)))
+              (if (local.get $dsl2)
+                (then
+                  (if (call $entry_is_accessor (local.get $dsl2))
+                    (then (let $dg2 i64 (i64.load (call $val_payload (i64.load (local.get $dsl2))))) (if (call $is_function (local.get $dg2)) (then (return (call $call_fn0 (local.get $dg2) (local.get $cont))))) (return (call $v_undef))))
+                  (return (i64.load (local.get $dsl2)))))))
+          (return (call $arr_get (local.get $a) (local.get $asidx)))))
       ;; named properties (a.foo, a[2**32-1], …) live in the @12 scope
       (let $aprops i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
       (if (local.get $aprops)
@@ -770,6 +814,24 @@
 ;; throws a TypeError instead of being silently ignored.
 (func $set_fail (effects)
   (if (i32.load (i32.const 392)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property")))))
+;; a deopted array index (accessor / non-default-attr data) lives in the @12 scope.
+;; returns 1 if `ks` is such an entry (write handled: setter invoked / data stored /
+;; refusal via set_fail), else 0 (caller writes the dense element).
+(func $arr_deopt_set (param $a i32) (param $ks i32) (param $val i64) (param $cont i64) (result i32) (effects)
+  (let $p i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
+  (if (i32.eqz (local.get $p)) (then (return (i32.const 0))))
+  (let $slot i32 (call $scope_find_local (local.get $p) (local.get $ks)))
+  (if (i32.eqz (local.get $slot)) (then (return (i32.const 0))))
+  (if (call $entry_is_accessor (local.get $slot))
+    (then
+      (let $set i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $slot))) (i32.const 8))))
+      (if (call $is_function (local.get $set))
+        (then (let $av i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $av) (local.get $val)) (drop (call $call_val (local.get $set) (i32.const 1) (local.get $av) (local.get $cont))))
+        (else (call $set_fail)))
+      (return (i32.const 1))))
+  (if (i32.eqz (call $entry_writable (local.get $slot))) (then (call $set_fail) (return (i32.const 1))))
+  (i64.store (local.get $slot) (local.get $val))
+  (i32.const 1))
 (func $set_prop (param $cont i64) (param $key i64) (param $val i64) (effects)
   (if (call $is_array (local.get $cont))
     (then
@@ -789,14 +851,18 @@
                   (i32.and (f64.lt (local.get $aset) (f64.const 2147483648))
                            (f64.eq (local.get $aset) (f64.floor (local.get $aset))))))
             (then
+              (let $nsi i32 (i32.trunc_f64_s (local.get $aset)))
+              ;; deopted index (accessor / attributed) → @12 scope takes the write
+              (if (local.get $ap12) (then (if (call $arr_deopt_set (local.get $a) (call $num_to_str (f64.convert_i32_s (local.get $nsi))) (local.get $val) (local.get $cont)) (then (return)))))
               ;; non-extensible: refuse a write that would ADD a new index (>= length)
-              (if (i32.and (local.get $anoext) (i32.ge_s (i32.trunc_f64_s (local.get $aset)) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
-              (call $arr_set (local.get $a) (i32.trunc_f64_s (local.get $aset)) (local.get $val)) (return)))))
+              (if (i32.and (local.get $anoext) (i32.ge_s (local.get $nsi) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
+              (call $arr_set (local.get $a) (local.get $nsi) (local.get $val)) (return)))))
       (let $askey i32 (call $to_prop_key (local.get $key)))
       ;; a string key that's a canonical index (a["3"]=…) writes an element
       (let $ssidx i32 (call $str_array_index (local.get $askey)))
       (if (i32.ge_s (local.get $ssidx) (i32.const 0))
         (then
+          (if (local.get $ap12) (then (if (call $arr_deopt_set (local.get $a) (local.get $askey) (local.get $val) (local.get $cont)) (then (return)))))
           (if (i32.and (local.get $anoext) (i32.ge_s (local.get $ssidx) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
           (call $arr_set (local.get $a) (local.get $ssidx) (local.get $val)) (return)))
       ;; `length` assignment resizes the array (truncate / extend with holes);
