@@ -993,6 +993,15 @@
         (set! $ocn (i32.add (local.get $ocn) (i32.const 1)))
         (call $vm_patch (local.get $code) (local.get $jacc))  ;; access lands here: [R, R]
         (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP dup → [R]
+        (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ?.(args) — optional call of the receiver (this=undefined)
+          (then
+            (call $next_token)  ;; '('
+            (let $ocac i32 (i32.const 0))
+            (if (i32.ne (call $tok_kind) (i32.const 16))
+              (then (block $occe (loop $occl (call $vm_c_expr (local.get $code)) (set! $ocac (i32.add (local.get $ocac) (i32.const 1))) (br_if $occe (i32.eqz (call $eat (i32.const 22)))) (br $occl)))))
+            (call $next_token)  ;; ')'
+            (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (local.get $ocac)))  ;; CALL
+          (else
         (if (i32.eq (call $tok_kind) (i32.const 19))  ;; ?.[idx]
           (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token) (call $vm_emit_op (local.get $code) (i32.const 31)))  ;; GETIDX
           (else
@@ -1007,7 +1016,7 @@
                   (then (block $oce (loop $ocl (call $vm_c_expr (local.get $code)) (set! $oca (i32.add (local.get $oca) (i32.const 1))) (br_if $oce (i32.eqz (call $eat (i32.const 22)))) (br $ocl)))))
                 (call $next_token)
                 (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $oca)))  ;; CALLM
-              (else (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $ock))))))  ;; GETPROP
+              (else (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $ock))))))))  ;; GETPROP (+2 close ?.( wrapper)
         (br $l)))
     (br $e)))
   ;; patch optional-chaining short-circuits to the end of the chain
