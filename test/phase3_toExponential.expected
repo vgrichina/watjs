@@ -1,0 +1,8 @@
+123=1.23e+2
+1.5=1.5e+0
+100=1e+2
+zero=0e+0
+neg=-1.25e+1
+small=1e-3
+explicit-2=1.23e+2
+explicit-4=1.2300e+2

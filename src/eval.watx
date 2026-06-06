@@ -3834,7 +3834,17 @@
       (let $exv f64 (call $num_this (local.get $thisv)))
       (if (i32.or (f64.ne (local.get $exv) (local.get $exv)) (f64.eq (f64.abs (local.get $exv)) (f64.div (f64.const 1) (f64.const 0))))
         (then (return (call $mk_str (call $num_to_str (local.get $exv))))))  ;; NaN/Infinity → ToString
-      (let $exd i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 6))))
+      ;; no argument → use the FEWEST fraction digits that round-trip to the value
+      (if (i32.or (i32.lt_s (local.get $argc) (i32.const 1)) (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+        (then
+          (let $exmd i32 (i32.const 0))
+          (block $exme (loop $exml
+            (br_if $exme (i32.ge_s (local.get $exmd) (i32.const 17)))
+            (let $exs i32 (call $num_to_exponential (local.get $exv) (local.get $exmd)))
+            (br_if $exme (f64.eq (call $to_num (call $mk_str (local.get $exs))) (local.get $exv)))
+            (set! $exmd (i32.add (local.get $exmd) (i32.const 1))) (br $exml)))
+          (return (call $mk_str (call $num_to_exponential (local.get $exv) (local.get $exmd))))))
+      (let $exd i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.or (i32.lt_s (local.get $exd) (i32.const 0)) (i32.gt_s (local.get $exd) (i32.const 100)))
         (then (call $throw_type (cstring "RangeError") (cstring "toExponential() argument must be between 0 and 100")) (return (call $v_undef))))
       (return (call $mk_str (call $num_to_exponential (local.get $exv) (local.get $exd))))))
