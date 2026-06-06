@@ -2969,24 +2969,34 @@
       (return (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
   (if (i32.eq (local.get $id) (i32.const 6))  ;; Boolean(x)
     (then (return (call $mk_bool (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
-  (if (i32.eq (local.get $id) (i32.const 220))  ;; Number/Boolean.prototype.valueOf — unwrap a wrapper to its primitive
+  (if (i32.eq (local.get $id) (i32.const 220))  ;; Number.prototype.valueOf — this must be a Number
     (then
       (if (call $is_object (local.get $thisv))
         (then
           (let $vo220 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
-          (if (local.get $vo220) (then (return (i64.load (local.get $vo220)))))
-          ;; object without a __prim__ wrapper slot → not a Number/Boolean → TypeError
-          (call $throw_type (cstring "TypeError") (cstring "valueOf called on incompatible receiver")) (return (call $v_undef))))
-      ;; primitive receiver: only number/boolean are valid for these valueOf's
-      (if (i32.or (call $is_number (local.get $thisv)) (call $is_boolean (local.get $thisv))) (then (return (local.get $thisv))))
-      (call $throw_type (cstring "TypeError") (cstring "valueOf called on incompatible receiver")) (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 221))  ;; Boolean.prototype.toString → "true"/"false"
+          (if (local.get $vo220) (then (if (call $is_number (i64.load (local.get $vo220))) (then (return (i64.load (local.get $vo220)))))))
+          (call $throw_type (cstring "TypeError") (cstring "Number.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
+      (if (call $is_number (local.get $thisv)) (then (return (local.get $thisv))))
+      (call $throw_type (cstring "TypeError") (cstring "Number.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 422))  ;; Boolean.prototype.valueOf — this must be a Boolean
+    (then
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $vo422 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $vo422) (then (if (call $is_boolean (i64.load (local.get $vo422))) (then (return (i64.load (local.get $vo422)))))))
+          (call $throw_type (cstring "TypeError") (cstring "Boolean.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
+      (if (call $is_boolean (local.get $thisv)) (then (return (local.get $thisv))))
+      (call $throw_type (cstring "TypeError") (cstring "Boolean.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 221))  ;; Boolean.prototype.toString → "true"/"false"; this must be a Boolean
     (then
       (let $bv221 i64 (local.get $thisv))
       (if (call $is_object (local.get $thisv))
         (then
           (let $bo221 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
-          (if (local.get $bo221) (then (set! $bv221 (i64.load (local.get $bo221)))))))
+          (if i32 (local.get $bo221) (then (set! $bv221 (i64.load (local.get $bo221))))
+            (else (call $throw_type (cstring "TypeError") (cstring "Boolean.prototype.toString called on incompatible receiver")) (return (call $v_undef))))))
+      (if (i32.eqz (call $is_boolean (local.get $bv221)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Boolean.prototype.toString called on incompatible receiver")) (return (call $v_undef))))
       (return (call $mk_str (if i32 (call $truthy (local.get $bv221)) (then (cstring "true")) (else (cstring "false")))))))
   (if (i32.eq (local.get $id) (i32.const 7))  ;; isNaN(x)
     (then (let $d f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -6637,7 +6647,7 @@
   (i32.store (i32.const 184) (local.get $boolproto))
   (call $scope_define (local.get $boolproto) (cstring "__prim__") (call $mk_bool (i32.const 0)))  ;; Boolean.prototype is a Boolean object (false)
   (call $scope_define (local.get $boolproto) (cstring "constructor") (local.get $boolf))
-  (call $scope_define (local.get $boolproto) (cstring "valueOf") (call $mk_native (i32.const 220) (cstring "valueOf")))
+  (call $scope_define (local.get $boolproto) (cstring "valueOf") (call $mk_native (i32.const 422) (cstring "valueOf")))
   (call $scope_define (local.get $boolproto) (cstring "toString") (call $mk_native (i32.const 221) (cstring "toString")))
   (call $set_prop (local.get $boolf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $boolproto)))
   (drop (call $def_native (local.get $g) (cstring "isNaN") (i32.const 7)))
