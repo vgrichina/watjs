@@ -3330,6 +3330,20 @@
         (set! $bgi (i32.sub (local.get $bgi) (i32.const 1)))
         (br $bfl)))
       (return (call $mk_str (local.get $bgs)))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 418)) (i32.eq (local.get $id) (i32.const 419)))  ;; BigInt.asIntN(bits,v) / asUintN(bits,v)
+    (then
+      (let $anbits i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (let $anv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.eqz (call $is_bigint (local.get $anv))) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert to a BigInt")) (return (call $v_undef))))
+      (if (i32.lt_s (local.get $anbits) (i32.const 0)) (then (call $throw_type (cstring "RangeError") (cstring "Invalid bits")) (return (call $v_undef))))
+      (let $aniv i64 (call $bigint_val (local.get $anv)))
+      (if (i32.eqz (local.get $anbits)) (then (return (call $mk_bigint (i64.const 0)))))
+      (if (i32.ge_s (local.get $anbits) (i32.const 64)) (then (return (call $mk_bigint (local.get $aniv)))))  ;; 64-bit storage cap
+      (if (i32.eq (local.get $id) (i32.const 419))  ;; asUintN → mask the low `bits` bits (unsigned)
+        (then (return (call $mk_bigint (i64.and (local.get $aniv) (i64.sub (i64.shl (i64.const 1) (i64.extend_i32_s (local.get $anbits))) (i64.const 1)))))))
+      ;; asIntN → sign-extend the low `bits` bits
+      (let $ansh i64 (i64.extend_i32_s (i32.sub (i32.const 64) (local.get $anbits))))
+      (return (call $mk_bigint (i64.shr_s (i64.shl (local.get $aniv) (local.get $ansh)) (local.get $ansh))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 410)) (i32.le_s (local.get $id) (i32.const 413)))  ;; Promise.all/race/allSettled/any
     (then
       (let $pitems i32 (call $arr_new (i32.const 8)))
@@ -6787,6 +6801,8 @@
   (call $scope_define_attr (local.get $bigproto) (cstring "@@toStringTag") (call $mk_str (cstring "BigInt")) (i32.const 4))
   (call $scope_define_attr (local.get $bigproto) (cstring "constructor") (local.get $bigf) (i32.const 12))
   (call $set_prop (local.get $bigf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $bigproto)))
+  (call $set_prop (local.get $bigf) (call $mk_str (cstring "asIntN")) (call $mk_native (i32.const 418) (cstring "asIntN")))
+  (call $set_prop (local.get $bigf) (call $mk_str (cstring "asUintN")) (call $mk_native (i32.const 419) (cstring "asUintN")))
   (let $mapf i64 (call $def_native (local.get $g) (cstring "Map") (i32.const 120)))
   (let $setf i64 (call $def_native (local.get $g) (cstring "Set") (i32.const 130)))
   ;; Map.prototype (reg 344) — methods shared via the prototype; instances hold only @@mk/@@mv
