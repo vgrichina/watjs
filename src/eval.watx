@@ -480,6 +480,42 @@
   (if (f64.le (local.get $v) (f64.const -2147483648)) (then (return (i32.const -2147483648))))
   (i32.trunc_f64_s (local.get $v)))
 
+;; a plain Array of `len` holes.
+(func $plain_array (param $len i32) (result i64) (effects)
+  (let $pa i32 (call $arr_new (i32.add (local.get $len) (i32.const 1))))
+  (call $arr_set_length (local.get $pa) (local.get $len))
+  (call $mk_arr (local.get $pa)))
+
+;; ArraySpeciesCreate(originalArray, length): the result-array constructor used by
+;; map/filter/slice/splice/concat. Default (non-array source, no @@species, or the
+;; species IS Array) → a plain Array; a custom constructor[@@species] is [[Construct]]
+;; ed with [length]; a non-constructor species → TypeError.
+(func $array_species_create (param $o i64) (param $len i32) (result i64) (effects)
+  (if (i32.eqz (call $is_array (local.get $o))) (then (return (call $plain_array (local.get $len)))))
+  (let $sctor i64 (call $get_prop (local.get $o) (call $mk_str (cstring "constructor"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (let $sspec i64 (call $v_undef))
+  (if (i32.or (call $is_object (local.get $sctor)) (i32.or (call $is_function (local.get $sctor)) (call $is_array (local.get $sctor))))
+    (then (set! $sspec (call $get_prop (local.get $sctor) (call $make_symbol (cstring "@@species") (cstring "Symbol.species"))))
+      (if (call $err) (then (return (call $v_undef))))))
+  (if (i32.or (call $is_undefined (local.get $sspec)) (call $is_null (local.get $sspec)))
+    (then (return (call $plain_array (local.get $len)))))
+  ;; the default Array constructor → plain array (skip the construct on the hot path)
+  (let $aslot i32 (call $scope_find_local (i32.load (i32.const 152)) (cstring "Array")))
+  (if (local.get $aslot)
+    (then (if (call $strict_eq (local.get $sspec) (i64.load (local.get $aslot))) (then (return (call $plain_array (local.get $len)))))))
+  (if (i32.eqz (call $is_constructor (local.get $sspec)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Array species is not a constructor")) (return (call $v_undef))))
+  (let $sab i32 (call $heap_alloc (i32.const 8)))
+  (i64.store (local.get $sab) (call $num (f64.convert_i32_s (local.get $len))))
+  (call $vm_construct (local.get $sspec) (i32.const 1) (local.get $sab)))
+
+;; CreateDataProperty(target, idx, val) for a species result (array or any object).
+(func $cdp (param $target i64) (param $idx i32) (param $val i64) (effects)
+  (if (call $is_array (local.get $target))
+    (then (call $arr_set (call $val_payload (local.get $target)) (local.get $idx) (local.get $val)))
+    (else (call $set_prop (local.get $target) (call $num (f64.convert_i32_s (local.get $idx))) (local.get $val)))))
+
 ;; Append one concat item to result `r`: spread it if IsConcatSpreadable (an array,
 ;; or an object whose @@isConcatSpreadable is truthy), else push it as one element.
 (func $concat_append (param $r i32) (param $item i64) (effects)
@@ -4299,7 +4335,9 @@
           ;; filter ArraySpeciesCreate: source length > 2^32-1 → RangeError
           (if (f64.gt (call $alike_len_f64 (local.get $thisv)) (f64.const 4294967295))
             (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
-          (let $r i32 (call $arr_new (i32.const 8)))
+          (let $rA i64 (call $array_species_create (local.get $thisv) (i32.const 0)))  ;; ArraySpeciesCreate(O, 0)
+          (if (call $err) (then (return (call $v_undef))))
+          (let $to i32 (i32.const 0))
           (let $i i32 (i32.const 0))
           (let $cargv i32 (call $heap_alloc (i32.const 24)))
           (block $fe (loop $fl (br_if $fe (i32.ge_s (local.get $i) (local.get $n)))
@@ -4310,10 +4348,10 @@
                 (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
                 (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
                 (if (call $truthy (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))  ;; thisArg = 2nd arg
-                  (then (call $arr_push (local.get $r) (local.get $el))))))
+                  (then (call $cdp (local.get $rA) (local.get $to) (local.get $el)) (set! $to (i32.add (local.get $to) (i32.const 1)))))))
             (br_if $fe (call $err))
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $fl)))
-          (return (call $mk_arr (local.get $r)))))
+          (return (local.get $rA))))
       (if (i32.eq (local.get $id) (i32.const 73))  ;; reduce(fn[, init])
         (then
           (let $racc i64 (call $v_undef))
@@ -5685,7 +5723,9 @@
           ;; id 25, shares this block but creates no result, so it must NOT throw.)
           (if (i32.and (i32.eq (local.get $id) (i32.const 26)) (f64.gt (call $alike_len_f64 (local.get $thisv)) (f64.const 4294967295)))
             (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
-          (let $r i32 (call $arr_new (i32.const 8)))
+          ;; map: result is ArraySpeciesCreate(O, len); forEach: no result
+          (let $rA i64 (if i64 (i32.eq (local.get $id) (i32.const 26)) (then (call $array_species_create (local.get $thisv) (local.get $n))) (else (call $v_undef))))
+          (if (call $err) (then (return (call $v_undef))))
           (let $i i32 (i32.const 0))
           (let $cargv i32 (call $heap_alloc (i32.const 24)))
           (block $fe (loop $fl
@@ -5696,12 +5736,11 @@
                 (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
                 (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
                 (let $res i64 (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))  ;; thisArg = 2nd arg
-                (if (i32.eq (local.get $id) (i32.const 26)) (then (call $arr_push (local.get $r) (local.get $res)))))
-              (else (if (i32.eq (local.get $id) (i32.const 26)) (then (call $arr_push (local.get $r) (call $v_hole))))))  ;; map preserves holes
+                (if (i32.eq (local.get $id) (i32.const 26)) (then (call $cdp (local.get $rA) (local.get $i) (local.get $res))))))  ;; map: define at index (holes stay absent)
             (br_if $fe (call $err))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $fl)))
-          (if (i32.eq (local.get $id) (i32.const 26)) (then (return (call $mk_arr (local.get $r)))))
+          (if (i32.eq (local.get $id) (i32.const 26)) (then (return (local.get $rA))))
           (return (call $v_undef))))
       (return (call $v_undef))))
   (call $v_undef))

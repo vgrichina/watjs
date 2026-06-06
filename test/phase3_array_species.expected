@@ -1,0 +1,7 @@
+map=2,4,6
+filter=1,3
+isArr=true
+species-map=S,10,20,30
+species-filter=S,2,3
+map-holes=false
+bad-species=TypeError
