@@ -869,6 +869,7 @@
       ;; a non-integer / negative / out-of-i32-range value → RangeError.
       (if (call $str_eq (local.get $askey) (cstring "length"))
         (then
+          (if (i32.eqz (call $arr_len_writable (local.get $a))) (then (call $set_fail) (return)))
           (let $lnv f64 (call $to_num (local.get $val)))
           (let $ln i32 (call $to_int_idx (local.get $lnv)))
           (if (i32.or (f64.ne (local.get $lnv) (f64.convert_i32_s (local.get $ln))) (f64.lt (local.get $lnv) (f64.const 0)))

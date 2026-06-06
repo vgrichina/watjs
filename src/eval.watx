@@ -1375,12 +1375,79 @@
   (if (i32.eqz (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "configurable"))))) (then (return (i32.const 1))))
   (i32.const 0))
 
+;; an array's length is writable unless made non-writable (@@lenNW marker) or frozen.
+(func $arr_len_writable (param $a i32) (result i32) (effects)
+  (let $p i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
+  (if (i32.eqz (local.get $p)) (then (return (i32.const 1))))
+  (if (call $scope_find_local (local.get $p) (cstring "@@lenNW")) (then (return (i32.const 0))))
+  (if (call $scope_find_local (local.get $p) (cstring "@@frozen")) (then (return (i32.const 0))))
+  (i32.const 1))
+
+;; Object.defineProperty(arr, "length", desc) — the ArraySetLength algorithm
+;; (ES 10.4.2.4 / 22.1.3.2). length is a non-configurable, non-enumerable data
+;; property; non-writability is tracked with the @@lenNW marker in @12.
+(func $arr_define_length (param $dpa i32) (param $de i64) (effects)
+  (let $hasVal i32 (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de))))
+  (let $hasWr i32 (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $de))))
+  (let $wantWr i32 (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "writable")))))
+  (let $hasCf i32 (call $truthy (call $js_in (call $mk_str (cstring "configurable")) (local.get $de))))
+  (let $wantCf i32 (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "configurable")))))
+  (let $hasEn i32 (call $truthy (call $js_in (call $mk_str (cstring "enumerable")) (local.get $de))))
+  (let $wantEn i32 (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "enumerable")))))
+  ;; ArraySetLength step order: when a value is present, ToUint32 + the RangeError
+  ;; come FIRST (before the configurable/writable invariant TypeErrors).
+  (let $dln i32 (i32.const 0))
+  (if (local.get $hasVal)
+    (then
+      (let $dlnv f64 (call $to_num (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
+      (set! $dln (call $to_int_idx (local.get $dlnv)))
+      (if (i32.or (f64.ne (local.get $dlnv) (f64.convert_i32_s (local.get $dln))) (f64.lt (local.get $dlnv) (f64.const 0)))
+        (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return)))))
+  ;; length is permanently non-configurable / non-enumerable
+  (if (i32.and (local.get $hasCf) (local.get $wantCf)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: length")) (return)))
+  (if (i32.and (local.get $hasEn) (local.get $wantEn)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: length")) (return)))
+  (let $curW i32 (call $arr_len_writable (local.get $dpa)))
+  ;; a non-writable length cannot be made writable again
+  (if (i32.and (i32.eqz (local.get $curW)) (i32.and (local.get $hasWr) (local.get $wantWr))) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: length")) (return)))
+  (if (i32.eqz (local.get $hasVal))
+    (then  ;; attribute-only change
+      (if (i32.and (local.get $hasWr) (i32.eqz (local.get $wantWr))) (then (call $scope_define (call $arr_props (local.get $dpa)) (cstring "@@lenNW") (call $v_true))))
+      (return)))
+  (let $oldLen i32 (call $arr_len (local.get $dpa)))
+  (if (i32.eqz (local.get $curW))
+    (then  ;; non-writable: only a no-op (same length) is allowed
+      (if (i32.ne (local.get $dln) (local.get $oldLen)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: length")) (return)))
+      (return)))
+  (if (i32.lt_s (local.get $dln) (local.get $oldLen))
+    (then  ;; shrink: delete indices high→low, stop+throw at a non-configurable one
+      (let $i i32 (i32.sub (local.get $oldLen) (i32.const 1)))
+      (let $p i32 (i32.load (i32.add (local.get $dpa) (i32.const 12))))
+      (block $done (loop $lp
+        (br_if $done (i32.lt_s (local.get $i) (local.get $dln)))
+        (if (local.get $p)
+          (then (let $sl i32 (call $scope_find_local (local.get $p) (call $num_to_str (f64.convert_i32_s (local.get $i)))))
+            (if (local.get $sl)
+              (then
+                (if (i32.eqz (call $entry_configurable (local.get $sl)))
+                  (then (call $arr_set_length (local.get $dpa) (i32.add (local.get $i) (i32.const 1)))
+                        (if (i32.and (local.get $hasWr) (i32.eqz (local.get $wantWr))) (then (call $scope_define (call $arr_props (local.get $dpa)) (cstring "@@lenNW") (call $v_true))))
+                        (call $throw_type (cstring "TypeError") (cstring "Cannot delete non-configurable array index")) (return)))
+                (drop (call $scope_delete (local.get $p) (call $num_to_str (f64.convert_i32_s (local.get $i)))))))))
+        (set! $i (i32.sub (local.get $i) (i32.const 1)))
+        (br $lp)))
+      (call $arr_set_length (local.get $dpa) (local.get $dln)))
+    (else (call $arr_set_length (local.get $dpa) (local.get $dln))))
+  (if (i32.and (local.get $hasWr) (i32.eqz (local.get $wantWr))) (then (call $scope_define (call $arr_props (local.get $dpa)) (cstring "@@lenNW") (call $v_true)))))
+
 (func $array_define_one (param $arrv i64) (param $ky i64) (param $de i64) (effects)
   (let $dpk i32 (call $to_str (local.get $ky)))
   (let $dpa i32 (call $val_payload (local.get $arrv)))
   (let $dpidx i32 (call $str_array_index (local.get $dpk)))
   (if (i32.ge_s (local.get $dpidx) (i32.const 0))
     (then
+      ;; adding a new index at/after length is refused when length is non-writable
+      (if (i32.and (i32.ge_s (local.get $dpidx) (call $arr_len (local.get $dpa))) (i32.eqz (call $arr_len_writable (local.get $dpa))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot add property, length is not writable")) (return)))
       ;; if the index already lives in the @12 scope (previously deopted), redefine it there
       (let $dpp i32 (i32.load (i32.add (local.get $dpa) (i32.const 12))))
       (if (local.get $dpp)
@@ -1401,14 +1468,7 @@
         (then (call $arr_set (local.get $dpa) (local.get $dpidx) (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
         (else (call $arr_set (local.get $dpa) (local.get $dpidx) (call $v_undef)))))
     (else (if (call $str_eq (local.get $dpk) (cstring "length"))
-      (then
-        (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
-          (then
-            (let $dlnv f64 (call $to_num (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
-            (let $dln i32 (call $to_int_idx (local.get $dlnv)))
-            (if (i32.or (f64.ne (local.get $dlnv) (f64.convert_i32_s (local.get $dln))) (f64.lt (local.get $dlnv) (f64.const 0)))
-              (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return)))
-            (call $arr_set_length (local.get $dpa) (local.get $dln)))))
+      (then (call $arr_define_length (local.get $dpa) (local.get $de)))
       (else (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de)))))))
 
 ;; URI unreserved: A-Za-z 0-9 - _ . ! ~ * ' ( )

@@ -1,0 +1,7 @@
+nw-value=true
+nw-index=true
+nw-assign=3
+shrink=2,undefined
+shrink-nc=true,3
+range-first=RangeError
+normal=1,1

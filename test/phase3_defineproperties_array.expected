@@ -1,5 +1,6 @@
 indices=[99,2,3,null,7] len=5
 resize=[99,2]
+shrink-nc=true len=3
 range-neg=true
 range-undef=true
 named=5
