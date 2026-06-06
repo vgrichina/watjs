@@ -3361,6 +3361,11 @@
           (let $fas i32 (call $arr_props (call $val_payload (local.get $fo))))
           (call $scope_define_attr (local.get $fas) (cstring "@@frozen") (call $v_true) (i32.const 0))
           (call $scope_define_attr (local.get $fas) (cstring "@@noext") (call $v_true) (i32.const 0))))
+      (if (call $is_function (local.get $fo))  ;; freeze a function: mark its own-prop scope
+        (then
+          (let $ffs i32 (call $fn_def_scope (local.get $fo)))
+          (call $scope_define_attr (local.get $ffs) (cstring "@@frozen") (call $v_true) (i32.const 0))
+          (call $scope_define_attr (local.get $ffs) (cstring "@@noext") (call $v_true) (i32.const 0))))
       (return (local.get $fo))))
   ;; Object.preventExtensions(o) (162) / seal(o) (164)
   (if (i32.or (i32.eq (local.get $id) (i32.const 162)) (i32.eq (local.get $id) (i32.const 164)))
@@ -3394,6 +3399,11 @@
           (let $xas i32 (call $arr_props (call $val_payload (local.get $xo))))
           (if (i32.eq (local.get $id) (i32.const 164)) (then (call $scope_define_attr (local.get $xas) (cstring "@@sealed") (call $v_true) (i32.const 0))))
           (call $scope_define_attr (local.get $xas) (cstring "@@noext") (call $v_true) (i32.const 0))))
+      (if (call $is_function (local.get $xo))  ;; seal/preventExtensions a function
+        (then
+          (let $xfs2 i32 (call $fn_def_scope (local.get $xo)))
+          (if (i32.eq (local.get $id) (i32.const 164)) (then (call $scope_define_attr (local.get $xfs2) (cstring "@@sealed") (call $v_true) (i32.const 0))))
+          (call $scope_define_attr (local.get $xfs2) (cstring "@@noext") (call $v_true) (i32.const 0))))
       (return (local.get $xo))))
   ;; Object.isExtensible(o) (163)
   (if (i32.eq (local.get $id) (i32.const 163))
@@ -3409,6 +3419,8 @@
             (else (return (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $xtg)) (call $v_undef)))))))
       (if (call $is_array (local.get $xo))
         (then (let $xap i32 (i32.load (i32.add (call $val_payload (local.get $xo)) (i32.const 12)))) (return (call $mk_bool (i32.eqz (if i32 (local.get $xap) (then (call $scope_find_local (local.get $xap) (cstring "@@noext"))) (else (i32.const 0))))))))
+      (if (call $is_function (local.get $xo))  ;; functions are extensible unless preventExtensions'd
+        (then (return (call $mk_bool (i32.eqz (call $scope_find_local (call $fn_def_scope (local.get $xo)) (cstring "@@noext")))))))
       (if (i32.eqz (call $is_object (local.get $xo))) (then (return (call $v_false))))
       (return (call $mk_bool (i32.eqz (call $scope_find_local (call $val_payload (local.get $xo)) (cstring "@@noext")))))))
   ;; Object.isSealed(o) (165): non-extensible and every own prop non-configurable.
@@ -3418,6 +3430,11 @@
       (let $xo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (call $is_array (local.get $xo))  ;; array isSealed: @@sealed marker (and length≥0 always); empty arrays w/ @@sealed
         (then (let $xap i32 (i32.load (i32.add (call $val_payload (local.get $xo)) (i32.const 12)))) (return (call $mk_bool (i32.and (i32.ne (local.get $xap) (i32.const 0)) (if i32 (local.get $xap) (then (i32.ne (call $scope_find_local (local.get $xap) (cstring "@@sealed")) (i32.const 0))) (else (i32.const 0))))))))
+      (if (call $is_function (local.get $xo))
+        (then
+          (let $xfp i32 (call $fn_def_scope (local.get $xo)))
+          (if (i32.eqz (call $scope_find_local (local.get $xfp) (cstring "@@noext"))) (then (return (call $v_false))))
+          (return (call $mk_bool (i32.ne (call $scope_find_local (local.get $xfp) (cstring "@@sealed")) (i32.const 0))))))
       (if (i32.eqz (call $is_object (local.get $xo))) (then (return (call $v_true))))
       (let $xsc i32 (call $val_payload (local.get $xo)))
       (if (i32.eqz (call $scope_find_local (local.get $xsc) (cstring "@@noext"))) (then (return (call $v_false))))
@@ -3435,8 +3452,29 @@
       (let $io i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (call $is_array (local.get $io))  ;; array isFrozen: @@frozen marker present
         (then (let $iap i32 (i32.load (i32.add (call $val_payload (local.get $io)) (i32.const 12)))) (return (call $mk_bool (if i32 (local.get $iap) (then (i32.ne (call $scope_find_local (local.get $iap) (cstring "@@frozen")) (i32.const 0))) (else (i32.const 0)))))))
+      ;; functions: extensible by default → not frozen unless preventExtensions'd;
+      ;; fn_def_scope picks the right own-prop scope (VM fn → @16, native → @12).
+      (if (call $is_function (local.get $io))
+        (then
+          (let $ifp i32 (call $fn_def_scope (local.get $io)))
+          (if (i32.eqz (call $scope_find_local (local.get $ifp) (cstring "@@noext"))) (then (return (call $v_false))))
+          (return (call $mk_bool (i32.ne (call $scope_find_local (local.get $ifp) (cstring "@@frozen")) (i32.const 0))))))
       (if (i32.eqz (call $is_object (local.get $io))) (then (return (call $v_true))))  ;; non-objects are "frozen"
-      (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $io)) (cstring "@@frozen")) (i32.const 0))))))
+      ;; computed: non-extensible AND every own prop non-configurable AND every
+      ;; own DATA prop non-writable (internal @@-markers are non-config+non-writable
+      ;; so they don't disturb the scan).
+      (let $isc i32 (call $val_payload (local.get $io)))
+      (if (i32.eqz (call $scope_find_local (local.get $isc) (cstring "@@noext"))) (then (return (call $v_false))))
+      (let $icnt i32 (call $scope_count (local.get $isc)))
+      (let $ii i32 (i32.const 0))
+      (block $ife (loop $ifl
+        (br_if $ife (i32.ge_s (local.get $ii) (local.get $icnt)))
+        (let $islot i32 (i32.add (call $scope_entry (local.get $isc) (local.get $ii)) (i32.const 8)))
+        (if (call $entry_configurable (local.get $islot)) (then (return (call $v_false))))
+        (if (i32.and (i32.eqz (call $entry_is_accessor (local.get $islot))) (i32.ne (call $entry_writable (local.get $islot)) (i32.const 0))) (then (return (call $v_false))))
+        (set! $ii (i32.add (local.get $ii) (i32.const 1)))
+        (br $ifl)))
+      (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 169))  ;; Object.is(a, b) — SameValue
     (then
       (let $isa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))

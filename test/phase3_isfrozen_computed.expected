@@ -1,0 +1,10 @@
+Object-frozen=false
+Object-sealed=false
+Object-ext=true
+child-frozen=true
+child-sealed=true
+o-frozen=false
+o-sealed=true
+fn-frozen=true,false
+fn-sealed=true,false
+fn-plain=true,false
