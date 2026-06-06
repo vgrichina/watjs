@@ -289,6 +289,13 @@
   (if (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 70))) (then (return (i32.add (i32.sub (local.get $c) (i32.const 65)) (i32.const 10)))))
   (i32.const -1))
 
+;; digit value for radix 2..36: 0-9 → 0..9, A-Z/a-z → 10..35, else -1.
+(func $digit36 (param $c i32) (result i32) (effects)
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))) (then (return (i32.sub (local.get $c) (i32.const 48)))))
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 122))) (then (return (i32.add (i32.sub (local.get $c) (i32.const 97)) (i32.const 10)))))
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 90))) (then (return (i32.add (i32.sub (local.get $c) (i32.const 65)) (i32.const 10)))))
+  (i32.const -1))
+
 ;; Decode a raw string-literal body [src,len) (between quotes) into a heap Str,
 ;; processing escapes: \n \t \r \b \f \v \0 \\ \" \' \` \/ \xHH \uHHHH.
 (func $decode_str (param $src i32) (param $len i32) (result i32) (effects)

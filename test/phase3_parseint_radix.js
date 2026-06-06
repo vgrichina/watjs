@@ -1,0 +1,10 @@
+print(parseInt("\t\t-1"));
+print(parseInt(" 42"));
+print(parseInt("Z", 36));
+print(parseInt("zz", 36));
+print(parseInt("11", 4294967298));
+print(parseInt("5", 1));
+print(parseInt("5", 37));
+print(parseInt("0x1F"));
+print(parseInt("1Z!", 36));
+print(parseInt("10", 2));
