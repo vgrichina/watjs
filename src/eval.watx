@@ -428,7 +428,10 @@
       (let $ai i32 (i32.const 0))
       (block $ie (loop $il
         (br_if $ie (i32.ge_s (local.get $ai) (local.get $an)))
-        (if (call $arr_has (local.get $aa) (local.get $ai))  ;; skip holes
+        ;; raw dense presence only — a deopted index reads as a hole here and is
+        ;; emitted (with its real enumerable bit) by push_scope_keys over @12 below,
+        ;; so it isn't double-counted.
+        (if (i32.eqz (call $is_hole (i64.load (call $arr_slot (local.get $aa) (local.get $ai)))))
           (then (call $arr_push (local.get $out) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $ai)))))))
         (set! $ai (i32.add (local.get $ai) (i32.const 1))) (br $il)))
       ;; `length` is a non-enumerable own prop — getOwnPropertyNames includes it
@@ -2589,8 +2592,25 @@
   ;; Object.prototype.propertyIsEnumerable(key) — this = the object
   (if (i32.eq (local.get $id) (i32.const 159))
     (then
+      (let $pk i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $is_array (local.get $thisv))
+        (then
+          (let $pa i32 (call $val_payload (local.get $thisv)))
+          (let $pps i32 (i32.load (i32.add (local.get $pa) (i32.const 12))))
+          ;; @12 entry (deopted index or named prop) carries its own enumerable bit
+          (if (local.get $pps)
+            (then (let $psl i32 (call $scope_find_local (local.get $pps) (local.get $pk)))
+              (if (local.get $psl) (then (return (call $mk_bool (call $entry_enumerable (local.get $psl))))))))
+          ;; a present dense element index is enumerable
+          (let $pidx i32 (call $str_array_index (local.get $pk)))
+          (if (i32.ge_s (local.get $pidx) (i32.const 0)) (then (return (call $mk_bool (call $arr_has (local.get $pa) (local.get $pidx))))))
+          (return (call $v_false))))
+      (if (call $is_string (local.get $thisv))
+        (then
+          (let $sidx i32 (call $str_array_index (local.get $pk)))
+          (return (call $mk_bool (i32.and (i32.ge_s (local.get $sidx) (i32.const 0)) (i32.lt_s (local.get $sidx) (call $str_len (call $val_payload (local.get $thisv)))))))))
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
-      (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (local.get $pk)))
       (if (i32.eqz (local.get $pslot)) (then (return (call $v_false))))
       (return (call $mk_bool (call $entry_enumerable (local.get $pslot))))))
   ;; Object.prototype.isPrototypeOf(v) — is `this` anywhere in v's prototype chain?
