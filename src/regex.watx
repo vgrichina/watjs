@@ -220,25 +220,23 @@
     (then (if (i32.eqz (local.get $spos)) (then (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 1)) (local.get $s) (local.get $slen) (local.get $spos)))) (else (return (i32.const -1))))))
   (if (i32.eq (local.get $c) (i32.const 36))  ;; $
     (then (if (i32.eq (local.get $spos) (local.get $slen)) (then (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 1)) (local.get $s) (local.get $slen) (local.get $spos)))) (else (return (i32.const -1))))))
-  ;; backreference \1..\9 — match the text previously captured by that group
+  ;; backreference \1..\9 (numbered) or \k<name> (named)
   (if (i32.eq (local.get $c) (i32.const 92))  ;; '\'
     (then
       (let $bnc i32 (call $re_pb (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 1))))
       (if (i32.and (i32.ge_s (local.get $bnc) (i32.const 49)) (i32.le_s (local.get $bnc) (i32.const 57)))  ;; '1'..'9'
         (then
-          (let $bgn i32 (i32.sub (local.get $bnc) (i32.const 48)))
-          (let $bst i32 (i32.load (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $bgn) (i32.const 1)) (i32.const 8)))))
-          (let $ben i32 (i32.load (i32.add (i32.load (i32.const 280)) (i32.add (i32.mul (i32.sub (local.get $bgn) (i32.const 1)) (i32.const 8)) (i32.const 4)))))
-          ;; an unset/empty group backref matches the empty string
-          (if (i32.lt_s (local.get $bst) (i32.const 0)) (then (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2)) (local.get $s) (local.get $slen) (local.get $spos)))))
-          (let $blen i32 (i32.sub (local.get $ben) (local.get $bst)))
-          (if (i32.gt_s (i32.add (local.get $spos) (local.get $blen)) (local.get $slen)) (then (return (i32.const -1))))
-          (let $bi i32 (i32.const 0))
-          (block $bce (loop $bcl
-            (br_if $bce (i32.ge_s (local.get $bi) (local.get $blen)))
-            (if (i32.eqz (call $re_eqc (i32.load8_u (i32.add (local.get $s) (i32.add (local.get $spos) (local.get $bi)))) (i32.load8_u (i32.add (local.get $s) (i32.add (local.get $bst) (local.get $bi)))))) (then (return (i32.const -1))))
-            (set! $bi (i32.add (local.get $bi) (i32.const 1))) (br $bcl)))
-          (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2)) (local.get $s) (local.get $slen) (i32.add (local.get $spos) (local.get $blen))))))))
+          (let $br i32 (call $re_match_backref (i32.sub (local.get $bnc) (i32.const 48)) (local.get $s) (local.get $slen) (local.get $spos)))
+          (if (i32.lt_s (local.get $br) (i32.const 0)) (then (return (i32.const -1))))
+          (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2)) (local.get $s) (local.get $slen) (local.get $br)))))
+      (if (i32.and (i32.eq (local.get $bnc) (i32.const 107)) (i32.eq (call $re_pb (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2))) (i32.const 60)))  ;; \k<
+        (then
+          (let $kns i32 (i32.add (local.get $ppos) (i32.const 3)))
+          (let $kne i32 (local.get $kns))
+          (block $kne2 (loop $knl (br_if $kne2 (i32.or (i32.ge_s (local.get $kne) (local.get $plen)) (i32.eq (i32.load8_u (i32.add (local.get $p) (local.get $kne))) (i32.const 62)))) (set! $kne (i32.add (local.get $kne) (i32.const 1))) (br $knl)))
+          (let $kr i32 (call $re_match_backref (call $re_name_to_gidx (local.get $p) (local.get $kns) (local.get $kne)) (local.get $s) (local.get $slen) (local.get $spos)))
+          (if (i32.lt_s (local.get $kr) (i32.const 0)) (then (return (i32.const -1))))
+          (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $kne) (i32.const 1)) (local.get $s) (local.get $slen) (local.get $kr)))))))
   (if (i32.eq (local.get $c) (i32.const 40))  ;; '(' group (capturing, (?:non-capturing), or (?=/(?! lookahead)
     (then
       (let $gend i32 (call $re_group_end (local.get $p) (local.get $plen) (local.get $ppos)))  ;; ')' position
@@ -451,6 +449,40 @@
   (if (i32.le_s (local.get $gidx) (i32.const 0)) (then (return)))  ;; non-capturing group → no slot
   (i32.store (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $gidx) (i32.const 1)) (i32.const 8))) (local.get $start))
   (i32.store (i32.add (i32.load (i32.const 280)) (i32.add (i32.mul (i32.sub (local.get $gidx) (i32.const 1)) (i32.const 8)) (i32.const 4))) (local.get $end)))
+
+;; match a backreference to capture group `gidx` at `spos`; returns the end
+;; position (>= spos), or -1 on mismatch. An unset group matches the empty string.
+(func $re_match_backref (param $gidx i32) (param $s i32) (param $slen i32) (param $spos i32) (result i32) (effects)
+  (if (i32.le_s (local.get $gidx) (i32.const 0)) (then (return (local.get $spos))))
+  (let $bst i32 (i32.load (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $gidx) (i32.const 1)) (i32.const 8)))))
+  (let $ben i32 (i32.load (i32.add (i32.load (i32.const 280)) (i32.add (i32.mul (i32.sub (local.get $gidx) (i32.const 1)) (i32.const 8)) (i32.const 4)))))
+  (if (i32.lt_s (local.get $bst) (i32.const 0)) (then (return (local.get $spos))))
+  (let $blen i32 (i32.sub (local.get $ben) (local.get $bst)))
+  (if (i32.gt_s (i32.add (local.get $spos) (local.get $blen)) (local.get $slen)) (then (return (i32.const -1))))
+  (let $bi i32 (i32.const 0))
+  (block $bce (loop $bcl
+    (br_if $bce (i32.ge_s (local.get $bi) (local.get $blen)))
+    (if (i32.eqz (call $re_eqc (i32.load8_u (i32.add (local.get $s) (i32.add (local.get $spos) (local.get $bi)))) (i32.load8_u (i32.add (local.get $s) (i32.add (local.get $bst) (local.get $bi)))))) (then (return (i32.const -1))))
+    (set! $bi (i32.add (local.get $bi) (i32.const 1))) (br $bcl)))
+  (i32.add (local.get $spos) (local.get $blen)))
+
+;; group index whose recorded name equals the pattern bytes p[ns,ne), else 0.
+(func $re_name_to_gidx (param $p i32) (param $ns i32) (param $ne i32) (result i32) (effects)
+  (let $nl i32 (i32.sub (local.get $ne) (local.get $ns)))
+  (let $g i32 (i32.const 1))
+  (block $e (loop $l
+    (br_if $e (i32.gt_s (local.get $g) (i32.load (i32.const 284))))
+    (let $nm i32 (i32.load (i32.add (i32.load (i32.const 288)) (i32.mul (local.get $g) (i32.const 4)))))
+    (if (local.get $nm)
+      (then (if (i32.eq (call $str_len (local.get $nm)) (local.get $nl))
+        (then
+          (let $eq i32 (i32.const 1)) (let $k i32 (i32.const 0))
+          (block $ce (loop $cl (br_if $ce (i32.ge_s (local.get $k) (local.get $nl)))
+            (if (i32.ne (call $str_byte (local.get $nm) (local.get $k)) (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $ns) (local.get $k))))) (then (set! $eq (i32.const 0)) (br $ce)))
+            (set! $k (i32.add (local.get $k) (i32.const 1))) (br $cl)))
+          (if (local.get $eq) (then (return (local.get $g))))))))
+    (set! $g (i32.add (local.get $g) (i32.const 1))) (br $l)))
+  (i32.const 0))
 
 ;; define `groups` on a match-result's @12 scope `rprops`: undefined when the
 ;; pattern has no named groups, else a null-prototype object {name: captureValue}.
