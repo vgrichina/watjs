@@ -1,0 +1,8 @@
+ctor-undef=(?:)
+ctor-empty=(?:)
+exec-undef=
+match-noarg=[""]
+match-undef=[""]
+search-noarg=0
+copy=ab+
+normal=true

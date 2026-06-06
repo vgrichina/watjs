@@ -4515,7 +4515,12 @@
   ;; --- regex (100 RegExp, 101 test) and string regex methods (102 match,103 replace,104 search) ---
   (if (i32.eq (local.get $id) (i32.const 100))  ;; RegExp(pattern[,flags])
     (then
-      (let $pat i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))) (else (cstring ""))))
+      ;; undefined (or absent) pattern → empty source (NOT the string "undefined");
+      ;; a RegExp argument copies its source.
+      (let $pa0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $pat i32 (if i32 (i32.or (i32.lt_s (local.get $argc) (i32.const 1)) (call $is_undefined (local.get $pa0)))
+        (then (cstring ""))
+        (else (if i32 (call $is_regexp (local.get $pa0)) (then (call $re_pat_of (local.get $pa0))) (else (call $to_str (local.get $pa0)))))))
       (let $flg i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (cstring ""))))
       ;; validate flags: only g/i/m/s/u/y, no duplicates → SyntaxError
       (let $fl i32 (call $str_len (local.get $flg)))
@@ -4702,7 +4707,8 @@
       (let $sub i32 (call $to_str (local.get $thisv)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (call $re_apply_flags (local.get $a0))
-      (let $pat i32 (call $re_pat_of (local.get $a0)))
+      ;; match/replace/search with undefined → RegExp(undefined) = empty pattern (NOT "undefined")
+      (let $pat i32 (if i32 (call $is_undefined (local.get $a0)) (then (cstring "")) (else (call $re_pat_of (local.get $a0)))))
       (let $start i32 (call $re_search_str (local.get $pat) (local.get $sub)))
       (if (i32.eq (local.get $id) (i32.const 104))  ;; search → index
         (then (return (call $num (f64.convert_i32_s (local.get $start))))))
