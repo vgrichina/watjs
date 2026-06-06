@@ -1,0 +1,9 @@
+len=5
+0in=false
+lastin=false
+hasOwn-last=false
+forEach=0
+reduce-throws=TypeError
+join=,,,,
+mapLen=5
+after-set=true,false

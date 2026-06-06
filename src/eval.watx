@@ -4857,7 +4857,7 @@
             (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
           (let $arlen i32 (i32.trunc_f64_u (local.get $arnf)))
           (let $arx i32 (call $arr_new (i32.add (local.get $arlen) (i32.const 1))))
-          (if (i32.gt_s (local.get $arlen) (i32.const 0)) (then (call $arr_set (local.get $arx) (i32.sub (local.get $arlen) (i32.const 1)) (call $v_undef))))
+          (call $arr_set_length (local.get $arx) (local.get $arlen))  ;; length n, all holes (NOT a trailing undefined)
           (return (call $mk_arr (local.get $arx)))))
       (let $arx2 i32 (call $arr_new (i32.const 8)))
       (let $i i32 (i32.const 0))
