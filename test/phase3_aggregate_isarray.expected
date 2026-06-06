@@ -1,0 +1,9 @@
+type=function
+errors=1,2,3
+name=AggregateError
+instanceof=true
+toString=AggregateError: msg
+no-msg=
+isarray-arr-proxy=true
+isarray-obj-proxy=false
+any=true,1,2
