@@ -1,0 +1,11 @@
+proto-then=function
+all-fn=function
+chain=a5,b9,cE,dR,eboom
+all=1,2,3
+all-rej=bad
+race=first
+settled=[{"status":"fulfilled","value":1},{"status":"rejected","reason":2}]
+any=7
+async=5
+await=11
+await-reject=caught:err

@@ -3263,8 +3263,63 @@
     (then (return (call $vm_gen_result (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 151))  ;; Promise.resolve(v)
     (then (return (call $vm_promise (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
-  (if (i32.eq (local.get $id) (i32.const 152))  ;; promise.then(cb)
-    (then (return (call $vm_promise_then (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 152))  ;; promise.then(onFulfilled, onRejected)
+    (then (return (call $promise_then (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
+  (if (i32.eq (local.get $id) (i32.const 408))  ;; promise.catch(onRejected) = then(undefined, onRejected)
+    (then (return (call $promise_then (local.get $thisv) (call $v_undef) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 409))  ;; promise.finally(onFinally)
+    (then
+      (let $pfin i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_function (local.get $pfin))
+        (then
+          (drop (call $call_val (local.get $pfin) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $v_undef)))
+          (if (call $err) (then (let $pfe i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $pfe)))))))
+      (return (local.get $thisv))))  ;; pass the original promise through
+  (if (i32.eq (local.get $id) (i32.const 414))  ;; Promise.reject(r)
+    (then (return (call $mk_promise (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 415))  ;; executor resolve(v)
+    (then (if (i32.eqz (i32.load (i32.const 612))) (then (i32.store (i32.const 612) (i32.const 1)) (i64.store (i32.const 616) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 416))  ;; executor reject(r)
+    (then (if (i32.eqz (i32.load (i32.const 612))) (then (i32.store (i32.const 612) (i32.const 2)) (i64.store (i32.const 616) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (return (call $v_undef))))
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 410)) (i32.le_s (local.get $id) (i32.const 413)))  ;; Promise.all/race/allSettled/any
+    (then
+      (let $pitems i32 (call $arr_new (i32.const 8)))
+      (call $spread_into (local.get $pitems) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $pn i32 (call $arr_len (local.get $pitems)))
+      (let $pacc i32 (call $arr_new (i32.const 8)))  ;; values / settled-objects / reasons
+      (let $pi i32 (i32.const 0))
+      (block $pae (loop $pal
+        (br_if $pae (i32.ge_s (local.get $pi) (local.get $pn)))
+        (let $pe i64 (call $vm_promise (call $arr_get (local.get $pitems) (local.get $pi))))  ;; Promise.resolve each
+        (let $pes i32 (call $promise_state (local.get $pe)))
+        (let $pev i64 (call $get_prop (local.get $pe) (call $mk_str (cstring "@@pval"))))
+        (if (i32.eq (local.get $id) (i32.const 411))  ;; race → first settled wins
+          (then (return (local.get $pe))))
+        (if (i32.eq (local.get $id) (i32.const 410))  ;; all → first rejection short-circuits, else collect values
+          (then
+            (if (i32.eq (local.get $pes) (i32.const 2)) (then (return (call $mk_promise (i32.const 2) (local.get $pev)))))
+            (call $arr_push (local.get $pacc) (local.get $pev))))
+        (if (i32.eq (local.get $id) (i32.const 413))  ;; any → first fulfilled wins, else collect reasons
+          (then
+            (if (i32.eq (local.get $pes) (i32.const 1)) (then (return (call $mk_promise (i32.const 1) (local.get $pev)))))
+            (call $arr_push (local.get $pacc) (local.get $pev))))
+        (if (i32.eq (local.get $id) (i32.const 412))  ;; allSettled → {status, value|reason}
+          (then
+            (let $pso i32 (call $obj_new (i32.const 4)))
+            (if (i32.eq (local.get $pes) (i32.const 1))
+              (then (call $scope_define (local.get $pso) (cstring "status") (call $mk_str (cstring "fulfilled"))) (call $scope_define (local.get $pso) (cstring "value") (local.get $pev)))
+              (else (call $scope_define (local.get $pso) (cstring "status") (call $mk_str (cstring "rejected"))) (call $scope_define (local.get $pso) (cstring "reason") (local.get $pev))))
+            (call $arr_push (local.get $pacc) (call $mk_obj (local.get $pso)))))
+        (set! $pi (i32.add (local.get $pi) (i32.const 1)))
+        (br $pal)))
+      (if (i32.eq (local.get $id) (i32.const 411)) (then (return (call $mk_promise (i32.const 0) (call $v_undef)))))  ;; race on empty → pending
+      (if (i32.eq (local.get $id) (i32.const 413))  ;; any: all rejected → AggregateError
+        (then
+          (let $age i64 (call $make_error (cstring "AggregateError") (cstring "All promises were rejected")))
+          (if (call $is_object (local.get $age)) (then (call $scope_define (call $val_payload (local.get $age)) (cstring "errors") (call $mk_arr (local.get $pacc)))))
+          (return (call $mk_promise (i32.const 2) (local.get $age)))))
+      (return (call $mk_promise (i32.const 1) (call $mk_arr (local.get $pacc))))))  ;; all / allSettled → fulfilled(array)
   (if (i32.eq (local.get $id) (i32.const 93))  ;; obj.hasOwnProperty(key)
     (then
       (let $ks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -3703,28 +3758,30 @@
       (return (call $mk_str (call $num_to_exponential (local.get $exv) (local.get $exd))))))
   (if (i32.eq (local.get $id) (i32.const 172))  ;; String.prototype.localeCompare(o) — byte-order compare
     (then (return (call $num (f64.convert_i32_s (call $str_cmp (call $to_str (local.get $thisv)) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
-  (if (i32.eq (local.get $id) (i32.const 192))  ;; new Promise(executor) — synchronous resolved-value model
+  (if (i32.eq (local.get $id) (i32.const 192))  ;; new Promise(executor) — synchronous model
     (then
-      (let $pp i32 (call $obj_new (i32.const 4)))
-      (call $scope_define (local.get $pp) (cstring "@@promise") (call $v_true))
-      (call $scope_define (local.get $pp) (cstring "@@pval") (call $v_undef))
-      (call $scope_define_attr (local.get $pp) (cstring "then") (call $mk_native (i32.const 152) (cstring "then")) (i32.const 12))  ;; DontEnum
-      (let $ppv i64 (call $mk_obj (local.get $pp)))
-      ;; resolve = a bound function (target=native193, this=the promise)
-      (let $prf i32 (call $heap_alloc (i32.const 40)))
-      (i32.store (local.get $prf) (i32.const 1448232540))  ;; bound magic
-      (i32.store (i32.add (local.get $prf) (i32.const 8)) (i32.const 0))
-      (i32.store (i32.add (local.get $prf) (i32.const 12)) (i32.const 0))
-      (i64.store (i32.add (local.get $prf) (i32.const 16)) (local.get $ppv))   ;; boundThis = promise
-      (i64.store (i32.add (local.get $prf) (i32.const 24)) (call $mk_native (i32.const 193) (cstring "resolve")))
-      (i32.store (i32.add (local.get $prf) (i32.const 32)) (i32.const 0))
-      (i32.store (i32.add (local.get $prf) (i32.const 36)) (call $heap_alloc (i32.const 8)))
       (let $pexec i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_function (local.get $pexec)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Promise resolver is not a function")) (return (call $v_undef))))
+      ;; resolve/reject write the settle-state regs (612 state, 616 value); save/
+      ;; restore around the executor so nested `new Promise` calls don't clobber it.
+      (let $psave_st i32 (i32.load (i32.const 612)))
+      (let $psave_v i64 (i64.load (i32.const 616)))
+      (i32.store (i32.const 612) (i32.const 0))
       (let $peav i32 (call $heap_alloc (i32.const 16)))
-      (i64.store (local.get $peav) (call $mk_fn (local.get $prf)))
-      (i64.store (i32.add (local.get $peav) (i32.const 8)) (call $mk_fn (local.get $prf)))  ;; reject = same (rejection ignored)
-      (if (call $is_function (local.get $pexec)) (then (drop (call $call_val (local.get $pexec) (i32.const 2) (local.get $peav) (call $v_undef)))))
-      (return (local.get $ppv))))
+      (i64.store (local.get $peav) (call $mk_native (i32.const 415) (cstring "resolve")))
+      (i64.store (i32.add (local.get $peav) (i32.const 8)) (call $mk_native (i32.const 416) (cstring "reject")))
+      (drop (call $call_val (local.get $pexec) (i32.const 2) (local.get $peav) (call $v_undef)))
+      (let $presult i64 (call $v_undef))
+      (if (call $err)  ;; executor threw → rejected
+        (then (let $pte i64 (call $err_val)) (call $set_err (i32.const 0)) (set! $presult (call $mk_promise (i32.const 2) (local.get $pte))))
+        (else
+          (let $pst i32 (i32.load (i32.const 612)))
+          (if (i32.eq (local.get $pst) (i32.const 1)) (then (set! $presult (call $vm_promise (i64.load (i32.const 616)))))      ;; resolved (adopt thenable)
+            (else (if (i32.eq (local.get $pst) (i32.const 2)) (then (set! $presult (call $mk_promise (i32.const 2) (i64.load (i32.const 616)))))  ;; rejected
+              (else (set! $presult (call $mk_promise (i32.const 0) (call $v_undef)))))))))  ;; never settled → pending
+      (i32.store (i32.const 612) (local.get $psave_st)) (i64.store (i32.const 616) (local.get $psave_v))  ;; restore
+      (return (local.get $presult))))
   (if (i32.eq (local.get $id) (i32.const 193))  ;; promise resolve(v) (this = the promise) — set @@pval
     (then
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@pval")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -6828,10 +6885,22 @@
   (call $scope_define (local.get $dproto) (cstring "toLocaleTimeString") (call $mk_native (i32.const 267) (cstring "toLocaleTimeString")))
   (call $scope_define (local.get $dproto) (cstring "getYear") (call $mk_native (i32.const 260) (cstring "getYear")))
   (call $scope_define (local.get $dproto) (cstring "setYear") (call $mk_native (i32.const 261) (cstring "setYear")))
-  ;; Promise constructor (synchronous resolved-value model; see vm.watx)
+  ;; Promise constructor (synchronous model; see vm.watx) + Promise.prototype (reg 608)
   (let $promf i64 (call $def_native (local.get $g) (cstring "Promise") (i32.const 192)))
+  (let $promproto i32 (call $obj_new (i32.const 8)))
+  (i32.store (i32.const 608) (local.get $promproto))
+  (call $scope_define_attr (local.get $promproto) (cstring "then") (call $mk_native (i32.const 152) (cstring "then")) (i32.const 12))
+  (call $scope_define_attr (local.get $promproto) (cstring "catch") (call $mk_native (i32.const 408) (cstring "catch")) (i32.const 12))
+  (call $scope_define_attr (local.get $promproto) (cstring "finally") (call $mk_native (i32.const 409) (cstring "finally")) (i32.const 12))
+  (call $scope_define_attr (local.get $promproto) (cstring "@@toStringTag") (call $mk_str (cstring "Promise")) (i32.const 4))
+  (call $scope_define_attr (local.get $promproto) (cstring "constructor") (local.get $promf) (i32.const 12))
+  (call $set_prop (local.get $promf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $promproto)))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "resolve")) (call $mk_native (i32.const 151) (cstring "resolve")))
-  (call $set_prop (local.get $promf) (call $mk_str (cstring "reject")) (call $mk_native (i32.const 151) (cstring "reject")))
+  (call $set_prop (local.get $promf) (call $mk_str (cstring "reject")) (call $mk_native (i32.const 414) (cstring "reject")))
+  (call $set_prop (local.get $promf) (call $mk_str (cstring "all")) (call $mk_native (i32.const 410) (cstring "all")))
+  (call $set_prop (local.get $promf) (call $mk_str (cstring "race")) (call $mk_native (i32.const 411) (cstring "race")))
+  (call $set_prop (local.get $promf) (call $mk_str (cstring "allSettled")) (call $mk_native (i32.const 412) (cstring "allSettled")))
+  (call $set_prop (local.get $promf) (call $mk_str (cstring "any")) (call $mk_native (i32.const 413) (cstring "any")))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "of")) (call $mk_native (i32.const 110) (cstring "of")))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 111) (cstring "from")))
   ;; Math object with methods + constants

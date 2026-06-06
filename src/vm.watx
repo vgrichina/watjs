@@ -4206,21 +4206,53 @@
 (func $vm_is_promise (param $v i64) (result i32) (effects)
   (if (i32.eqz (call $is_object (local.get $v))) (then (return (i32.const 0))))
   (i32.ne (call $scope_find_local (call $val_payload (local.get $v)) (cstring "@@promise")) (i32.const 0)))
-(func $vm_promise (param $v i64) (result i64) (effects)  ;; wrap a value in a resolved promise (idempotent)
-  (if (call $vm_is_promise (local.get $v)) (then (return (local.get $v))))
-  (let $o i32 (call $obj_new (i32.const 4)))
+;; promise object: @@promise, @@pstate (0 pending/1 fulfilled/2 rejected), @@pval.
+;; Synchronous model (no microtask queue): executors/handlers run eagerly.
+(func $mk_promise (param $state i32) (param $val i64) (result i64) (effects)
+  (let $o i32 (call $obj_new (i32.const 6)))
+  (if (i32.load (i32.const 608)) (then (i32.store (local.get $o) (i32.load (i32.const 608)))))  ;; [[Prototype]] = Promise.prototype
   (call $scope_define (local.get $o) (cstring "@@promise") (call $v_true))
-  (call $scope_define (local.get $o) (cstring "@@pval") (local.get $v))
-  (call $scope_define_attr (local.get $o) (cstring "then") (call $mk_native (i32.const 152) (cstring "then")) (i32.const 12))  ;; DontEnum
+  (call $scope_define (local.get $o) (cstring "@@pstate") (call $num (f64.convert_i32_s (local.get $state))))
+  (call $scope_define (local.get $o) (cstring "@@pval") (local.get $val))
   (call $mk_obj (local.get $o)))
-(func $vm_await_unwrap (param $v i64) (result i64) (effects)  ;; await: a promise → its value, else the value
-  (if (call $vm_is_promise (local.get $v)) (then (return (call $get_prop (local.get $v) (call $mk_str (cstring "@@pval"))))))
+(func $promise_state (param $p i64) (result i32) (effects)
+  (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $p) (call $mk_str (cstring "@@pstate"))))))
+;; Promise.resolve(v): a promise as-is; else a fulfilled promise (adopt a thenable's value)
+(func $vm_promise (param $v i64) (result i64) (effects)
+  (if (call $vm_is_promise (local.get $v)) (then (return (local.get $v))))
+  (call $mk_promise (i32.const 1) (local.get $v)))
+;; await: a fulfilled promise → its value; a rejected promise → re-throw the reason
+(func $vm_await_unwrap (param $v i64) (result i64) (effects)
+  (if (call $vm_is_promise (local.get $v))
+    (then
+      (if (i32.eq (call $promise_state (local.get $v)) (i32.const 2))
+        (then (call $set_err (i32.const 1)) (call $set_err_val (call $get_prop (local.get $v) (call $mk_str (cstring "@@pval")))) (return (call $v_undef))))
+      (return (call $get_prop (local.get $v) (call $mk_str (cstring "@@pval"))))))
   (local.get $v))
-;; promise.then(cb): call cb with the resolved value, return a promise of the result
-(func $vm_promise_then (param $pv i64) (param $cb i64) (result i64) (effects)
+;; run one reaction handler `h` with `val`; on a thrown error → rejected promise,
+;; else resolve the handler's result (adopting a returned promise).
+(func $promise_run_handler (param $h i64) (param $val i64) (result i64) (effects)
   (let $av i32 (call $heap_alloc (i32.const 8)))
-  (i64.store (local.get $av) (call $get_prop (local.get $pv) (call $mk_str (cstring "@@pval"))))
-  (call $vm_promise (call $call_val (local.get $cb) (i32.const 1) (local.get $av) (call $v_undef))))
+  (i64.store (local.get $av) (local.get $val))
+  (let $r i64 (call $call_val (local.get $h) (i32.const 1) (local.get $av) (call $v_undef)))
+  (if (call $err) (then (let $e i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $e)))))
+  (call $vm_promise (local.get $r)))
+;; promise.then(onF, onR)
+(func $promise_then (param $p i64) (param $onF i64) (param $onR i64) (result i64) (effects)
+  (let $st i32 (call $promise_state (local.get $p)))
+  (let $val i64 (call $get_prop (local.get $p) (call $mk_str (cstring "@@pval"))))
+  (if (i32.eq (local.get $st) (i32.const 1))  ;; fulfilled
+    (then
+      (if (call $is_function (local.get $onF)) (then (return (call $promise_run_handler (local.get $onF) (local.get $val)))))
+      (return (call $mk_promise (i32.const 1) (local.get $val)))))  ;; passthrough
+  (if (i32.eq (local.get $st) (i32.const 2))  ;; rejected
+    (then
+      (if (call $is_function (local.get $onR)) (then (return (call $promise_run_handler (local.get $onR) (local.get $val)))))
+      (return (call $mk_promise (i32.const 2) (local.get $val)))))  ;; propagate
+  (call $mk_promise (i32.const 0) (call $v_undef)))  ;; pending (no queue) → pending result
+;; legacy single-arg then (used by async-return paths)
+(func $vm_promise_then (param $pv i64) (param $cb i64) (result i64) (effects)
+  (call $promise_then (local.get $pv) (local.get $cb) (call $v_undef)))
 
 ;; call an async function: run its body, driving each await to the resolved
 ;; value, and return a promise of the body's return value.
