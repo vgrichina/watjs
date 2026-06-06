@@ -706,11 +706,27 @@
 (func $parse_float (param $s i32) (result f64) (effects)
   (let $n i32 (call $str_len (local.get $s)))
   (let $i i32 (i32.const 0))
-  (block $wse (loop $wsl  ;; skip leading whitespace
+  (block $wse (loop $wsl  ;; skip leading StrWhiteSpace / line terminators
     (br_if $wse (i32.ge_s (local.get $i) (local.get $n)))
     (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
-    (if (i32.eqz (i32.or (i32.eq (local.get $c) (i32.const 32)) (i32.or (i32.eq (local.get $c) (i32.const 9)) (i32.or (i32.eq (local.get $c) (i32.const 10)) (i32.or (i32.eq (local.get $c) (i32.const 13)) (i32.or (i32.eq (local.get $c) (i32.const 11)) (i32.eq (local.get $c) (i32.const 12)))))))) (then (br $wse)))
-    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $wsl)))
+    (if (call $is_space (local.get $c))   ;; ASCII TAB/LF/VT/FF/CR/SP
+      (then (set! $i (i32.add (local.get $i) (i32.const 1))) (br $wsl)))
+    ;; NBSP (C2 A0)
+    (if (i32.and (i32.eq (local.get $c) (i32.const 194)) (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $n)))
+      (then (if (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))) (i32.const 160))
+        (then (set! $i (i32.add (local.get $i) (i32.const 2))) (br $wsl)))))
+    ;; LS/PS (E2 80 A8/A9)
+    (if (i32.and (i32.eq (local.get $c) (i32.const 226)) (i32.lt_s (i32.add (local.get $i) (i32.const 2)) (local.get $n)))
+      (then (if (i32.and (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))) (i32.const 128))
+              (i32.or (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2))) (i32.const 168))
+                      (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2))) (i32.const 169))))
+        (then (set! $i (i32.add (local.get $i) (i32.const 3))) (br $wsl)))))
+    ;; BOM (EF BB BF)
+    (if (i32.and (i32.eq (local.get $c) (i32.const 239)) (i32.lt_s (i32.add (local.get $i) (i32.const 2)) (local.get $n)))
+      (then (if (i32.and (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))) (i32.const 187))
+                         (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2))) (i32.const 191)))
+        (then (set! $i (i32.add (local.get $i) (i32.const 3))) (br $wsl)))))
+    (br $wse)))
   (let $start i32 (local.get $i))
   (if (i32.lt_s (local.get $i) (local.get $n))  ;; optional sign
     (then
