@@ -491,6 +491,18 @@
   (if (f64.gt (local.get $t) (f64.const 9007199254740991)) (then (return (f64.const 9007199254740991))))
   (local.get $t))
 
+;; Set the receiver's `length` to `valf`, throwing a TypeError if it can't be
+;; written (spec mutators call Set(O,"length",..,Throw=true)). A non-object
+;; receiver (string/primitive) and a non-writable own length both throw.
+(func $set_length_throwing (param $thisv i64) (param $valf f64) (effects)
+  (if (i32.eqz (call $is_object (local.get $thisv)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return)))
+  (let $sl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "length")))
+  (if (local.get $sl)
+    (then (if (i32.eqz (call $entry_writable (local.get $sl)))
+      (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return)))))
+  (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (local.get $valf))))
+
 ;; ToLength of an array-like's `length` (0 if absent/negative), clamped to i32.
 (func $alike_len (param $thisv i64) (result i32) (effects)
   (if (call $is_array (local.get $thisv)) (then (return (call $arr_len (call $val_payload (local.get $thisv))))))
@@ -5270,14 +5282,14 @@
             (then
               (let $hlen i32 (call $alike_len (local.get $thisv)))
               (if (i32.le_s (local.get $hlen) (i32.const 0))
-                (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.const 0))) (return (call $v_undef))))
+                (then (call $set_length_throwing (local.get $thisv) (f64.const 0)) (return (call $v_undef))))
               (let $gshv i64 (call $get_prop (local.get $thisv) (call $num (f64.const 0))))
               (let $gshk i32 (i32.const 1))
               (block $he (loop $hl (br_if $he (i32.ge_s (local.get $gshk) (local.get $hlen)))
                 (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (i32.sub (local.get $gshk) (i32.const 1)))) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $gshk)))))
                 (set! $gshk (i32.add (local.get $gshk) (i32.const 1))) (br $hl)))
               (if (call $is_object (local.get $thisv)) (then (drop (call $scope_delete (call $val_payload (local.get $thisv)) (call $num_to_str (f64.convert_i32_s (i32.sub (local.get $hlen) (i32.const 1))))))))
-              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (i32.sub (local.get $hlen) (i32.const 1)))))
+              (call $set_length_throwing (local.get $thisv) (f64.convert_i32_s (i32.sub (local.get $hlen) (i32.const 1))))
               (if (call $err) (then (return (call $v_undef))))
               (return (local.get $gshv))))
           (if (i32.eqz (local.get $n))
@@ -5310,7 +5322,7 @@
                     (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $uk))) (call $argn (local.get $argv) (local.get $argc) (local.get $uk)))
                     (set! $uk (i32.add (local.get $uk) (i32.const 1))) (br $ul2)))))
               (let $unl i32 (i32.add (local.get $ulen) (local.get $argc)))
-              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (local.get $unl))))
+              (call $set_length_throwing (local.get $thisv) (f64.convert_i32_s (local.get $unl)))
               (if (call $err) (then (return (call $v_undef))))
               (return (call $num (f64.convert_i32_s (local.get $unl))))))
           (if (i32.gt_s (local.get $argc) (i32.const 0))
@@ -5341,7 +5353,7 @@
                 (if (call $err) (then (return (call $v_undef))))
                 (set! $gk (i32.add (local.get $gk) (i32.const 1))) (br $gpl)))
               (let $gnlf f64 (f64.add (local.get $glenf) (f64.convert_i32_s (local.get $argc))))
-              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (local.get $gnlf)))
+              (call $set_length_throwing (local.get $thisv) (local.get $gnlf))
               (if (call $err) (then (return (call $v_undef))))
               (return (call $num (local.get $gnlf)))))
           ;; adding indices needs a writable length + extensibility
@@ -5361,11 +5373,11 @@
             (then
               (let $plen i32 (call $alike_len (local.get $thisv)))
               (if (i32.le_s (local.get $plen) (i32.const 0))
-                (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.const 0))) (return (call $v_undef))))
+                (then (call $set_length_throwing (local.get $thisv) (f64.const 0)) (return (call $v_undef))))
               (let $pidx i32 (i32.sub (local.get $plen) (i32.const 1)))
               (let $pv i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $pidx)))))
               (if (call $is_object (local.get $thisv)) (then (drop (call $scope_delete (call $val_payload (local.get $thisv)) (call $num_to_str (f64.convert_i32_s (local.get $pidx)))))))
-              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (local.get $pidx))))
+              (call $set_length_throwing (local.get $thisv) (f64.convert_i32_s (local.get $pidx)))
               (if (call $err) (then (return (call $v_undef))))
               (return (local.get $pv))))
           (if (i32.le_s (local.get $n) (i32.const 0))

@@ -1,0 +1,7 @@
+b-attrs=false,false,false
+b-readonly=2
+pop=TypeError
+shift=TypeError
+unshift=TypeError
+push=TypeError
+push-limit=TypeError
