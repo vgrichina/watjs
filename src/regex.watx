@@ -253,12 +253,22 @@
           (if (local.get $lok)
             (then (return (call $re_match (local.get $p) (local.get $plen) (local.get $after) (local.get $s) (local.get $slen) (local.get $spos))))  ;; continue at SAME spos
             (else (return (i32.const -1))))))
-      ;; (?:...) non-capturing → body starts at +3, gidx 0; else capturing → +1
+      ;; (?:...) non-capturing → body at +3, gidx 0; (?<name>...) named capture → body
+      ;; past '>', counts as a capture; else plain capturing → +1
       (let $gstart i32 (i32.add (local.get $ppos) (i32.const 1)))
       (let $gidx i32 (i32.const 0))
       (if (i32.and (i32.eq (local.get $pfx) (i32.const 63)) (i32.eq (local.get $pfx2) (i32.const 58)))  ;; (?:
         (then (set! $gstart (i32.add (local.get $ppos) (i32.const 3))))
-        (else (set! $gidx (call $re_group_idx (local.get $p) (local.get $ppos)))))
+        (else
+          (if (call $re_is_cap_group (local.get $p) (local.get $ppos))
+            (then
+              (set! $gidx (call $re_group_idx (local.get $p) (local.get $ppos)))
+              (if (i32.eq (local.get $pfx) (i32.const 63))  ;; (?<name> → skip past '>'
+                (then
+                  (let $np i32 (i32.add (local.get $ppos) (i32.const 3)))
+                  (block $npe (loop $npl (br_if $npe (i32.or (i32.ge_s (local.get $np) (local.get $gend)) (i32.eq (i32.load8_u (i32.add (local.get $p) (local.get $np))) (i32.const 62)))) (set! $np (i32.add (local.get $np) (i32.const 1))) (br $npl)))
+                  (set! $gstart (i32.add (local.get $np) (i32.const 1))))))
+            (else (set! $gstart (i32.add (local.get $ppos) (i32.const 3)))))))  ;; other (? non-capturing
       (let $gq i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $after)))
       (let $gmin i32 (i32.const 1)) (let $gmax i32 (i32.const 1)) (let $gqend i32 (local.get $after))
       (if (i32.eq (local.get $gq) (i32.const 42)) (then (set! $gmin (i32.const 0)) (set! $gmax (i32.add (local.get $slen) (i32.const 1))) (set! $gqend (i32.add (local.get $after) (i32.const 1)))))
@@ -354,6 +364,17 @@
     (br $l)))
   (local.get $to))
 
+;; 1 if the '(' at pos opens a CAPTURING group: a plain '(' or '(?<name>' (named),
+;; but NOT (?:, (?=, (?!, (?<=, (?<! .
+(func $re_is_cap_group (param $p i32) (param $pos i32) (result i32) (effects)
+  (if (i32.ne (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $pos) (i32.const 1)))) (i32.const 63)) (then (return (i32.const 1))))  ;; '(' not '(?'
+  (if (i32.eq (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $pos) (i32.const 2)))) (i32.const 60))  ;; '(?<'
+    (then
+      (let $c3 i32 (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $pos) (i32.const 3)))))
+      (if (i32.or (i32.eq (local.get $c3) (i32.const 61)) (i32.eq (local.get $c3) (i32.const 33))) (then (return (i32.const 0))))  ;; (?<= (?<! lookbehind
+      (return (i32.const 1))))  ;; (?<name>
+  (i32.const 0))  ;; (?: (?= (?! …
+
 ;; index of the ')' matching the '(' at ppos (handles nesting, [..], \)
 (func $re_group_end (param $p i32) (param $plen i32) (param $ppos i32) (result i32) (effects)
   (let $i i32 (i32.add (local.get $ppos) (i32.const 1)))
@@ -384,8 +405,8 @@
     (if (i32.eq (local.get $c) (i32.const 92)) (then (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
     (if (i32.eq (local.get $c) (i32.const 91)) (then (set! $incls (i32.const 1))))
     (if (i32.eq (local.get $c) (i32.const 93)) (then (set! $incls (i32.const 0))))
-    ;; only a capturing '(' counts — '(?' (?:, ?=, ?!, …) does not
-    (if (i32.and (i32.eqz (local.get $incls)) (i32.and (i32.eq (local.get $c) (i32.const 40)) (i32.ne (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 1)))) (i32.const 63)))) (then (set! $n (i32.add (local.get $n) (i32.const 1)))))
+    ;; only a capturing '(' counts (plain '(' or '(?<name>') — not (?:/(?=/(?!/(?<=/(?<!
+    (if (i32.and (i32.eqz (local.get $incls)) (i32.and (i32.eq (local.get $c) (i32.const 40)) (call $re_is_cap_group (local.get $p) (local.get $i)))) (then (set! $n (i32.add (local.get $n) (i32.const 1)))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $l)))
   (local.get $n))
@@ -403,7 +424,7 @@
     (if (i32.eq (local.get $c) (i32.const 92)) (then (set! $j (i32.add (local.get $j) (i32.const 2))) (br $l2)))
     (if (i32.eq (local.get $c) (i32.const 91)) (then (set! $incls (i32.const 1))))
     (if (i32.eq (local.get $c) (i32.const 93)) (then (set! $incls (i32.const 0))))
-    (if (i32.and (i32.eqz (local.get $incls)) (i32.and (i32.eq (local.get $c) (i32.const 40)) (i32.ne (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $j) (i32.const 1)))) (i32.const 63)))) (then (set! $g (i32.add (local.get $g) (i32.const 1)))))
+    (if (i32.and (i32.eqz (local.get $incls)) (i32.and (i32.eq (local.get $c) (i32.const 40)) (call $re_is_cap_group (local.get $p) (local.get $j)))) (then (set! $g (i32.add (local.get $g) (i32.const 1)))))
     (set! $j (i32.add (local.get $j) (i32.const 1))) (br $l2)))
   (i32.store (i32.const 284) (local.get $g)))
 (func $re_set_cap (param $gidx i32) (param $start i32) (param $end i32) (effects)
