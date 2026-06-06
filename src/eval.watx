@@ -5221,6 +5221,11 @@
               (set! $sdc (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
               (if (i32.lt_s (local.get $sdc) (i32.const 0)) (then (set! $sdc (i32.const 0))))
               (if (i32.gt_s (local.get $sdc) (i32.sub (local.get $n) (local.get $ss))) (then (set! $sdc (i32.sub (local.get $n) (local.get $ss)))))))
+          ;; when the item count differs from the delete count the length changes;
+          ;; refuse it on a length-locked array (growing also needs extensibility)
+          (let $sic i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.sub (local.get $argc) (i32.const 2))) (else (i32.const 0))))
+          (if (i32.ne (local.get $sic) (local.get $sdc))
+            (then (if (call $arr_mut_locked (local.get $arr) (i32.gt_s (local.get $sic) (local.get $sdc))) (then (return (call $v_undef))))))
           (let $srem i32 (call $arr_new (i32.const 8)))
           (let $si i32 (i32.const 0))
           (block $sre (loop $srl
