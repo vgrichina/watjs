@@ -609,7 +609,15 @@
           (let $vinh i32 (call $fn_inherited_slot (local.get $ks)))
           (if (local.get $vinh) (then (return (i64.load (local.get $vinh)))))
           (return (call $v_undef))))
-      (if (call $str_eq (local.get $ks) (cstring "prototype")) (then (return (call $fn_get_prototype (local.get $fn)))))
+      (if (call $str_eq (local.get $ks) (cstring "prototype"))
+        (then
+          ;; explicitly-installed .prototype (well-known proto reg) wins
+          (let $pslot i32 (call $scope_find_local (call $fn_props (local.get $fn)) (cstring "prototype")))
+          (if (local.get $pslot) (then (return (i64.load (local.get $pslot)))))
+          ;; only constructors expose (and lazily get) a .prototype; parseInt,
+          ;; Math.*, String.prototype.*, bound fns, etc. have none → undefined
+          (if (call $native_is_ctor (i32.load (local.get $fn))) (then (return (call $fn_get_prototype (local.get $fn)))))
+          (return (call $v_undef))))
       (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
       (let $props i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
       (if (local.get $props)

@@ -6806,6 +6806,16 @@
   (call $scope_define_attr (local.get $symp) (cstring "asyncDispose") (call $make_symbol (cstring "@@asyncDispose") (cstring "Symbol.asyncDispose")) (i32.const 0))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "for")) (call $mk_native (i32.const 197) (cstring "for")))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "keyFor")) (call $mk_native (i32.const 198) (cstring "keyFor")))
+  ;; Symbol.prototype — Symbol is not a constructor but still exposes a prototype
+  ;; object (own, non-W/E/C). Symbol primitive method access is served directly in
+  ;; get_prop's symbol branch; this object exists for `Symbol.prototype` itself.
+  (let $symproto i32 (call $obj_new (i32.const 6)))
+  (call $scope_define_attr (local.get $symproto) (cstring "toString") (call $mk_native (i32.const 199) (cstring "toString")) (i32.const 12))
+  (call $scope_define_attr (local.get $symproto) (cstring "toLocaleString") (call $mk_native (i32.const 199) (cstring "toLocaleString")) (i32.const 12))
+  (call $scope_define_attr (local.get $symproto) (cstring "valueOf") (call $mk_native (i32.const 302) (cstring "valueOf")) (i32.const 12))
+  (call $scope_define_attr (local.get $symproto) (cstring "@@toStringTag") (call $mk_str (cstring "Symbol")) (i32.const 4))
+  (call $scope_define_attr (local.get $symproto) (cstring "constructor") (local.get $symf) (i32.const 12))
+  (call $set_prop (local.get $symf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $symproto)))
   ;; Reflect — static facade over the internal property operations
   (let $refo i32 (call $obj_new (i32.const 12)))
   (call $scope_define (local.get $refo) (cstring "get") (call $mk_native (i32.const 200) (cstring "get")))

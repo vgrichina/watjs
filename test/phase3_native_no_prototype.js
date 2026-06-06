@@ -1,0 +1,12 @@
+print(typeof parseInt.prototype);
+print(typeof parseFloat.prototype);
+print(typeof Math.abs.prototype);
+print(typeof [].map.prototype);
+print(typeof "".slice.prototype);
+print(typeof isNaN.prototype);
+print(typeof Array.prototype);
+print(typeof Object.prototype);
+print(typeof Symbol.prototype);
+print(typeof BigInt.prototype);
+print(Symbol.prototype.constructor === Symbol);
+function F(){}; print(typeof F.prototype);
