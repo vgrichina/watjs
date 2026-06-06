@@ -1,0 +1,6 @@
+basic=1,2,3,4,5
+nested=[1,[2],3]
+spreadable-obj=0,a,b
+array-nospread=2
+obj-element=[0,{"x":1}]
+holes=true,false

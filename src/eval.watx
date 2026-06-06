@@ -480,6 +480,28 @@
   (if (f64.le (local.get $v) (f64.const -2147483648)) (then (return (i32.const -2147483648))))
   (i32.trunc_f64_s (local.get $v)))
 
+;; Append one concat item to result `r`: spread it if IsConcatSpreadable (an array,
+;; or an object whose @@isConcatSpreadable is truthy), else push it as one element.
+(func $concat_append (param $r i32) (param $item i64) (effects)
+  (let $spread i32 (i32.const 0))
+  (if (i32.or (call $is_object (local.get $item)) (call $is_array (local.get $item)))
+    (then
+      (let $s i64 (call $get_prop (local.get $item) (call $make_symbol (cstring "@@isConcatSpreadable") (cstring "Symbol.isConcatSpreadable"))))
+      (if (call $is_undefined (local.get $s))
+        (then (set! $spread (call $is_array (local.get $item))))
+        (else (set! $spread (call $truthy (local.get $s)))))))
+  (if (local.get $spread)
+    (then
+      (let $clen i32 (call $alike_len (local.get $item)))
+      (let $cj i32 (i32.const 0))
+      (block $cce (loop $ccl (br_if $cce (i32.ge_s (local.get $cj) (local.get $clen)))
+        (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $cj))) (local.get $item)))
+          (then (call $arr_push (local.get $r) (call $get_prop (local.get $item) (call $num (f64.convert_i32_s (local.get $cj))))))
+          (else (call $arr_push (local.get $r) (call $v_hole))))
+        (br_if $cce (call $err))
+        (set! $cj (i32.add (local.get $cj) (i32.const 1))) (br $ccl))))
+    (else (call $arr_push (local.get $r) (local.get $item)))))
+
 ;; ToLength of an array-like's `length` as f64 (0 if NaN/negative; capped at 2^53-1).
 ;; Used by the generic array-like mutators to detect the 2^53-1 integer limit and
 ;; to address indices beyond the i32 range without overflow/looping.
@@ -4181,21 +4203,13 @@
       (if (i32.eq (local.get $id) (i32.const 70))  ;; concat(...arrays/values)
         (then
           (let $r i32 (call $arr_new (i32.const 8)))
-          (let $i i32 (i32.const 0))
-          (block $e0 (loop $l0 (br_if $e0 (i32.ge_s (local.get $i) (local.get $n)))
-            (call $arr_push (local.get $r) (call $arr_get (local.get $arr) (local.get $i)))
-            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l0)))
+          ;; the receiver and each argument are IsConcatSpreadable-spread or pushed
+          (call $concat_append (local.get $r) (local.get $thisv))
+          (if (call $err) (then (return (call $v_undef))))
           (let $k i32 (i32.const 0))
           (block $ke (loop $kl (br_if $ke (i32.ge_s (local.get $k) (local.get $argc)))
-            (let $av i64 (call $argn (local.get $argv) (local.get $argc) (local.get $k)))
-            (if (call $is_array (local.get $av))
-              (then
-                (let $oa i32 (call $val_payload (local.get $av)))
-                (let $j i32 (i32.const 0))
-                (block $je (loop $jl (br_if $je (i32.ge_s (local.get $j) (call $arr_len (local.get $oa))))
-                  (call $arr_push (local.get $r) (call $arr_get (local.get $oa) (local.get $j)))
-                  (set! $j (i32.add (local.get $j) (i32.const 1))) (br $jl))))
-              (else (call $arr_push (local.get $r) (local.get $av))))
+            (call $concat_append (local.get $r) (call $argn (local.get $argv) (local.get $argc) (local.get $k)))
+            (if (call $err) (then (return (call $v_undef))))
             (set! $k (i32.add (local.get $k) (i32.const 1))) (br $kl)))
           (return (call $mk_arr (local.get $r)))))
       (if (i32.eq (local.get $id) (i32.const 71))  ;; reverse() in place
