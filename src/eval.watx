@@ -4565,7 +4565,7 @@
       ;; spec exec result carries .index (match offset), .input (subject), .groups
       (call $scope_define (call $arr_props (local.get $r)) (cstring "index") (call $num (f64.convert_i32_s (local.get $start))))
       (call $scope_define (call $arr_props (local.get $r)) (cstring "input") (call $mk_str (local.get $sub)))
-      (call $re_set_groups (local.get $sub) (call $arr_props (local.get $r)))
+      (call $re_set_groups (local.get $sub) (i32.const 0) (call $arr_props (local.get $r)))
       (return (call $mk_arr (local.get $r)))))
   (if (i32.eq (local.get $id) (i32.const 173))  ;; str.matchAll(re) (this = string) → iterator
     (then
@@ -4605,6 +4605,9 @@
           (else (call $arr_push (local.get $maarr) (call $mk_str (call $substr (local.get $mams) (i32.add (local.get $mapos) (local.get $macs)) (i32.sub (i32.load (i32.add (local.get $macb) (i32.const 4))) (local.get $macs)))))))
         (set! $magi (i32.add (local.get $magi) (i32.const 1)))
         (br $macl)))
+      (call $scope_define (call $arr_props (local.get $maarr)) (cstring "index") (call $num (f64.convert_i32_s (local.get $mastart))))
+      (call $scope_define (call $arr_props (local.get $maarr)) (cstring "input") (call $mk_str (local.get $mams)))
+      (call $re_set_groups (local.get $mams) (local.get $mapos) (call $arr_props (local.get $maarr)))
       ;; advance @@mpos (zero-width → +1 to avoid an infinite loop)
       (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@mpos")
         (call $num (f64.convert_i32_s (if i32 (i32.le_s (local.get $maend) (local.get $mastart)) (then (i32.add (local.get $mastart) (i32.const 1))) (else (local.get $maend))))))
@@ -4642,7 +4645,7 @@
               ;; non-global match result carries .index, .input, .groups (like exec)
               (call $scope_define (call $arr_props (local.get $r)) (cstring "index") (call $num (f64.convert_i32_s (local.get $start))))
               (call $scope_define (call $arr_props (local.get $r)) (cstring "input") (call $mk_str (local.get $sub)))
-              (call $re_set_groups (local.get $sub) (call $arr_props (local.get $r)))
+              (call $re_set_groups (local.get $sub) (i32.const 0) (call $arr_props (local.get $r)))
               (return (call $mk_arr (local.get $r))))
             (else  ;; global → every match
               (let $r i32 (call $arr_new (i32.const 4)))

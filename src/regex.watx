@@ -74,6 +74,19 @@
                   (then (set! $out (call $str_concat (local.get $out) (cstring "$"))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
                 (if (i32.eq (local.get $nx) (i32.const 38))  ;; $& whole match
                   (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $ms) (i32.sub (local.get $me) (local.get $ms))))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+                ;; $<name> named-group reference (only when the pattern has named groups)
+                (if (i32.and (i32.eq (local.get $nx) (i32.const 60)) (i32.load (i32.const 292)))  ;; '<'
+                  (then
+                    (let $rns i32 (i32.add (local.get $i) (i32.const 2)))
+                    (let $rne i32 (local.get $rns))
+                    (block $rne2 (loop $rnl (br_if $rne2 (i32.or (i32.ge_s (local.get $rne) (local.get $rl)) (i32.eq (call $str_byte (local.get $replstr) (local.get $rne)) (i32.const 62)))) (set! $rne (i32.add (local.get $rne) (i32.const 1))) (br $rnl)))
+                    (let $rgi i32 (call $re_name_to_gidx (i32.add (local.get $replstr) (i32.const 4)) (local.get $rns) (local.get $rne)))
+                    (if (i32.gt_s (local.get $rgi) (i32.const 0))
+                      (then
+                        (let $rcb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $rgi) (i32.const 1)) (i32.const 8))))
+                        (let $rcs i32 (i32.load (local.get $rcb)))
+                        (if (i32.ge_s (local.get $rcs) (i32.const 0)) (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $rcs) (i32.sub (i32.load (i32.add (local.get $rcb) (i32.const 4))) (local.get $rcs)))))))))
+                    (set! $i (i32.add (local.get $rne) (i32.const 1))) (br $l)))
                 (if (i32.and (i32.ge_s (local.get $nx) (i32.const 49)) (i32.le_s (local.get $nx) (i32.const 57)))  ;; $1-$9
                   (then
                     (let $gn i32 (i32.sub (local.get $nx) (i32.const 48)))
@@ -486,7 +499,7 @@
 
 ;; define `groups` on a match-result's @12 scope `rprops`: undefined when the
 ;; pattern has no named groups, else a null-prototype object {name: captureValue}.
-(func $re_set_groups (param $sub i32) (param $rprops i32) (effects)
+(func $re_set_groups (param $sub i32) (param $off i32) (param $rprops i32) (effects)
   (if (i32.eqz (i32.load (i32.const 292)))
     (then (call $scope_define (local.get $rprops) (cstring "groups") (call $v_undef)) (return)))
   (let $go i32 (call $scope_new (i32.const 0) (i32.const 8)))  ;; null prototype (spec)
@@ -500,7 +513,7 @@
         (let $cs i32 (i32.load (local.get $cb)))
         (if (i32.lt_s (local.get $cs) (i32.const 0))
           (then (call $scope_define (local.get $go) (local.get $nm) (call $v_undef)))
-          (else (call $scope_define (local.get $go) (local.get $nm) (call $mk_str (call $substr (local.get $sub) (local.get $cs) (i32.sub (i32.load (i32.add (local.get $cb) (i32.const 4))) (local.get $cs)))))))))
+          (else (call $scope_define (local.get $go) (local.get $nm) (call $mk_str (call $substr (local.get $sub) (i32.add (local.get $off) (local.get $cs)) (i32.sub (i32.load (i32.add (local.get $cb) (i32.const 4))) (local.get $cs)))))))))
     (set! $g (i32.add (local.get $g) (i32.const 1))) (br $gl)))
   (call $scope_define (local.get $rprops) (cstring "groups") (call $mk_obj (local.get $go))))
 
