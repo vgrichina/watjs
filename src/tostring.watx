@@ -383,6 +383,10 @@
 ;; symbol record accessors (payload → [keyStr i32 @0][descStr i32 @4])
 (func $sym_key (param $v i64) (result i32) (effects) (i32.load (call $val_payload (local.get $v))))
 (func $sym_desc (param $v i64) (result i32) (effects) (i32.load (i32.add (call $val_payload (local.get $v)) (i32.const 4))))
+;; description as a STRING ("" for an absent description) — for string-building callers
+(func $sym_desc_str (param $v i64) (result i32) (effects)
+  (let $d i32 (call $sym_desc (local.get $v)))
+  (if i32 (local.get $d) (then (local.get $d)) (else (cstring ""))))
 
 ;; property-key coercion: a symbol → its internal key string; else ToString.
 (func $to_prop_key (param $v i64) (result i32) (effects)
@@ -420,7 +424,7 @@
     (then (call $i64_to_str (call $bigint_val (local.get $v))))
     (else
   (if i32 (call $is_symbol (local.get $v))
-    (then (call $str_concat (call $str_concat (cstring "Symbol(") (call $sym_desc (local.get $v))) (cstring ")")))
+    (then (call $str_concat (call $str_concat (cstring "Symbol(") (call $sym_desc_str (local.get $v))) (cstring ")")))
     (else
   (if i32 (call $is_number (local.get $v))
     (then (call $num_to_str (call $tonum_raw (local.get $v))))

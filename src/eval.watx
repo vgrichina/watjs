@@ -3851,11 +3851,13 @@
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 196))  ;; Symbol([desc]) → fresh unique symbol
     (then
-      (let $sdesc i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))) (else (cstring ""))))
+      (let $shasd i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+      (let $sdesc i32 (if i32 (local.get $shasd) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))) (else (cstring ""))))
       (let $scnt i32 (i32.load (i32.const 292)))
       (i32.store (i32.const 292) (i32.add (local.get $scnt) (i32.const 1)))
       (let $symbkey i32 (call $str_concat (call $str_concat (call $str_concat (cstring "@@sym:") (call $num_to_str (f64.convert_i32_s (local.get $scnt)))) (cstring ":")) (local.get $sdesc)))
-      (return (call $make_symbol (local.get $symbkey) (local.get $sdesc)))))
+      ;; desc field 0 (null) marks an absent description (Symbol() vs Symbol("")) → .description undefined
+      (return (call $make_symbol (local.get $symbkey) (if i32 (local.get $shasd) (then (local.get $sdesc)) (else (i32.const 0)))))))
   (if (i32.eq (local.get $id) (i32.const 197))  ;; Symbol.for(key) → registered (shared) symbol
     (then
       (let $sfk i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -3874,7 +3876,9 @@
       (if (i32.ne (call $str_indexof (local.get $kfkey) (cstring "@@symfor:")) (i32.const 0)) (then (return (call $v_undef))))
       (return (call $mk_str (call $substr (local.get $kfkey) (i32.const 9) (i32.sub (call $str_len (local.get $kfkey)) (i32.const 9)))))))
   (if (i32.eq (local.get $id) (i32.const 199))  ;; Symbol.prototype.toString (this = symbol)
-    (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (call $sym_desc (local.get $thisv))) (cstring ")"))))))
+    (then
+      (let $sdd i32 (call $sym_desc (local.get $thisv)))  ;; 0 → absent description
+      (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (if i32 (local.get $sdd) (then (local.get $sdd)) (else (cstring "")))) (cstring ")"))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 210)) (i32.le_s (local.get $id) (i32.const 218)))  ;; TypedArray constructors
     (then (return (call $ta_make (i32.sub (local.get $id) (i32.const 210)) (local.get $argc) (local.get $argv)))))
   (if (i32.eq (local.get $id) (i32.const 394)) (then (return (call $ta_make (i32.const 9) (local.get $argc) (local.get $argv)))))   ;; BigInt64Array

@@ -2994,9 +2994,9 @@
   (let $noff i32 (i32.add (i32.add (local.get $fp) (i32.const 28)) (i32.mul (i32.load (i32.add (local.get $fp) (i32.const 8))) (i32.const 4))))
   (if (i32.load (local.get $noff)) (then (return)))  ;; already named
   (let $kn i32 (if i32 (call $is_symbol (local.get $keyval))
-    (then (if i32 (i32.eqz (call $str_len (call $sym_desc (local.get $keyval))))
+    (then (if i32 (i32.eqz (call $str_len (call $sym_desc_str (local.get $keyval))))
       (then (cstring ""))
-      (else (call $str_concat (cstring "[") (call $str_concat (call $sym_desc (local.get $keyval)) (cstring "]"))))))
+      (else (call $str_concat (cstring "[") (call $str_concat (call $sym_desc_str (local.get $keyval)) (cstring "]"))))))
     (else (call $to_str (local.get $keyval)))))
   (i32.store (local.get $noff) (if i32 (local.get $prefix) (then (call $str_concat (local.get $prefix) (local.get $kn))) (else (local.get $kn)))))
 

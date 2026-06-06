@@ -1,0 +1,10 @@
+noarg=undefined
+empty=string
+empty-val=true
+with=x
+noarg-ts=Symbol()
+empty-ts=Symbol()
+desc-ts=Symbol(d)
+valueOf=true
+for-desc=k
+computed-noarg=1

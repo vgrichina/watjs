@@ -611,7 +611,7 @@
   (if (call $is_symbol (local.get $cont))
     (then
       (let $sks i32 (call $to_str (local.get $key)))
-      (if (call $str_eq (local.get $sks) (cstring "description")) (then (return (call $mk_str (call $sym_desc (local.get $cont))))))
+      (if (call $str_eq (local.get $sks) (cstring "description")) (then (let $sd i32 (call $sym_desc (local.get $cont))) (if (i32.eqz (local.get $sd)) (then (return (call $v_undef)))) (return (call $mk_str (local.get $sd)))))
       (if (call $str_eq (local.get $sks) (cstring "toString")) (then (return (call $mk_native (i32.const 199) (cstring "toString")))))
       (if (call $str_eq (local.get $sks) (cstring "valueOf")) (then (return (call $mk_native (i32.const 302) (cstring "valueOf")))))  ;; returns thisSymbolValue
       (if (call $str_eq (local.get $sks) (cstring "toLocaleString")) (then (return (call $mk_native (i32.const 199) (cstring "toLocaleString")))))
