@@ -1,0 +1,7 @@
+map-nan=1
+map-zero=z,2
+set-nan-dedup=1
+set-has-nan=true
+set-zero-dedup=1
+map-normal=1
+map-delete-nan=false

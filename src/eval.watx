@@ -152,7 +152,10 @@
   (let $i i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
-    (if (call $strict_eq (call $arr_get (local.get $keys) (local.get $i)) (local.get $key)) (then (return (local.get $i))))
+    ;; Map/Set use SameValueZero: NaN matches NaN (same_value), +0 matches -0
+    ;; (strict_eq) — the union of the two is exactly SameValueZero.
+    (let $mfk i64 (call $arr_get (local.get $keys) (local.get $i)))
+    (if (i32.or (call $strict_eq (local.get $mfk) (local.get $key)) (call $same_value (local.get $mfk) (local.get $key))) (then (return (local.get $i))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $l)))
   (i32.const -1))
