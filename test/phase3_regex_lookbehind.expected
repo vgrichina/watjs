@@ -1,0 +1,8 @@
+pos=true
+pos-no=false
+neg=true
+neg-no=false
+variable=100
+global-repl=a#b#
+at-start=true
+lookahead-still=true
