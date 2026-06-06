@@ -1,0 +1,8 @@
+with-null=TypeError
+toReversed-undef=TypeError
+with-huge=RangeError
+toSpliced-huge=RangeError
+with=1,9,3
+toReversed=3,2,1
+toSorted=1,2,3
+toSpliced=1,9,3
