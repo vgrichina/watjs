@@ -247,6 +247,7 @@
 ;; Lex an identifier/keyword. Sets TOK_KIND=3, TOK_START, TOK_LEN.
 (func $lex_ident (effects)
   (let $start i32 (call $pos))
+  (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 35)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))  ;; private name #x → include the '#'
   (block $ie (loop $il
     ;; a \uHHHH or \u{H+} unicode escape is part of the identifier (IdentifierName)
     (if (i32.and (i32.eq (call $ch_at (i32.const 0)) (i32.const 92)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 117)))
@@ -500,6 +501,7 @@
   (if (i32.and (i32.eq (local.get $c) (i32.const 92)) (i32.eq (local.get $c1) (i32.const 117)))
     (then (call $lex_ident) (return)))  ;; \u… → identifier starting with a unicode escape
   (if (call $is_alpha (local.get $c)) (then (call $lex_ident) (return)))
+  (if (i32.and (i32.eq (local.get $c) (i32.const 35)) (call $is_alpha (local.get $c1))) (then (call $lex_ident) (return)))  ;; #privateName → a single NAME token "#x"
   (if (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const 39)))
     (then (call $lex_string (local.get $c)) (return)))  ;; " or '
   (if (i32.eq (local.get $c) (i32.const 96)) (then (call $lex_template) (return)))  ;; `template`

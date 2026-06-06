@@ -655,6 +655,10 @@
           (call $vm_emit_op (local.get $code) (local.get $iop))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR → leaves old
           (return)))
+      ;; a bare #privateName (only valid as the LHS of `#x in obj`) → push the key
+      ;; string so the `in` operator becomes a private-brand check
+      (if (i32.eq (call $str_byte (local.get $vn) (i32.const 0)) (i32.const 35))
+        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $vn))) (return)))
       (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 240)) (then (i32.const 62)) (else (i32.const 8))))  ;; LOADVAR_SOFT inside typeof, else LOADVAR
       (call $vm_emit_op (local.get $code) (local.get $vn))
       (return)))
