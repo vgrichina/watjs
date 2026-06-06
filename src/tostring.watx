@@ -853,14 +853,25 @@
   (if (i32.eqz (call $str_rest_ws (local.get $s) (local.get $i) (local.get $len))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
   (if (i32.eqz (local.get $any)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
   (let $r f64 (f64.convert_i64_s (local.get $mant)))
-  (let $res f64 (f64.const 0))
-  (if (i32.eqz (local.get $exp))
-    (then (set! $res (local.get $r)))
-    (else
+  (let $res f64 (local.get $r))
+  ;; combine mant·10^exp — MUST match $lex_number's slow path exactly, or a literal
+  ;; and Number("<same digits>") round-trip to different f64 bits (toExponential()
+  ;; no-arg then over-counts digits). Exact range: one mul/div by pow10; out of
+  ;; range: step by *10 / /10 (keeps denormals representable, same rounding chain).
+  (if (i32.ne (local.get $exp) (i32.const 0))
+    (then
       (if (i32.and (i32.le_s (local.get $nd) (i32.const 15)) (i32.and (i32.ge_s (local.get $exp) (i32.const -22)) (i32.le_s (local.get $exp) (i32.const 22))))
         (then
           (if (i32.gt_s (local.get $exp) (i32.const 0))
             (then (set! $res (f64.mul (local.get $r) (call $pow10 (f64.convert_i32_s (local.get $exp))))))
             (else (set! $res (f64.div (local.get $r) (call $pow10 (f64.convert_i32_s (i32.sub (i32.const 0) (local.get $exp)))))))))
-        (else (set! $res (f64.mul (local.get $r) (call $pow10 (f64.convert_i32_s (local.get $exp)))))))))
+        (else
+          (let $k i32 (if i32 (i32.lt_s (local.get $exp) (i32.const 0)) (then (i32.sub (i32.const 0) (local.get $exp))) (else (local.get $exp))))
+          (let $neg i32 (i32.lt_s (local.get $exp) (i32.const 0)))
+          (let $ei i32 (i32.const 0))
+          (block $xe (loop $xl
+            (br_if $xe (i32.ge_s (local.get $ei) (local.get $k)))
+            (set! $res (if f64 (local.get $neg) (then (f64.div (local.get $res) (f64.const 10))) (else (f64.mul (local.get $res) (f64.const 10)))))
+            (set! $ei (i32.add (local.get $ei) (i32.const 1)))
+            (br $xl)))))))
   (f64.mul (local.get $sign) (local.get $res)))
