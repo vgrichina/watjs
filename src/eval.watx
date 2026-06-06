@@ -480,6 +480,17 @@
   (if (f64.le (local.get $v) (f64.const -2147483648)) (then (return (i32.const -2147483648))))
   (i32.trunc_f64_s (local.get $v)))
 
+;; ToLength of an array-like's `length` as f64 (0 if NaN/negative; capped at 2^53-1).
+;; Used by the generic array-like mutators to detect the 2^53-1 integer limit and
+;; to address indices beyond the i32 range without overflow/looping.
+(func $alike_len_f64 (param $thisv i64) (result f64) (effects)
+  (let $l f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length")))))
+  (if (f64.ne (local.get $l) (local.get $l)) (then (return (f64.const 0))))  ;; NaN
+  (if (f64.le (local.get $l) (f64.const 0)) (then (return (f64.const 0))))
+  (let $t f64 (f64.floor (local.get $l)))
+  (if (f64.gt (local.get $t) (f64.const 9007199254740991)) (then (return (f64.const 9007199254740991))))
+  (local.get $t))
+
 ;; ToLength of an array-like's `length` (0 if absent/negative), clamped to i32.
 (func $alike_len (param $thisv i64) (result i32) (effects)
   (if (call $is_array (local.get $thisv)) (then (return (call $arr_len (call $val_payload (local.get $thisv))))))
@@ -5284,6 +5295,9 @@
           ;; generic array-like object receiver
           (if (i32.eqz (call $is_array (local.get $thisv)))
             (then
+              ;; len + argCount must not exceed 2^53-1 (checked before any movement)
+              (if (f64.gt (f64.add (call $alike_len_f64 (local.get $thisv)) (f64.convert_i32_s (local.get $argc))) (f64.const 9007199254740991))
+                (then (call $throw_type (cstring "TypeError") (cstring "Invalid array length")) (return (call $v_undef))))
               (let $ulen i32 (call $alike_len (local.get $thisv)))
               (if (i32.gt_s (local.get $argc) (i32.const 0))
                 (then
@@ -5317,16 +5331,19 @@
           ;; (the dense path below would mutate a throwaway materialized copy)
           (if (i32.eqz (call $is_array (local.get $thisv)))
             (then
-              (let $glen i32 (call $alike_len (local.get $thisv)))
+              (let $glenf f64 (call $alike_len_f64 (local.get $thisv)))
+              ;; len + argCount must not exceed 2^53-1 (indices addressed as f64)
+              (if (f64.gt (f64.add (local.get $glenf) (f64.convert_i32_s (local.get $argc))) (f64.const 9007199254740991))
+                (then (call $throw_type (cstring "TypeError") (cstring "Invalid array length")) (return (call $v_undef))))
               (let $gk i32 (i32.const 0))
               (block $gpe (loop $gpl (br_if $gpe (i32.ge_s (local.get $gk) (local.get $argc)))
-                (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (i32.add (local.get $glen) (local.get $gk)))) (call $argn (local.get $argv) (local.get $argc) (local.get $gk)))
+                (call $set_prop (local.get $thisv) (call $num (f64.add (local.get $glenf) (f64.convert_i32_s (local.get $gk)))) (call $argn (local.get $argv) (local.get $argc) (local.get $gk)))
                 (if (call $err) (then (return (call $v_undef))))
                 (set! $gk (i32.add (local.get $gk) (i32.const 1))) (br $gpl)))
-              (let $gnl i32 (i32.add (local.get $glen) (local.get $argc)))
-              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (local.get $gnl))))
+              (let $gnlf f64 (f64.add (local.get $glenf) (f64.convert_i32_s (local.get $argc))))
+              (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (local.get $gnlf)))
               (if (call $err) (then (return (call $v_undef))))
-              (return (call $num (f64.convert_i32_s (local.get $gnl))))))
+              (return (call $num (local.get $gnlf)))))
           ;; adding indices needs a writable length + extensibility
           (if (i32.gt_s (local.get $argc) (i32.const 0))
             (then (if (call $arr_mut_locked (local.get $arr) (i32.const 1)) (then (return (call $v_undef))))))
