@@ -1,0 +1,5 @@
+grow=["b","c"] a,X,Y,Z,d|5
+shrink=["b"] a,c,d|3
+equal=["b","c"] a,X,Y,d|4
+toend=["b","c","d"] a|1
+real=[2,3] 1,9,4,5

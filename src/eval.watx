@@ -502,6 +502,65 @@
         (set! $cj (i32.add (local.get $cj) (i32.const 1))) (br $ccl))))
     (else (call $arr_push (local.get $r) (local.get $item)))))
 
+;; DeletePropertyOrThrow(O, idx) for the generic splice on an object receiver.
+(func $splice_delete (param $thisv i64) (param $idx i32) (effects)
+  (if (call $is_object (local.get $thisv))
+    (then (drop (call $scope_delete (call $val_payload (local.get $thisv)) (call $num_to_str (f64.convert_i32_s (local.get $idx))))))))
+
+;; Array.prototype.splice on a generic array-like OBJECT receiver: reads/writes the
+;; receiver's indices + length (the dense path would mutate a throwaway copy).
+;; Returns the array of removed elements. Indices fit i32 for realistic receivers.
+(func $splice_generic (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
+  (let $gsl i32 (call $alike_len (local.get $thisv)))
+  (let $gss i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+  (if (i32.lt_s (local.get $gss) (i32.const 0)) (then (set! $gss (i32.add (local.get $gsl) (local.get $gss))) (if (i32.lt_s (local.get $gss) (i32.const 0)) (then (set! $gss (i32.const 0))))))
+  (if (i32.gt_s (local.get $gss) (local.get $gsl)) (then (set! $gss (local.get $gsl))))
+  (let $gdc i32 (i32.const 0))
+  (if (i32.eq (local.get $argc) (i32.const 1)) (then (set! $gdc (i32.sub (local.get $gsl) (local.get $gss)))))
+  (if (i32.ge_s (local.get $argc) (i32.const 2))
+    (then (set! $gdc (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+      (if (i32.lt_s (local.get $gdc) (i32.const 0)) (then (set! $gdc (i32.const 0))))
+      (if (i32.gt_s (local.get $gdc) (i32.sub (local.get $gsl) (local.get $gss))) (then (set! $gdc (i32.sub (local.get $gsl) (local.get $gss)))))))
+  (let $gic i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.sub (local.get $argc) (i32.const 2))) (else (i32.const 0))))
+  (let $gsa i32 (call $arr_new (i32.const 8)))
+  (let $gk i32 (i32.const 0))
+  (block $gae (loop $gal (br_if $gae (i32.ge_s (local.get $gk) (local.get $gdc)))
+    (let $gf i32 (i32.add (local.get $gss) (local.get $gk)))
+    (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $gf))) (local.get $thisv)))
+      (then (call $arr_set (local.get $gsa) (local.get $gk) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $gf)))))))
+    (set! $gk (i32.add (local.get $gk) (i32.const 1))) (br $gal)))
+  (i32.store (local.get $gsa) (local.get $gdc))  ;; removed.length = deleteCount (holes ok)
+  (if (i32.lt_s (local.get $gic) (local.get $gdc))
+    (then  ;; shrink: shift the tail down, then delete the now-vacant slots
+      (set! $gk (local.get $gss))
+      (block $gse (loop $gsl2 (br_if $gse (i32.ge_s (local.get $gk) (i32.sub (local.get $gsl) (local.get $gdc))))
+        (let $gf2 i32 (i32.add (local.get $gk) (local.get $gdc)))
+        (let $gt i32 (i32.add (local.get $gk) (local.get $gic)))
+        (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $gf2))) (local.get $thisv)))
+          (then (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $gt))) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $gf2))))))
+          (else (call $splice_delete (local.get $thisv) (local.get $gt))))
+        (set! $gk (i32.add (local.get $gk) (i32.const 1))) (br $gsl2)))
+      (set! $gk (local.get $gsl))
+      (block $gte (loop $gtl (br_if $gte (i32.le_s (local.get $gk) (i32.add (i32.sub (local.get $gsl) (local.get $gdc)) (local.get $gic))))
+        (call $splice_delete (local.get $thisv) (i32.sub (local.get $gk) (i32.const 1)))
+        (set! $gk (i32.sub (local.get $gk) (i32.const 1))) (br $gtl)))))
+  (if (i32.gt_s (local.get $gic) (local.get $gdc))
+    (then  ;; grow: shift the tail up from the end
+      (set! $gk (i32.sub (local.get $gsl) (local.get $gdc)))
+      (block $gue (loop $gul (br_if $gue (i32.le_s (local.get $gk) (local.get $gss)))
+        (let $gf3 i32 (i32.sub (i32.add (local.get $gk) (local.get $gdc)) (i32.const 1)))
+        (let $gt3 i32 (i32.sub (i32.add (local.get $gk) (local.get $gic)) (i32.const 1)))
+        (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $gf3))) (local.get $thisv)))
+          (then (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $gt3))) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $gf3))))))
+          (else (call $splice_delete (local.get $thisv) (local.get $gt3))))
+        (set! $gk (i32.sub (local.get $gk) (i32.const 1))) (br $gul)))))
+  (set! $gk (i32.const 0))
+  (block $gie (loop $gil (br_if $gie (i32.ge_s (local.get $gk) (local.get $gic)))
+    (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (i32.add (local.get $gss) (local.get $gk)))) (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $gk) (i32.const 2))))
+    (set! $gk (i32.add (local.get $gk) (i32.const 1))) (br $gil)))
+  (call $set_length_throwing (local.get $thisv) (f64.convert_i32_s (i32.add (i32.sub (local.get $gsl) (local.get $gdc)) (local.get $gic))))
+  (call $mk_arr (local.get $gsa)))
+
 ;; ToLength of an array-like's `length` as f64 (0 if NaN/negative; capped at 2^53-1).
 ;; Used by the generic array-like mutators to detect the 2^53-1 integer limit and
 ;; to address indices beyond the i32 range without overflow/looping.
@@ -5261,6 +5320,9 @@
           (return (call $mk_arr (local.get $tsout)))))
       (if (i32.eq (local.get $id) (i32.const 35))  ;; splice(start, deleteCount, ...items)
         (then
+          ;; generic array-like object receiver → operate on it via Get/Set/Delete
+          (if (i32.eqz (call $is_array (local.get $thisv)))
+            (then (return (call $splice_generic (local.get $thisv) (local.get $argv) (local.get $argc)))))
           (let $ss i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (if (i32.lt_s (local.get $ss) (i32.const 0)) (then (set! $ss (i32.add (local.get $n) (local.get $ss))) (if (i32.lt_s (local.get $ss) (i32.const 0)) (then (set! $ss (i32.const 0))))))
           (if (i32.gt_s (local.get $ss) (local.get $n)) (then (set! $ss (local.get $n))))
