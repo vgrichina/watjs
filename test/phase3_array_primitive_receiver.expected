@@ -1,0 +1,6 @@
+map-bool=true,1
+map-str=A,B
+filter-str=a,c
+forEach-str=2
+indexOf-str=1
+null=TypeError
