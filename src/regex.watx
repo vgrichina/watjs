@@ -242,7 +242,12 @@
   (if (i32.eq (local.get $q) (i32.const 63)) (then (set! $min (i32.const 0)) (set! $max (i32.const 1)) (set! $qend (i32.add (local.get $aend) (i32.const 1)))))  ;; ?
   (if (i32.eq (local.get $q) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $aend))  ;; {n,m} → sets regs 172/176/180
     (set! $min (i32.load (i32.const 172))) (set! $max (i32.load (i32.const 176))) (set! $qend (i32.load (i32.const 180)))))
-  ;; greedy: count consecutive atom matches up to max
+  ;; lazy modifier: a '?' right after the quantifier (a+?, a*?, a??, a{2,3}?)
+  (let $lazy i32 (i32.const 0))
+  (if (i32.or (i32.eq (local.get $q) (i32.const 42)) (i32.or (i32.eq (local.get $q) (i32.const 43)) (i32.or (i32.eq (local.get $q) (i32.const 63)) (i32.eq (local.get $q) (i32.const 123)))))
+    (then (if (i32.eq (call $re_pb (local.get $p) (local.get $plen) (local.get $qend)) (i32.const 63))
+      (then (set! $lazy (i32.const 1)) (set! $qend (i32.add (local.get $qend) (i32.const 1)))))))
+  ;; count consecutive atom matches up to max
   (let $count i32 (i32.const 0))
   (block $ce (loop $cl
     (br_if $ce (i32.ge_s (local.get $count) (local.get $max)))
@@ -250,7 +255,17 @@
     (br_if $ce (i32.eqz (call $re_atom_match (local.get $p) (local.get $ppos) (local.get $aend) (i32.load8_u (i32.add (local.get $s) (i32.add (local.get $spos) (local.get $count)))))))
     (set! $count (i32.add (local.get $count) (i32.const 1)))
     (br $cl)))
-  ;; backtrack from count down to min
+  (if (local.get $lazy)
+    (then  ;; lazy: try the FEWEST repetitions first, expanding up to count
+      (let $tc i32 (local.get $min))
+      (block $le (loop $ll
+        (br_if $le (i32.gt_s (local.get $tc) (local.get $count)))
+        (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (i32.add (local.get $spos) (local.get $tc))))
+        (if (i32.ge_s (local.get $r) (i32.const 0)) (then (return (local.get $r))))
+        (set! $tc (i32.add (local.get $tc) (i32.const 1)))
+        (br $ll)))
+      (return (i32.const -1))))
+  ;; greedy: backtrack from count down to min
   (block $be (loop $bl
     (br_if $be (i32.lt_s (local.get $count) (local.get $min)))
     (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (i32.add (local.get $spos) (local.get $count))))

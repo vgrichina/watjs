@@ -1,0 +1,8 @@
+plus=a
+star-nomatch=true
+star-match=aaab
+tag=<a>
+brace=a
+opt=ab
+greedy=aaa
+greedy-tag=<a><b>
