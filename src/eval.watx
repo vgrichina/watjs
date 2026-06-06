@@ -4594,10 +4594,18 @@
       (if (call $err) (then (return (call $v_undef))))
       (if (i32.eqz (local.get $js)) (then (return (call $v_undef))))
       (return (call $mk_str (local.get $js)))))
-  (if (i32.eq (local.get $id) (i32.const 106))  ;; JSON.parse(text)
+  (if (i32.eq (local.get $id) (i32.const 106))  ;; JSON.parse(text[, reviver])
     (then
       (let $jt i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-      (return (call $json_parse (local.get $jt)))))
+      (let $jpr i64 (call $json_parse (local.get $jt)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $jrev i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (call $is_function (local.get $jrev))  ;; reviver → walk via {"" : result}
+        (then
+          (let $jhold i32 (call $obj_new (i32.const 2)))
+          (call $scope_define (local.get $jhold) (cstring "") (local.get $jpr))
+          (return (call $json_revive (call $mk_obj (local.get $jhold)) (cstring "") (local.get $jrev)))))
+      (return (local.get $jpr))))
   ;; --- regex (100 RegExp, 101 test) and string regex methods (102 match,103 replace,104 search) ---
   (if (i32.eq (local.get $id) (i32.const 100))  ;; RegExp(pattern[,flags])
     (then

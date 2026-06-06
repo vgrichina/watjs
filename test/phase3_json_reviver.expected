@@ -1,0 +1,7 @@
+transform=10
+delete={"a":1}
+array=2,3,4
+nested=2
+root-key=
+no-reviver=5
+this-holder=true

@@ -296,6 +296,35 @@
   (call $v_undef))
 
 ;; top-level entry: parse the whole source; trailing junk is a SyntaxError.
+;; InternalizeJSONProperty: recursively apply a JSON.parse reviver bottom-up.
+(func $json_revive (param $holder i64) (param $key i32) (param $reviver i64) (result i64) (effects)
+  (let $val i64 (call $get_prop (local.get $holder) (call $mk_str (local.get $key))))
+  (if (call $is_array (local.get $val))
+    (then
+      (let $ja i32 (call $val_payload (local.get $val)))
+      (let $ji i32 (i32.const 0))
+      (block $jae (loop $jal (br_if $jae (i32.ge_s (local.get $ji) (call $arr_len (local.get $ja))))
+        (let $je i64 (call $json_revive (local.get $val) (call $num_to_str (f64.convert_i32_s (local.get $ji))) (local.get $reviver)))
+        (if (call $is_undefined (local.get $je))
+          (then (i64.store (call $arr_slot (local.get $ja) (local.get $ji)) (call $v_hole)))
+          (else (call $arr_set (local.get $ja) (local.get $ji) (local.get $je))))
+        (set! $ji (i32.add (local.get $ji) (i32.const 1))) (br $jal))))
+    (else (if (call $is_object (local.get $val))
+      (then
+        (let $jkeys i32 (call $own_enum_keys (local.get $val) (i32.const 0)))
+        (let $ji2 i32 (i32.const 0))
+        (block $joe (loop $jol (br_if $joe (i32.ge_s (local.get $ji2) (call $arr_len (local.get $jkeys))))
+          (let $jk i32 (call $val_payload (call $arr_get (local.get $jkeys) (local.get $ji2))))
+          (let $je2 i64 (call $json_revive (local.get $val) (local.get $jk) (local.get $reviver)))
+          (if (call $is_undefined (local.get $je2))
+            (then (drop (call $scope_delete (call $val_payload (local.get $val)) (local.get $jk))))
+            (else (call $set_prop (local.get $val) (call $mk_str (local.get $jk)) (local.get $je2))))
+          (set! $ji2 (i32.add (local.get $ji2) (i32.const 1))) (br $jol)))))))
+  (let $jav i32 (call $heap_alloc (i32.const 16)))
+  (i64.store (local.get $jav) (call $mk_str (local.get $key)))
+  (i64.store (i32.add (local.get $jav) (i32.const 8)) (local.get $val))
+  (call $call_val (local.get $reviver) (i32.const 2) (local.get $jav) (local.get $holder)))
+
 (func $json_parse (param $src i32) (result i64) (effects)
   (i32.store (i32.const 408) (local.get $src))
   (i32.store (i32.const 412) (call $str_len (local.get $src)))
