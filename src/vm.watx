@@ -3628,10 +3628,17 @@
                             )
                       (else (set! $dres (call $v_false))))
                     (set! $ddh (i32.const 1))))))
-            ;; plain dense element → hole (dense elements are always configurable)
+            ;; plain dense element → hole (dense elements are configurable unless
+            ;; the array is frozen/sealed, in which case the delete is refused)
             (if (i32.eqz (local.get $ddh))
               (then (if (i32.and (i32.ge_s (local.get $didx) (i32.const 0)) (i32.lt_s (local.get $didx) (call $arr_len (local.get $dap))))
-                (then (i64.store (call $arr_slot (local.get $dap) (local.get $didx)) (call $v_hole))))))))
+                (then
+                  (let $dfrz i32 (i32.const 0))
+                  (if (local.get $dap12)
+                    (then (if (i32.or (call $scope_find_local (local.get $dap12) (cstring "@@frozen")) (call $scope_find_local (local.get $dap12) (cstring "@@sealed"))) (then (set! $dfrz (i32.const 1))))))
+                  (if (local.get $dfrz)
+                    (then (set! $dres (call $v_false)))
+                    (else (i64.store (call $arr_slot (local.get $dap) (local.get $didx)) (call $v_hole))))))))))
         (if (call $is_object (local.get $dobj))
           (then
             (let $dsc i32 (call $val_payload (local.get $dobj)))

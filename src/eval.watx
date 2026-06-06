@@ -4691,14 +4691,17 @@
               (if (local.get $apsi)
                 (then (let $aisl i32 (call $scope_find_local (local.get $apsi) (local.get $aks)))
                   (if (local.get $aisl) (then (return (call $make_descriptor (local.get $aisl)))))))
-              ;; plain dense element → {W:true,E:true,C:true}
+              ;; plain dense element → {W,E,C:true}, except a frozen array's
+              ;; elements report W:false,C:false and a sealed array's report C:false
               (if (call $arr_has (local.get $aobj) (local.get $aidx))
                 (then
+                  (let $efroz i32 (if i32 (local.get $apsi) (then (i32.ne (call $scope_find_local (local.get $apsi) (cstring "@@frozen")) (i32.const 0))) (else (i32.const 0))))
+                  (let $eseal i32 (if i32 (local.get $apsi) (then (i32.ne (call $scope_find_local (local.get $apsi) (cstring "@@sealed")) (i32.const 0))) (else (i32.const 0))))
                   (let $edr i32 (call $obj_new (i32.const 4)))
                   (call $scope_define (local.get $edr) (cstring "value") (call $arr_get (local.get $aobj) (local.get $aidx)))
-                  (call $scope_define (local.get $edr) (cstring "writable") (call $v_true))
+                  (call $scope_define (local.get $edr) (cstring "writable") (call $mk_bool (i32.eqz (local.get $efroz))))
                   (call $scope_define (local.get $edr) (cstring "enumerable") (call $v_true))
-                  (call $scope_define (local.get $edr) (cstring "configurable") (call $v_true))
+                  (call $scope_define (local.get $edr) (cstring "configurable") (call $mk_bool (i32.eqz (i32.or (local.get $efroz) (local.get $eseal)))))
                   (return (call $mk_obj (local.get $edr)))))))
           ;; named property in the @12 scope
           (let $aps i32 (i32.load (i32.add (local.get $aobj) (i32.const 12))))

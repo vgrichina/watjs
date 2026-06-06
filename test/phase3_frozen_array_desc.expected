@@ -1,0 +1,6 @@
+frozen-desc=false,false,true
+frozen-write=1
+frozen-del=false,true
+sealed-desc=true,false
+sealed-write=7
+sealed-del=false,true
