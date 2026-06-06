@@ -2962,6 +2962,16 @@
 ;; instance's scope-parent chain links to it (see the NEW opcode). Native fns
 ;; (Map/Set/…) fall back to the production js_instanceof.
 (func $vm_instanceof (param $x i64) (param $f i64) (result i64) (effects)
+  ;; a custom [Symbol.hasInstance] method on the RHS takes precedence (works even
+  ;; when the RHS isn't itself callable)
+  (if (i32.or (call $is_object (local.get $f)) (i32.or (call $is_function (local.get $f)) (call $is_array (local.get $f))))
+    (then
+      (let $hinst i64 (call $get_prop (local.get $f) (call $make_symbol (cstring "@@hasInstance") (cstring "Symbol.hasInstance"))))
+      (if (call $is_function (local.get $hinst))
+        (then
+          (let $hiav i32 (call $heap_alloc (i32.const 8)))
+          (i64.store (local.get $hiav) (local.get $x))
+          (return (call $mk_bool (call $truthy (call $call_val (local.get $hinst) (i32.const 1) (local.get $hiav) (local.get $f)))))))))
   ;; the RHS must be callable; a non-callable RHS is a TypeError
   (if (i32.eqz (call $is_function (local.get $f)))
     (then (call $throw_type (cstring "TypeError") (cstring "Right-hand side of 'instanceof' is not callable")) (return (call $v_false))))

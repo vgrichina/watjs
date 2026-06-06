@@ -1,0 +1,6 @@
+custom=true
+custom-no=false
+array=true
+object=true
+vmfn=true
+fn-override=true
