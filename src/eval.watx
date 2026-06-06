@@ -4651,6 +4651,9 @@
     (then
       (let $maa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (call $re_apply_flags (local.get $maa))
+      ;; a RegExp argument must be global (a string arg becomes an implicit global regex)
+      (if (i32.and (call $is_regexp (local.get $maa)) (i32.eqz (i32.load (i32.const 276))))
+        (then (call $throw_type (cstring "TypeError") (cstring "matchAll must be called with a global RegExp")) (return (call $v_undef))))
       (let $mait i32 (call $obj_new (i32.const 6)))
       (call $scope_define (local.get $mait) (cstring "@@ms") (call $mk_str (call $to_str (local.get $thisv))))
       (call $scope_define (local.get $mait) (cstring "@@mpat") (call $mk_str (call $re_pat_of (local.get $maa))))
