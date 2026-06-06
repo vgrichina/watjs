@@ -8,3 +8,5 @@ bad-species=TypeError
 slice=2,3
 slice-holes=false
 species-slice=S,2,3
+species-concat=S,1,2,3,4
+concat-len=4

@@ -516,9 +516,11 @@
     (then (call $arr_set (call $val_payload (local.get $target)) (local.get $idx) (local.get $val)))
     (else (call $set_prop (local.get $target) (call $num (f64.convert_i32_s (local.get $idx))) (local.get $val)))))
 
-;; Append one concat item to result `r`: spread it if IsConcatSpreadable (an array,
-;; or an object whose @@isConcatSpreadable is truthy), else push it as one element.
-(func $concat_append (param $r i32) (param $item i64) (effects)
+;; Append one concat item to result `A` starting at index `n`; returns the next
+;; index. Spreads the item if IsConcatSpreadable (an array, or an object whose
+;; @@isConcatSpreadable is truthy) defining present indices via CreateDataProperty
+;; (holes stay absent), else defines it as one element.
+(func $concat_append (param $A i64) (param $n i32) (param $item i64) (result i32) (effects)
   (let $spread i32 (i32.const 0))
   (if (i32.or (call $is_object (local.get $item)) (call $is_array (local.get $item)))
     (then
@@ -532,11 +534,12 @@
       (let $cj i32 (i32.const 0))
       (block $cce (loop $ccl (br_if $cce (i32.ge_s (local.get $cj) (local.get $clen)))
         (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $cj))) (local.get $item)))
-          (then (call $arr_push (local.get $r) (call $get_prop (local.get $item) (call $num (f64.convert_i32_s (local.get $cj))))))
-          (else (call $arr_push (local.get $r) (call $v_hole))))
+          (then (call $cdp (local.get $A) (local.get $n) (call $get_prop (local.get $item) (call $num (f64.convert_i32_s (local.get $cj)))))))
         (br_if $cce (call $err))
+        (set! $n (i32.add (local.get $n) (i32.const 1)))
         (set! $cj (i32.add (local.get $cj) (i32.const 1))) (br $ccl))))
-    (else (call $arr_push (local.get $r) (local.get $item)))))
+    (else (call $cdp (local.get $A) (local.get $n) (local.get $item)) (set! $n (i32.add (local.get $n) (i32.const 1)))))
+  (local.get $n))
 
 ;; element get/set for the in-place array methods (fill/copyWithin/reverse): a real
 ;; array hits the dense store, a generic array-like object goes through get/set_prop
@@ -624,6 +627,8 @@
 ;; written (spec mutators call Set(O,"length",..,Throw=true)). A non-object
 ;; receiver (string/primitive) and a non-writable own length both throw.
 (func $set_length_throwing (param $thisv i64) (param $valf f64) (effects)
+  (if (call $is_array (local.get $thisv))  ;; a real array's length is writable (unless frozen, which set_prop handles)
+    (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (local.get $valf))) (return)))
   (if (i32.eqz (call $is_object (local.get $thisv)))
     (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return)))
   (let $sl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "length")))
@@ -4310,16 +4315,20 @@
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eq (local.get $id) (i32.const 70))  ;; concat(...arrays/values)
         (then
-          (let $r i32 (call $arr_new (i32.const 8)))
+          (let $rA i64 (call $array_species_create (local.get $thisv) (i32.const 0)))  ;; ArraySpeciesCreate(O, 0)
+          (if (call $err) (then (return (call $v_undef))))
           ;; the receiver and each argument are IsConcatSpreadable-spread or pushed
-          (call $concat_append (local.get $r) (local.get $thisv))
+          (let $cn i32 (call $concat_append (local.get $rA) (i32.const 0) (local.get $thisv)))
           (if (call $err) (then (return (call $v_undef))))
           (let $k i32 (i32.const 0))
           (block $ke (loop $kl (br_if $ke (i32.ge_s (local.get $k) (local.get $argc)))
-            (call $concat_append (local.get $r) (call $argn (local.get $argv) (local.get $argc) (local.get $k)))
+            (set! $cn (call $concat_append (local.get $rA) (local.get $cn) (call $argn (local.get $argv) (local.get $argc) (local.get $k))))
             (if (call $err) (then (return (call $v_undef))))
             (set! $k (i32.add (local.get $k) (i32.const 1))) (br $kl)))
-          (return (call $mk_arr (local.get $r)))))
+          ;; concat sets the final length explicitly (covers a trailing-holes tail)
+          (call $set_length_throwing (local.get $rA) (f64.convert_i32_s (local.get $cn)))
+          (if (call $err) (then (return (call $v_undef))))
+          (return (local.get $rA))))
       (if (i32.eq (local.get $id) (i32.const 71))  ;; reverse() in place
         (then
           (let $i i32 (i32.const 0))

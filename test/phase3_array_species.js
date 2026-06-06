@@ -27,3 +27,8 @@ p("slice", [1, 2, 3, 4, 5].slice(1, 3).join(","));  // 2,3
 p("slice-holes", (0 in [1, , 3].slice(1, 2)));       // false
 var c = [1, 2, 3, 4]; c.constructor = {}; c.constructor[Symbol.species] = function (n) { var o = []; o.tag = "S"; return o; };
 var s = c.slice(1, 3); p("species-slice", s.tag + "," + s.join(",")); // S,2,3
+
+// concat also uses ArraySpeciesCreate
+var d = [1, 2]; d.constructor = {}; d.constructor[Symbol.species] = function (n) { var o = []; o.tag = "S"; return o; };
+var cc = d.concat([3, 4]); p("species-concat", cc.tag + "," + cc.join(",")); // S,1,2,3,4
+p("concat-len", [1, 2].concat([3, 4]).length); // 4
