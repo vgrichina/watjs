@@ -4168,7 +4168,9 @@
           (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (i32.sub (local.get $sl) (local.get $pl)) (local.get $pl)) (call $to_str (local.get $a0)))))))
       (if (i32.eq (local.get $id) (i32.const 60))  ;; split(sep) — string or regex separator
         (then
-          (if (i32.eqz (local.get $argc))  ;; no sep -> whole string as single element
+          ;; no separator, or an explicit `undefined` separator → [wholeString]
+          ;; (must NOT coerce undefined to the string "undefined")
+          (if (i32.or (i32.eqz (local.get $argc)) (call $is_undefined (local.get $a0)))
             (then (let $r0 i32 (call $arr_new (i32.const 2))) (call $arr_push (local.get $r0) (call $mk_str (local.get $s))) (return (call $mk_arr (local.get $r0)))))
           (if (if i32 (call $is_object (local.get $a0)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "__re_src__")) (i32.const 0))) (else (i32.const 0)))  ;; regex separator (guard: i32.and would deref val_payload of a non-object)
             (then
