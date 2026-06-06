@@ -3043,7 +3043,7 @@
       (let $rarepl i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (let $raisfn i32 (call $is_function (local.get $rarepl)))
       (let $rareplstr i32 (if i32 (local.get $raisfn) (then (i32.const 0)) (else (call $to_str (local.get $rarepl)))))
-      (i32.store (i32.const 284) (i32.const 0))  ;; string search → no capture groups ($1-$9 are literal)
+      (i32.store (i32.const 284) (i32.const 0)) (i32.store (i32.const 604) (i32.const 0))  ;; string search → no capture/named groups
       (let $sln i32 (call $str_len (local.get $rals)))
       (let $slen i32 (call $str_len (local.get $rasearch)))
       (let $raout i32 (cstring ""))
