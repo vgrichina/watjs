@@ -220,18 +220,33 @@
     (then (if (i32.eqz (local.get $spos)) (then (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 1)) (local.get $s) (local.get $slen) (local.get $spos)))) (else (return (i32.const -1))))))
   (if (i32.eq (local.get $c) (i32.const 36))  ;; $
     (then (if (i32.eq (local.get $spos) (local.get $slen)) (then (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 1)) (local.get $s) (local.get $slen) (local.get $spos)))) (else (return (i32.const -1))))))
-  (if (i32.eq (local.get $c) (i32.const 40))  ;; '(' capturing group (with optional quantifier)
+  (if (i32.eq (local.get $c) (i32.const 40))  ;; '(' group (capturing, (?:non-capturing), or (?=/(?! lookahead)
     (then
-      (let $gstart i32 (i32.add (local.get $ppos) (i32.const 1)))
       (let $gend i32 (call $re_group_end (local.get $p) (local.get $plen) (local.get $ppos)))  ;; ')' position
       (let $after i32 (i32.add (local.get $gend) (i32.const 1)))
+      (let $pfx i32 (call $re_pb (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 1))))   ;; char after '('
+      (let $pfx2 i32 (call $re_pb (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2))))  ;; char after that
+      ;; (?=...) positive / (?!...) negative lookahead — zero-width assertion
+      (if (i32.and (i32.eq (local.get $pfx) (i32.const 63)) (i32.or (i32.eq (local.get $pfx2) (i32.const 61)) (i32.eq (local.get $pfx2) (i32.const 33))))
+        (then
+          (let $lm i32 (call $re_match_alt (local.get $p) (i32.add (local.get $ppos) (i32.const 3)) (local.get $gend) (local.get $s) (local.get $slen) (local.get $spos)))
+          (let $lok i32 (if i32 (i32.eq (local.get $pfx2) (i32.const 61)) (then (i32.ge_s (local.get $lm) (i32.const 0))) (else (i32.lt_s (local.get $lm) (i32.const 0)))))
+          (if (local.get $lok)
+            (then (return (call $re_match (local.get $p) (local.get $plen) (local.get $after) (local.get $s) (local.get $slen) (local.get $spos))))  ;; continue at SAME spos
+            (else (return (i32.const -1))))))
+      ;; (?:...) non-capturing → body starts at +3, gidx 0; else capturing → +1
+      (let $gstart i32 (i32.add (local.get $ppos) (i32.const 1)))
+      (let $gidx i32 (i32.const 0))
+      (if (i32.and (i32.eq (local.get $pfx) (i32.const 63)) (i32.eq (local.get $pfx2) (i32.const 58)))  ;; (?:
+        (then (set! $gstart (i32.add (local.get $ppos) (i32.const 3))))
+        (else (set! $gidx (call $re_group_idx (local.get $p) (local.get $ppos)))))
       (let $gq i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $after)))
       (let $gmin i32 (i32.const 1)) (let $gmax i32 (i32.const 1)) (let $gqend i32 (local.get $after))
       (if (i32.eq (local.get $gq) (i32.const 42)) (then (set! $gmin (i32.const 0)) (set! $gmax (i32.add (local.get $slen) (i32.const 1))) (set! $gqend (i32.add (local.get $after) (i32.const 1)))))
       (if (i32.eq (local.get $gq) (i32.const 43)) (then (set! $gmin (i32.const 1)) (set! $gmax (i32.add (local.get $slen) (i32.const 1))) (set! $gqend (i32.add (local.get $after) (i32.const 1)))))
       (if (i32.eq (local.get $gq) (i32.const 63)) (then (set! $gmin (i32.const 0)) (set! $gmax (i32.const 1)) (set! $gqend (i32.add (local.get $after) (i32.const 1)))))
       (if (i32.eq (local.get $gq) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $after)) (set! $gmin (i32.load (i32.const 172))) (set! $gmax (i32.load (i32.const 176))) (set! $gqend (i32.load (i32.const 180)))))
-      (return (call $re_group_rep (local.get $p) (local.get $plen) (local.get $gstart) (local.get $gend) (local.get $gqend) (local.get $gmin) (local.get $gmax) (local.get $s) (local.get $slen) (local.get $spos) (call $re_group_idx (local.get $p) (local.get $ppos))))))
+      (return (call $re_group_rep (local.get $p) (local.get $plen) (local.get $gstart) (local.get $gend) (local.get $gqend) (local.get $gmin) (local.get $gmax) (local.get $s) (local.get $slen) (local.get $spos) (local.get $gidx)))))
   (let $aend i32 (call $re_atom_end (local.get $p) (local.get $plen) (local.get $ppos)))
   (let $q i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $aend)))
   (let $min i32 (i32.const 1))
@@ -350,7 +365,8 @@
     (if (i32.eq (local.get $c) (i32.const 92)) (then (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
     (if (i32.eq (local.get $c) (i32.const 91)) (then (set! $incls (i32.const 1))))
     (if (i32.eq (local.get $c) (i32.const 93)) (then (set! $incls (i32.const 0))))
-    (if (i32.and (i32.eqz (local.get $incls)) (i32.eq (local.get $c) (i32.const 40))) (then (set! $n (i32.add (local.get $n) (i32.const 1)))))
+    ;; only a capturing '(' counts — '(?' (?:, ?=, ?!, …) does not
+    (if (i32.and (i32.eqz (local.get $incls)) (i32.and (i32.eq (local.get $c) (i32.const 40)) (i32.ne (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 1)))) (i32.const 63)))) (then (set! $n (i32.add (local.get $n) (i32.const 1)))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $l)))
   (local.get $n))
@@ -368,10 +384,11 @@
     (if (i32.eq (local.get $c) (i32.const 92)) (then (set! $j (i32.add (local.get $j) (i32.const 2))) (br $l2)))
     (if (i32.eq (local.get $c) (i32.const 91)) (then (set! $incls (i32.const 1))))
     (if (i32.eq (local.get $c) (i32.const 93)) (then (set! $incls (i32.const 0))))
-    (if (i32.and (i32.eqz (local.get $incls)) (i32.eq (local.get $c) (i32.const 40))) (then (set! $g (i32.add (local.get $g) (i32.const 1)))))
+    (if (i32.and (i32.eqz (local.get $incls)) (i32.and (i32.eq (local.get $c) (i32.const 40)) (i32.ne (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $j) (i32.const 1)))) (i32.const 63)))) (then (set! $g (i32.add (local.get $g) (i32.const 1)))))
     (set! $j (i32.add (local.get $j) (i32.const 1))) (br $l2)))
   (i32.store (i32.const 284) (local.get $g)))
 (func $re_set_cap (param $gidx i32) (param $start i32) (param $end i32) (effects)
+  (if (i32.le_s (local.get $gidx) (i32.const 0)) (then (return)))  ;; non-capturing group → no slot
   (i32.store (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $gidx) (i32.const 1)) (i32.const 8))) (local.get $start))
   (i32.store (i32.add (i32.load (i32.const 280)) (i32.add (i32.mul (i32.sub (local.get $gidx) (i32.const 1)) (i32.const 8)) (i32.const 4))) (local.get $end)))
 

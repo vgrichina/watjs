@@ -1,0 +1,10 @@
+noncap=abab
+noncap-len=1
+lookahead=true
+lookahead-no=false
+neglook=true
+neglook-no=false
+la-zerowidth=a
+cap-index=a
+plain-caps=b
+nested=bar
