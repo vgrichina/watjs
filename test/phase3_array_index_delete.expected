@@ -1,0 +1,4 @@
+acc=true,false,undefined
+data=true,false
+nonconf=false,true
+dense=true,false,len=3

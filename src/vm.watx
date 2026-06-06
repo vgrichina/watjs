@@ -3615,11 +3615,23 @@
             (let $dap i32 (call $val_payload (local.get $dobj)))
             (let $dks2 i32 (call $to_prop_key (local.get $dkey)))
             (let $didx i32 (call $str_array_index (local.get $dks2)))
-            (if (i32.and (i32.ge_s (local.get $didx) (i32.const 0)) (i32.lt_s (local.get $didx) (call $arr_len (local.get $dap))))
-              (then (i64.store (call $arr_slot (local.get $dap) (local.get $didx)) (call $v_hole)))  ;; element → hole
-              (else
-                (let $dap12 i32 (i32.load (i32.add (local.get $dap) (i32.const 12))))
-                (if (local.get $dap12) (then (drop (call $scope_delete (local.get $dap12) (local.get $dks2)))))))))
+            (let $dap12 i32 (i32.load (i32.add (local.get $dap) (i32.const 12))))
+            (let $ddh i32 (i32.const 0))  ;; handled by the @12 scope?
+            ;; a deopted index OR a named array property lives in @12: honor configurability
+            (if (local.get $dap12)
+              (then (let $ddsl i32 (call $scope_find_local (local.get $dap12) (local.get $dks2)))
+                (if (local.get $ddsl)
+                  (then
+                    (if (call $entry_configurable (local.get $ddsl))
+                      (then (drop (call $scope_delete (local.get $dap12) (local.get $dks2)))
+                            ;; a deopted index also clears its (already-hole) dense slot — keep it a hole
+                            )
+                      (else (set! $dres (call $v_false))))
+                    (set! $ddh (i32.const 1))))))
+            ;; plain dense element → hole (dense elements are always configurable)
+            (if (i32.eqz (local.get $ddh))
+              (then (if (i32.and (i32.ge_s (local.get $didx) (i32.const 0)) (i32.lt_s (local.get $didx) (call $arr_len (local.get $dap))))
+                (then (i64.store (call $arr_slot (local.get $dap) (local.get $didx)) (call $v_hole))))))))
         (if (call $is_object (local.get $dobj))
           (then
             (let $dsc i32 (call $val_payload (local.get $dobj)))
