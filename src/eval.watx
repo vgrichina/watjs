@@ -5432,6 +5432,23 @@
       (return (call $num (f64.mul (f64.convert_i64_u (i64.shr_u (local.get $rs) (i64.const 11))) (f64.const 1.1102230246251565e-16))))))
   (if (i32.eq (local.get $id) (i32.const 224))  ;; Math.imul(a,b) — 32-bit integer multiply
     (then (return (call $num (f64.convert_i32_s (i32.mul (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))))
+  (if (i32.eq (local.get $id) (i32.const 424))  ;; Math.f16round — round to IEEE-754 binary16 precision
+    (then
+      (let $f16x f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (f64.ne (local.get $f16x) (local.get $f16x)) (then (return (call $num (local.get $f16x)))))  ;; NaN
+      (let $f16a f64 (f64.abs (local.get $f16x)))
+      (let $f16inf f64 (f64.div (f64.const 1) (f64.const 0)))
+      (if (f64.eq (local.get $f16a) (local.get $f16inf)) (then (return (call $num (local.get $f16x)))))   ;; ±∞
+      (if (f64.eq (local.get $f16a) (f64.const 0)) (then (return (call $num (local.get $f16x)))))        ;; ±0
+      (if (f64.ge (local.get $f16a) (f64.const 65520)) (then (return (call $num (f64.copysign (local.get $f16inf) (local.get $f16x))))))  ;; overflow → ±∞
+      ;; quantum = 2^(E-10) clamped to the subnormal ulp 2^-24, where 2^E ≤ |x| < 2^(E+1)
+      (let $f16e i32 (i32.sub (i32.wrap_i64 (i64.and (i64.shr_u (i64.reinterpret_f64 (local.get $f16a)) (i64.const 52)) (i64.const 2047))) (i32.const 1023)))
+      (let $f16qe i32 (i32.sub (local.get $f16e) (i32.const 10)))
+      (if (i32.lt_s (local.get $f16qe) (i32.const -24)) (then (set! $f16qe (i32.const -24))))
+      (let $f16q f64 (f64.reinterpret_i64 (i64.shl (i64.extend_i32_s (i32.add (local.get $f16qe) (i32.const 1023))) (i64.const 52))))
+      (let $f16r f64 (f64.mul (f64.nearest (f64.div (local.get $f16a) (local.get $f16q))) (local.get $f16q)))  ;; round-half-even
+      (if (f64.gt (local.get $f16r) (f64.const 65504)) (then (return (call $num (f64.copysign (local.get $f16inf) (local.get $f16x))))))  ;; rounded up past max
+      (return (call $num (f64.copysign (local.get $f16r) (local.get $f16x))))))
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 242)))
               (i32.and (i32.ge_s (local.get $id) (i32.const 244)) (i32.le_s (local.get $id) (i32.const 246))))  ;; transcendental Math (243 = setPrototypeOf, excluded)
     (then
@@ -6169,7 +6186,7 @@
     (then (return (i32.const 1))))  ;; Math.abs/floor/ceil/round/sqrt/trunc/sign
   (if (i32.or (i32.eq (local.get $id) (i32.const 170)) (i32.or (i32.eq (local.get $id) (i32.const 4)) (i32.or (i32.eq (local.get $id) (i32.const 5)) (i32.or (i32.eq (local.get $id) (i32.const 6)) (i32.or (i32.eq (local.get $id) (i32.const 7)) (i32.or (i32.eq (local.get $id) (i32.const 8)) (i32.eq (local.get $id) (i32.const 51))))))))
     (then (return (i32.const 1))))  ;; Math.clz32, Number/String/Boolean/isNaN/isFinite/parseFloat
-  (if (i32.or (i32.eq (local.get $id) (i32.const 223)) (i32.eq (local.get $id) (i32.const 225))) (then (return (i32.const 1))))  ;; Math.fround, Array unshift
+  (if (i32.or (i32.eq (local.get $id) (i32.const 223)) (i32.or (i32.eq (local.get $id) (i32.const 225)) (i32.eq (local.get $id) (i32.const 424)))) (then (return (i32.const 1))))  ;; Math.fround, Array unshift, Math.f16round
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
   (if (i32.eq (local.get $id) (i32.const 277)) (then (return (i32.const 2))))  ;; Object.hasOwn
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
@@ -7145,6 +7162,7 @@
   (call $scope_define (local.get $mo) (cstring "hypot") (call $mk_native (i32.const 52) (cstring "hypot")))
   (call $scope_define (local.get $mo) (cstring "fround") (call $mk_native (i32.const 223) (cstring "fround")))
   (call $scope_define (local.get $mo) (cstring "random") (call $mk_native (i32.const 423) (cstring "random")))
+  (call $scope_define (local.get $mo) (cstring "f16round") (call $mk_native (i32.const 424) (cstring "f16round")))
   (call $scope_define (local.get $mo) (cstring "imul") (call $mk_native (i32.const 224) (cstring "imul")))
   (call $scope_define (local.get $mo) (cstring "exp") (call $mk_native (i32.const 226) (cstring "exp")))
   (call $scope_define (local.get $mo) (cstring "log") (call $mk_native (i32.const 227) (cstring "log")))

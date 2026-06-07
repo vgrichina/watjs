@@ -1,0 +1,9 @@
+print(Math.f16round.name);
+print(Math.f16round.length);
+print(Math.f16round(1.337));
+print(Math.f16round(1.5));
+print(Math.f16round(65504));
+print(Math.f16round(65520));
+print(1/Math.f16round(-0));
+print(Math.f16round(Math.pow(2,-24)));
+print(Math.f16round(Math.pow(2,-25)));
