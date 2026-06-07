@@ -1,0 +1,10 @@
+object
+object
+Error
+Error: 42
+24
+24: 42
+TypeError
+TypeError
+TypeError
+TypeError: boom
