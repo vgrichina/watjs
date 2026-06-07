@@ -1,0 +1,9 @@
+print(1/Math.atan2(0,0));
+print(Math.atan2(0,-0));
+print(1/Math.atan2(-0,0));
+print(Math.atan2(-0,-0));
+print(Math.atan2(0,-1));
+print(Math.atan2(Infinity,Infinity).toFixed(4));
+print(Math.atan2(-Infinity,-Infinity).toFixed(4));
+print(Math.atan2(1,0).toFixed(4));
+print(Math.atan2(NaN,1));

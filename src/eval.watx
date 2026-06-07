@@ -5467,16 +5467,26 @@
       (if (i32.eq (local.get $id) (i32.const 246))  ;; atanh(x) = 0.5*ln((1+x)/(1-x)), |x|<=1
         (then (if (f64.gt (f64.abs (local.get $mx)) (f64.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
               (return (call $num (f64.mul (f64.const 0.5) (call $m_log (f64.div (f64.add (f64.const 1) (local.get $mx)) (f64.sub (f64.const 1) (local.get $mx)))))))))
-      ;; atan2(y, x)
+      ;; atan2(y=$mx, x=$a2x) — full spec table incl. signed zeros & infinities
       (let $a2x f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-      (if (f64.gt (local.get $a2x) (f64.const 0)) (then (return (call $num (call $m_atan (f64.div (local.get $mx) (local.get $a2x)))))))
-      (if (f64.lt (local.get $a2x) (f64.const 0))
-        (then (if (f64.ge (local.get $mx) (f64.const 0))
-                (then (return (call $num (f64.add (call $m_atan (f64.div (local.get $mx) (local.get $a2x))) (f64.const 3.141592653589793)))))
-                (else (return (call $num (f64.sub (call $m_atan (f64.div (local.get $mx) (local.get $a2x))) (f64.const 3.141592653589793))))))))
-      (if (f64.gt (local.get $mx) (f64.const 0)) (then (return (call $num (f64.const 1.5707963267948966)))))
-      (if (f64.lt (local.get $mx) (f64.const 0)) (then (return (call $num (f64.const -1.5707963267948966)))))
-      (return (call $num (f64.const 0)))))
+      (if (i32.or (f64.ne (local.get $mx) (local.get $mx)) (f64.ne (local.get $a2x) (local.get $a2x)))
+        (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))  ;; NaN
+      (let $a2inf f64 (f64.div (f64.const 1) (f64.const 0)))
+      (let $yinf i32 (f64.eq (f64.abs (local.get $mx)) (local.get $a2inf)))
+      (let $xinf i32 (f64.eq (f64.abs (local.get $a2x)) (local.get $a2inf)))
+      ;; x's sign bit set ⇒ x<0 or x is -0
+      (let $xneg i32 (f64.lt (f64.copysign (f64.const 1) (local.get $a2x)) (f64.const 0)))
+      (if (i32.and (local.get $yinf) (local.get $xinf))  ;; both infinite → ±π/4 (x>0) / ±3π/4 (x<0)
+        (then (return (call $num (f64.copysign (if f64 (local.get $xneg) (then (f64.const 2.356194490192345)) (else (f64.const 0.7853981633974483))) (local.get $mx))))))
+      (if (local.get $yinf) (then (return (call $num (f64.copysign (f64.const 1.5707963267948966) (local.get $mx))))))  ;; y±∞, x finite → ±π/2
+      (if (local.get $xinf)  ;; x±∞, y finite → x>0:±0  x<0:±π (sign from y)
+        (then (return (call $num (f64.copysign (if f64 (local.get $xneg) (then (f64.const 3.141592653589793)) (else (f64.const 0))) (local.get $mx))))))
+      (if (f64.eq (local.get $mx) (f64.const 0))  ;; y is ±0 → x≥+0:±0(=y)  x<0/-0:±π
+        (then (return (call $num (if f64 (local.get $xneg) (then (f64.copysign (f64.const 3.141592653589793) (local.get $mx))) (else (local.get $mx)))))))
+      (if (f64.eq (local.get $a2x) (f64.const 0)) (then (return (call $num (f64.copysign (f64.const 1.5707963267948966) (local.get $mx))))))  ;; x±0, y≠0 → ±π/2
+      (if (f64.gt (local.get $a2x) (f64.const 0)) (then (return (call $num (call $m_atan (f64.div (local.get $mx) (local.get $a2x)))))))  ;; x>0
+      ;; x<0, y≠0 → atan(y/x) + sign(y)·π
+      (return (call $num (f64.add (call $m_atan (f64.div (local.get $mx) (local.get $a2x))) (f64.copysign (f64.const 3.141592653589793) (local.get $mx)))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 40)) (i32.le_s (local.get $id) (i32.const 49)))
     (then
       (let $x f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
