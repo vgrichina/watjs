@@ -3640,10 +3640,13 @@
           (if (i32.or (i32.lt_s (local.get $i) (i32.const 0)) (i32.ge_s (local.get $i) (local.get $slen)))
             (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
           (return (call $num (f64.convert_i32_s (call $str_byte (local.get $s) (local.get $i)))))))
-      (if (i32.eq (local.get $id) (i32.const 13))  ;; indexOf(needle[, fromIndex])
+      (if (i32.eq (local.get $id) (i32.const 13))  ;; indexOf(searchString[, position])
         (then
-          (let $ndl i32 (call $to_str (local.get $a0)))
-          (let $from i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (if (call $is_symbol (local.get $a0)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
+          (let $ndl i32 (call $to_str (local.get $a0)))  ;; ToString(searchString) — @@toPrimitive/toString/valueOf
+          (if (call $err) (then (return (call $v_undef))))
+          (let $from i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $tonum_fmtarg (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (if (call $err) (then (return (call $v_undef))))  ;; ToInteger(position) threw (Symbol/BigInt)
           (if (i32.lt_s (local.get $from) (i32.const 0)) (then (set! $from (i32.const 0))))
           (if (i32.gt_s (local.get $from) (local.get $slen)) (then (set! $from (local.get $slen))))
           (let $idr i32 (call $str_indexof (call $substr (local.get $s) (local.get $from) (i32.sub (local.get $slen) (local.get $from))) (local.get $ndl)))

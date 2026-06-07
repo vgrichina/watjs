@@ -440,6 +440,12 @@
 ;; ToString(object) = ToPrimitive(O, string hint): @@toPrimitive, else toString()
 ;; THEN valueOf() (string-hint order), else __prim__ wrapper, else "[object Object]".
 ;; Mirrors $obj_to_num. Errors surface via the err flag (the cstring "" is a dummy).
+;; ToString of a primitive ToPrimitive result: a Symbol throws (unlike lenient $to_str
+;; / String(symbol)). Used for the values methods/@@toPrimitive return inside obj_to_str.
+(func $prim_to_str (param $p i64) (result i32) (effects)
+  (if (call $is_symbol (local.get $p)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (cstring ""))))
+  (call $to_str (local.get $p)))
+
 (func $obj_to_str (param $v i64) (result i32) (effects)
   (if (call $is_array (local.get $v)) (then (return (call $arr_join (local.get $v)))))
   (if (call $is_object (local.get $v))
@@ -455,7 +461,10 @@
           (if (call $err) (then (return (cstring ""))))
           (if (i32.or (call $is_object (local.get $stpr)) (i32.or (call $is_array (local.get $stpr)) (call $is_function (local.get $stpr))))
             (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert object to primitive value")) (return (cstring ""))))
-          (return (call $to_str (local.get $stpr)))))
+          (return (call $prim_to_str (local.get $stpr)))))
+      ;; @@toPrimitive present but not callable (and not null) → TypeError
+      (if (i32.eqz (i32.or (call $is_undefined (local.get $stpf)) (call $is_null (local.get $stpf))))
+        (then (call $throw_type (cstring "TypeError") (cstring "@@toPrimitive is not a function")) (return (cstring ""))))
       (let $shad i32 (i32.const 0))  ;; a method returned an object
       ;; toString first (string hint)
       (let $sts i64 (call $get_prop (local.get $v) (call $mk_str (cstring "toString"))))
@@ -464,7 +473,7 @@
         (then
           (let $sr i64 (call $call_fn0 (local.get $sts) (local.get $v)))
           (if (call $err) (then (return (cstring ""))))
-          (if (i32.eqz (i32.or (call $is_object (local.get $sr)) (i32.or (call $is_array (local.get $sr)) (call $is_function (local.get $sr))))) (then (return (call $to_str (local.get $sr)))))
+          (if (i32.eqz (i32.or (call $is_object (local.get $sr)) (i32.or (call $is_array (local.get $sr)) (call $is_function (local.get $sr))))) (then (return (call $prim_to_str (local.get $sr)))))
           (set! $shad (i32.const 1))))
       ;; then valueOf
       (let $svo i64 (call $get_prop (local.get $v) (call $mk_str (cstring "valueOf"))))
@@ -473,14 +482,15 @@
         (then
           (let $sr2 i64 (call $call_fn0 (local.get $svo) (local.get $v)))
           (if (call $err) (then (return (cstring ""))))
-          (if (i32.eqz (i32.or (call $is_object (local.get $sr2)) (i32.or (call $is_array (local.get $sr2)) (call $is_function (local.get $sr2))))) (then (return (call $to_str (local.get $sr2)))))
+          (if (i32.eqz (i32.or (call $is_object (local.get $sr2)) (i32.or (call $is_array (local.get $sr2)) (call $is_function (local.get $sr2))))) (then (return (call $prim_to_str (local.get $sr2)))))
           (set! $shad (i32.const 1))))
       ;; wrapper object (new String/Number/Boolean): ToString of the boxed primitive
       (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__prim__")))
       (if (local.get $pslot) (then (return (call $to_str (i64.load (local.get $pslot))))))
-      ;; a user method returned an object → genuine TypeError
-      (if (local.get $shad)
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert object to primitive value")) (return (cstring ""))))))
+      ;; neither toString nor valueOf was callable (or a method returned an object) →
+      ;; OrdinaryToPrimitive has no usable result → TypeError
+      (call $throw_type (cstring "TypeError") (cstring "Cannot convert object to primitive value"))
+      (return (cstring ""))))
   (if (call $is_function (local.get $v)) (then (return (cstring "function"))))
   (cstring "[object Object]"))
 
