@@ -4460,6 +4460,18 @@
             (then (let $r0 i32 (call $arr_new (i32.const 2))) (call $arr_push (local.get $r0) (call $mk_str (local.get $s)))
               (call $split_apply_limit (local.get $r0) (local.get $argv) (local.get $argc))  ;; limit 0 → [] even for undefined separator
               (return (call $mk_arr (local.get $r0)))))
+          ;; @@split protocol: a separator with a @@split method handles split itself
+          ;; (covers RegExp.prototype[@@split] for a regex separator + custom @@split)
+          (if (i32.eqz (call $is_null (local.get $a0)))
+            (then
+              (let $spm i64 (call $get_prop (local.get $a0) (call $mk_str (cstring "@@split"))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (call $is_function (local.get $spm))
+                (then
+                  (let $spargs i32 (call $heap_alloc (i32.const 16)))
+                  (i64.store (local.get $spargs) (call $mk_str (local.get $s)))
+                  (i64.store (i32.add (local.get $spargs) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+                  (return (call $call_val (local.get $spm) (i32.const 2) (local.get $spargs) (local.get $a0)))))))
           (if (if i32 (call $is_object (local.get $a0)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "__re_src__")) (i32.const 0))) (else (i32.const 0)))  ;; regex separator (guard: i32.and would deref val_payload of a non-object)
             (then
               (call $re_apply_flags (local.get $a0))
@@ -4988,6 +5000,51 @@
       (call $scope_define (local.get $mait) (cstring "@@mpos") (call $num (f64.const 0)))
       (call $scope_define (local.get $mait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")))
       (return (call $mk_obj (local.get $mait)))))
+  (if (i32.eq (local.get $id) (i32.const 429))  ;; RegExp.prototype[@@split](string[, limit]) — this = regexp
+    (then
+      (let $s i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (call $re_apply_flags (local.get $thisv))
+      (let $pat i32 (call $re_pat_of (local.get $thisv)))
+      (let $r i32 (call $arr_new (i32.const 4)))
+      (let $pos i32 (i32.const 0))
+      (let $sln i32 (call $str_len (local.get $s)))
+      (if (i32.eqz (call $str_len (local.get $pat)))  ;; empty regex → one element per char
+        (then
+          (block $ece (loop $ecl
+            (br_if $ece (i32.ge_s (local.get $pos) (local.get $sln)))
+            (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.const 1))))
+            (set! $pos (i32.add (local.get $pos) (i32.const 1)))
+            (br $ecl)))
+          (call $split_apply_limit (local.get $r) (local.get $argv) (local.get $argc))
+          (return (call $mk_arr (local.get $r)))))
+      (block $se (loop $sl
+        (br_if $se (i32.gt_s (local.get $pos) (local.get $sln)))
+        (let $rel i32 (call $re_search (i32.add (local.get $pat) (i32.const 4)) (call $str_len (local.get $pat)) (i32.add (i32.add (local.get $s) (i32.const 4)) (local.get $pos)) (i32.sub (local.get $sln) (local.get $pos))))
+        (br_if $se (i32.lt_s (local.get $rel) (i32.const 0)))
+        (let $ms i32 (i32.add (local.get $pos) (local.get $rel)))
+        (let $me i32 (i32.add (local.get $pos) (i32.load (i32.const 168))))
+        (if (i32.le_s (local.get $me) (local.get $ms))
+          (then
+            (br_if $se (i32.ge_s (local.get $ms) (local.get $sln)))
+            (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.sub (i32.add (local.get $ms) (i32.const 1)) (local.get $pos)))))
+            (set! $pos (i32.add (local.get $ms) (i32.const 1))))
+          (else
+            (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.sub (local.get $ms) (local.get $pos)))))
+            (let $gc i32 (i32.const 1))
+            (block $gce (loop $gcl
+              (br_if $gce (i32.gt_s (local.get $gc) (i32.load (i32.const 284))))
+              (let $gb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $gc) (i32.const 1)) (i32.const 8))))
+              (let $cs i32 (i32.load (local.get $gb)))
+              (if (i32.lt_s (local.get $cs) (i32.const 0))
+                (then (call $arr_push (local.get $r) (call $v_undef)))
+                (else (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (i32.add (local.get $pos) (local.get $cs)) (i32.sub (i32.load (i32.add (local.get $gb) (i32.const 4))) (local.get $cs)))))))
+              (set! $gc (i32.add (local.get $gc) (i32.const 1)))
+              (br $gcl)))
+            (set! $pos (local.get $me))))
+        (br $sl)))
+      (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.sub (local.get $sln) (local.get $pos)))))
+      (call $split_apply_limit (local.get $r) (local.get $argv) (local.get $argc))
+      (return (call $mk_arr (local.get $r)))))
   (if (i32.eq (local.get $id) (i32.const 428))  ;; RegExp.prototype[@@match](string) — this = regexp
     (then
       (call $re_apply_flags (local.get $thisv))
@@ -7040,6 +7097,7 @@
   (call $scope_define (local.get $reproto) (cstring "@@matchAll") (call $mk_native (i32.const 426) (cstring "[Symbol.matchAll]")))
   (call $scope_define (local.get $reproto) (cstring "@@search") (call $mk_native (i32.const 427) (cstring "[Symbol.search]")))
   (call $scope_define (local.get $reproto) (cstring "@@match") (call $mk_native (i32.const 428) (cstring "[Symbol.match]")))
+  (call $scope_define (local.get $reproto) (cstring "@@split") (call $mk_native (i32.const 429) (cstring "[Symbol.split]")))
   (i32.store (i32.const 324) (local.get $reproto))
   (call $set_prop (local.get $ref) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $reproto)))
   ;; Number with NaN / Infinity constants
