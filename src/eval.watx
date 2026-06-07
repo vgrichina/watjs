@@ -4269,7 +4269,7 @@
             (else (set! $dt (f64.div (f64.const 0) (f64.const 0)))))))
       ;; TimeClip the final time value (single-number ctor path; multi-arg already clipped in date_make, idempotent)
       (if (i32.or (f64.ne (local.get $dt) (local.get $dt)) (f64.gt (f64.abs (local.get $dt)) (f64.const 8640000000000000)))
-        (then (set! $dt (f64.div (f64.const 0) (f64.const 0)))) (else (set! $dt (f64.trunc (local.get $dt)))))
+        (then (set! $dt (f64.div (f64.const 0) (f64.const 0)))) (else (set! $dt (f64.add (f64.trunc (local.get $dt)) (f64.const 0)))))  ;; +0 flushes -0 → +0
       (let $dobj i32 (call $obj_new (i32.const 16)))
       (i32.store (local.get $dobj) (i32.load (i32.const 308)))  ;; prototype chain → Date.prototype (methods inherited)
       (call $scope_define (local.get $dobj) (cstring "@@time") (call $num (local.get $dt)))
@@ -4313,7 +4313,7 @@
       ;; TimeClip: NaN or |t| > 8.64e15 → NaN; else trunc toward zero
       (if (i32.or (f64.ne (local.get $stv) (local.get $stv)) (f64.gt (f64.abs (local.get $stv)) (f64.const 8640000000000000)))
         (then (set! $stv (f64.div (f64.const 0) (f64.const 0))))
-        (else (set! $stv (f64.trunc (local.get $stv)))))
+        (else (set! $stv (f64.add (f64.trunc (local.get $stv)) (f64.const 0)))))  ;; +0 flushes -0 → +0
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $stv)))
       (return (call $num (local.get $stv)))))
   (if (i32.eq (local.get $id) (i32.const 257))  ;; getTimezoneOffset() — always UTC (0), NaN for Invalid Date
