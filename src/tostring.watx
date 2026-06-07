@@ -699,10 +699,9 @@
 (func $str_rest_ws (param $s i32) (param $pos i32) (param $len i32) (result i32) (effects)
   (block $b (loop $l
     (br_if $b (i32.ge_s (local.get $pos) (local.get $len)))
-    (let $w i32 (call $str_byte (local.get $s) (local.get $pos)))
-    (if (i32.eqz (i32.or (i32.eq (local.get $w) (i32.const 32)) (i32.and (i32.ge_s (local.get $w) (i32.const 9)) (i32.le_s (local.get $w) (i32.const 13)))))
-      (then (return (i32.const 0))))
-    (set! $pos (i32.add (local.get $pos) (i32.const 1))) (br $l)))
+    (let $w i32 (call $ws_fwd_len (local.get $s) (local.get $pos)))  ;; ASCII + UTF-8 Unicode whitespace
+    (if (i32.eqz (local.get $w)) (then (return (i32.const 0))))
+    (set! $pos (i32.add (local.get $pos) (local.get $w))) (br $l)))
   (i32.const 1))
 
 ;; Parse a base-`base` (2/8/16) integer at s[pos..]; trailing whitespace OK.
@@ -817,12 +816,12 @@
 (func $str_to_num (param $s i32) (result f64) (effects)
   (let $len i32 (call $str_len (local.get $s)))
   (let $i i32 (i32.const 0))
-  ;; skip leading ASCII whitespace (tab/LF/VT/FF/CR/space)
+  ;; skip leading WhiteSpace/LineTerminator (ASCII + all UTF-8 Unicode spaces)
   (block $sl1 (loop $ll1
     (br_if $sl1 (i32.ge_s (local.get $i) (local.get $len)))
-    (let $w i32 (call $str_byte (local.get $s) (local.get $i)))
-    (br_if $sl1 (i32.eqz (i32.or (i32.eq (local.get $w) (i32.const 32)) (i32.and (i32.ge_s (local.get $w) (i32.const 9)) (i32.le_s (local.get $w) (i32.const 13))))))
-    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ll1)))
+    (let $w i32 (call $ws_fwd_len (local.get $s) (local.get $i)))
+    (br_if $sl1 (i32.eqz (local.get $w)))
+    (set! $i (i32.add (local.get $i) (local.get $w))) (br $ll1)))
   (if (i32.ge_s (local.get $i) (local.get $len)) (then (return (f64.const 0))))  ;; empty / all whitespace → 0
   (let $sign f64 (f64.const 1))
   (let $signSeen i32 (i32.const 0))
