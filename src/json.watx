@@ -382,11 +382,19 @@
       (i64.store (i32.add (local.get $a2) (i32.const 8)) (local.get $v))
       (set! $v (call $call_val (local.get $rep) (i32.const 2) (local.get $a2) (local.get $holder)))
       (if (call $err) (then (return (i32.const 0))))))
-  ;; unwrap Number/String/Boolean wrapper objects to their primitive
+  ;; Number/String/Boolean/BigInt wrapper objects: per spec a Number wrapper is
+  ;; ToNumber'd and a String wrapper ToString'd (invoking overridden valueOf/toString),
+  ;; NOT just read off the boxed primitive. Boolean/BigInt use the boxed value.
   (if (call $is_object (local.get $v))
     (then
       (let $ps i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__prim__")))
-      (if (local.get $ps) (then (set! $v (i64.load (local.get $ps)))))))
+      (if (local.get $ps)
+        (then
+          (let $pv i64 (i64.load (local.get $ps)))
+          (if (call $is_number (local.get $pv)) (then (set! $v (call $num (call $to_num (local.get $v)))))
+            (else (if (call $is_string (local.get $pv)) (then (set! $v (call $mk_str (call $to_str (local.get $v)))))
+              (else (set! $v (local.get $pv))))))  ;; boolean / bigint
+          (if (call $err) (then (return (i32.const 0))))))))
   ;; primitives
   (if (call $is_null (local.get $v)) (then (return (cstring "null"))))
   (if (call $is_boolean (local.get $v)) (then (return (if i32 (call $val_payload (local.get $v)) (then (cstring "true")) (else (cstring "false"))))))
@@ -464,11 +472,18 @@
 ;; build the gap string from the `space` argument (Number → N spaces, capped 10;
 ;; String → first 10 chars; else ""). Returns Str ptr (empty Str if no gap).
 (func $jstr_gap (param $sp i64) (result i32) (effects)
-  ;; unwrap wrapper
+  ;; a Number-wrapper space is ToNumber'd and a String-wrapper ToString'd (invoking an
+  ;; overridden valueOf/toString), not read off the boxed primitive
   (if (call $is_object (local.get $sp))
     (then
       (let $ps i32 (call $scope_find_local (call $val_payload (local.get $sp)) (cstring "__prim__")))
-      (if (local.get $ps) (then (set! $sp (i64.load (local.get $ps)))))))
+      (if (local.get $ps)
+        (then
+          (let $pv i64 (i64.load (local.get $ps)))
+          (if (call $is_number (local.get $pv)) (then (set! $sp (call $num (call $to_num (local.get $sp)))))
+            (else (if (call $is_string (local.get $pv)) (then (set! $sp (call $mk_str (call $to_str (local.get $sp)))))
+              (else (set! $sp (local.get $pv))))))
+          (if (call $err) (then (return (i32.const 0))))))))
   (if (call $is_number (local.get $sp))
     (then
       (let $nn i32 (i32.trunc_f64_s (call $tonum_raw (local.get $sp))))
