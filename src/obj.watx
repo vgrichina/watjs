@@ -951,7 +951,14 @@
           (if (i32.and (i32.ge_s (local.get $tidx) (i32.const 0)) (i32.lt_s (local.get $tidx) (local.get $tln)))
             (then (call $ta_store_val (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))) (local.get $val))))
           (return)))
-      (if (call $scope_find_local (local.get $o) (cstring "@@frozen")) (then (call $set_fail) (return)))  ;; Object.freeze: ignore writes (strict: throw)
+      ;; Object.freeze: data writes / new props are refused (strict: throw), but an own
+      ;; accessor still fires its setter — fall through to the accessor handling below.
+      (if (call $scope_find_local (local.get $o) (cstring "@@frozen"))
+        (then
+          (let $frsl i32 (call $scope_find_local (local.get $o) (call $to_prop_key (local.get $key))))
+          (if (local.get $frsl)
+            (then (if (i32.eqz (call $entry_is_accessor (local.get $frsl))) (then (call $set_fail) (return))))
+            (else (call $set_fail) (return)))))
       ;; mapped arguments: writing a numeric index < @@anp writes the parameter slot
       (if (call $is_number (local.get $key))
         (then
