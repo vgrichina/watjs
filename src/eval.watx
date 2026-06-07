@@ -4113,6 +4113,16 @@
       ;; registered symbols have an "@@symfor:" prefixed key → strip it
       (if (i32.ne (call $str_indexof (local.get $kfkey) (cstring "@@symfor:")) (i32.const 0)) (then (return (call $v_undef))))
       (return (call $mk_str (call $substr (local.get $kfkey) (i32.const 9) (i32.sub (call $str_len (local.get $kfkey)) (i32.const 9)))))))
+  (if (i32.eq (local.get $id) (i32.const 439))  ;; get Symbol.prototype.description (this = symbol or wrapper)
+    (then
+      (if (call $is_object (local.get $thisv))
+        (then (let $sde i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $sde) (then (if (call $is_symbol (i64.load (local.get $sde))) (then (set! $thisv (i64.load (local.get $sde)))))))))
+      (if (i32.eqz (call $is_symbol (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Symbol.prototype.description getter called on non-symbol")) (return (call $v_undef))))
+      (let $sdv i32 (call $sym_desc (local.get $thisv)))  ;; 0 → absent description → undefined
+      (if (i32.eqz (local.get $sdv)) (then (return (call $v_undef))))
+      (return (call $mk_str (local.get $sdv)))))
   (if (i32.eq (local.get $id) (i32.const 199))  ;; Symbol.prototype.toString (this = symbol or wrapper)
     (then
       ;; unwrap a Symbol wrapper object (Object(sym)) to its primitive
@@ -7528,6 +7538,7 @@
   (call $scope_define_attr (local.get $symproto) (cstring "toLocaleString") (call $mk_native (i32.const 199) (cstring "toLocaleString")) (i32.const 12))
   (call $scope_define_attr (local.get $symproto) (cstring "valueOf") (call $mk_native (i32.const 437) (cstring "valueOf")) (i32.const 12))
   (call $scope_define_attr (local.get $symproto) (cstring "@@toPrimitive") (call $mk_native (i32.const 438) (cstring "[Symbol.toPrimitive]")) (i32.const 4))  ;; returns thisSymbolValue (any hint)
+  (call $scope_define_accessor_attr (local.get $symproto) (cstring "description") (call $mk_native (i32.const 439) (cstring "get description")) (call $v_undef) (i32.const 5))  ;; {get, E:false, C:true}
   (call $scope_define_attr (local.get $symproto) (cstring "@@toStringTag") (call $mk_str (cstring "Symbol")) (i32.const 4))
   (call $scope_define_attr (local.get $symproto) (cstring "constructor") (local.get $symf) (i32.const 12))
   (call $scope_define_attr (call $fn_def_scope (local.get $symf)) (cstring "prototype") (call $mk_obj (local.get $symproto)) (i32.const 0))
