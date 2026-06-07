@@ -108,6 +108,68 @@
             (br $l)))
           (local.get $out))))))
 
+;; one capture (1-based $n) from a RegExpExec RESULT object → Str ptr ("" if the
+;; capture is undefined). Reads Get(result, ToString(n)), so it works for a custom exec.
+(func $sub_cap (param $result i64) (param $n i32) (result i32) (effects)
+  (let $cv i64 (call $get_prop (local.get $result) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $n))))))
+  (if (call $err) (then (return (cstring ""))))
+  (if (call $is_undefined (local.get $cv)) (then (return (cstring ""))))
+  (call $to_str (local.get $cv)))
+
+;; GetSubstitution(matched, str, position, result, nCaptures, namedCaptures, replacement).
+;; Expands $$ $& $` $' $n $nn $<name> reading captures from the RESULT object. Returns a Str ptr.
+(func $get_substitution (param $matched i32) (param $sval i32) (param $position i32) (param $result i64) (param $ncap i32) (param $named i64) (param $repl i32) (result i32) (effects)
+  (let $mlen i32 (call $str_len (local.get $matched)))
+  (let $slen i32 (call $str_len (local.get $sval)))
+  (let $tail i32 (i32.add (local.get $position) (local.get $mlen)))
+  (if (i32.eqz (call $str_has_char (local.get $repl) (i32.const 36))) (then (return (local.get $repl))))
+  (let $out i32 (cstring ""))
+  (let $i i32 (i32.const 0))
+  (let $rl i32 (call $str_len (local.get $repl)))
+  (let $hasnamed i32 (i32.eqz (i32.or (call $is_undefined (local.get $named)) (call $is_null (local.get $named)))))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $rl)))
+    (let $ch i32 (call $str_byte (local.get $repl) (local.get $i)))
+    (if (i32.and (i32.eq (local.get $ch) (i32.const 36)) (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $rl)))  ;; '$' + something
+      (then
+        (let $nx i32 (call $str_byte (local.get $repl) (i32.add (local.get $i) (i32.const 1))))
+        (if (i32.eq (local.get $nx) (i32.const 36))  ;; $$
+          (then (set! $out (call $str_concat (local.get $out) (cstring "$"))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+        (if (i32.eq (local.get $nx) (i32.const 38))  ;; $&
+          (then (set! $out (call $str_concat (local.get $out) (local.get $matched))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+        (if (i32.eq (local.get $nx) (i32.const 96))  ;; $` (before)
+          (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sval) (i32.const 0) (local.get $position)))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+        (if (i32.eq (local.get $nx) (i32.const 39))  ;; $' (after)
+          (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sval) (local.get $tail) (i32.sub (local.get $slen) (local.get $tail))))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+        (if (i32.and (i32.eq (local.get $nx) (i32.const 60)) (local.get $hasnamed))  ;; $<name>
+          (then
+            (let $ns i32 (i32.add (local.get $i) (i32.const 2)))
+            (let $ne i32 (local.get $ns))
+            (block $ne2 (loop $nl (br_if $ne2 (i32.or (i32.ge_s (local.get $ne) (local.get $rl)) (i32.eq (call $str_byte (local.get $repl) (local.get $ne)) (i32.const 62)))) (set! $ne (i32.add (local.get $ne) (i32.const 1))) (br $nl)))
+            ;; only consume the group if a closing '>' was found
+            (if (i32.lt_s (local.get $ne) (local.get $rl))
+              (then
+                (let $gv i64 (call $get_prop (local.get $named) (call $mk_str (call $substr (local.get $repl) (local.get $ns) (i32.sub (local.get $ne) (local.get $ns))))))
+                (if (call $err) (then (return (cstring ""))))
+                (if (i32.eqz (call $is_undefined (local.get $gv))) (then (set! $out (call $str_concat (local.get $out) (call $to_str (local.get $gv))))))
+                (set! $i (i32.add (local.get $ne) (i32.const 1))) (br $l)))))
+        (if (i32.and (i32.ge_s (local.get $nx) (i32.const 49)) (i32.le_s (local.get $nx) (i32.const 57)))  ;; $1-$9 (maybe $nn)
+          (then
+            (let $d1 i32 (i32.sub (local.get $nx) (i32.const 48)))
+            (let $two i32 (i32.const -1))
+            (if (i32.lt_s (i32.add (local.get $i) (i32.const 2)) (local.get $rl))
+              (then (let $c2 i32 (call $str_byte (local.get $repl) (i32.add (local.get $i) (i32.const 2))))
+                (if (i32.and (i32.ge_s (local.get $c2) (i32.const 48)) (i32.le_s (local.get $c2) (i32.const 57)))
+                  (then (set! $two (i32.add (i32.mul (local.get $d1) (i32.const 10)) (i32.sub (local.get $c2) (i32.const 48))))))))
+            (if (i32.and (i32.ge_s (local.get $two) (i32.const 1)) (i32.le_s (local.get $two) (local.get $ncap)))  ;; two-digit group
+              (then (set! $out (call $str_concat (local.get $out) (call $sub_cap (local.get $result) (local.get $two)))) (set! $i (i32.add (local.get $i) (i32.const 3))) (br $l)))
+            (if (i32.le_s (local.get $d1) (local.get $ncap))  ;; single-digit group
+              (then (set! $out (call $str_concat (local.get $out) (call $sub_cap (local.get $result) (local.get $d1)))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))))))
+    (set! $out (call $str_concat (local.get $out) (call $substr (local.get $repl) (local.get $i) (i32.const 1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l)))
+  (local.get $out))
+
 ;; index of `ndl` in `hay` at/after `from`, or -1
 (func $str_find (param $hay i32) (param $ndl i32) (param $from i32) (result i32) (effects)
   (let $hl i32 (call $str_len (local.get $hay)))
