@@ -2925,6 +2925,8 @@
               (if (call $is_number (local.get $pv)) (then (return (call $mk_str (cstring "[object Number]")))))
               (if (call $is_string (local.get $pv)) (then (return (call $mk_str (cstring "[object String]")))))
               (if (call $is_boolean (local.get $pv)) (then (return (call $mk_str (cstring "[object Boolean]")))))))
+          (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@af")) (then (return (call $mk_str (cstring "[object Arguments]")))))  ;; [[ParameterMap]]
+          (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__re_src__")) (then (return (call $mk_str (cstring "[object RegExp]")))))  ;; [[RegExpMatcher]]
           (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time")) (then (return (call $mk_str (cstring "[object Date]")))))
           ;; [[ErrorData]]: instances chaining to Error.prototype carry an inherited
           ;; internal #errkind marker → builtinTag "Error"
