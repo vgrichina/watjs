@@ -4871,15 +4871,19 @@
   ;; 292-298 global/ignoreCase/multiline/sticky/unicode/dotAll/hasIndices.
   (if (i32.eq (local.get $id) (i32.const 290))  ;; get source
     (then
-      (if (call $is_object (local.get $thisv))
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "get source called on non-object")) (return (call $v_undef))))
+      (let $rsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__re_src__")))
+      (if (local.get $rsl)
         (then
-          (let $rsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__re_src__")))
-          (if (local.get $rsl)
-            (then
-              (let $rsv i64 (i64.load (local.get $rsl)))
-              (if (call $is_string (local.get $rsv))
-                (then (if (i32.gt_s (call $str_len (call $val_payload (local.get $rsv))) (i32.const 0)) (then (return (local.get $rsv))))))))))
-      (return (call $mk_str (cstring "(?:)")))))
+          (let $rsv i64 (i64.load (local.get $rsl)))
+          (if (call $is_string (local.get $rsv))
+            (then (if (i32.gt_s (call $str_len (call $val_payload (local.get $rsv))) (i32.const 0)) (then (return (local.get $rsv))))))))
+      ;; not a RegExp: only RegExp.prototype itself yields "(?:)"; any other object throws
+      (if (i32.eq (call $val_payload (local.get $thisv)) (i32.load (i32.const 324)))
+        (then (return (call $mk_str (cstring "(?:)")))))
+      (if (local.get $rsl) (then (return (call $mk_str (cstring "(?:)")))))  ;; an empty-source RegExp
+      (call $throw_type (cstring "TypeError") (cstring "get source called on a non-RegExp object")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 291))  ;; get flags — assemble from Get(this, <flag>) in d g i m s u v y order
     (then
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_function (local.get $thisv)) (call $is_array (local.get $thisv)))))
@@ -4904,12 +4908,17 @@
       (return (call $mk_str (local.get $fres)))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 292)) (i32.le_s (local.get $id) (i32.const 298)))
     (then
-      (let $rbf i32 (i32.const 0))  ;; flags string ptr (0 if none/non-regex)
-      (if (call $is_object (local.get $thisv))
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "get flag called on non-object")) (return (call $v_undef))))
+      (let $rbf i32 (i32.const 0))  ;; flags string ptr (0 if non-regex)
+      (let $bsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__re_flags__")))
+      (if (local.get $bsl)
+        (then (let $bfv i64 (i64.load (local.get $bsl))) (if (call $is_string (local.get $bfv)) (then (set! $rbf (call $val_payload (local.get $bfv)))))))
+      ;; non-RegExp: RegExp.prototype → undefined; any other object → TypeError
+      (if (i32.eqz (local.get $rbf))
         (then
-          (let $bsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__re_flags__")))
-          (if (local.get $bsl)
-            (then (let $bfv i64 (i64.load (local.get $bsl))) (if (call $is_string (local.get $bfv)) (then (set! $rbf (call $val_payload (local.get $bfv)))))))))
+          (if (i32.eq (call $val_payload (local.get $thisv)) (i32.load (i32.const 324))) (then (return (call $v_undef))))
+          (call $throw_type (cstring "TypeError") (cstring "get flag called on a non-RegExp object")) (return (call $v_undef))))
       (let $bch i32 (i32.const 100))  ;; hasIndices 'd' (id 298)
       (if (i32.eq (local.get $id) (i32.const 292)) (then (set! $bch (i32.const 103))))  ;; global g
       (if (i32.eq (local.get $id) (i32.const 293)) (then (set! $bch (i32.const 105))))  ;; ignoreCase i
