@@ -4337,7 +4337,8 @@
       (if (i32.eqz (local.get $std))
         (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
       (let $dcur f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
-      (if (f64.ne (local.get $dcur) (local.get $dcur)) (then (set! $dcur (f64.const 0))))  ;; Invalid Date → base +0
+      (let $tnan i32 (f64.ne (local.get $dcur) (local.get $dcur)))  ;; capture invalid-Date BEFORE coercing args
+      (if (local.get $tnan) (then (set! $dcur (f64.const 0))))  ;; placeholder base; discarded if $tnan
       ;; ToNumber ALL provided components in order FIRST (side effects run before any
       ;; finiteness check / any field is applied), THEN validate, THEN build.
       (let $dnvf f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -4355,6 +4356,8 @@
       (if (local.get $act1) (then (set! $dav1 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (if (call $err) (then (return (call $v_undef))))))
       (if (local.get $act2) (then (set! $dav2 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))) (if (call $err) (then (return (call $v_undef))))))
       (if (local.get $act3) (then (set! $dav3 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 3)))) (if (call $err) (then (return (call $v_undef))))))
+      (if (i32.and (local.get $tnan) (i32.ne (local.get $id) (i32.const 250)))  ;; setFullYear (250) sets NaN→+0 and proceeds; all others return NaN
+        (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))  ;; t was NaN: args coerced (side effects ran), return NaN, slot untouched
       (if (i32.or (i32.eqz (call $f64_safe_i64 (local.get $dnvf)))  ;; any provided component non-finite → Invalid Date
             (i32.or (i32.and (local.get $act1) (i32.eqz (call $f64_safe_i64 (local.get $dav1))))
               (i32.or (i32.and (local.get $act2) (i32.eqz (call $f64_safe_i64 (local.get $dav2))))
