@@ -4099,6 +4099,7 @@
   (if (i32.eq (local.get $id) (i32.const 197))  ;; Symbol.for(key) → registered (shared) symbol
     (then
       (let $sfk i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))  ;; ToString(key) threw (e.g. throwing toString)
       (let $sreg i32 (i32.load (i32.const 296)))
       (let $sfslot i32 (call $scope_find_local (local.get $sreg) (local.get $sfk)))
       (if (local.get $sfslot) (then (return (i64.load (local.get $sfslot)))))
@@ -4108,7 +4109,7 @@
   (if (i32.eq (local.get $id) (i32.const 198))  ;; Symbol.keyFor(sym) → registered key or undefined
     (then
       (let $kfs i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eqz (call $is_symbol (local.get $kfs))) (then (return (call $v_undef))))
+      (if (i32.eqz (call $is_symbol (local.get $kfs))) (then (call $throw_type (cstring "TypeError") (cstring "Symbol.keyFor: argument is not a Symbol")) (return (call $v_undef))))
       (let $kfkey i32 (call $sym_key (local.get $kfs)))
       ;; registered symbols have an "@@symfor:" prefixed key → strip it
       (if (i32.ne (call $str_indexof (local.get $kfkey) (cstring "@@symfor:")) (i32.const 0)) (then (return (call $v_undef))))
