@@ -1783,7 +1783,7 @@
   (if (call $is_string (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 156))))))
   (if (call $is_boolean (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 184))))))
   (if (call $is_bigint (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 624))))))  ;; BigInt.prototype
-  (if (call $is_symbol (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.const 0)))))
+  (if (call $is_symbol (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 636))))))
   (call $mk_obj (call $obj_new (i32.const 8))))
 
 ;; native dispatch by id (1 = print, 2 = assert)
@@ -3022,7 +3022,7 @@
       (if (call $is_string (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 156))))))
       (if (call $is_boolean (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 184))))))
       (if (call $is_bigint (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 624))))))  ;; BigInt.prototype
-      (if (call $is_symbol (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.const 0)))))
+      (if (call $is_symbol (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 636))))))
       (return (call $mk_obj (call $obj_new (i32.const 8))))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 10)) (i32.eq (local.get $id) (i32.const 112)))  ;; Object.keys / getOwnPropertyNames
     (then
@@ -3957,8 +3957,12 @@
       ;; registered symbols have an "@@symfor:" prefixed key → strip it
       (if (i32.ne (call $str_indexof (local.get $kfkey) (cstring "@@symfor:")) (i32.const 0)) (then (return (call $v_undef))))
       (return (call $mk_str (call $substr (local.get $kfkey) (i32.const 9) (i32.sub (call $str_len (local.get $kfkey)) (i32.const 9)))))))
-  (if (i32.eq (local.get $id) (i32.const 199))  ;; Symbol.prototype.toString (this = symbol)
+  (if (i32.eq (local.get $id) (i32.const 199))  ;; Symbol.prototype.toString (this = symbol or wrapper)
     (then
+      ;; unwrap a Symbol wrapper object (Object(sym)) to its primitive
+      (if (call $is_object (local.get $thisv))
+        (then (let $sws i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $sws) (then (if (call $is_symbol (i64.load (local.get $sws))) (then (set! $thisv (i64.load (local.get $sws)))))))))
       (let $sdd i32 (call $sym_desc (local.get $thisv)))  ;; 0 → absent description
       (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (if i32 (local.get $sdd) (then (local.get $sdd)) (else (cstring "")))) (cstring ")"))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 210)) (i32.le_s (local.get $id) (i32.const 218)))  ;; TypedArray constructors
@@ -6983,6 +6987,7 @@
   ;; object (own, non-W/E/C). Symbol primitive method access is served directly in
   ;; get_prop's symbol branch; this object exists for `Symbol.prototype` itself.
   (let $symproto i32 (call $obj_new (i32.const 6)))
+  (i32.store (i32.const 636) (local.get $symproto))  ;; Symbol.prototype (for Object(symbol) wrappers)
   (call $scope_define_attr (local.get $symproto) (cstring "toString") (call $mk_native (i32.const 199) (cstring "toString")) (i32.const 12))
   (call $scope_define_attr (local.get $symproto) (cstring "toLocaleString") (call $mk_native (i32.const 199) (cstring "toLocaleString")) (i32.const 12))
   (call $scope_define_attr (local.get $symproto) (cstring "valueOf") (call $mk_native (i32.const 302) (cstring "valueOf")) (i32.const 12))
