@@ -3168,6 +3168,8 @@
       ;; a supplied mapfn must be callable
       (if (i32.and (i32.gt_s (local.get $argc) (i32.const 1)) (i32.and (i32.eqz (call $is_undefined (local.get $frm))) (i32.eqz (call $is_function (local.get $frm)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Array.from: mapping function is not callable")) (return (call $v_undef))))
+      (let $frthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))  ;; mapfn thisArg
+      (let $frmapped i32 (i32.const 0))  ;; iterator branch applies mapfn inline (to close on throw)
       (let $fra i32 (call $arr_new (i32.const 4)))
       (if (call $is_array (local.get $frs))
         (then
@@ -3195,12 +3197,24 @@
           (if (call $is_function (local.get $frifn)) (then (set! $frit (call $call_fn0 (local.get $frifn) (local.get $frs)))))
           (let $frnx i64 (call $get_prop (local.get $frit) (call $mk_str (cstring "next"))))
           (if (call $is_function (local.get $frnx))
-            (then  ;; iterator protocol
+            (then  ;; iterator protocol — apply mapfn inline so a throw CLOSES the iterator
+              (set! $frmapped (i32.const 1))
+              (let $fridx i32 (i32.const 0))
               (block $frie (loop $fril
                 (let $frr i64 (call $call_fn0 (local.get $frnx) (local.get $frit)))
-                (br_if $frie (call $err))
+                (br_if $frie (call $err))  ;; next() threw → propagate (no close)
                 (br_if $frie (call $truthy (call $get_prop (local.get $frr) (call $mk_str (cstring "done")))))
-                (call $arr_push (local.get $fra) (call $get_prop (local.get $frr) (call $mk_str (cstring "value"))))
+                (let $frval i64 (call $get_prop (local.get $frr) (call $mk_str (cstring "value"))))
+                (if (call $err) (then (call $iter_close_throw (local.get $frit)) (return (call $v_undef))))
+                (if (call $is_function (local.get $frm))
+                  (then
+                    (let $frav i32 (call $heap_alloc (i32.const 16)))
+                    (i64.store (local.get $frav) (local.get $frval))
+                    (i64.store (i32.add (local.get $frav) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $fridx))))
+                    (set! $frval (call $call_val (local.get $frm) (i32.const 2) (local.get $frav) (local.get $frthis)))
+                    (if (call $err) (then (call $iter_close_throw (local.get $frit)) (return (call $v_undef))))))
+                (call $arr_push (local.get $fra) (local.get $frval))
+                (set! $fridx (i32.add (local.get $fridx) (i32.const 1)))
                 (br $fril))))
             (else  ;; array-like: indices 0..length-1 (NaN/negative length → 0)
               (let $frlnf f64 (call $to_num (call $get_prop (local.get $frs) (call $mk_str (cstring "length")))))
@@ -3211,7 +3225,7 @@
                 (call $arr_push (local.get $fra) (call $get_prop (local.get $frs) (call $num (f64.convert_i32_s (local.get $frk)))))
                 (set! $frk (i32.add (local.get $frk) (i32.const 1)))
                 (br $frll)))))))
-      (if (call $is_function (local.get $frm))  ;; apply mapFn(elem, i)
+      (if (i32.and (i32.eqz (local.get $frmapped)) (call $is_function (local.get $frm)))  ;; apply mapFn(elem,i) for the non-iterator (array-like/string) paths
         (then
           (let $frmi i32 (i32.const 0))
           (let $frmlen i32 (call $arr_len (local.get $fra)))
@@ -3220,7 +3234,8 @@
             (let $frav i32 (call $heap_alloc (i32.const 16)))
             (i64.store (local.get $frav) (call $arr_get (local.get $fra) (local.get $frmi)))
             (i64.store (i32.add (local.get $frav) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $frmi))))
-            (call $arr_set (local.get $fra) (local.get $frmi) (call $call_val (local.get $frm) (i32.const 2) (local.get $frav) (call $v_undef)))
+            (call $arr_set (local.get $fra) (local.get $frmi) (call $call_val (local.get $frm) (i32.const 2) (local.get $frav) (local.get $frthis)))
+            (if (call $err) (then (return (call $v_undef))))
             (set! $frmi (i32.add (local.get $frmi) (i32.const 1)))
             (br $frmlp)))))
       (return (call $mk_arr (local.get $fra)))))
