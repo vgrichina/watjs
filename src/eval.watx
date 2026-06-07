@@ -6417,10 +6417,11 @@
           (block $flie (loop $flil
             (br_if $flie (i32.lt_s (local.get $fli) (i32.const 0)))
             (let $fle i64 (call $arr_get (local.get $arr) (local.get $fli)))
-            (let $fcb2 i32 (call $heap_alloc (i32.const 16)))
+            (let $fcb2 i32 (call $heap_alloc (i32.const 24)))
             (i64.store (local.get $fcb2) (local.get $fle))
             (i64.store (i32.add (local.get $fcb2) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $fli))))
-            (if (call $truthy (call $call_val (local.get $a0) (i32.const 2) (local.get $fcb2) (call $v_undef)))
+            (i64.store (i32.add (local.get $fcb2) (i32.const 16)) (local.get $thisv))  ;; the array (3rd cb arg)
+            (if (call $truthy (call $call_val (local.get $a0) (i32.const 3) (local.get $fcb2) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
               (then (return (if i64 (i32.eq (local.get $id) (i32.const 33)) (then (local.get $fle)) (else (call $num (f64.convert_i32_s (local.get $fli))))))))
             (set! $fli (i32.sub (local.get $fli) (i32.const 1)))
             (br $flil)))
