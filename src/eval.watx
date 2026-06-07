@@ -4333,6 +4333,27 @@
       (if (i32.eq (local.get $id) (i32.const 254)) (then (set! $dsmi (local.get $dnv))))
       (if (i32.eq (local.get $id) (i32.const 255)) (then (set! $dss (local.get $dnv))))
       (if (i32.eq (local.get $id) (i32.const 256)) (then (set! $dsms (local.get $dnv))))
+      ;; multi-arg cascade: setFullYear(y,mo,d) setMonth(mo,d) setHours(h,m,s,ms)
+      ;; setMinutes(m,s,ms) setSeconds(s,ms) — extra args fill the subsequent fields
+      (let $dav f64 (f64.const 0))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 250)) (i32.ge_s (local.get $argc) (i32.const 2)))  ;; setFullYear month
+        (then (set! $dav (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (if (i32.eqz (call $f64_safe_i64 (local.get $dav))) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0)))))) (set! $dsmo (i64.trunc_f64_s (local.get $dav)))))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 250)) (i32.ge_s (local.get $argc) (i32.const 3)))  ;; setFullYear date
+        (then (set! $dav (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))) (if (i32.eqz (call $f64_safe_i64 (local.get $dav))) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0)))))) (set! $dsd (i64.trunc_f64_s (local.get $dav)))))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 251)) (i32.ge_s (local.get $argc) (i32.const 2)))  ;; setMonth date
+        (then (set! $dav (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (if (i32.eqz (call $f64_safe_i64 (local.get $dav))) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0)))))) (set! $dsd (i64.trunc_f64_s (local.get $dav)))))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 253)) (i32.ge_s (local.get $argc) (i32.const 2)))  ;; setHours min
+        (then (set! $dav (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (if (i32.eqz (call $f64_safe_i64 (local.get $dav))) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0)))))) (set! $dsmi (i64.trunc_f64_s (local.get $dav)))))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 253)) (i32.ge_s (local.get $argc) (i32.const 3)))  ;; setHours sec
+        (then (set! $dav (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))) (if (i32.eqz (call $f64_safe_i64 (local.get $dav))) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0)))))) (set! $dss (i64.trunc_f64_s (local.get $dav)))))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 253)) (i32.ge_s (local.get $argc) (i32.const 4)))  ;; setHours ms
+        (then (set! $dav (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 3)))) (if (i32.eqz (call $f64_safe_i64 (local.get $dav))) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0)))))) (set! $dsms (i64.trunc_f64_s (local.get $dav)))))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 254)) (i32.ge_s (local.get $argc) (i32.const 2)))  ;; setMinutes sec
+        (then (set! $dav (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (if (i32.eqz (call $f64_safe_i64 (local.get $dav))) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0)))))) (set! $dss (i64.trunc_f64_s (local.get $dav)))))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 254)) (i32.ge_s (local.get $argc) (i32.const 3)))  ;; setMinutes ms
+        (then (set! $dav (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))) (if (i32.eqz (call $f64_safe_i64 (local.get $dav))) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0)))))) (set! $dsms (i64.trunc_f64_s (local.get $dav)))))
+      (if (i32.and (i32.eq (local.get $id) (i32.const 255)) (i32.ge_s (local.get $argc) (i32.const 2)))  ;; setSeconds ms
+        (then (set! $dav (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (if (i32.eqz (call $f64_safe_i64 (local.get $dav))) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0)))))) (set! $dsms (i64.trunc_f64_s (local.get $dav)))))
       (let $dnt f64 (call $date_make (local.get $dsy) (local.get $dsmo) (local.get $dsd) (local.get $dsh) (local.get $dsmi) (local.get $dss) (local.get $dsms)))
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $dnt)))
       (return (call $num (local.get $dnt)))))

@@ -1,0 +1,12 @@
+var d=new Date(Date.UTC(2020,0,1,0,0,0,0));
+d.setUTCHours(10,30,45,123);
+print(d.getUTCHours()+":"+d.getUTCMinutes()+":"+d.getUTCSeconds()+"."+d.getUTCMilliseconds());
+var d2=new Date(Date.UTC(2020,0,1,5,5,5,5));
+d2.setUTCMinutes(20,40);
+print(d2.getUTCMinutes()+":"+d2.getUTCSeconds());
+var d3=new Date(Date.UTC(2020,0,1));
+d3.setUTCFullYear(2021,3,15);
+print(d3.getUTCFullYear()+"-"+d3.getUTCMonth()+"-"+d3.getUTCDate());
+var d4=new Date(0);
+d4.setSeconds(30,500);
+print(d4.getUTCSeconds()+"."+d4.getUTCMilliseconds());
