@@ -592,14 +592,22 @@
                   (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vproto))
                   (call $scope_define_attr (call $val_payload (local.get $vproto)) (cstring "constructor") (local.get $cont) (i32.const 12))))  ;; F.prototype.constructor === F {W:true,E:false,C:true}
               (return (local.get $vproto))))
-          (if (i32.and (call $str_eq (local.get $ks) (cstring "length"))  ;; not deleted (flag bit5=32)
-                (i32.eqz (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 32))))
-            (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
-          (if (i32.and (call $str_eq (local.get $ks) (cstring "name"))  ;; declared/inferred name @(28+np*4); not deleted (flag bit4=16)
-                (i32.eqz (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 16))))
+          (if (call $str_eq (local.get $ks) (cstring "length"))  ;; an own length (defineProperty, @16) overrides the param-count field
             (then
-              (let $nmp i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))))
-              (return (if i64 (local.get $nmp) (then (call $mk_str (local.get $nmp))) (else (call $mk_str (cstring "")))))))
+              (if (call $is_object (local.get $vproto))
+                (then (let $vlsl i32 (call $scope_find_local (call $val_payload (local.get $vproto)) (cstring "length")))
+                  (if (local.get $vlsl) (then (return (i64.load (local.get $vlsl)))))))
+              (if (i32.eqz (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 32)))  ;; not deleted (bit5)
+                (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))))
+          (if (call $str_eq (local.get $ks) (cstring "name"))  ;; an own name (defineProperty) overrides @(28+np*4)
+            (then
+              (if (call $is_object (local.get $vproto))
+                (then (let $vnsl i32 (call $scope_find_local (call $val_payload (local.get $vproto)) (cstring "name")))
+                  (if (local.get $vnsl) (then (return (i64.load (local.get $vnsl)))))))
+              (if (i32.eqz (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 16)))  ;; not deleted (bit4)
+                (then
+                  (let $nmp i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))))
+                  (return (if i64 (local.get $nmp) (then (call $mk_str (local.get $nmp))) (else (call $mk_str (cstring "")))))))))
           (if (call $is_object (local.get $vproto))
             (then
               (let $vslot i32 (call $scope_find (call $val_payload (local.get $vproto)) (local.get $ks)))
@@ -618,7 +626,11 @@
           ;; Math.*, String.prototype.*, bound fns, etc. have none → undefined
           (if (call $native_is_ctor (i32.load (local.get $fn))) (then (return (call $fn_get_prototype (local.get $fn)))))
           (return (call $v_undef))))
-      (if (call $str_eq (local.get $ks) (cstring "length")) (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
+      (if (call $str_eq (local.get $ks) (cstring "length"))  ;; own length (defineProperty, @12) overrides the arity field
+        (then
+          (let $nlp i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
+          (if (local.get $nlp) (then (let $nls i32 (call $scope_find_local (local.get $nlp) (cstring "length"))) (if (local.get $nls) (then (return (i64.load (local.get $nls)))))))
+          (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.const 8))))))))
       (let $props i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
       (if (local.get $props)
         (then
