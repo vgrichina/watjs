@@ -188,7 +188,7 @@
 
 ;; set reg 272 (ignorecase 'i') and 276 (global 'g') from a regex value's flags
 (func $re_apply_flags (param $v i64) (effects)
-  (i32.store (i32.const 272) (i32.const 0)) (i32.store (i32.const 276) (i32.const 0))
+  (i32.store (i32.const 272) (i32.const 0)) (i32.store (i32.const 276) (i32.const 0)) (i32.store (i32.const 644) (i32.const 0))
   (if (call $is_object (local.get $v))
     (then
       (let $sl i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__re_flags__")))
@@ -198,7 +198,8 @@
           (if (call $is_string (local.get $fv))
             (then
               (i32.store (i32.const 272) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 105)))
-              (i32.store (i32.const 276) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 103))))))))))
+              (i32.store (i32.const 276) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 103)))
+              (i32.store (i32.const 644) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 121))))))))))  ;; 'y' sticky → reg 644
 
 ;; does escape letter `e` match char `ch`?  (ch = -1 means past end)
 (func $re_esc_match (param $e i32) (param $ch i32) (result i32) (effects)
@@ -704,3 +705,16 @@
 (func $re_search_str_from (param $patStr i32) (param $subStr i32) (param $from i32) (result i32) (effects)
   (call $re_search_from (i32.add (local.get $patStr) (i32.const 4)) (call $str_len (local.get $patStr))
                    (i32.add (local.get $subStr) (i32.const 4)) (call $str_len (local.get $subStr)) (local.get $from)))
+
+;; sticky ('y') match: the match must begin EXACTLY at byte offset $from (no forward
+;; scan). Returns $from on success (reg 168 = match end) else -1.
+(func $re_match_str_at (param $patStr i32) (param $subStr i32) (param $from i32) (result i32) (effects)
+  (let $p i32 (i32.add (local.get $patStr) (i32.const 4)))
+  (let $plen i32 (call $str_len (local.get $patStr)))
+  (let $s i32 (i32.add (local.get $subStr) (i32.const 4)))
+  (let $slen i32 (call $str_len (local.get $subStr)))
+  (call $re_reset_caps (local.get $p) (local.get $plen))
+  (if (i32.or (i32.lt_s (local.get $from) (i32.const 0)) (i32.gt_s (local.get $from) (local.get $slen))) (then (return (i32.const -1))))
+  (let $r i32 (call $re_match_alt (local.get $p) (i32.const 0) (local.get $plen) (local.get $s) (local.get $slen) (local.get $from)))
+  (if (i32.ge_s (local.get $r) (i32.const 0)) (then (i32.store (i32.const 168) (local.get $r)) (return (local.get $from))))
+  (i32.const -1))
