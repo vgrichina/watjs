@@ -5463,6 +5463,9 @@
       (let $ov i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.or (call $is_null (local.get $ov)) (call $is_undefined (local.get $ov)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      ;; ToObject(arg): a primitive → its wrapper, so getPrototypeOf(5) === Number.prototype
+      (if (i32.eqz (i32.or (call $is_object (local.get $ov)) (i32.or (call $is_array (local.get $ov)) (i32.or (call $is_function (local.get $ov)) (call $is_proxy (local.get $ov))))))
+        (then (set! $ov (call $to_object (local.get $ov)))))
       (return (call $js_get_prototype (local.get $ov)))))
   (if (i32.eq (local.get $id) (i32.const 83))  ;; Array.isArray(x) — sees through Proxies to the target
     (then
