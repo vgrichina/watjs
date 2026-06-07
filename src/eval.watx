@@ -4313,6 +4313,9 @@
       (let $ums f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 7)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 6)))) (else (f64.const 0))))
       (if (i32.eqz (i32.and (call $f64_safe_i64 (local.get $uy)) (i32.and (call $f64_safe_i64 (local.get $umo)) (i32.and (call $f64_safe_i64 (local.get $ud)) (i32.and (call $f64_safe_i64 (local.get $uh)) (i32.and (call $f64_safe_i64 (local.get $umi)) (i32.and (call $f64_safe_i64 (local.get $us)) (call $f64_safe_i64 (local.get $ums)))))))))
         (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
+      ;; ToIntegerOrInfinity(y) FIRST, then year 0..99 maps to 1900+year (so -0.999999 → 0 → 1900)
+      (set! $uy (f64.trunc (local.get $uy)))
+      (if (i32.and (f64.ge (local.get $uy) (f64.const 0)) (f64.le (local.get $uy) (f64.const 99))) (then (set! $uy (f64.add (local.get $uy) (f64.const 1900)))))
       (return (call $num (call $date_make (i64.trunc_f64_s (local.get $uy)) (i64.trunc_f64_s (local.get $umo)) (i64.trunc_f64_s (local.get $ud)) (i64.trunc_f64_s (local.get $uh)) (i64.trunc_f64_s (local.get $umi)) (i64.trunc_f64_s (local.get $us)) (i64.trunc_f64_s (local.get $ums)))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 250)) (i32.le_s (local.get $id) (i32.const 256)))  ;; setFullYear/Month/Date/Hours/Minutes/Seconds/Milliseconds (single field)
     (then
