@@ -6792,6 +6792,7 @@
     (then (return (i32.const 1))))  ;; Math.clz32, Number/String/Boolean/isNaN/isFinite/parseFloat
   (if (i32.or (i32.eq (local.get $id) (i32.const 223)) (i32.or (i32.eq (local.get $id) (i32.const 225)) (i32.or (i32.eq (local.get $id) (i32.const 424)) (i32.or (i32.eq (local.get $id) (i32.const 425)) (i32.or (i32.eq (local.get $id) (i32.const 433)) (i32.eq (local.get $id) (i32.const 435))))))) (then (return (i32.const 1))))  ;; Math.fround, Array unshift, Math.f16round, Math.sumPrecise, Date.toJSON, String.fromCodePoint
   (if (i32.eq (local.get $id) (i32.const 434)) (then (return (i32.const 1))))  ;; Date.prototype[@@toPrimitive](hint)
+  (if (i32.eq (local.get $id) (i32.const 3)) (then (return (i32.const 1))))  ;; eval(x)
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
   (if (i32.eq (local.get $id) (i32.const 277)) (then (return (i32.const 2))))  ;; Object.hasOwn
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
