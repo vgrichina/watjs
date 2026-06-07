@@ -4449,7 +4449,9 @@
           ;; no separator, or an explicit `undefined` separator → [wholeString]
           ;; (must NOT coerce undefined to the string "undefined")
           (if (i32.or (i32.eqz (local.get $argc)) (call $is_undefined (local.get $a0)))
-            (then (let $r0 i32 (call $arr_new (i32.const 2))) (call $arr_push (local.get $r0) (call $mk_str (local.get $s))) (return (call $mk_arr (local.get $r0)))))
+            (then (let $r0 i32 (call $arr_new (i32.const 2))) (call $arr_push (local.get $r0) (call $mk_str (local.get $s)))
+              (call $split_apply_limit (local.get $r0) (local.get $argv) (local.get $argc))  ;; limit 0 → [] even for undefined separator
+              (return (call $mk_arr (local.get $r0)))))
           (if (if i32 (call $is_object (local.get $a0)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "__re_src__")) (i32.const 0))) (else (i32.const 0)))  ;; regex separator (guard: i32.and would deref val_payload of a non-object)
             (then
               (call $re_apply_flags (local.get $a0))
@@ -4464,6 +4466,7 @@
                     (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.const 1))))
                     (set! $pos (i32.add (local.get $pos) (i32.const 1)))
                     (br $ecl)))
+                  (call $split_apply_limit (local.get $r) (local.get $argv) (local.get $argc))
                   (return (call $mk_arr (local.get $r)))))
               (block $se (loop $sl
                 (br_if $se (i32.gt_s (local.get $pos) (local.get $sln)))
