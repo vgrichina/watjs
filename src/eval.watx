@@ -5000,6 +5000,53 @@
       (call $scope_define (local.get $mait) (cstring "@@mpos") (call $num (f64.const 0)))
       (call $scope_define (local.get $mait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")))
       (return (call $mk_obj (local.get $mait)))))
+  (if (i32.eq (local.get $id) (i32.const 430))  ;; RegExp.prototype[@@replace](string, repl) — this = regexp
+    (then
+      (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (call $re_apply_flags (local.get $thisv))
+      (let $pat i32 (call $re_pat_of (local.get $thisv)))
+      (let $start i32 (call $re_search_str (local.get $pat) (local.get $sub)))
+      (let $repfn i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $repisfn i32 (call $is_function (local.get $repfn)))
+      (let $repl i32 (if i32 (local.get $repisfn) (then (cstring "")) (else (call $to_str (local.get $repfn)))))
+      (if (i32.eqz (i32.load (i32.const 276)))  ;; not global → first match only
+        (then
+          (if (i32.lt_s (local.get $start) (i32.const 0)) (then (return (call $mk_str (local.get $sub)))))
+          (let $end i32 (i32.load (i32.const 168)))
+          (let $out i32 (call $str_concat (call $substr (local.get $sub) (i32.const 0) (local.get $start)) (call $re_repl_of (local.get $repfn) (local.get $repisfn) (local.get $repl) (local.get $sub) (local.get $start) (local.get $end))))
+          (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $end) (i32.sub (call $str_len (local.get $sub)) (local.get $end)))))
+          (return (call $mk_str (local.get $out))))
+        (else  ;; global: replace every match
+          (let $out i32 (cstring ""))
+          (let $pos i32 (i32.const 0))
+          (let $sln i32 (call $str_len (local.get $sub)))
+          (block $ge (loop $gl
+            (let $rel i32 (call $re_search (i32.add (local.get $pat) (i32.const 4)) (call $str_len (local.get $pat)) (i32.add (i32.add (local.get $sub) (i32.const 4)) (local.get $pos)) (i32.sub (local.get $sln) (local.get $pos))))
+            (br_if $ge (i32.lt_s (local.get $rel) (i32.const 0)))
+            (let $ms i32 (i32.add (local.get $pos) (local.get $rel)))
+            (let $me i32 (i32.add (local.get $pos) (i32.load (i32.const 168))))
+            (if (i32.gt_s (local.get $pos) (i32.const 0))
+              (then
+                (let $cgi i32 (i32.const 0))
+                (let $cgn i32 (i32.load (i32.const 284)))
+                (block $cge (loop $cgl
+                  (br_if $cge (i32.ge_s (local.get $cgi) (local.get $cgn)))
+                  (let $ccb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (local.get $cgi) (i32.const 8))))
+                  (let $ccs i32 (i32.load (local.get $ccb)))
+                  (if (i32.ge_s (local.get $ccs) (i32.const 0)) (then (i32.store (local.get $ccb) (i32.add (local.get $ccs) (local.get $pos)))))
+                  (let $cce i32 (i32.load (i32.add (local.get $ccb) (i32.const 4))))
+                  (if (i32.ge_s (local.get $cce) (i32.const 0)) (then (i32.store (i32.add (local.get $ccb) (i32.const 4)) (i32.add (local.get $cce) (local.get $pos)))))
+                  (set! $cgi (i32.add (local.get $cgi) (i32.const 1)))
+                  (br $cgl)))))
+            (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $pos) (i32.sub (local.get $ms) (local.get $pos)))))
+            (set! $out (call $str_concat (local.get $out) (call $re_repl_of (local.get $repfn) (local.get $repisfn) (local.get $repl) (local.get $sub) (local.get $ms) (local.get $me))))
+            (if (i32.le_s (local.get $me) (local.get $ms))
+              (then (if (i32.lt_s (local.get $ms) (local.get $sln)) (then (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $ms) (i32.const 1)))))) (set! $pos (i32.add (local.get $ms) (i32.const 1))))
+              (else (set! $pos (local.get $me))))
+            (br_if $ge (i32.gt_s (local.get $pos) (local.get $sln)))
+            (br $gl)))
+          (set! $out (call $str_concat (local.get $out) (call $substr (local.get $sub) (local.get $pos) (i32.sub (local.get $sln) (local.get $pos)))))
+          (return (call $mk_str (local.get $out)))))))
   (if (i32.eq (local.get $id) (i32.const 429))  ;; RegExp.prototype[@@split](string[, limit]) — this = regexp
     (then
       (let $s i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -5129,6 +5176,17 @@
               (let $ssargs i32 (call $heap_alloc (i32.const 8)))
               (i64.store (local.get $ssargs) (call $mk_str (local.get $sub)))
               (return (call $call_val (local.get $ssm) (i32.const 1) (local.get $ssargs) (local.get $a0)))))))
+      ;; @@replace protocol: a searchValue with a @@replace method handles replace itself
+      (if (i32.and (i32.eq (local.get $id) (i32.const 103)) (i32.eqz (i32.or (call $is_null (local.get $a0)) (call $is_undefined (local.get $a0)))))
+        (then
+          (let $srm i64 (call $get_prop (local.get $a0) (call $mk_str (cstring "@@replace"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_function (local.get $srm))
+            (then
+              (let $srargs i32 (call $heap_alloc (i32.const 16)))
+              (i64.store (local.get $srargs) (call $mk_str (local.get $sub)))
+              (i64.store (i32.add (local.get $srargs) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+              (return (call $call_val (local.get $srm) (i32.const 2) (local.get $srargs) (local.get $a0)))))))
       (call $re_apply_flags (local.get $a0))
       ;; match/replace/search with undefined → RegExp(undefined) = empty pattern (NOT "undefined")
       (let $pat i32 (if i32 (call $is_undefined (local.get $a0)) (then (cstring "")) (else (call $re_pat_of (local.get $a0)))))
@@ -7098,6 +7156,7 @@
   (call $scope_define (local.get $reproto) (cstring "@@search") (call $mk_native (i32.const 427) (cstring "[Symbol.search]")))
   (call $scope_define (local.get $reproto) (cstring "@@match") (call $mk_native (i32.const 428) (cstring "[Symbol.match]")))
   (call $scope_define (local.get $reproto) (cstring "@@split") (call $mk_native (i32.const 429) (cstring "[Symbol.split]")))
+  (call $scope_define (local.get $reproto) (cstring "@@replace") (call $mk_native (i32.const 430) (cstring "[Symbol.replace]")))
   (i32.store (i32.const 324) (local.get $reproto))
   (call $set_prop (local.get $ref) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $reproto)))
   ;; Number with NaN / Infinity constants
