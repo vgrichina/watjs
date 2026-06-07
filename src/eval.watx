@@ -5114,9 +5114,11 @@
       (let $reglobal i32 (i32.load (i32.const 276)))
       (let $resticky i32 (i32.load (i32.const 644)))
       (let $restateful i32 (i32.or (local.get $reglobal) (local.get $resticky)))
-      (let $relastix i32 (i32.const 0))
-      (if (local.get $restateful)
-        (then (set! $relastix (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))))))
+      ;; ToLength(Get(R,"lastIndex")) is ALWAYS evaluated (its valueOf side effect runs even
+      ;; for a non-global/non-sticky regex), but the value is only USED when stateful.
+      (let $relastix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (local.get $restateful)) (then (set! $relastix (i32.const 0))))
       (let $start i32 (if i32 (local.get $restateful)
         (then (if i32 (i32.gt_s (local.get $relastix) (call $str_len (local.get $sub)))
                 (then (i32.const -1))   ;; lastIndex past end → no match
@@ -6956,6 +6958,7 @@
   (if (i32.eq (local.get $id) (i32.const 438)) (then (return (i32.const 1))))  ;; Symbol.prototype[@@toPrimitive](hint)
   (if (i32.or (i32.eq (local.get $id) (i32.const 426)) (i32.or (i32.eq (local.get $id) (i32.const 427)) (i32.eq (local.get $id) (i32.const 428)))) (then (return (i32.const 1))))  ;; RegExp @@matchAll/@@search/@@match
   (if (i32.or (i32.eq (local.get $id) (i32.const 429)) (i32.eq (local.get $id) (i32.const 430))) (then (return (i32.const 2))))  ;; RegExp @@split/@@replace
+  (if (i32.or (i32.eq (local.get $id) (i32.const 167)) (i32.eq (local.get $id) (i32.const 101))) (then (return (i32.const 1))))  ;; RegExp.prototype exec/test
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
   (if (i32.eq (local.get $id) (i32.const 277)) (then (return (i32.const 2))))  ;; Object.hasOwn
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
