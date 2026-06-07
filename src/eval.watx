@@ -3083,6 +3083,15 @@
           (call $throw_type (cstring "TypeError") (cstring "BigInt.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
       (if (call $is_bigint (local.get $thisv)) (then (return (local.get $thisv))))
       (call $throw_type (cstring "TypeError") (cstring "BigInt.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 437))  ;; Symbol.prototype.valueOf — this must be a Symbol (or Symbol wrapper)
+    (then
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $vo437 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $vo437) (then (if (call $is_symbol (i64.load (local.get $vo437))) (then (return (i64.load (local.get $vo437)))))))
+          (call $throw_type (cstring "TypeError") (cstring "Symbol.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
+      (if (call $is_symbol (local.get $thisv)) (then (return (local.get $thisv))))
+      (call $throw_type (cstring "TypeError") (cstring "Symbol.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 422))  ;; Boolean.prototype.valueOf — this must be a Boolean
     (then
       (if (call $is_object (local.get $thisv))
@@ -7516,7 +7525,7 @@
   (i32.store (i32.const 636) (local.get $symproto))  ;; Symbol.prototype (for Object(symbol) wrappers)
   (call $scope_define_attr (local.get $symproto) (cstring "toString") (call $mk_native (i32.const 199) (cstring "toString")) (i32.const 12))
   (call $scope_define_attr (local.get $symproto) (cstring "toLocaleString") (call $mk_native (i32.const 199) (cstring "toLocaleString")) (i32.const 12))
-  (call $scope_define_attr (local.get $symproto) (cstring "valueOf") (call $mk_native (i32.const 302) (cstring "valueOf")) (i32.const 12))
+  (call $scope_define_attr (local.get $symproto) (cstring "valueOf") (call $mk_native (i32.const 437) (cstring "valueOf")) (i32.const 12))
   (call $scope_define_attr (local.get $symproto) (cstring "@@toStringTag") (call $mk_str (cstring "Symbol")) (i32.const 4))
   (call $scope_define_attr (local.get $symproto) (cstring "constructor") (local.get $symf) (i32.const 12))
   (call $scope_define_attr (call $fn_def_scope (local.get $symf)) (cstring "prototype") (call $mk_obj (local.get $symproto)) (i32.const 0))
