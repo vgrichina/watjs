@@ -5356,10 +5356,24 @@
         (br $mmL)))
       (if (i32.eqz (local.get $mn)) (then (return (call $v_null))))
       (return (call $mk_arr (local.get $marr)))))
-  (if (i32.eq (local.get $id) (i32.const 427))  ;; RegExp.prototype[@@search](string) — this = regexp → index
+  (if (i32.eq (local.get $id) (i32.const 427))  ;; RegExp.prototype[@@search](string) — spec protocol
     (then
-      (call $re_apply_flags (local.get $thisv))
-      (return (call $num (f64.convert_i32_s (call $re_search_str (call $re_pat_of (local.get $thisv)) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_function (local.get $thisv)) (call $is_array (local.get $thisv)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "RegExp.prototype[@@search] called on non-object")) (return (call $v_undef))))
+      (let $hS i64 (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))  ;; S = ToString(string)
+      (if (call $err) (then (return (call $v_undef))))
+      (let $hprev i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))  ;; previousLastIndex (raw)
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $same_value (local.get $hprev) (call $num (f64.const 0))))  ;; set 0 only if not already +0
+        (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0))) (if (call $err) (then (return (call $v_undef))))))
+      (let $hres i64 (call $regexp_exec (local.get $thisv) (local.get $hS)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $hcur i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))  ;; restore if exec changed it
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $same_value (local.get $hcur) (local.get $hprev)))
+        (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (local.get $hprev)) (if (call $err) (then (return (call $v_undef))))))
+      (if (call $is_null (local.get $hres)) (then (return (call $num (f64.const -1)))))
+      (return (call $get_prop (local.get $hres) (call $mk_str (cstring "index"))))))
   (if (i32.eq (local.get $id) (i32.const 426))  ;; RegExp.prototype[@@matchAll](string) — this = regexp
     (then
       (let $rmait i32 (call $obj_new (i32.const 6)))
