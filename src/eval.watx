@@ -4216,10 +4216,19 @@
       (if (i32.eq (local.get $argc) (i32.const 1))
         (then
           (let $d1 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-          ;; new Date(string) parses; new Date(Date) / number → its time value
-          (if (call $is_string (local.get $d1))
-            (then (set! $dt (call $parse_date_str (call $val_payload (local.get $d1)))))
-            (else (set! $dt (call $to_num (local.get $d1)))))))
+          ;; new Date(Date) uses thisTimeValue directly (NO ToPrimitive); otherwise
+          ;; v = ToPrimitive(value) [default hint], then String → parse else ToNumber.
+          (let $disd i32 (i32.const 0))  ;; arg is a Date object (own @@time)
+          (if (call $is_object (local.get $d1))
+            (then (if (call $scope_find_local (call $val_payload (local.get $d1)) (cstring "@@time")) (then (set! $disd (i32.const 1))))))
+          (if (local.get $disd)
+            (then (set! $dt (call $to_num (call $get_prop (local.get $d1) (call $mk_str (cstring "@@time"))))))
+            (else
+              (let $d1p i64 (call $to_primitive_h (local.get $d1) (i32.const 0)))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (call $is_string (local.get $d1p))
+                (then (set! $dt (call $parse_date_str (call $val_payload (local.get $d1p)))))
+                (else (set! $dt (call $to_num (local.get $d1p)))))))))
       (if (i32.ge_s (local.get $argc) (i32.const 2))
         (then
           ;; ToNumber each component left-to-right; a throwing valueOf propagates.
