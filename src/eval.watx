@@ -5410,6 +5410,18 @@
   ;; --- Math methods (no this) ---
   (if (i32.eq (local.get $id) (i32.const 223))  ;; Math.fround — round to float32 precision
     (then (return (call $num (f64.promote_f32 (f32.demote_f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))))
+  (if (i32.eq (local.get $id) (i32.const 423))  ;; Math.random → [0,1)
+    (then
+      ;; xorshift64 PRNG; state at reg 628 (i64), lazily seeded from now_ms bits.
+      (let $rs i64 (i64.load (i32.const 628)))
+      (if (i64.eqz (local.get $rs))
+        (then (set! $rs (i64.or (i64.reinterpret_f64 (call $now_ms)) (i64.const 2862933555777941757)))))  ;; nonzero odd seed
+      (set! $rs (i64.xor (local.get $rs) (i64.shl (local.get $rs) (i64.const 13))))
+      (set! $rs (i64.xor (local.get $rs) (i64.shr_u (local.get $rs) (i64.const 7))))
+      (set! $rs (i64.xor (local.get $rs) (i64.shl (local.get $rs) (i64.const 17))))
+      (i64.store (i32.const 628) (local.get $rs))
+      ;; top 53 bits ÷ 2^53 → a double in [0,1)
+      (return (call $num (f64.mul (f64.convert_i64_u (i64.shr_u (local.get $rs) (i64.const 11))) (f64.const 1.1102230246251565e-16))))))
   (if (i32.eq (local.get $id) (i32.const 224))  ;; Math.imul(a,b) — 32-bit integer multiply
     (then (return (call $num (f64.convert_i32_s (i32.mul (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))))
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 242)))
@@ -7099,6 +7111,7 @@
   (call $scope_define (local.get $mo) (cstring "sign") (call $mk_native (i32.const 49) (cstring "sign")))
   (call $scope_define (local.get $mo) (cstring "hypot") (call $mk_native (i32.const 52) (cstring "hypot")))
   (call $scope_define (local.get $mo) (cstring "fround") (call $mk_native (i32.const 223) (cstring "fround")))
+  (call $scope_define (local.get $mo) (cstring "random") (call $mk_native (i32.const 423) (cstring "random")))
   (call $scope_define (local.get $mo) (cstring "imul") (call $mk_native (i32.const 224) (cstring "imul")))
   (call $scope_define (local.get $mo) (cstring "exp") (call $mk_native (i32.const 226) (cstring "exp")))
   (call $scope_define (local.get $mo) (cstring "log") (call $mk_native (i32.const 227) (cstring "log")))
