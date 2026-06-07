@@ -3304,21 +3304,37 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (if (i32.eqz (i32.or (call $is_array (local.get $fesrc)) (i32.or (call $is_object (local.get $fesrc)) (call $is_string (local.get $fesrc)))))  ;; not iterable (number/boolean/symbol)
         (then (call $throw_type (cstring "TypeError") (cstring "object is not iterable")) (return (call $v_undef))))
-      ;; drain any iterable; each entry must be an object; key via ToPropertyKey
-      (let $fea i32 (call $arr_new (i32.const 4)))
-      (call $spread_into (local.get $fea) (local.get $fesrc))
+      ;; GetIterator(src) and pull entries one at a time so the iterator is CLOSED on an
+      ;; abrupt completion (bad entry / throwing key|value get / ToPropertyKey), but NOT
+      ;; closed when next() itself throws / is uncallable / returns a non-object.
+      (let $feitf i64 (call $get_prop (local.get $fesrc) (call $mk_str (cstring "@@iterator"))))
       (if (call $err) (then (return (call $v_undef))))
-      (let $fei i32 (i32.const 0))
+      (if (i32.eqz (call $is_function (local.get $feitf)))
+        (then (call $throw_type (cstring "TypeError") (cstring "object is not iterable")) (return (call $v_undef))))
+      (let $feit i64 (call $call_val (local.get $feitf) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $fesrc)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $fenf i64 (call $get_prop (local.get $feit) (call $mk_str (cstring "next"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $febuf i32 (call $heap_alloc (i32.const 8)))
       (block $fee2 (loop $fel2
-        (br_if $fee2 (i32.ge_s (local.get $fei) (call $arr_len (local.get $fea))))
-        (let $fepair i64 (call $arr_get (local.get $fea) (local.get $fei)))
-        (if (i32.eqz (i32.or (call $is_array (local.get $fepair)) (call $is_object (local.get $fepair))))
-          (then (call $throw_type (cstring "TypeError") (cstring "Iterator value is not an entry object")) (return (call $v_undef))))
-        (let $fek i64 (call $get_prop (local.get $fepair) (call $mk_str (cstring "0"))))
-        (let $fev i64 (call $get_prop (local.get $fepair) (call $mk_str (cstring "1"))))
+        (let $fer i64 (call $call_val (local.get $fenf) (i32.const 0) (local.get $febuf) (local.get $feit)))
+        (if (call $err) (then (return (call $v_undef))))  ;; next() threw → propagate, no close
+        (if (i32.eqz (i32.or (call $is_object (local.get $fer)) (i32.or (call $is_array (local.get $fer)) (call $is_function (local.get $fer)))))
+          (then (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (return (call $v_undef))))  ;; no close
+        (br_if $fee2 (call $truthy (call $get_prop (local.get $fer) (call $mk_str (cstring "done")))))
         (if (call $err) (then (return (call $v_undef))))
-        (call $scope_define (local.get $feo) (call $to_prop_key (local.get $fek)) (local.get $fev))
-        (set! $fei (i32.add (local.get $fei) (i32.const 1)))
+        (let $fepair i64 (call $get_prop (local.get $fer) (call $mk_str (cstring "value"))))
+        (if (call $err) (then (return (call $v_undef))))
+        ;; from here, abrupt completions close the iterator
+        (if (i32.eqz (i32.or (call $is_array (local.get $fepair)) (call $is_object (local.get $fepair))))
+          (then (call $throw_type (cstring "TypeError") (cstring "Iterator value is not an entry object")) (call $iter_close_throw (local.get $feit)) (return (call $v_undef))))
+        (let $fek i64 (call $get_prop (local.get $fepair) (call $mk_str (cstring "0"))))
+        (if (call $err) (then (call $iter_close_throw (local.get $feit)) (return (call $v_undef))))
+        (let $fekk i32 (call $to_prop_key (local.get $fek)))
+        (if (call $err) (then (call $iter_close_throw (local.get $feit)) (return (call $v_undef))))
+        (let $fev i64 (call $get_prop (local.get $fepair) (call $mk_str (cstring "1"))))
+        (if (call $err) (then (call $iter_close_throw (local.get $feit)) (return (call $v_undef))))
+        (call $scope_define (local.get $feo) (local.get $fekk) (local.get $fev))
         (br $fel2)))
       (return (call $mk_obj (local.get $feo)))))
   (if (i32.eq (local.get $id) (i32.const 150))  ;; generator .next([v]) — resumes the VM context

@@ -1,0 +1,5 @@
+ok:{"a":1,"b":2}
+ok:{"x":1}
+TypeError
+closed=1
+notClosed=0
