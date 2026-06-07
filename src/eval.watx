@@ -5434,19 +5434,32 @@
     (then (return (call $num (f64.convert_i32_s (i32.mul (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (call $to_int32 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))))
   (if (i32.eq (local.get $id) (i32.const 425))  ;; Math.sumPrecise(iterable) — sum of Numbers (empty → -0)
     (then
-      (let $spit i32 (call $arr_new (i32.const 0)))
-      (call $spread_into (local.get $spit) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $err) (then (return (call $v_undef))))  ;; non-iterable → TypeError
-      (let $spn i32 (call $arr_len (local.get $spit)))
+      ;; GetIterator(arg) honoring a custom @@iterator; pull elements one at a time
+      ;; so a non-Number throws + closes the iterator on the FIRST bad value (the
+      ;; iterator may be infinite) and no element is coerced.
+      (let $spsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $spitf i64 (call $get_prop (local.get $spsrc) (call $mk_str (cstring "@@iterator"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $is_function (local.get $spitf)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Math.sumPrecise argument is not iterable")) (return (call $v_undef))))
+      (let $spit i64 (call $call_val (local.get $spitf) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $spsrc)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $spnf i64 (call $get_prop (local.get $spit) (call $mk_str (cstring "next"))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $spsum f64 (f64.neg (f64.const 0)))  ;; empty sum is -0
-      (let $spi i32 (i32.const 0))
+      (let $spbuf i32 (call $heap_alloc (i32.const 8)))
       (block $spe (loop $spl
-        (br_if $spe (i32.ge_s (local.get $spi) (local.get $spn)))
-        (let $spv i64 (call $arr_get (local.get $spit) (local.get $spi)))
+        (let $spr i64 (call $call_val (local.get $spnf) (i32.const 0) (local.get $spbuf) (local.get $spit)))
+        (if (call $err) (then (return (call $v_undef))))
+        (br_if $spe (call $truthy (call $get_prop (local.get $spr) (call $mk_str (cstring "done")))))
+        (let $spv i64 (call $get_prop (local.get $spr) (call $mk_str (cstring "value"))))
+        (if (call $err) (then (return (call $v_undef))))
         (if (i32.eqz (call $is_number (local.get $spv)))  ;; must be a Number, no coercion
-          (then (call $throw_type (cstring "TypeError") (cstring "Math.sumPrecise: not a Number")) (return (call $v_undef))))
+          (then
+            (call $throw_type (cstring "TypeError") (cstring "Math.sumPrecise: not a Number"))
+            (call $iter_close_throw (local.get $spit))  ;; close, preserving the TypeError
+            (return (call $v_undef))))
         (set! $spsum (f64.add (local.get $spsum) (call $tonum_raw (local.get $spv))))
-        (set! $spi (i32.add (local.get $spi) (i32.const 1)))
         (br $spl)))
       (return (call $num (local.get $spsum)))))
   (if (i32.eq (local.get $id) (i32.const 424))  ;; Math.f16round — round to IEEE-754 binary16 precision
