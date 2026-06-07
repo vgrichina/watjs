@@ -6109,10 +6109,12 @@
                 (br_if $fme (i32.ge_s (local.get $fmi) (local.get $n)))
                 (if (call $arr_has (local.get $arr) (local.get $fmi))  ;; skip absent indices (HasProperty)
                   (then
-                    (let $fcb i32 (call $heap_alloc (i32.const 16)))
+                    (let $fcb i32 (call $heap_alloc (i32.const 24)))
                     (i64.store (local.get $fcb) (call $arr_get (local.get $arr) (local.get $fmi)))
                     (i64.store (i32.add (local.get $fcb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $fmi))))
-                    (call $arr_push (local.get $fm) (call $call_val (local.get $a0) (i32.const 2) (local.get $fcb) (call $v_undef)))))
+                    (i64.store (i32.add (local.get $fcb) (i32.const 16)) (local.get $thisv))  ;; flatMap maps with the array as the 3rd cb arg
+                    (call $arr_push (local.get $fm) (call $call_val (local.get $a0) (i32.const 3) (local.get $fcb) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))  ;; thisArg
+                    (if (call $err) (then (return (call $v_undef))))))
                 (set! $fmi (i32.add (local.get $fmi) (i32.const 1)))
                 (br $fml)))
               (set! $fsrc (local.get $fm))))
