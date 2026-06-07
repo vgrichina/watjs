@@ -680,7 +680,9 @@
 ;; epoch-ms from date components (UTC). month is 0-based per JS.
 (func $date_make (param $y i64) (param $mo i64) (param $d i64) (param $h i64) (param $mi i64) (param $s i64) (param $ms i64) (result f64) (effects)
   (let $days i64 (call $days_from_civil (local.get $y) (i64.add (local.get $mo) (i64.const 1)) (local.get $d)))
-  (f64.convert_i64_s (i64.add (i64.add (i64.add (i64.add (i64.mul (local.get $days) (i64.const 86400000)) (i64.mul (local.get $h) (i64.const 3600000))) (i64.mul (local.get $mi) (i64.const 60000))) (i64.mul (local.get $s) (i64.const 1000))) (local.get $ms))))
+  (let $dmr f64 (f64.convert_i64_s (i64.add (i64.add (i64.add (i64.add (i64.mul (local.get $days) (i64.const 86400000)) (i64.mul (local.get $h) (i64.const 3600000))) (i64.mul (local.get $mi) (i64.const 60000))) (i64.mul (local.get $s) (i64.const 1000))) (local.get $ms))))
+  (if (i32.or (f64.ne (local.get $dmr) (local.get $dmr)) (f64.gt (f64.abs (local.get $dmr)) (f64.const 8640000000000000))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (local.get $dmr))
 
 ;; extract a UTC date/time field from epoch ms. field: 0 year, 1 month(0-based),
 ;; 2 date, 3 weekday, 4 hours, 5 minutes, 6 seconds, 7 ms.
