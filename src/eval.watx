@@ -5042,6 +5042,39 @@
       (call $scope_define (local.get $mait) (cstring "@@mpos") (call $num (f64.const 0)))
       (call $scope_define (local.get $mait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")))
       (return (call $mk_obj (local.get $mait)))))
+  (if (i32.eq (local.get $id) (i32.const 433))  ;; Date.prototype.toJSON() — non-finite → null
+    (then
+      (let $tjv f64 (call $to_num (local.get $thisv)))  ;; ToPrimitive(number) via valueOf
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $f64_safe_i64 (local.get $tjv))) (then (return (call $v_null))))  ;; NaN/Infinity → null
+      (let $tjiso i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "toISOString"))))
+      (if (i32.eqz (call $is_function (local.get $tjiso))) (then (call $throw_type (cstring "TypeError") (cstring "toISOString is not callable")) (return (call $v_undef))))
+      (return (call $call_val (local.get $tjiso) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $thisv)))))
+  (if (i32.eq (local.get $id) (i32.const 434))  ;; Date.prototype[@@toPrimitive](hint)
+    (then
+      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_function (local.get $thisv)) (call $is_array (local.get $thisv)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Date.prototype[@@toPrimitive] called on non-object")) (return (call $v_undef))))
+      (let $dph i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      ;; OrdinaryToPrimitive directly (NOT obj_to_str/num — those re-enter @@toPrimitive →
+      ;; infinite recursion). string/default: toString then valueOf; number: valueOf then toString.
+      (let $dpnum i32 (call $str_eq (local.get $dph) (cstring "number")))
+      (if (i32.eqz (i32.or (local.get $dpnum) (i32.or (call $str_eq (local.get $dph) (cstring "string")) (call $str_eq (local.get $dph) (cstring "default")))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Date[@@toPrimitive]: invalid hint")) (return (call $v_undef))))
+      (let $dpm1 i32 (if i32 (local.get $dpnum) (then (cstring "valueOf")) (else (cstring "toString"))))
+      (let $dpm2 i32 (if i32 (local.get $dpnum) (then (cstring "toString")) (else (cstring "valueOf"))))
+      (let $dpf1 i64 (call $get_prop (local.get $thisv) (call $mk_str (local.get $dpm1))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (call $is_function (local.get $dpf1))
+        (then (let $dpr1 i64 (call $call_fn0 (local.get $dpf1) (local.get $thisv)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.eqz (i32.or (call $is_object (local.get $dpr1)) (i32.or (call $is_array (local.get $dpr1)) (call $is_function (local.get $dpr1))))) (then (return (local.get $dpr1))))))
+      (let $dpf2 i64 (call $get_prop (local.get $thisv) (call $mk_str (local.get $dpm2))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (call $is_function (local.get $dpf2))
+        (then (let $dpr2 i64 (call $call_fn0 (local.get $dpf2) (local.get $thisv)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.eqz (i32.or (call $is_object (local.get $dpr2)) (i32.or (call $is_array (local.get $dpr2)) (call $is_function (local.get $dpr2))))) (then (return (local.get $dpr2))))))
+      (call $throw_type (cstring "TypeError") (cstring "Cannot convert object to primitive value")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 431))  ;; RegExp.prototype.toString() → "/" source "/" flags
     (then
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_function (local.get $thisv)) (call $is_array (local.get $thisv)))))
@@ -7567,7 +7600,8 @@
   (call $scope_define (local.get $dproto) (cstring "getMilliseconds") (call $mk_native (i32.const 190) (cstring "getMilliseconds")))
   (call $scope_define (local.get $dproto) (cstring "getUTCMilliseconds") (call $mk_native (i32.const 190) (cstring "getUTCMilliseconds")))
   (call $scope_define (local.get $dproto) (cstring "toISOString") (call $mk_native (i32.const 191) (cstring "toISOString")))
-  (call $scope_define (local.get $dproto) (cstring "toJSON") (call $mk_native (i32.const 191) (cstring "toJSON")))
+  (call $scope_define (local.get $dproto) (cstring "toJSON") (call $mk_native (i32.const 433) (cstring "toJSON")))
+  (call $scope_define (local.get $dproto) (cstring "@@toPrimitive") (call $mk_native (i32.const 434) (cstring "[Symbol.toPrimitive]")))
   (call $scope_define (local.get $dproto) (cstring "setTime") (call $mk_native (i32.const 249) (cstring "setTime")))
   (call $scope_define (local.get $dproto) (cstring "setFullYear") (call $mk_native (i32.const 250) (cstring "setFullYear")))
   (call $scope_define (local.get $dproto) (cstring "setUTCFullYear") (call $mk_native (i32.const 250) (cstring "setUTCFullYear")))
