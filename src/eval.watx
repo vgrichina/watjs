@@ -3356,6 +3356,10 @@
     (then (if (i32.eqz (i32.load (i32.const 612))) (then (i32.store (i32.const 612) (i32.const 2)) (i64.store (i32.const 616) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 417))  ;; BigInt.prototype.toString([radix])
     (then
+      ;; unwrap a BigInt wrapper object (Object(5n)) to its primitive
+      (if (call $is_object (local.get $thisv))
+        (then (let $bws i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $bws) (then (if (call $is_bigint (i64.load (local.get $bws))) (then (set! $thisv (i64.load (local.get $bws)))))))))
       (if (i32.eqz (call $is_bigint (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "BigInt.prototype.toString requires that 'this' be a BigInt")) (return (call $v_undef))))
       (let $bgv i64 (call $bigint_val (local.get $thisv)))
       (let $bgr i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 10))))
