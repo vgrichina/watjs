@@ -4675,7 +4675,10 @@
       (return (call $mk_str (local.get $js)))))
   (if (i32.eq (local.get $id) (i32.const 106))  ;; JSON.parse(text[, reviver])
     (then
+      (if (call $is_symbol (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $jt i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $jpr i64 (call $json_parse (local.get $jt)))
       (if (call $err) (then (return (call $v_undef))))
       (let $jrev i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
