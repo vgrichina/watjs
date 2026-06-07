@@ -5145,7 +5145,12 @@
     (then
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_function (local.get $thisv)) (call $is_array (local.get $thisv)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Date.prototype[@@toPrimitive] called on non-object")) (return (call $v_undef))))
-      (let $dph i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      ;; hint must be a STRING primitive equal to "string"/"number"/"default" — NO coercion
+      ;; (new String("number"), null, an object, etc. all throw TypeError).
+      (let $dpa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_string (local.get $dpa)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Date[@@toPrimitive]: invalid hint")) (return (call $v_undef))))
+      (let $dph i32 (call $val_payload (local.get $dpa)))
       ;; OrdinaryToPrimitive directly (NOT obj_to_str/num — those re-enter @@toPrimitive →
       ;; infinite recursion). string/default: toString then valueOf; number: valueOf then toString.
       (let $dpnum i32 (call $str_eq (local.get $dph) (cstring "number")))
@@ -6772,6 +6777,7 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 170)) (i32.or (i32.eq (local.get $id) (i32.const 4)) (i32.or (i32.eq (local.get $id) (i32.const 5)) (i32.or (i32.eq (local.get $id) (i32.const 6)) (i32.or (i32.eq (local.get $id) (i32.const 7)) (i32.or (i32.eq (local.get $id) (i32.const 8)) (i32.eq (local.get $id) (i32.const 51))))))))
     (then (return (i32.const 1))))  ;; Math.clz32, Number/String/Boolean/isNaN/isFinite/parseFloat
   (if (i32.or (i32.eq (local.get $id) (i32.const 223)) (i32.or (i32.eq (local.get $id) (i32.const 225)) (i32.or (i32.eq (local.get $id) (i32.const 424)) (i32.or (i32.eq (local.get $id) (i32.const 425)) (i32.or (i32.eq (local.get $id) (i32.const 433)) (i32.eq (local.get $id) (i32.const 435))))))) (then (return (i32.const 1))))  ;; Math.fround, Array unshift, Math.f16round, Math.sumPrecise, Date.toJSON, String.fromCodePoint
+  (if (i32.eq (local.get $id) (i32.const 434)) (then (return (i32.const 1))))  ;; Date.prototype[@@toPrimitive](hint)
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
   (if (i32.eq (local.get $id) (i32.const 277)) (then (return (i32.const 2))))  ;; Object.hasOwn
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
@@ -7693,7 +7699,7 @@
   (call $scope_define (local.get $dproto) (cstring "getUTCMilliseconds") (call $mk_native (i32.const 190) (cstring "getUTCMilliseconds")))
   (call $scope_define (local.get $dproto) (cstring "toISOString") (call $mk_native (i32.const 191) (cstring "toISOString")))
   (call $scope_define (local.get $dproto) (cstring "toJSON") (call $mk_native (i32.const 433) (cstring "toJSON")))
-  (call $scope_define (local.get $dproto) (cstring "@@toPrimitive") (call $mk_native (i32.const 434) (cstring "[Symbol.toPrimitive]")))
+  (call $scope_define_attr (local.get $dproto) (cstring "@@toPrimitive") (call $mk_native (i32.const 434) (cstring "[Symbol.toPrimitive]")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $dproto) (cstring "setTime") (call $mk_native (i32.const 249) (cstring "setTime")))
   (call $scope_define (local.get $dproto) (cstring "setFullYear") (call $mk_native (i32.const 250) (cstring "setFullYear")))
   (call $scope_define (local.get $dproto) (cstring "setUTCFullYear") (call $mk_native (i32.const 250) (cstring "setUTCFullYear")))
