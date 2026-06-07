@@ -4269,9 +4269,16 @@
           (return (call $mk_str (call $str_concat (local.get $iso) (cstring "Z"))))))
       ;; getFullYear(183,f0) Month(184,f1) Date(185,f2) Day(186,f3) Hours(187,f4) Minutes(188,f5) Seconds(189,f6) Ms(190,f7)
       (return (call $num (f64.convert_i32_s (call $date_field (local.get $dtm) (i32.sub (local.get $id) (i32.const 183))))))))
-  (if (i32.eq (local.get $id) (i32.const 249))  ;; setTime(ms)
+  (if (i32.eq (local.get $id) (i32.const 249))  ;; setTime(ms) — brand-check, ToNumber, TimeClip
     (then
+      (if (i32.eqz (call $is_object (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time"))) (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
       (let $stv f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
+      ;; TimeClip: NaN or |t| > 8.64e15 → NaN; else trunc toward zero
+      (if (i32.or (f64.ne (local.get $stv) (local.get $stv)) (f64.gt (f64.abs (local.get $stv)) (f64.const 8640000000000000)))
+        (then (set! $stv (f64.div (f64.const 0) (f64.const 0))))
+        (else (set! $stv (f64.trunc (local.get $stv)))))
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $stv)))
       (return (call $num (local.get $stv)))))
   (if (i32.eq (local.get $id) (i32.const 257))  ;; getTimezoneOffset() — always UTC (0), NaN for Invalid Date
