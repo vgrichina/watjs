@@ -3113,7 +3113,15 @@
       (return (call $mk_arr (local.get $arr)))))
   (if (i32.eq (local.get $id) (i32.const 109))  ;; str.replaceAll(search, repl)
     (then
+      ;; RequireObjectCoercible(this) — this handler precedes the shared string null-guard
+      (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "String.prototype.replaceAll called on null or undefined")) (return (call $v_undef))))
+      (if (call $is_symbol (local.get $thisv))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $rasv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_symbol (local.get $rasv))  ;; ToString(searchValue) on a Symbol throws (non-regex)
+        (then (if (i32.eqz (call $is_regexp (local.get $rasv)))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))))
       ;; a RegExp search must be global; then it's exactly replace(...) (global → all)
       (if (call $is_regexp (local.get $rasv))
         (then
@@ -4500,7 +4508,7 @@
           (let $sres i32 (call $str_split (local.get $s) (call $to_str (local.get $a0))))
           (call $split_apply_limit (local.get $sres) (local.get $argv) (local.get $argc))
           (return (call $mk_arr (local.get $sres)))))
-      (if (i32.eq (local.get $id) (i32.const 141))  ;; replaceAll(search, repl) — string search
+      (if (i32.eq (local.get $id) (i32.const 141))  ;; replaceAll(search, repl) — DEAD (active id is 109)
         (then
           (let $srch i32 (call $to_str (local.get $a0)))
           (let $rpl i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
@@ -6434,8 +6442,8 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 87)) (i32.or (i32.eq (local.get $id) (i32.const 102)) (i32.or (i32.eq (local.get $id) (i32.const 104)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.eq (local.get $id) (i32.const 173))))))
     (then (return (i32.const 1))))  ;; fromCharCode/fromCodePoint, match, search, localeCompare, matchAll
   ;; String.prototype length-2 methods
-  (if (i32.or (i32.eq (local.get $id) (i32.const 60)) (i32.or (i32.eq (local.get $id) (i32.const 103)) (i32.or (i32.eq (local.get $id) (i32.const 138)) (i32.eq (local.get $id) (i32.const 141)))))
-    (then (return (i32.const 2))))  ;; split, replace, substr, replaceAll
+  (if (i32.or (i32.eq (local.get $id) (i32.const 60)) (i32.or (i32.eq (local.get $id) (i32.const 103)) (i32.or (i32.eq (local.get $id) (i32.const 138)) (i32.or (i32.eq (local.get $id) (i32.const 141)) (i32.eq (local.get $id) (i32.const 109))))))
+    (then (return (i32.const 2))))  ;; split, replace, substr, replaceAll(109 active)
   ;; Array.prototype length-1 methods (push/indexOf/join/forEach/map/includes/at/
   ;; fill/lastIndexOf/flatMap/findLast/findLastIndex/concat/filter/reduce/find/
   ;; findIndex/some/every/sort/reduceRight)
