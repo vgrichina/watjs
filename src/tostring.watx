@@ -453,7 +453,11 @@
       ;; Symbol.toPrimitive (string hint) is authoritative
       (let $stpf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@toPrimitive"))))
       (if (call $err) (then (return (cstring ""))))
-      (if (call $is_function (local.get $stpf))
+      ;; GetMethod: @@toPrimitive present but neither undefined/null nor callable → TypeError
+      (if (i32.and (i32.eqz (i32.or (call $is_undefined (local.get $stpf)) (call $is_null (local.get $stpf))))
+                   (i32.eqz (i32.or (call $is_function (local.get $stpf)) (call $is_proxy (local.get $stpf)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "@@toPrimitive is not a function")) (return (cstring ""))))
+      (if (i32.or (call $is_function (local.get $stpf)) (call $is_proxy (local.get $stpf)))
         (then
           (let $stpa i32 (call $heap_alloc (i32.const 8)))
           (i64.store (local.get $stpa) (call $mk_str (cstring "string")))
@@ -549,7 +553,11 @@
 (func $obj_to_num (param $v i64) (result f64) (effects)
   ;; Symbol.toPrimitive (number hint) is authoritative for ToNumber(object)
   (let $ntpf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@toPrimitive"))))
-  (if (call $is_function (local.get $ntpf))
+  (if (call $err) (then (return (f64.div (f64.const 0) (f64.const 0)))))  ;; throwing @@toPrimitive getter
+  (if (i32.and (i32.eqz (i32.or (call $is_undefined (local.get $ntpf)) (call $is_null (local.get $ntpf))))
+               (i32.eqz (i32.or (call $is_function (local.get $ntpf)) (call $is_proxy (local.get $ntpf)))))
+    (then (call $throw_type (cstring "TypeError") (cstring "@@toPrimitive is not a function")) (return (f64.div (f64.const 0) (f64.const 0)))))
+  (if (i32.or (call $is_function (local.get $ntpf)) (call $is_proxy (local.get $ntpf)))
     (then
       (let $ntpa i32 (call $heap_alloc (i32.const 8)))
       (i64.store (local.get $ntpa) (call $mk_str (cstring "number")))
@@ -598,7 +606,12 @@
   (if (call $is_object (local.get $v))
     (then
       (let $tpf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@toPrimitive"))))
-      (if (call $is_function (local.get $tpf))
+      (if (call $err) (then (return (call $v_undef))))  ;; throwing @@toPrimitive getter (GetMethod) propagates
+      ;; GetMethod: @@toPrimitive present but neither undefined/null nor callable → TypeError
+      (if (i32.and (i32.eqz (i32.or (call $is_undefined (local.get $tpf)) (call $is_null (local.get $tpf))))
+                   (i32.eqz (i32.or (call $is_function (local.get $tpf)) (call $is_proxy (local.get $tpf)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "@@toPrimitive is not a function")) (return (call $v_undef))))
+      (if (i32.or (call $is_function (local.get $tpf)) (call $is_proxy (local.get $tpf)))
         (then
           (let $hintstr i32 (cstring "default"))
           (if (i32.eq (local.get $hint) (i32.const 1)) (then (set! $hintstr (cstring "number"))))
