@@ -3597,16 +3597,24 @@
             (set! $scs (call $str_concat (local.get $scs) (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $cck)))))
             (set! $cck (i32.add (local.get $cck) (i32.const 1))) (br $ccl)))
           (return (call $mk_str (local.get $scs)))))
-      ;; lastIndexOf(needle[, fromIndex]) — highest match position with start ≤ fromIndex
+      ;; lastIndexOf(searchString[, position]) — highest match start ≤ position
+      (if (call $is_symbol (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $cln i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $clhl i32 (call $str_len (local.get $scs)))
       (let $clnl i32 (call $str_len (local.get $cln)))
       (let $clmax i32 (i32.sub (local.get $clhl) (local.get $clnl)))  ;; last possible start
       (if (i32.ge_s (local.get $argc) (i32.const 2))
         (then
-          (let $cf i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
-          (if (i32.lt_s (local.get $cf) (i32.const 0)) (then (set! $cf (i32.const 0))))
-          (if (i32.lt_s (local.get $cf) (local.get $clmax)) (then (set! $clmax (local.get $cf))))))
+          (let $clfn f64 (call $tonum_fmtarg (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))  ;; BigInt→TypeError
+          (if (call $err) (then (return (call $v_undef))))
+          ;; NaN position → +∞ → search the whole string (clmax unchanged)
+          (if (f64.eq (local.get $clfn) (local.get $clfn))
+            (then
+              (let $cf i32 (call $to_int_idx (local.get $clfn)))
+              (if (i32.lt_s (local.get $cf) (i32.const 0)) (then (set! $cf (i32.const 0))))
+              (if (i32.lt_s (local.get $cf) (local.get $clmax)) (then (set! $clmax (local.get $cf))))))))
       (let $clres i32 (i32.const -1))
       (let $clp i32 (i32.const 0))
       (block $cle (loop $cll
