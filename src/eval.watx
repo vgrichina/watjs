@@ -7678,7 +7678,7 @@
   (let $dproto i32 (call $obj_new (i32.const 24)))
   (i32.store (i32.const 308) (local.get $dproto))
   (call $scope_define (local.get $dproto) (cstring "constructor") (local.get $datef))
-  (call $set_prop (local.get $datef) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $dproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $datef)) (cstring "prototype") (call $mk_obj (local.get $dproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
   (call $scope_define (local.get $dproto) (cstring "getTime") (call $mk_native (i32.const 182) (cstring "getTime")))
   (call $scope_define (local.get $dproto) (cstring "valueOf") (call $mk_native (i32.const 182) (cstring "valueOf")))
   (call $scope_define (local.get $dproto) (cstring "getFullYear") (call $mk_native (i32.const 183) (cstring "getFullYear")))
