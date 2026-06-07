@@ -5000,6 +5000,15 @@
       (call $scope_define (local.get $mait) (cstring "@@mpos") (call $num (f64.const 0)))
       (call $scope_define (local.get $mait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")))
       (return (call $mk_obj (local.get $mait)))))
+  (if (i32.eq (local.get $id) (i32.const 431))  ;; RegExp.prototype.toString() → "/" source "/" flags
+    (then
+      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_function (local.get $thisv)) (call $is_array (local.get $thisv)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "RegExp.prototype.toString called on non-object")) (return (call $v_undef))))
+      (let $rtsrc i32 (call $to_str (call $get_prop (local.get $thisv) (call $mk_str (cstring "source")))))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $rtflg i32 (call $to_str (call $get_prop (local.get $thisv) (call $mk_str (cstring "flags")))))
+      (if (call $err) (then (return (call $v_undef))))
+      (return (call $mk_str (call $str_concat (call $str_concat (call $str_concat (cstring "/") (local.get $rtsrc)) (cstring "/")) (local.get $rtflg))))))
   (if (i32.eq (local.get $id) (i32.const 430))  ;; RegExp.prototype[@@replace](string, repl) — this = regexp
     (then
       (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -7157,6 +7166,7 @@
   (call $scope_define (local.get $reproto) (cstring "@@match") (call $mk_native (i32.const 428) (cstring "[Symbol.match]")))
   (call $scope_define (local.get $reproto) (cstring "@@split") (call $mk_native (i32.const 429) (cstring "[Symbol.split]")))
   (call $scope_define (local.get $reproto) (cstring "@@replace") (call $mk_native (i32.const 430) (cstring "[Symbol.replace]")))
+  (call $scope_define (local.get $reproto) (cstring "toString") (call $mk_native (i32.const 431) (cstring "toString")))
   (i32.store (i32.const 324) (local.get $reproto))
   (call $set_prop (local.get $ref) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $reproto)))
   ;; Number with NaN / Infinity constants
