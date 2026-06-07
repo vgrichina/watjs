@@ -7526,6 +7526,7 @@
   (call $scope_define_attr (local.get $symproto) (cstring "toString") (call $mk_native (i32.const 199) (cstring "toString")) (i32.const 12))
   (call $scope_define_attr (local.get $symproto) (cstring "toLocaleString") (call $mk_native (i32.const 199) (cstring "toLocaleString")) (i32.const 12))
   (call $scope_define_attr (local.get $symproto) (cstring "valueOf") (call $mk_native (i32.const 437) (cstring "valueOf")) (i32.const 12))
+  (call $scope_define_attr (local.get $symproto) (cstring "@@toPrimitive") (call $mk_native (i32.const 437) (cstring "[Symbol.toPrimitive]")) (i32.const 4))  ;; returns thisSymbolValue (any hint)
   (call $scope_define_attr (local.get $symproto) (cstring "@@toStringTag") (call $mk_str (cstring "Symbol")) (i32.const 4))
   (call $scope_define_attr (local.get $symproto) (cstring "constructor") (local.get $symf) (i32.const 12))
   (call $scope_define_attr (call $fn_def_scope (local.get $symf)) (cstring "prototype") (call $mk_obj (local.get $symproto)) (i32.const 0))
