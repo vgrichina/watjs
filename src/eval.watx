@@ -3261,7 +3261,14 @@
       (return (call $mk_obj (local.get $gbmo)))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 113)) (i32.eq (local.get $id) (i32.const 114)))  ;; trimStart / trimEnd
     (then
+      ;; RequireObjectCoercible + ToString(this): null/undefined and symbol → TypeError;
+      ;; this handler precedes the shared string null-guard, so check inline.
+      (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "String.prototype.trim* called on null or undefined")) (return (call $v_undef))))
+      (if (call $is_symbol (local.get $thisv))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $tts i32 (call $to_str (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))  ;; toString/valueOf threw
       (let $ttn i32 (call $str_len (local.get $tts)))
       (if (i32.eq (local.get $id) (i32.const 113))  ;; trimStart
         (then
