@@ -7377,8 +7377,8 @@
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isInteger")) (call $mk_native (i32.const 85) (cstring "isInteger")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isFinite")) (call $mk_native (i32.const 86) (cstring "isFinite")))
   (call $set_prop (local.get $numf) (call $mk_str (cstring "isSafeInteger")) (call $mk_native (i32.const 98) (cstring "isSafeInteger")))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "parseInt")) (call $mk_native (i32.const 50) (cstring "parseInt")))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "parseFloat")) (call $mk_native (i32.const 51) (cstring "parseFloat")))
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "parseInt")) (i64.load (call $scope_find_local (local.get $g) (cstring "parseInt"))))  ;; same object as global parseInt
+  (call $set_prop (local.get $numf) (call $mk_str (cstring "parseFloat")) (i64.load (call $scope_find_local (local.get $g) (cstring "parseFloat"))))  ;; same object as global parseFloat
   (call $def_const (local.get $numf) (cstring "MIN_SAFE_INTEGER") (call $num (f64.const -9007199254740991)))
   (call $def_const (local.get $numf) (cstring "EPSILON") (call $num (f64.const 2.220446049250313e-16)))
   (call $def_const (local.get $numf) (cstring "MAX_VALUE") (call $num (f64.const 1.7976931348623157e308)))
