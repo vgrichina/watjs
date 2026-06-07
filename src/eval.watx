@@ -4098,9 +4098,25 @@
     (then (drop (call $call_native (i32.const 243) (local.get $argc) (local.get $argv) (call $v_undef))) (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 200))  ;; Reflect.get(target, key)
     (then (return (call $get_prop (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
-  (if (i32.eq (local.get $id) (i32.const 201))  ;; Reflect.set(target, key, value) → true
+  (if (i32.eq (local.get $id) (i32.const 201))  ;; Reflect.set(target, key, value[, receiver]) → boolean
     (then
-      (call $set_prop (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      (let $rstgt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $rstgt)) (i32.or (call $is_array (local.get $rstgt)) (i32.or (call $is_function (local.get $rstgt)) (call $is_proxy (local.get $rstgt))))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Reflect.set called on non-object")) (return (call $v_undef))))
+      ;; for a plain object, a failed [[Set]] returns false (not throw): own non-writable
+      ;; data prop, or a new key on a non-extensible/frozen target. (An own accessor or
+      ;; chain lookup falls through to set_prop, which fires the setter.)
+      (if (call $is_object (local.get $rstgt))
+        (then
+          (let $rso i32 (call $val_payload (local.get $rstgt)))
+          (let $rsks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (let $rsslot i32 (call $scope_find_local (local.get $rso) (local.get $rsks)))
+          (if (local.get $rsslot)
+            (then (if (i32.eqz (call $entry_is_accessor (local.get $rsslot))) (then (if (i32.eqz (call $entry_writable (local.get $rsslot))) (then (return (call $v_false)))))))
+            (else (if (i32.or (i32.ne (call $scope_find_local (local.get $rso) (cstring "@@noext")) (i32.const 0)) (i32.ne (call $scope_find_local (local.get $rso) (cstring "@@frozen")) (i32.const 0)))
+              (then (return (call $v_false))))))))
+      (call $set_prop (local.get $rstgt) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      (if (call $err) (then (return (call $v_undef))))  ;; a setter/proxy trap threw → propagate
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 202))  ;; Reflect.has(target, key)
     (then (return (call $js_in (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
