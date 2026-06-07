@@ -4230,7 +4230,10 @@
           (let $dcms f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 7)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 6)))) (else (f64.const 0)))) (if (call $err) (then (return (call $v_undef))))
           ;; any non-finite/out-of-range component → Invalid Date (NaN), never a trunc trap
           (if (i32.and (call $f64_safe_i64 (local.get $dcy)) (i32.and (call $f64_safe_i64 (local.get $dcmo)) (i32.and (call $f64_safe_i64 (local.get $dcd)) (i32.and (call $f64_safe_i64 (local.get $dch)) (i32.and (call $f64_safe_i64 (local.get $dcmi)) (i32.and (call $f64_safe_i64 (local.get $dcs)) (call $f64_safe_i64 (local.get $dcms))))))))
-            (then (set! $dt (call $date_make (i64.trunc_f64_s (local.get $dcy)) (i64.trunc_f64_s (local.get $dcmo)) (i64.trunc_f64_s (local.get $dcd)) (i64.trunc_f64_s (local.get $dch)) (i64.trunc_f64_s (local.get $dcmi)) (i64.trunc_f64_s (local.get $dcs)) (i64.trunc_f64_s (local.get $dcms)))))
+            (then
+              (set! $dcy (f64.trunc (local.get $dcy)))  ;; year 0..99 → 1900+year
+              (if (i32.and (f64.ge (local.get $dcy) (f64.const 0)) (f64.le (local.get $dcy) (f64.const 99))) (then (set! $dcy (f64.add (local.get $dcy) (f64.const 1900)))))
+              (set! $dt (call $date_make (i64.trunc_f64_s (local.get $dcy)) (i64.trunc_f64_s (local.get $dcmo)) (i64.trunc_f64_s (local.get $dcd)) (i64.trunc_f64_s (local.get $dch)) (i64.trunc_f64_s (local.get $dcmi)) (i64.trunc_f64_s (local.get $dcs)) (i64.trunc_f64_s (local.get $dcms)))))
             (else (set! $dt (f64.div (f64.const 0) (f64.const 0)))))))
       (let $dobj i32 (call $obj_new (i32.const 16)))
       (i32.store (local.get $dobj) (i32.load (i32.const 308)))  ;; prototype chain → Date.prototype (methods inherited)
