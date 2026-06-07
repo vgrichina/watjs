@@ -4931,8 +4931,8 @@
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 167))  ;; regex.exec(str) (this = regex) → [match, ...caps] | null
     (then
-      (let $src i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "__re_src__"))))
-      (if (i32.eqz (call $is_string (local.get $src))) (then (return (call $v_null))))
+      (if (i32.eqz (call $is_regexp (local.get $thisv)))  ;; [[RegExpMatcher]] brand check
+        (then (call $throw_type (cstring "TypeError") (cstring "RegExp.prototype.exec called on a non-RegExp object")) (return (call $v_undef))))
       (call $re_apply_flags (local.get $thisv))
       (let $pat i32 (call $re_pat_of (local.get $thisv)))
       (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
