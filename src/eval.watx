@@ -4405,11 +4405,20 @@
           (return (call $mk_str (local.get $out)))))
       (if (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.eq (local.get $id) (i32.const 67)))  ;; padStart/padEnd
         (then
-          (let $padt i32 (call $to_int_idx (call $to_num (local.get $a0))))
-          (let $pads i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (cstring " "))))
+          (let $padt i32 (call $to_int_idx (call $tonum_fmtarg (local.get $a0))))  ;; ToLength(maxLength); BigInt/Symbol→TypeError
+          (if (call $err) (then (return (call $v_undef))))
           (let $padsl i32 (call $str_len (local.get $s)))
-          (if (i32.or (i32.ge_s (local.get $padsl) (local.get $padt)) (i32.eqz (call $str_len (local.get $pads))))
-            (then (return (call $mk_str (local.get $s)))))
+          ;; maxLength ≤ length → return S WITHOUT coercing fillString (spec order)
+          (if (i32.ge_s (local.get $padsl) (local.get $padt)) (then (return (call $mk_str (local.get $s)))))
+          ;; fillString: absent/undefined → " "; Symbol → TypeError; else ToString
+          (let $pads i32 (cstring " "))
+          (if (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+            (then
+              (if (call $is_symbol (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+                (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
+              (set! $pads (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+              (if (call $err) (then (return (call $v_undef))))))
+          (if (i32.eqz (call $str_len (local.get $pads))) (then (return (call $mk_str (local.get $s)))))  ;; empty filler
           (let $padn i32 (i32.sub (local.get $padt) (local.get $padsl)))
           (let $padb i32 (cstring ""))
           (block $pe2 (loop $pl2
