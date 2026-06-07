@@ -4958,19 +4958,44 @@
       (call $scope_define (call $arr_props (local.get $r)) (cstring "input") (call $mk_str (local.get $sub)))
       (call $re_set_groups (local.get $sub) (i32.const 0) (call $arr_props (local.get $r)))
       (return (call $mk_arr (local.get $r)))))
-  (if (i32.eq (local.get $id) (i32.const 173))  ;; str.matchAll(re) (this = string) → iterator
+  (if (i32.eq (local.get $id) (i32.const 173))  ;; str.matchAll(regexp) — @@matchAll protocol dispatch
     (then
       (let $maa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (call $re_apply_flags (local.get $maa))
-      ;; a RegExp argument must be global (a string arg becomes an implicit global regex)
-      (if (i32.and (call $is_regexp (local.get $maa)) (i32.eqz (i32.load (i32.const 276))))
-        (then (call $throw_type (cstring "TypeError") (cstring "matchAll must be called with a global RegExp")) (return (call $v_undef))))
+      ;; if regexp is not null/undefined: flags-must-be-global check (for a RegExp) then
+      ;; GetMethod(regexp, @@matchAll) and Call it with the string
+      (if (i32.eqz (i32.or (call $is_null (local.get $maa)) (call $is_undefined (local.get $maa))))
+        (then
+          (if (call $is_regexp (local.get $maa))
+            (then
+              (let $maflags i64 (call $get_prop (local.get $maa) (call $mk_str (cstring "flags"))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.or (call $is_null (local.get $maflags)) (call $is_undefined (local.get $maflags)))
+                (then (call $throw_type (cstring "TypeError") (cstring "matchAll: flags is undefined")) (return (call $v_undef))))
+              (let $maflstr i32 (call $to_str (local.get $maflags)))
+              (if (i32.lt_s (call $str_indexof (local.get $maflstr) (cstring "g")) (i32.const 0))
+                (then (call $throw_type (cstring "TypeError") (cstring "matchAll must be called with a global RegExp")) (return (call $v_undef))))))
+          (let $mamatcher i64 (call $get_prop (local.get $maa) (call $mk_str (cstring "@@matchAll"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_function (local.get $mamatcher))
+            (then
+              (let $maargs i32 (call $heap_alloc (i32.const 8)))
+              (i64.store (local.get $maargs) (call $mk_str (call $to_str (local.get $thisv))))
+              (return (call $call_val (local.get $mamatcher) (i32.const 1) (local.get $maargs) (local.get $maa)))))))
+      ;; string/other argument: implicit global regex iterator (built directly)
       (let $mait i32 (call $obj_new (i32.const 6)))
       (call $scope_define (local.get $mait) (cstring "@@ms") (call $mk_str (call $to_str (local.get $thisv))))
       (call $scope_define (local.get $mait) (cstring "@@mpat") (call $mk_str (call $re_pat_of (local.get $maa))))
       (call $scope_define (local.get $mait) (cstring "@@mpos") (call $num (f64.const 0)))
       (call $scope_define (local.get $mait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")))
       (return (call $mk_obj (local.get $mait)))))
+  (if (i32.eq (local.get $id) (i32.const 426))  ;; RegExp.prototype[@@matchAll](string) — this = regexp
+    (then
+      (let $rmait i32 (call $obj_new (i32.const 6)))
+      (call $scope_define (local.get $rmait) (cstring "@@ms") (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (call $scope_define (local.get $rmait) (cstring "@@mpat") (call $mk_str (call $re_pat_of (local.get $thisv))))
+      (call $scope_define (local.get $rmait) (cstring "@@mpos") (call $num (f64.const 0)))
+      (call $scope_define (local.get $rmait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")))
+      (return (call $mk_obj (local.get $rmait)))))
   (if (i32.eq (local.get $id) (i32.const 174))  ;; matchAll iterator .next() (this = iterator)
     (then
       (let $mams i32 (call $val_payload (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ms")))))
@@ -6977,6 +7002,7 @@
   (call $scope_define_accessor_attr (local.get $reproto) (cstring "hasIndices") (call $mk_native (i32.const 298) (cstring "get hasIndices")) (call $v_undef) (i32.const 5))
   (call $scope_define (local.get $reproto) (cstring "test") (call $mk_native (i32.const 101) (cstring "test")))
   (call $scope_define (local.get $reproto) (cstring "exec") (call $mk_native (i32.const 167) (cstring "exec")))
+  (call $scope_define (local.get $reproto) (cstring "@@matchAll") (call $mk_native (i32.const 426) (cstring "[Symbol.matchAll]")))
   (i32.store (i32.const 324) (local.get $reproto))
   (call $set_prop (local.get $ref) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $reproto)))
   ;; Number with NaN / Infinity constants
