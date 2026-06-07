@@ -5056,6 +5056,23 @@
       (call $scope_define (local.get $mait) (cstring "@@mpos") (call $num (f64.const 0)))
       (call $scope_define (local.get $mait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")))
       (return (call $mk_obj (local.get $mait)))))
+  (if (i32.eq (local.get $id) (i32.const 435))  ;; String.fromCodePoint(...codePoints)
+    (then
+      (let $fcbuf i32 (call $str_alloc (i32.mul (local.get $argc) (i32.const 4))))  ;; ≤4 UTF-8 bytes per code point
+      (let $fco i32 (i32.const 0))
+      (let $fci i32 (i32.const 0))
+      (block $fce (loop $fcl
+        (br_if $fce (i32.ge_s (local.get $fci) (local.get $argc)))
+        (let $cpf f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (local.get $fci))))
+        (if (call $err) (then (return (call $v_undef))))
+        ;; each must be a finite integer in [0, 0x10FFFF] else RangeError
+        (if (i32.or (f64.ne (local.get $cpf) (f64.trunc (local.get $cpf))) (i32.or (f64.lt (local.get $cpf) (f64.const 0)) (f64.gt (local.get $cpf) (f64.const 1114111))))
+          (then (call $throw_type (cstring "RangeError") (cstring "Invalid code point")) (return (call $v_undef))))
+        (set! $fco (call $utf8_emit (local.get $fcbuf) (local.get $fco) (i32.trunc_f64_s (local.get $cpf))))
+        (set! $fci (i32.add (local.get $fci) (i32.const 1)))
+        (br $fcl)))
+      (i32.store (local.get $fcbuf) (local.get $fco))  ;; fix the byte-length header to what was emitted
+      (return (call $mk_str (local.get $fcbuf)))))
   (if (i32.eq (local.get $id) (i32.const 433))  ;; Date.prototype.toJSON() — non-finite → null
     (then
       ;; O = ToObject(this): null/undefined → TypeError; primitive → wrapper
@@ -6700,7 +6717,7 @@
     (then (return (i32.const 1))))  ;; Math.abs/floor/ceil/round/sqrt/trunc/sign
   (if (i32.or (i32.eq (local.get $id) (i32.const 170)) (i32.or (i32.eq (local.get $id) (i32.const 4)) (i32.or (i32.eq (local.get $id) (i32.const 5)) (i32.or (i32.eq (local.get $id) (i32.const 6)) (i32.or (i32.eq (local.get $id) (i32.const 7)) (i32.or (i32.eq (local.get $id) (i32.const 8)) (i32.eq (local.get $id) (i32.const 51))))))))
     (then (return (i32.const 1))))  ;; Math.clz32, Number/String/Boolean/isNaN/isFinite/parseFloat
-  (if (i32.or (i32.eq (local.get $id) (i32.const 223)) (i32.or (i32.eq (local.get $id) (i32.const 225)) (i32.or (i32.eq (local.get $id) (i32.const 424)) (i32.or (i32.eq (local.get $id) (i32.const 425)) (i32.eq (local.get $id) (i32.const 433)))))) (then (return (i32.const 1))))  ;; Math.fround, Array unshift, Math.f16round, Math.sumPrecise, Date.toJSON
+  (if (i32.or (i32.eq (local.get $id) (i32.const 223)) (i32.or (i32.eq (local.get $id) (i32.const 225)) (i32.or (i32.eq (local.get $id) (i32.const 424)) (i32.or (i32.eq (local.get $id) (i32.const 425)) (i32.or (i32.eq (local.get $id) (i32.const 433)) (i32.eq (local.get $id) (i32.const 435))))))) (then (return (i32.const 1))))  ;; Math.fround, Array unshift, Math.f16round, Math.sumPrecise, Date.toJSON, String.fromCodePoint
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
   (if (i32.eq (local.get $id) (i32.const 277)) (then (return (i32.const 2))))  ;; Object.hasOwn
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
@@ -7334,7 +7351,7 @@
   (call $scope_define (local.get $sp) (cstring "@@iterator") (call $mk_native (i32.const 299) (cstring "[Symbol.iterator]")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCharCode")) (call $mk_native (i32.const 87) (cstring "fromCharCode")))
   (call $set_prop (local.get $strf) (call $mk_str (cstring "raw")) (call $mk_native (i32.const 269) (cstring "raw")))
-  (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCodePoint")) (call $mk_native (i32.const 87) (cstring "fromCodePoint")))
+  (call $set_prop (local.get $strf) (call $mk_str (cstring "fromCodePoint")) (call $mk_native (i32.const 435) (cstring "fromCodePoint")))
   (call $scope_define (local.get $sp) (cstring "match") (call $mk_native (i32.const 102) (cstring "match")))
   (call $scope_define (local.get $sp) (cstring "matchAll") (call $mk_native (i32.const 173) (cstring "matchAll")))
   (call $scope_define (local.get $sp) (cstring "replace") (call $mk_native (i32.const 103) (cstring "replace")))
