@@ -4225,8 +4225,14 @@
         (else (return (call $mk_obj (local.get $rcobj)))))))
   (if (i32.eq (local.get $id) (i32.const 179))  ;; Date.now()
     (then (return (call $num (call $now_ms)))))
-  (if (i32.eq (local.get $id) (i32.const 180))  ;; new Date(...) → date object (UTC)
+  (if (i32.eq (local.get $id) (i32.const 180))  ;; Date(...) / new Date(...)
     (then
+      ;; Date called as a FUNCTION (not via `new`) ignores all args and returns the
+      ;; current-time string — never coerces arguments. (reg 640 = native-construct flag)
+      (let $dctor i32 (i32.load (i32.const 640)))
+      (i32.store (i32.const 640) (i32.const 0))
+      (if (i32.eqz (local.get $dctor))
+        (then (return (call $mk_str (call $date_fmt (call $now_ms) (i32.const 0))))))
       (let $dt f64 (call $now_ms))
       (if (i32.eq (local.get $argc) (i32.const 1))
         (then
