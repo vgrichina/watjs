@@ -2898,6 +2898,11 @@
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
   (call $vm_hoist (local.get $code))
+  ;; reset the completion register at runtime AFTER the prelude (whose trailing
+  ;; expression statements leave a value in mem 288) and BEFORE user code, so a
+  ;; user program with no expression statement (e.g. `var x`, ``) completes to undefined.
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+  (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION undefined
   ;; now compile the user program
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
