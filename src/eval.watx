@@ -7310,7 +7310,7 @@
   (call $scope_define (local.get $boolproto) (cstring "constructor") (local.get $boolf))
   (call $scope_define (local.get $boolproto) (cstring "valueOf") (call $mk_native (i32.const 422) (cstring "valueOf")))
   (call $scope_define (local.get $boolproto) (cstring "toString") (call $mk_native (i32.const 221) (cstring "toString")))
-  (call $set_prop (local.get $boolf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $boolproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $boolf)) (cstring "prototype") (call $mk_obj (local.get $boolproto)) (i32.const 0))
   (drop (call $def_native (local.get $g) (cstring "isNaN") (i32.const 7)))
   (drop (call $def_native (local.get $g) (cstring "isFinite") (i32.const 8)))
   (drop (call $def_native (local.get $g) (cstring "parseInt") (i32.const 50)))
@@ -7341,7 +7341,7 @@
   (call $scope_define (local.get $reproto) (cstring "@@replace") (call $mk_native (i32.const 430) (cstring "[Symbol.replace]")))
   (call $scope_define (local.get $reproto) (cstring "toString") (call $mk_native (i32.const 431) (cstring "toString")))
   (i32.store (i32.const 324) (local.get $reproto))
-  (call $set_prop (local.get $ref) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $reproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $ref)) (cstring "prototype") (call $mk_obj (local.get $reproto)) (i32.const 0))
   ;; Number with NaN / Infinity constants
   (let $numproto i32 (call $scope_new (i32.const 0) (i32.const 8)))  ;; Number.prototype (reg 164)
   (i32.store (i32.const 164) (local.get $numproto))
@@ -7493,7 +7493,7 @@
   (call $scope_define_attr (local.get $symproto) (cstring "valueOf") (call $mk_native (i32.const 302) (cstring "valueOf")) (i32.const 12))
   (call $scope_define_attr (local.get $symproto) (cstring "@@toStringTag") (call $mk_str (cstring "Symbol")) (i32.const 4))
   (call $scope_define_attr (local.get $symproto) (cstring "constructor") (local.get $symf) (i32.const 12))
-  (call $set_prop (local.get $symf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $symproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $symf)) (cstring "prototype") (call $mk_obj (local.get $symproto)) (i32.const 0))
   ;; Reflect — static facade over the internal property operations
   (let $refo i32 (call $obj_new (i32.const 12)))
   (call $scope_define (local.get $refo) (cstring "get") (call $mk_native (i32.const 200) (cstring "get")))
@@ -7540,7 +7540,7 @@
   ;; Array global constructor + isArray
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
-  (call $set_prop (local.get $arrf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $ap)))  ;; Array.prototype
+  (call $scope_define_attr (call $fn_def_scope (local.get $arrf)) (cstring "prototype") (call $mk_obj (local.get $ap)) (i32.const 0))  ;; Array.prototype
   (call $scope_define (local.get $ap) (cstring "constructor") (local.get $arrf))  ;; Array.prototype.constructor === Array
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $arrf))) (cstring "@@species")  ;; Array[Symbol.species] === Array
     (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
@@ -7553,7 +7553,7 @@
   (call $scope_define_attr (local.get $bigproto) (cstring "valueOf") (call $mk_native (i32.const 302) (cstring "valueOf")) (i32.const 12))
   (call $scope_define_attr (local.get $bigproto) (cstring "@@toStringTag") (call $mk_str (cstring "BigInt")) (i32.const 4))
   (call $scope_define_attr (local.get $bigproto) (cstring "constructor") (local.get $bigf) (i32.const 12))
-  (call $set_prop (local.get $bigf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $bigproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $bigf)) (cstring "prototype") (call $mk_obj (local.get $bigproto)) (i32.const 0))
   (call $set_prop (local.get $bigf) (call $mk_str (cstring "asIntN")) (call $mk_native (i32.const 418) (cstring "asIntN")))
   (call $set_prop (local.get $bigf) (call $mk_str (cstring "asUintN")) (call $mk_native (i32.const 419) (cstring "asUintN")))
   (let $mapf i64 (call $def_native (local.get $g) (cstring "Map") (i32.const 120)))
@@ -7737,7 +7737,7 @@
   (call $scope_define_attr (local.get $promproto) (cstring "finally") (call $mk_native (i32.const 409) (cstring "finally")) (i32.const 12))
   (call $scope_define_attr (local.get $promproto) (cstring "@@toStringTag") (call $mk_str (cstring "Promise")) (i32.const 4))
   (call $scope_define_attr (local.get $promproto) (cstring "constructor") (local.get $promf) (i32.const 12))
-  (call $set_prop (local.get $promf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $promproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "prototype") (call $mk_obj (local.get $promproto)) (i32.const 0))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "resolve")) (call $mk_native (i32.const 151) (cstring "resolve")))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "reject")) (call $mk_native (i32.const 414) (cstring "reject")))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "all")) (call $mk_native (i32.const 410) (cstring "all")))
@@ -7838,7 +7838,7 @@
   ;; __proto__ accessor (get/set [[Prototype]]) — inherited by all objects
   (call $scope_define_accessor (local.get $objproto) (cstring "__proto__") (call $mk_native (i32.const 303) (cstring "get __proto__")) (call $mk_native (i32.const 304) (cstring "set __proto__")))
   (call $scope_define (local.get $objproto) (cstring "constructor") (local.get $objf))
-  (call $set_prop (local.get $objf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $objproto)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $objf)) (cstring "prototype") (call $mk_obj (local.get $objproto)) (i32.const 0))
   ;; register Object.prototype as the [[Prototype]] root (obj_new links new
   ;; objects to it) and chain the builtin prototypes to it so `x instanceof
   ;; Object` holds and Object.prototype methods are inherited everywhere.
@@ -7854,14 +7854,14 @@
   ;; test262 propertyHelper harness).
   (let $funcf i64 (call $def_native (local.get $g) (cstring "Function") (i32.const 157)))
   (let $funcproto i64 (call $mk_native (i32.const 158) (cstring "")))
-  (call $set_prop (local.get $funcf) (call $mk_str (cstring "prototype")) (local.get $funcproto))
+  (call $scope_define_attr (call $fn_def_scope (local.get $funcf)) (cstring "prototype") (local.get $funcproto) (i32.const 0))
   (i64.store (i32.const 336) (local.get $funcproto))  ;; Function.prototype value — for `fn instanceof Function`
   ;; link each constructor's .prototype to the real prototype scope holding its
   ;; methods, so generic access works (String.prototype.slice,
   ;; Array.prototype.slice.call(...), etc.) — not just primitive dispatch.
-  (call $set_prop (local.get $strf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $sp)))
-  (call $set_prop (local.get $numf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $numproto)))
-  (call $set_prop (local.get $arrf) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $ap)))
+  (call $scope_define_attr (call $fn_def_scope (local.get $strf)) (cstring "prototype") (call $mk_obj (local.get $sp)) (i32.const 0))
+  (call $scope_define_attr (call $fn_def_scope (local.get $numf)) (cstring "prototype") (call $mk_obj (local.get $numproto)) (i32.const 0))
+  (call $scope_define_attr (call $fn_def_scope (local.get $arrf)) (cstring "prototype") (call $mk_obj (local.get $ap)) (i32.const 0))
   ;; global NaN / Infinity / undefined are {W:false,E:false,C:false} (attrs 0)
   (call $scope_define_attr (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))) (i32.const 0))
   (call $scope_define_attr (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))) (i32.const 0))
