@@ -3074,6 +3074,15 @@
           (call $throw_type (cstring "TypeError") (cstring "Number.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
       (if (call $is_number (local.get $thisv)) (then (return (local.get $thisv))))
       (call $throw_type (cstring "TypeError") (cstring "Number.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 436))  ;; BigInt.prototype.valueOf — this must be a BigInt (or BigInt wrapper)
+    (then
+      (if (call $is_object (local.get $thisv))
+        (then
+          (let $vo436 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
+          (if (local.get $vo436) (then (if (call $is_bigint (i64.load (local.get $vo436))) (then (return (i64.load (local.get $vo436)))))))
+          (call $throw_type (cstring "TypeError") (cstring "BigInt.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
+      (if (call $is_bigint (local.get $thisv)) (then (return (local.get $thisv))))
+      (call $throw_type (cstring "TypeError") (cstring "BigInt.prototype.valueOf called on incompatible receiver")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 422))  ;; Boolean.prototype.valueOf — this must be a Boolean
     (then
       (if (call $is_object (local.get $thisv))
@@ -7567,7 +7576,7 @@
   (i32.store (i32.const 624) (local.get $bigproto))
   (call $scope_define_attr (local.get $bigproto) (cstring "toString") (call $mk_native (i32.const 417) (cstring "toString")) (i32.const 12))
   (call $scope_define_attr (local.get $bigproto) (cstring "toLocaleString") (call $mk_native (i32.const 417) (cstring "toLocaleString")) (i32.const 12))
-  (call $scope_define_attr (local.get $bigproto) (cstring "valueOf") (call $mk_native (i32.const 302) (cstring "valueOf")) (i32.const 12))
+  (call $scope_define_attr (local.get $bigproto) (cstring "valueOf") (call $mk_native (i32.const 436) (cstring "valueOf")) (i32.const 12))
   (call $scope_define_attr (local.get $bigproto) (cstring "@@toStringTag") (call $mk_str (cstring "BigInt")) (i32.const 4))
   (call $scope_define_attr (local.get $bigproto) (cstring "constructor") (local.get $bigf) (i32.const 12))
   (call $scope_define_attr (call $fn_def_scope (local.get $bigf)) (cstring "prototype") (call $mk_obj (local.get $bigproto)) (i32.const 0))

@@ -537,9 +537,13 @@
 ;; toExponential digits). Unlike the == / relational path, here ToNumber(BigInt)
 ;; is a TypeError. Symbol already throws inside $to_num.
 (func $tonum_fmtarg (param $v i64) (result f64) (effects)
-  (if (call $is_bigint (local.get $v))
+  ;; ToNumber: ToPrimitive(number) FIRST, so an object whose valueOf/@@toPrimitive yields
+  ;; a BigInt (or Symbol) throws TypeError — not only a directly-passed BigInt.
+  (let $p i64 (call $to_primitive_h (local.get $v) (i32.const 1)))
+  (if (call $err) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  (if (call $is_bigint (local.get $p))
     (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (return (f64.div (f64.const 0) (f64.const 0)))))
-  (call $to_num (local.get $v)))
+  (call $to_num (local.get $p)))
 
 ;; ToNumber for an object: prefer valueOf(), then __prim__ wrapper slot, else NaN.
 (func $obj_to_num (param $v i64) (result f64) (effects)
