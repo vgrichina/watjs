@@ -5493,7 +5493,15 @@
       (if (i32.eq (local.get $id) (i32.const 40)) (then (return (call $num (f64.abs (local.get $x))))))
       (if (i32.eq (local.get $id) (i32.const 41)) (then (return (call $num (f64.floor (local.get $x))))))
       (if (i32.eq (local.get $id) (i32.const 42)) (then (return (call $num (f64.ceil (local.get $x))))))
-      (if (i32.eq (local.get $id) (i32.const 43)) (then (return (call $num (f64.floor (f64.add (local.get $x) (f64.const 0.5)))))))  ;; round
+      (if (i32.eq (local.get $id) (i32.const 43))  ;; round — ties toward +∞, preserves -0
+        (then
+          (if (f64.ne (local.get $x) (local.get $x)) (then (return (call $num (local.get $x)))))  ;; NaN
+          (if (f64.eq (local.get $x) (f64.const 0)) (then (return (call $num (local.get $x)))))   ;; ±0 (and 0)
+          (let $rr f64 (f64.floor (local.get $x)))
+          (if (f64.ge (f64.sub (local.get $x) (local.get $rr)) (f64.const 0.5)) (then (set! $rr (f64.add (local.get $rr) (f64.const 1)))))
+          ;; a result of 0 from a negative x (i.e. x∈(-0.5,0)) is -0
+          (if (i32.and (f64.eq (local.get $rr) (f64.const 0)) (f64.lt (local.get $x) (f64.const 0))) (then (return (call $num (f64.neg (f64.const 0))))))
+          (return (call $num (local.get $rr)))))
       (if (i32.eq (local.get $id) (i32.const 44)) (then (return (call $num (f64.sqrt (local.get $x))))))
       (if (i32.eq (local.get $id) (i32.const 48)) (then (return (call $num (f64.trunc (local.get $x))))))
       (if (i32.eq (local.get $id) (i32.const 49))  ;; sign
