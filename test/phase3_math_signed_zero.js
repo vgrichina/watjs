@@ -1,0 +1,9 @@
+print(1/Math.sinh(-0));
+print(1/Math.expm1(-0));
+print(1/Math.tanh(-0));
+print(1/Math.asinh(-0));
+print(1/Math.atanh(-0));
+print(1/Math.log1p(-0));
+print(1/Math.atan(-0));
+print(1/Math.sinh(0));
+print(Math.tanh(Infinity));

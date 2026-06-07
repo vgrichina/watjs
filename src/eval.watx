@@ -5428,6 +5428,11 @@
               (i32.and (i32.ge_s (local.get $id) (i32.const 244)) (i32.le_s (local.get $id) (i32.const 246))))  ;; transcendental Math (243 = setPrototypeOf, excluded)
     (then
       (let $mx f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      ;; odd functions f(±0)=±0: return the signed zero (the e^x-based formulas
+      ;; compute +0 and lose the sign). sin/tan/expm1/log1p/sinh/tanh/asin/atan/asinh/atanh
+      (if (f64.eq (local.get $mx) (f64.const 0))
+        (then (if (i32.or (i32.eq (local.get $id) (i32.const 228)) (i32.or (i32.eq (local.get $id) (i32.const 230)) (i32.or (i32.eq (local.get $id) (i32.const 234)) (i32.or (i32.eq (local.get $id) (i32.const 235)) (i32.or (i32.eq (local.get $id) (i32.const 236)) (i32.or (i32.eq (local.get $id) (i32.const 238)) (i32.or (i32.eq (local.get $id) (i32.const 239)) (i32.or (i32.eq (local.get $id) (i32.const 241)) (i32.or (i32.eq (local.get $id) (i32.const 244)) (i32.eq (local.get $id) (i32.const 246)))))))))))
+          (then (return (call $num (local.get $mx)))))))
       (if (i32.eq (local.get $id) (i32.const 226)) (then (return (call $num (call $m_exp (local.get $mx))))))
       (if (i32.eq (local.get $id) (i32.const 227)) (then (return (call $num (call $m_log (local.get $mx))))))
       (if (i32.eq (local.get $id) (i32.const 228)) (then (return (call $num (call $m_sin (local.get $mx))))))
