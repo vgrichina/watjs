@@ -4909,8 +4909,8 @@
         (else (call $mk_bool (call $str_has_char (local.get $rbf) (local.get $bch))))))))
   (if (i32.eq (local.get $id) (i32.const 101))  ;; regex.test(str)  (this = regex obj)
     (then
-      (let $src i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "__re_src__"))))
-      (if (i32.eqz (call $is_string (local.get $src))) (then (return (call $v_false))))
+      (if (i32.eqz (call $is_regexp (local.get $thisv)))  ;; test → RegExpExec → brand check
+        (then (call $throw_type (cstring "TypeError") (cstring "RegExp.prototype.test called on a non-RegExp object")) (return (call $v_undef))))
       (call $re_apply_flags (local.get $thisv))
       (let $tpat i32 (call $re_pat_of (local.get $thisv)))
       (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
