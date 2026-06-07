@@ -4988,6 +4988,27 @@
       (call $scope_define (local.get $mait) (cstring "@@mpos") (call $num (f64.const 0)))
       (call $scope_define (local.get $mait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")))
       (return (call $mk_obj (local.get $mait)))))
+  (if (i32.eq (local.get $id) (i32.const 428))  ;; RegExp.prototype[@@match](string) — this = regexp
+    (then
+      (call $re_apply_flags (local.get $thisv))
+      (if (i32.eqz (i32.load (i32.const 276)))  ;; not global → the exec result (array | null)
+        (then (return (call $call_native (i32.const 167) (local.get $argc) (local.get $argv) (local.get $thisv)))))
+      ;; global → array of every full-match string, or null if none
+      (let $mmsub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (let $mmpat i32 (call $re_pat_of (local.get $thisv)))
+      (let $mmsln i32 (call $str_len (local.get $mmsub)))
+      (let $mmpos i32 (i32.const 0))
+      (let $mmarr i32 (call $arr_new (i32.const 4)))
+      (block $mme (loop $mml
+        (br_if $mme (i32.gt_s (local.get $mmpos) (local.get $mmsln)))
+        (let $mst i32 (call $re_search_str_from (local.get $mmpat) (local.get $mmsub) (local.get $mmpos)))
+        (br_if $mme (i32.lt_s (local.get $mst) (i32.const 0)))
+        (let $men i32 (i32.load (i32.const 168)))
+        (call $arr_push (local.get $mmarr) (call $mk_str (call $substr (local.get $mmsub) (local.get $mst) (i32.sub (local.get $men) (local.get $mst)))))
+        (set! $mmpos (if i32 (i32.gt_s (local.get $men) (local.get $mst)) (then (local.get $men)) (else (i32.add (local.get $mst) (i32.const 1)))))
+        (br $mml)))
+      (if (i32.eqz (call $arr_len (local.get $mmarr))) (then (return (call $v_null))))
+      (return (call $mk_arr (local.get $mmarr)))))
   (if (i32.eq (local.get $id) (i32.const 427))  ;; RegExp.prototype[@@search](string) — this = regexp → index
     (then
       (call $re_apply_flags (local.get $thisv))
@@ -5041,10 +5062,10 @@
     (then
       (let $sub i32 (call $to_str (local.get $thisv)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      ;; @@search protocol: a searchValue with a @@search method handles search itself
-      (if (i32.and (i32.eq (local.get $id) (i32.const 104)) (i32.eqz (i32.or (call $is_null (local.get $a0)) (call $is_undefined (local.get $a0)))))
+      ;; @@search / @@match protocol: a searchValue with the symbol method handles it
+      (if (i32.and (i32.or (i32.eq (local.get $id) (i32.const 104)) (i32.eq (local.get $id) (i32.const 102))) (i32.eqz (i32.or (call $is_null (local.get $a0)) (call $is_undefined (local.get $a0)))))
         (then
-          (let $ssm i64 (call $get_prop (local.get $a0) (call $mk_str (cstring "@@search"))))
+          (let $ssm i64 (call $get_prop (local.get $a0) (call $mk_str (if i32 (i32.eq (local.get $id) (i32.const 104)) (then (cstring "@@search")) (else (cstring "@@match"))))))
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_function (local.get $ssm))
             (then
@@ -7018,6 +7039,7 @@
   (call $scope_define (local.get $reproto) (cstring "exec") (call $mk_native (i32.const 167) (cstring "exec")))
   (call $scope_define (local.get $reproto) (cstring "@@matchAll") (call $mk_native (i32.const 426) (cstring "[Symbol.matchAll]")))
   (call $scope_define (local.get $reproto) (cstring "@@search") (call $mk_native (i32.const 427) (cstring "[Symbol.search]")))
+  (call $scope_define (local.get $reproto) (cstring "@@match") (call $mk_native (i32.const 428) (cstring "[Symbol.match]")))
   (i32.store (i32.const 324) (local.get $reproto))
   (call $set_prop (local.get $ref) (call $mk_str (cstring "prototype")) (call $mk_obj (local.get $reproto)))
   ;; Number with NaN / Infinity constants
