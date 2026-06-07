@@ -1782,6 +1782,7 @@
   (if (call $is_number (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 164))))))
   (if (call $is_string (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 156))))))
   (if (call $is_boolean (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 184))))))
+  (if (call $is_bigint (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 624))))))  ;; BigInt.prototype
   (if (call $is_symbol (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.const 0)))))
   (call $mk_obj (call $obj_new (i32.const 8))))
 
@@ -3018,6 +3019,8 @@
       (if (call $is_number (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 164))))))
       (if (call $is_string (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 156))))))
       (if (call $is_boolean (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 184))))))
+      (if (call $is_bigint (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.load (i32.const 624))))))  ;; BigInt.prototype
+      (if (call $is_symbol (local.get $a)) (then (return (call $make_wrapper (local.get $a) (i32.const 0)))))
       (return (call $mk_obj (call $obj_new (i32.const 8))))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 10)) (i32.eq (local.get $id) (i32.const 112)))  ;; Object.keys / getOwnPropertyNames
     (then
