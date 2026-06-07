@@ -6896,6 +6896,8 @@
   (if (i32.eq (local.get $id) (i32.const 434)) (then (return (i32.const 1))))  ;; Date.prototype[@@toPrimitive](hint)
   (if (i32.eq (local.get $id) (i32.const 3)) (then (return (i32.const 1))))  ;; eval(x)
   (if (i32.eq (local.get $id) (i32.const 438)) (then (return (i32.const 1))))  ;; Symbol.prototype[@@toPrimitive](hint)
+  (if (i32.or (i32.eq (local.get $id) (i32.const 426)) (i32.or (i32.eq (local.get $id) (i32.const 427)) (i32.eq (local.get $id) (i32.const 428)))) (then (return (i32.const 1))))  ;; RegExp @@matchAll/@@search/@@match
+  (if (i32.or (i32.eq (local.get $id) (i32.const 429)) (i32.eq (local.get $id) (i32.const 430))) (then (return (i32.const 2))))  ;; RegExp @@split/@@replace
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
   (if (i32.eq (local.get $id) (i32.const 277)) (then (return (i32.const 2))))  ;; Object.hasOwn
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
