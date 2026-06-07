@@ -4271,8 +4271,16 @@
       (let $stv f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $stv)))
       (return (call $num (local.get $stv)))))
-  (if (i32.eq (local.get $id) (i32.const 257))  ;; getTimezoneOffset() — always UTC
-    (then (return (call $num (f64.const 0)))))
+  (if (i32.eq (local.get $id) (i32.const 257))  ;; getTimezoneOffset() — always UTC (0), NaN for Invalid Date
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
+      (let $tzsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time")))
+      (if (i32.eqz (local.get $tzsl))
+        (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
+      (let $tztv f64 (call $tonum_raw (i64.load (local.get $tzsl))))
+      (if (f64.ne (local.get $tztv) (local.get $tztv)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))  ;; Invalid Date → NaN
+      (return (call $num (f64.const 0)))))
   (if (i32.eq (local.get $id) (i32.const 268))  ;; Date.parse(str) → epoch ms
     (then (return (call $num (call $parse_date_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
   (if (i32.eq (local.get $id) (i32.const 269))  ;; String.raw(template, ...subs)
