@@ -4271,6 +4271,9 @@
       ;; includes/startsWith/endsWith reject a RegExp search argument (IsRegExp → TypeError)
       (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 63)) (i32.le_s (local.get $id) (i32.const 65))) (call $is_regexp (local.get $a0)))
         (then (call $throw_type (cstring "TypeError") (cstring "First argument to String.prototype.includes/startsWith/endsWith must not be a regular expression")) (return (call $v_undef))))
+      ;; ToString(searchString) throws on a Symbol (includes/startsWith/endsWith)
+      (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 63)) (i32.le_s (local.get $id) (i32.const 65))) (call $is_symbol (local.get $a0)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 61)) (then (return (call $mk_str (call $str_trim (local.get $s))))))
       (if (i32.eq (local.get $id) (i32.const 63))  ;; includes(sub[, fromIndex])
         (then
@@ -4284,12 +4287,21 @@
           (let $spos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (if (i32.lt_s (local.get $spos) (i32.const 0)) (then (set! $spos (i32.const 0))))
           (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (local.get $spos) (call $str_len (local.get $sp2))) (local.get $sp2))))))
-      (if (i32.eq (local.get $id) (i32.const 65))  ;; endsWith(p)
+      (if (i32.eq (local.get $id) (i32.const 65))  ;; endsWith(searchString[, endPosition])
         (then
-          (let $pl i32 (call $str_len (call $to_str (local.get $a0))))
-          (let $sl i32 (call $str_len (local.get $s)))
-          (if (i32.lt_s (local.get $sl) (local.get $pl)) (then (return (call $v_false))))
-          (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (i32.sub (local.get $sl) (local.get $pl)) (local.get $pl)) (call $to_str (local.get $a0)))))))
+          (let $ewp i32 (call $to_str (local.get $a0)))
+          (let $ewpl i32 (call $str_len (local.get $ewp)))
+          (let $ewsl i32 (call $str_len (local.get $s)))
+          ;; endPosition: undefined → length; else ToIntegerOrInfinity, clamped to [0,len]
+          (let $ewend i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+                            (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+                            (else (local.get $ewsl))))
+          (if (call $err) (then (return (call $v_undef))))  ;; ToInteger(endPosition) threw (e.g. Symbol)
+          (if (i32.lt_s (local.get $ewend) (i32.const 0)) (then (set! $ewend (i32.const 0))))
+          (if (i32.gt_s (local.get $ewend) (local.get $ewsl)) (then (set! $ewend (local.get $ewsl))))
+          (let $ewstart i32 (i32.sub (local.get $ewend) (local.get $ewpl)))
+          (if (i32.lt_s (local.get $ewstart) (i32.const 0)) (then (return (call $v_false))))
+          (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (local.get $ewstart) (local.get $ewpl)) (local.get $ewp))))))
       (if (i32.eq (local.get $id) (i32.const 60))  ;; split(sep) — string or regex separator
         (then
           ;; no separator, or an explicit `undefined` separator → [wholeString]
