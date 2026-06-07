@@ -3171,12 +3171,20 @@
     (then
       (let $hs f64 (f64.const 0))
       (let $hi i32 (i32.const 0))
+      (let $hinf i32 (i32.const 0))
+      (let $hnan i32 (i32.const 0))
+      (let $hpinf f64 (f64.div (f64.const 1) (f64.const 0)))
       (block $he (loop $hl
         (br_if $he (i32.ge_s (local.get $hi) (local.get $argc)))
         (let $hv f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (local.get $hi))))
+        (if (f64.eq (f64.abs (local.get $hv)) (local.get $hpinf)) (then (set! $hinf (i32.const 1))))
+        (if (f64.ne (local.get $hv) (local.get $hv)) (then (set! $hnan (i32.const 1))))
         (set! $hs (f64.add (local.get $hs) (f64.mul (local.get $hv) (local.get $hv))))
         (set! $hi (i32.add (local.get $hi) (i32.const 1)))
         (br $hl)))
+      ;; any ±∞ arg ⇒ +∞ (dominates NaN); else any NaN ⇒ NaN
+      (if (local.get $hinf) (then (return (call $num (local.get $hpinf)))))
+      (if (local.get $hnan) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
       (return (call $num (f64.sqrt (local.get $hs))))))
   ;; Map/Set/WeakMap/WeakSet (120-136, 310-316, 320-328) — handled in $native_collections
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 120)) (i32.le_s (local.get $id) (i32.const 136))) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316))) (i32.and (i32.ge_s (local.get $id) (i32.const 320)) (i32.le_s (local.get $id) (i32.const 328)))))
@@ -5459,8 +5467,10 @@
         (then (if (f64.gt (f64.abs (local.get $mx)) (f64.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
               (return (call $num (f64.sub (f64.const 1.5707963267948966) (call $m_atan (f64.div (local.get $mx) (f64.sqrt (f64.sub (f64.const 1) (f64.mul (local.get $mx) (local.get $mx)))))))))))
       (if (i32.eq (local.get $id) (i32.const 241)) (then (return (call $num (call $m_atan (local.get $mx))))))  ;; atan
-      (if (i32.eq (local.get $id) (i32.const 244))  ;; asinh(x) = ln(x + sqrt(x²+1))
-        (then (return (call $num (call $m_log (f64.add (local.get $mx) (f64.sqrt (f64.add (f64.mul (local.get $mx) (local.get $mx)) (f64.const 1)))))))))
+      (if (i32.eq (local.get $id) (i32.const 244))  ;; asinh(x) = ln(x + sqrt(x²+1)); ±∞ → ±∞ (formula gives -∞+∞=NaN)
+        (then
+          (if (f64.eq (f64.abs (local.get $mx)) (f64.div (f64.const 1) (f64.const 0))) (then (return (call $num (local.get $mx)))))
+          (return (call $num (call $m_log (f64.add (local.get $mx) (f64.sqrt (f64.add (f64.mul (local.get $mx) (local.get $mx)) (f64.const 1)))))))))
       (if (i32.eq (local.get $id) (i32.const 245))  ;; acosh(x) = ln(x + sqrt(x²-1)), x>=1
         (then (if (f64.lt (local.get $mx) (f64.const 1)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
               (return (call $num (call $m_log (f64.add (local.get $mx) (f64.sqrt (f64.sub (f64.mul (local.get $mx) (local.get $mx)) (f64.const 1)))))))))
