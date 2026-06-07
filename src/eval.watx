@@ -4551,9 +4551,13 @@
     (then
       (let $s i32 (call $to_str (local.get $thisv)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      ;; includes/startsWith/endsWith reject a RegExp search argument (IsRegExp → TypeError)
-      (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 63)) (i32.le_s (local.get $id) (i32.const 65))) (call $is_regexp (local.get $a0)))
-        (then (call $throw_type (cstring "TypeError") (cstring "First argument to String.prototype.includes/startsWith/endsWith must not be a regular expression")) (return (call $v_undef))))
+      ;; includes/startsWith/endsWith reject a RegExp search argument (IsRegExp → TypeError);
+      ;; IsRegExp reads @@match (a throwing getter propagates).
+      (if (i32.and (i32.ge_s (local.get $id) (i32.const 63)) (i32.le_s (local.get $id) (i32.const 65)))
+        (then
+          (let $isrx i32 (call $is_regexp_spec (local.get $a0)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (local.get $isrx) (then (call $throw_type (cstring "TypeError") (cstring "First argument to String.prototype.includes/startsWith/endsWith must not be a regular expression")) (return (call $v_undef))))))
       ;; ToString(searchString) throws on a Symbol (includes/startsWith/endsWith)
       (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 63)) (i32.le_s (local.get $id) (i32.const 65))) (call $is_symbol (local.get $a0)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
