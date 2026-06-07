@@ -4390,11 +4390,18 @@
           (return (call $mk_str (local.get $out)))))
       (if (i32.eq (local.get $id) (i32.const 62))  ;; repeat(n)
         (then
-          (let $cntf f64 (call $to_num (local.get $a0)))
-          ;; negative or +Infinity (or absurdly large) count → RangeError
-          (if (i32.or (f64.lt (local.get $cntf) (f64.const 0)) (f64.ge (local.get $cntf) (f64.const 1073741824)))
+          (let $cntf f64 (call $tonum_fmtarg (local.get $a0)))  ;; ToNumber; BigInt→TypeError
+          (if (call $err) (then (return (call $v_undef))))
+          ;; RangeError only for count < 0 or +Infinity (per spec)
+          (if (i32.or (f64.lt (local.get $cntf) (f64.const 0)) (f64.eq (local.get $cntf) (f64.div (f64.const 1) (f64.const 0))))
             (then (call $throw_type (cstring "RangeError") (cstring "Invalid count value")) (return (call $v_undef))))
           (let $cnt i32 (call $to_int_idx (local.get $cntf)))
+          ;; empty string or count 0 → "" (any finite count of "" is "", no length cap)
+          (if (i32.or (i32.eqz (call $str_len (local.get $s))) (i32.le_s (local.get $cnt) (i32.const 0)))
+            (then (return (call $mk_str (cstring "")))))
+          ;; a non-empty result that would exceed the max string length → RangeError
+          (if (i32.ge_s (local.get $cnt) (i32.const 1073741824))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid count value")) (return (call $v_undef))))
           (let $out i32 (cstring ""))
           (let $k i32 (i32.const 0))
           (block $re (loop $rl
