@@ -5321,27 +5321,41 @@
       (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.sub (local.get $sln) (local.get $pos)))))
       (call $split_apply_limit (local.get $r) (local.get $argv) (local.get $argc))
       (return (call $mk_arr (local.get $r)))))
-  (if (i32.eq (local.get $id) (i32.const 428))  ;; RegExp.prototype[@@match](string) — this = regexp
+  (if (i32.eq (local.get $id) (i32.const 428))  ;; RegExp.prototype[@@match](string) — spec protocol
     (then
-      (call $re_apply_flags (local.get $thisv))
-      (if (i32.eqz (i32.load (i32.const 276)))  ;; not global → the exec result (array | null)
-        (then (return (call $call_native (i32.const 167) (local.get $argc) (local.get $argv) (local.get $thisv)))))
-      ;; global → array of every full-match string, or null if none
-      (let $mmsub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-      (let $mmpat i32 (call $re_pat_of (local.get $thisv)))
-      (let $mmsln i32 (call $str_len (local.get $mmsub)))
-      (let $mmpos i32 (i32.const 0))
-      (let $mmarr i32 (call $arr_new (i32.const 4)))
-      (block $mme (loop $mml
-        (br_if $mme (i32.gt_s (local.get $mmpos) (local.get $mmsln)))
-        (let $mst i32 (call $re_search_str_from (local.get $mmpat) (local.get $mmsub) (local.get $mmpos)))
-        (br_if $mme (i32.lt_s (local.get $mst) (i32.const 0)))
-        (let $men i32 (i32.load (i32.const 168)))
-        (call $arr_push (local.get $mmarr) (call $mk_str (call $substr (local.get $mmsub) (local.get $mst) (i32.sub (local.get $men) (local.get $mst)))))
-        (set! $mmpos (if i32 (i32.gt_s (local.get $men) (local.get $mst)) (then (local.get $men)) (else (i32.add (local.get $mst) (i32.const 1)))))
-        (br $mml)))
-      (if (i32.eqz (call $arr_len (local.get $mmarr))) (then (return (call $v_null))))
-      (return (call $mk_arr (local.get $mmarr)))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_function (local.get $thisv)) (call $is_array (local.get $thisv)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "RegExp.prototype[@@match] called on non-object")) (return (call $v_undef))))
+      (let $mS i64 (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))  ;; S = ToString(string)
+      (if (call $err) (then (return (call $v_undef))))
+      (let $mglob i32 (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "global")))))  ;; ToBoolean(Get(rx,"global"))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (local.get $mglob))
+        (then (return (call $regexp_exec (local.get $thisv) (local.get $mS)))))  ;; non-global → RegExpExec
+      ;; global: reset lastIndex, loop RegExpExec accumulating Get(result,"0")
+      (let $muni i32 (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "unicode")))))
+      (if (call $err) (then (return (call $v_undef))))
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $marr i32 (call $arr_new (i32.const 4)))
+      (let $mn i32 (i32.const 0))
+      (block $mmE (loop $mmL
+        (let $mres i64 (call $regexp_exec (local.get $thisv) (local.get $mS)))
+        (if (call $err) (then (return (call $v_undef))))
+        (br_if $mmE (call $is_null (local.get $mres)))
+        (let $m0 i32 (call $to_str (call $get_prop (local.get $mres) (call $mk_str (cstring "0")))))  ;; ToString(Get(result,"0"))
+        (if (call $err) (then (return (call $v_undef))))
+        (call $arr_push (local.get $marr) (call $mk_str (local.get $m0)))
+        (set! $mn (i32.add (local.get $mn) (i32.const 1)))
+        ;; empty match → advance lastIndex by 1 (AdvanceStringIndex) to make progress
+        (if (i32.eqz (call $str_len (local.get $m0)))
+          (then
+            (let $mli i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))))
+            (if (call $err) (then (return (call $v_undef))))
+            (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.convert_i32_s (i32.add (local.get $mli) (i32.const 1)))))
+            (if (call $err) (then (return (call $v_undef))))))
+        (br $mmL)))
+      (if (i32.eqz (local.get $mn)) (then (return (call $v_null))))
+      (return (call $mk_arr (local.get $marr)))))
   (if (i32.eq (local.get $id) (i32.const 427))  ;; RegExp.prototype[@@search](string) — this = regexp → index
     (then
       (call $re_apply_flags (local.get $thisv))

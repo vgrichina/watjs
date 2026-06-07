@@ -604,6 +604,23 @@
         (else (call $to_str (local.get $v)))))
     (else (call $to_str (local.get $v)))))
 
+;; RegExpExec(R, S): if R.exec is callable, Call(exec, R, «S») and validate the result
+;; is Object|null; else (R must be a RegExp) run the builtin exec (native 167). $sval is
+;; the string VALUE. Returns an array | null | whatever a user exec returns; sets $err on abrupt.
+(func $regexp_exec (param $rx i64) (param $sval i64) (result i64) (effects)
+  (let $rex i64 (call $get_prop (local.get $rx) (call $mk_str (cstring "exec"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (call $is_function (local.get $rex))
+    (then
+      (let $rer i64 (call $call_val (local.get $rex) (i32.const 1) (call $argv1 (local.get $sval)) (local.get $rx)))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $rer)) (i32.or (call $is_array (local.get $rer)) (call $is_null (local.get $rer)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "exec method must return an Object or null")) (return (call $v_undef))))
+      (return (local.get $rer))))
+  (if (i32.eqz (call $is_regexp (local.get $rx)))
+    (then (call $throw_type (cstring "TypeError") (cstring "RegExpExec called on a non-RegExp object")) (return (call $v_undef))))
+  (call $call_native (i32.const 167) (i32.const 1) (call $argv1 (local.get $sval)) (local.get $rx)))
+
 ;; convenience: search a Str subject for a Str pattern. start offset or -1.
 (func $re_search_str (param $patStr i32) (param $subStr i32) (result i32) (effects)
   (call $re_search (i32.add (local.get $patStr) (i32.const 4)) (call $str_len (local.get $patStr))
