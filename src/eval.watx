@@ -2802,6 +2802,9 @@
   (if (i32.eq (local.get $id) (i32.const 159))
     (then
       (let $pk i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))  ;; ToObject(this)
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (if (call $is_array (local.get $thisv))
         (then
           (let $pa i32 (call $val_payload (local.get $thisv)))
@@ -3442,6 +3445,13 @@
   (if (i32.eq (local.get $id) (i32.const 93))  ;; obj.hasOwnProperty(key)
     (then
       (let $ks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))  ;; ToPropertyKey threw
+      ;; ToObject(this): null/undefined → TypeError; primitive → boxed wrapper (so a
+      ;; string's own index/length props are visible)
+      (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv)))))
+        (then (set! $thisv (call $to_object (local.get $thisv)))))
       (if (call $is_function (local.get $thisv))
         (then (return (call $mk_bool (call $fn_own (call $val_payload (local.get $thisv)) (local.get $ks))))))
       (if (call $is_array (local.get $thisv))
