@@ -3559,15 +3559,19 @@
   ;; --- string methods (this = the string) ---
   ;; String.prototype methods require an object-coercible `this`: null/undefined
   ;; → TypeError (the contiguous method-id ranges; ToString would otherwise coerce).
-  (if (i32.and
-        (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+  (let $smeth i32
         (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
         (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 60)) (i32.le_s (local.get $id) (i32.const 68)))
         (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 102)) (i32.le_s (local.get $id) (i32.const 104)))  ;; match/replace/search
         (i32.or (i32.eq (local.get $id) (i32.const 109)) (i32.or (i32.eq (local.get $id) (i32.const 141))  ;; replaceAll
         (i32.or (i32.eq (local.get $id) (i32.const 113)) (i32.or (i32.eq (local.get $id) (i32.const 114))  ;; trimStart/trimEnd
         (i32.or (i32.eq (local.get $id) (i32.const 138)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.or (i32.eq (local.get $id) (i32.const 173)) (i32.eq (local.get $id) (i32.const 299))))))))))))) ;; substr/localeCompare/matchAll/@@iterator
+  ;; RequireObjectCoercible: null/undefined `this` → TypeError
+  (if (i32.and (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv))) (local.get $smeth))
     (then (call $throw_type (cstring "TypeError") (cstring "String.prototype method called on null or undefined")) (return (call $v_undef))))
+  ;; ToString(this): a Symbol receiver → TypeError
+  (if (i32.and (call $is_symbol (local.get $thisv)) (local.get $smeth))
+    (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 299))  ;; String.prototype[@@iterator] → char iterator
     (then
       (let $sisp i32 (call $to_str (local.get $thisv)))
