@@ -5326,6 +5326,10 @@
       (if (i32.or (call $is_null (local.get $t)) (call $is_undefined (local.get $t)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (set! $t (call $to_object (local.get $t)))  ;; ToObject(target): primitive → wrapper
+      ;; CopyDataProperties uses Set(to, key, val, true) — Throw=true: read-only / frozen /
+      ;; non-extensible targets must throw. Drive set_prop's set_fail via the strict flag.
+      (let $a80save i32 (i32.load (i32.const 392)))
+      (i32.store (i32.const 392) (i32.const 1))
       (let $k i32 (i32.const 1))
       (block $ae (loop $al
         (br_if $ae (i32.ge_s (local.get $k) (local.get $argc)))
@@ -5339,6 +5343,7 @@
             (block $sce2 (loop $scl2
               (br_if $sce2 (i32.ge_s (local.get $sci) (local.get $slen)))
               (call $set_prop (local.get $t) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $sci)))) (call $str_char_at (local.get $sstr) (local.get $sci)))
+              (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))
               (set! $sci (i32.add (local.get $sci) (i32.const 1))) (br $scl2)))))
         ;; array source: copy own enumerable indices, then named props (@12 scope)
         (if (call $is_array (local.get $sv))
@@ -5348,7 +5353,8 @@
             (block $aae (loop $aal2
               (br_if $aae (i32.ge_s (local.get $aai) (call $arr_len (local.get $aap))))
               (if (call $arr_has (local.get $aap) (local.get $aai))
-                (then (call $set_prop (local.get $t) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $aai)))) (call $arr_get (local.get $aap) (local.get $aai)))))
+                (then (call $set_prop (local.get $t) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $aai)))) (call $arr_get (local.get $aap) (local.get $aai)))
+                  (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))))
               (set! $aai (i32.add (local.get $aai) (i32.const 1))) (br $aal2)))))
         ;; objects / arrays / functions: copy own enumerable named props from the scope
         (let $ss i32 (if i32 (call $is_object (local.get $sv)) (then (call $val_payload (local.get $sv)))
@@ -5367,12 +5373,14 @@
                 (then
                   (let $akey i64 (call $mk_str (i32.load (local.get $en))))
                   (let $aval i64 (call $get_prop (local.get $sv) (local.get $akey)))
-                  (if (call $err) (then (return (call $v_undef))))
-                  (call $set_prop (local.get $t) (local.get $akey) (local.get $aval))))
+                  (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))
+                  (call $set_prop (local.get $t) (local.get $akey) (local.get $aval))
+                  (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))))
               (set! $i (i32.add (local.get $i) (i32.const 1)))
               (br $cl)))))
         (set! $k (i32.add (local.get $k) (i32.const 1)))
         (br $al)))
+      (i32.store (i32.const 392) (local.get $a80save))
       (return (local.get $t))))
   (if (i32.eq (local.get $id) (i32.const 81))  ;; Object.create(proto)
     (then
