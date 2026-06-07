@@ -4237,6 +4237,9 @@
               (if (i32.and (f64.ge (local.get $dcy) (f64.const 0)) (f64.le (local.get $dcy) (f64.const 99))) (then (set! $dcy (f64.add (local.get $dcy) (f64.const 1900)))))
               (set! $dt (call $date_make (i64.trunc_f64_s (local.get $dcy)) (i64.trunc_f64_s (local.get $dcmo)) (i64.trunc_f64_s (local.get $dcd)) (i64.trunc_f64_s (local.get $dch)) (i64.trunc_f64_s (local.get $dcmi)) (i64.trunc_f64_s (local.get $dcs)) (i64.trunc_f64_s (local.get $dcms)))))
             (else (set! $dt (f64.div (f64.const 0) (f64.const 0)))))))
+      ;; TimeClip the final time value (single-number ctor path; multi-arg already clipped in date_make, idempotent)
+      (if (i32.or (f64.ne (local.get $dt) (local.get $dt)) (f64.gt (f64.abs (local.get $dt)) (f64.const 8640000000000000)))
+        (then (set! $dt (f64.div (f64.const 0) (f64.const 0)))) (else (set! $dt (f64.trunc (local.get $dt)))))
       (let $dobj i32 (call $obj_new (i32.const 16)))
       (i32.store (local.get $dobj) (i32.load (i32.const 308)))  ;; prototype chain → Date.prototype (methods inherited)
       (call $scope_define (local.get $dobj) (cstring "@@time") (call $num (local.get $dt)))
@@ -5100,9 +5103,10 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Date.prototype.toJSON called on null or undefined")) (return (call $v_undef))))
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv)))))
         (then (set! $thisv (call $to_object (local.get $thisv)))))
-      (let $tjv f64 (call $to_num (local.get $thisv)))  ;; ToPrimitive(O, number)
+      (let $tjp i64 (call $to_primitive_h (local.get $thisv) (i32.const 1)))  ;; ToPrimitive(O, number) — RAW primitive
       (if (call $err) (then (return (call $v_undef))))
-      (if (i32.eqz (call $f64_safe_i64 (local.get $tjv))) (then (return (call $v_null))))  ;; NaN/Infinity → null
+      ;; only a non-finite NUMBER short-circuits to null; any non-number primitive proceeds to Invoke
+      (if (i32.and (call $is_number (local.get $tjp)) (i32.eqz (call $f64_safe_i64 (call $tonum_raw (local.get $tjp))))) (then (return (call $v_null))))
       (let $tjiso i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "toISOString"))))
       (if (call $err) (then (return (call $v_undef))))
       (if (i32.eqz (call $is_function (local.get $tjiso))) (then (call $throw_type (cstring "TypeError") (cstring "toISOString is not callable")) (return (call $v_undef))))
