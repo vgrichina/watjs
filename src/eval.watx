@@ -3673,7 +3673,9 @@
       (let $nv f64 (call $num_this (local.get $thisv)))
       (if (i32.eq (local.get $id) (i32.const 145))  ;; toString([radix])
         (then
-          (let $radix i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (call $to_int_idx (call $tonum_fmtarg (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (else (i32.const 10))))
+          ;; radix undefined (or absent) → 10; else ToIntegerOrInfinity(radix)
+          (let $rarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (let $radix i32 (if i32 (call $is_undefined (local.get $rarg)) (then (i32.const 10)) (else (call $to_int_idx (call $tonum_fmtarg (local.get $rarg))))))
           ;; RangeError for radix outside 2..36
           (if (i32.or (i32.lt_s (local.get $radix) (i32.const 2)) (i32.gt_s (local.get $radix) (i32.const 36)))
             (then (call $throw_type (cstring "RangeError") (cstring "toString() radix must be between 2 and 36")) (return (call $v_undef))))
@@ -3685,8 +3687,8 @@
       (let $fxd i32 (call $to_int_idx (call $tonum_fmtarg (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.or (i32.lt_s (local.get $fxd) (i32.const 0)) (i32.gt_s (local.get $fxd) (i32.const 100)))
         (then (call $throw_type (cstring "RangeError") (cstring "toFixed() digits argument must be between 0 and 100")) (return (call $v_undef))))
-      (if (i32.or (f64.ne (local.get $nv) (local.get $nv)) (f64.eq (f64.abs (local.get $nv)) (f64.div (f64.const 1) (f64.const 0))))
-        (then (return (call $mk_str (call $num_to_str (local.get $nv))))))  ;; NaN/Infinity → ToString
+      (if (i32.or (f64.ne (local.get $nv) (local.get $nv)) (i32.or (f64.eq (f64.abs (local.get $nv)) (f64.div (f64.const 1) (f64.const 0))) (f64.ge (f64.abs (local.get $nv)) (f64.const 1e21))))
+        (then (return (call $mk_str (call $num_to_str (local.get $nv))))))  ;; NaN/Infinity/|x|>=1e21 → ToString
       (return (call $mk_str (call $num_to_fixed (local.get $nv) (local.get $fxd))))))
   (if (i32.eq (local.get $id) (i32.const 166))  ;; Number.prototype.toPrecision([p])
     (then
