@@ -447,8 +447,10 @@
   (call $to_str (local.get $p)))
 
 (func $obj_to_str (param $v i64) (result i32) (effects)
-  (if (call $is_array (local.get $v)) (then (return (call $arr_join (local.get $v)))))
-  (if (call $is_object (local.get $v))
+  ;; arrays and functions go through OrdinaryToPrimitive too (so an overridden
+  ;; Array.prototype.toString / Function.prototype.toString is honored), not a
+  ;; hardcoded join / "function".
+  (if (i32.or (call $is_object (local.get $v)) (i32.or (call $is_array (local.get $v)) (call $is_function (local.get $v))))
     (then
       ;; Symbol.toPrimitive (string hint) is authoritative
       (let $stpf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@toPrimitive"))))
@@ -489,8 +491,10 @@
           (if (i32.eqz (i32.or (call $is_object (local.get $sr2)) (i32.or (call $is_array (local.get $sr2)) (call $is_function (local.get $sr2))))) (then (return (call $prim_to_str (local.get $sr2)))))
           (set! $shad (i32.const 1))))
       ;; wrapper object (new String/Number/Boolean): ToString of the boxed primitive
-      (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__prim__")))
-      (if (local.get $pslot) (then (return (call $to_str (i64.load (local.get $pslot))))))
+      (if (call $is_object (local.get $v))
+        (then
+          (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__prim__")))
+          (if (local.get $pslot) (then (return (call $to_str (i64.load (local.get $pslot))))))))
       ;; neither toString nor valueOf was callable (or a method returned an object) →
       ;; OrdinaryToPrimitive has no usable result → TypeError
       (call $throw_type (cstring "TypeError") (cstring "Cannot convert object to primitive value"))
