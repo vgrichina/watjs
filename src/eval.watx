@@ -4533,7 +4533,22 @@
             (then
               (let $dpr i64 (call $call_val (local.get $dptrap) (i32.const 2) (local.get $dpb) (local.get $rdph)))
               (if (call $err) (then (return (call $v_undef))))
-              (return (call $mk_bool (call $truthy (local.get $dpr)))))
+              (if (i32.eqz (call $truthy (local.get $dpr))) (then (return (call $v_false))))
+              ;; trap returned true → invariant: P must not be a non-configurable
+              ;; own property of target, and target must be extensible if P exists
+              (let $dptgt i64 (call $proxy_target (local.get $rdt)))
+              (let $dpdb i32 (call $heap_alloc (i32.const 16)))
+              (i64.store (local.get $dpdb) (local.get $dptgt))
+              (i64.store (i32.add (local.get $dpdb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+              (let $dpdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $dpdb) (call $v_undef)))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.eqz (call $is_undefined (local.get $dpdesc)))
+                (then
+                  (if (i32.eqz (call $truthy (call $get_prop (local.get $dpdesc) (call $mk_str (cstring "configurable")))))
+                    (then (call $throw_type (cstring "TypeError") (cstring "proxy deleteProperty: cannot delete a non-configurable property")) (return (call $v_undef))))
+                  (if (i32.eqz (call $truthy (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $dptgt)) (call $v_undef))))
+                    (then (call $throw_type (cstring "TypeError") (cstring "proxy deleteProperty: cannot delete a property of a non-extensible target")) (return (call $v_undef))))))
+              (return (call $v_true)))
             (else (return (call $call_native (i32.const 203) (i32.const 2) (local.get $dpb) (call $v_undef)))))))  ;; no trap → Reflect.deleteProperty(target, key)
       (if (call $is_object (local.get $rdt))
         (then
