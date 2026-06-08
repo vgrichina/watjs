@@ -6788,7 +6788,8 @@
                 (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))))
           (let $start i32 (call $to_int_idx (call $to_num (local.get $a0))))
           (let $end i32 (local.get $n))
-          (if (i32.ge_s (local.get $argc) (i32.const 2)) (then (set! $end (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+          (if (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))  ;; undefined end → length
+            (then (set! $end (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
           (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.add (local.get $n) (local.get $start)))))
           (if (i32.lt_s (local.get $end) (i32.const 0)) (then (set! $end (i32.add (local.get $n) (local.get $end)))))
           (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.const 0))))
