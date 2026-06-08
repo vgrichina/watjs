@@ -2849,6 +2849,38 @@
           (call $arr_remove (local.get $wmv) (local.get $widx2))
           (return (call $v_true))))
       (return (call $v_undef))))
+  ;; ── WeakMap.prototype.getOrInsert(443) / getOrInsertComputed(444) — upsert proposal ──
+  (if (i32.or (i32.eq (local.get $id) (i32.const 443)) (i32.eq (local.get $id) (i32.const 444)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@wmk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (let $wgkey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $weakly_holdable (local.get $wgkey)))  ;; CanBeHeldWeakly (before the callable check)
+        (then (call $throw_type (cstring "TypeError") (cstring "Invalid value used as weak map key")) (return (call $v_undef))))
+      (if (i32.eq (local.get $id) (i32.const 444))
+        (then (if (i32.eqz (call $is_function (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (then (call $throw_type (cstring "TypeError") (cstring "getOrInsertComputed callbackfn is not a function")) (return (call $v_undef))))))
+      (let $wgmk i32 (call $coll_arr (local.get $thisv) (cstring "@@wmk")))
+      (let $wgmv i32 (call $coll_arr (local.get $thisv) (cstring "@@wmv")))
+      (let $wgidx i32 (call $map_find (local.get $wgmk) (local.get $wgkey)))
+      (if (i32.ge_s (local.get $wgidx) (i32.const 0)) (then (return (call $arr_get (local.get $wgmv) (local.get $wgidx)))))
+      (if (i32.eq (local.get $id) (i32.const 443))  ;; getOrInsert(key, value)
+        (then
+          (let $wgval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (call $arr_push (local.get $wgmk) (local.get $wgkey)) (call $arr_push (local.get $wgmv) (local.get $wgval))
+          (return (local.get $wgval))))
+      (let $wgcb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $wgcbuf i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $wgcbuf) (local.get $wgkey))
+      (let $wgcval i64 (call $call_val (local.get $wgcb) (i32.const 1) (local.get $wgcbuf) (call $v_undef)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $wgidx2 i32 (call $map_find (local.get $wgmk) (local.get $wgkey)))
+      (if (i32.ge_s (local.get $wgidx2) (i32.const 0))
+        (then (call $arr_set (local.get $wgmv) (local.get $wgidx2) (local.get $wgcval)))
+        (else (call $arr_push (local.get $wgmk) (local.get $wgkey)) (call $arr_push (local.get $wgmv) (local.get $wgcval))))
+      (return (local.get $wgcval))))
   ;; ── WeakSet (ctor 325, add 326, has 327, delete 328) ──
   (if (i32.eq (local.get $id) (i32.const 325))  ;; new WeakSet()
     (then
@@ -3490,7 +3522,7 @@
       (if (local.get $hnan) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
       (return (call $num (f64.sqrt (local.get $hs))))))
   ;; Map/Set/WeakMap/WeakSet (120-136, 310-316, 320-328) + Map upsert (441-442) — in $native_collections
-  (if (i32.or (i32.or (i32.eq (local.get $id) (i32.const 441)) (i32.eq (local.get $id) (i32.const 442))) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 120)) (i32.le_s (local.get $id) (i32.const 136))) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316))) (i32.and (i32.ge_s (local.get $id) (i32.const 320)) (i32.le_s (local.get $id) (i32.const 328))))))
+  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 441)) (i32.le_s (local.get $id) (i32.const 444))) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 120)) (i32.le_s (local.get $id) (i32.const 136))) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316))) (i32.and (i32.ge_s (local.get $id) (i32.const 320)) (i32.le_s (local.get $id) (i32.const 328))))))
     (then (return (call $native_collections (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   ;; WeakRef / FinalizationRegistry (358-362) — handled in a separate fn to keep call_native small
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
@@ -7130,7 +7162,7 @@
 ;; Only high-confidence arities are listed (an exhaustive id→arity table is TODO).
 (func $native_arity (param $id i32) (result i32) (effects)
   ;; length 2
-  (if (i32.or (i32.eq (local.get $id) (i32.const 441)) (i32.eq (local.get $id) (i32.const 442))) (then (return (i32.const 2))))  ;; Map getOrInsert / getOrInsertComputed
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 441)) (i32.le_s (local.get $id) (i32.const 444))) (then (return (i32.const 2))))  ;; Map/WeakMap getOrInsert / getOrInsertComputed
   (if (i32.or (i32.eq (local.get $id) (i32.const 45)) (i32.or (i32.eq (local.get $id) (i32.const 46)) (i32.or (i32.eq (local.get $id) (i32.const 47)) (i32.or (i32.eq (local.get $id) (i32.const 52)) (i32.eq (local.get $id) (i32.const 224))))))
     (then (return (i32.const 2))))  ;; Math.max, min, pow, hypot, imul
   (if (i32.or (i32.eq (local.get $id) (i32.const 14)) (i32.or (i32.eq (local.get $id) (i32.const 15)) (i32.or (i32.eq (local.get $id) (i32.const 24)) (i32.or (i32.eq (local.get $id) (i32.const 50)) (i32.eq (local.get $id) (i32.const 156))))))
@@ -8036,6 +8068,8 @@
   (i32.store (i32.const 480) (local.get $wmproto))
   (call $scope_define (local.get $wmproto) (cstring "set") (call $mk_native (i32.const 321) (cstring "set")))
   (call $scope_define (local.get $wmproto) (cstring "get") (call $mk_native (i32.const 322) (cstring "get")))
+  (call $scope_define (local.get $wmproto) (cstring "getOrInsert") (call $mk_native (i32.const 443) (cstring "getOrInsert")))
+  (call $scope_define (local.get $wmproto) (cstring "getOrInsertComputed") (call $mk_native (i32.const 444) (cstring "getOrInsertComputed")))
   (call $scope_define (local.get $wmproto) (cstring "has") (call $mk_native (i32.const 323) (cstring "has")))
   (call $scope_define (local.get $wmproto) (cstring "delete") (call $mk_native (i32.const 324) (cstring "delete")))
   (call $scope_define_attr (local.get $wmproto) (cstring "@@toStringTag") (call $mk_str (cstring "WeakMap")) (i32.const 4))  ;; {W:false,E:false,C:true}
