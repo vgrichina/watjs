@@ -1675,6 +1675,15 @@
       (return (i32.const 1))))
   (call $strict_eq (local.get $a) (local.get $b)))
 
+;; [[DefineOwnProperty]] rejection. Object.defineProperty wants a thrown TypeError;
+;; Reflect.defineProperty wants a `false` return. Reg 664 = soft mode (set by the
+;; Reflect path around an apply_descriptor call): when set, record the failure in
+;; reg 668 instead of throwing. The caller resets 664 and reads 668.
+(func $def_reject (param $msg i32) (effects)
+  (if (i32.load (i32.const 664))
+    (then (i32.store (i32.const 668) (i32.const 1)))
+    (else (call $throw_type (cstring "TypeError") (local.get $msg)))))
+
 ;; apply a property descriptor (scope $ds) onto object scope $os at key $ks,
 ;; implementing the [[DefineOwnProperty]] validation + attribute-merge rules.
 ;; Throws TypeError (sets err) on an invalid (re)definition.
@@ -1711,31 +1720,31 @@
     (then
       ;; new property: forbidden on a non-extensible object
       (if (call $scope_find_local (local.get $os) (cstring "@@noext"))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot define property, object is not extensible")) (return))))
+        (then (call $def_reject (cstring "Cannot define property, object is not extensible")) (return))))
     (else
       ;; redefining: if the existing prop is non-configurable, enforce the limits
       (if (i32.eqz (call $entry_configurable (local.get $old)))
         (then
-          (if (local.get $wantConf) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))
+          (if (local.get $wantConf) (then (call $def_reject (cstring "Cannot redefine non-configurable property")) (return)))
           (if (i32.and (i32.ne (local.get $en) (i32.const 0)) (i32.ne (i32.ne (local.get $wantEnum) (i32.const 0)) (i32.ne (call $entry_enumerable (local.get $old)) (i32.const 0))))
-            (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))
+            (then (call $def_reject (cstring "Cannot redefine non-configurable property")) (return)))
           ;; cannot switch between data and accessor
           (if (i32.or (i32.and (local.get $isAcc) (i32.eqz (local.get $oldAcc))) (i32.and (local.get $hasData) (local.get $oldAcc)))
-            (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))
+            (then (call $def_reject (cstring "Cannot redefine non-configurable property")) (return)))
           ;; non-configurable accessor: a present get/set must equal the current one
           (if (local.get $oldAcc)
             (then
               (let $ocell i32 (call $val_payload (i64.load (local.get $old))))
               (if (i32.and (local.get $gs) (i32.eqz (call $strict_eq (local.get $vGet) (i64.load (local.get $ocell)))))
-                (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))
+                (then (call $def_reject (cstring "Cannot redefine non-configurable property")) (return)))
               (if (i32.and (local.get $ss) (i32.eqz (call $strict_eq (local.get $vSet) (i64.load (i32.add (local.get $ocell) (i32.const 8))))))
-                (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))))
+                (then (call $def_reject (cstring "Cannot redefine non-configurable property")) (return)))))
           ;; non-writable data: cannot become writable nor change value
           (if (i32.and (i32.eqz (local.get $oldAcc)) (i32.eqz (call $entry_writable (local.get $old))))
             (then
-              (if (local.get $wantWrit) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))
+              (if (local.get $wantWrit) (then (call $def_reject (cstring "Cannot redefine non-configurable property")) (return)))
               (if (i32.and (i32.ne (local.get $vs) (i32.const 0)) (i32.eqz (call $same_value (local.get $vVal) (i64.load (local.get $old)))))
-                (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return)))))))))
+                (then (call $def_reject (cstring "Cannot redefine non-configurable property")) (return)))))))))
   ;; ---- validation passed: compute merged attrs and write ----
   ;; treat as accessor if the descriptor is accessor, or it's generic over an
   ;; existing accessor.
@@ -4923,9 +4932,15 @@
             (else (return (call $call_native (i32.const 206) (i32.const 3) (local.get $rdfb) (call $v_undef)))))))
       (if (i32.and (i32.or (call $is_object (local.get $rpt)) (i32.or (call $is_function (local.get $rpt)) (call $is_array (local.get $rpt)))) (i32.or (call $is_object (local.get $rpd)) (i32.or (call $is_function (local.get $rpd)) (call $is_array (local.get $rpd)))))
         (then
+          ;; soft mode: a [[DefineOwnProperty]] rejection records reg 668 instead of throwing
+          (i32.store (i32.const 664) (i32.const 1))
+          (i32.store (i32.const 668) (i32.const 0))
           (if (call $is_function (local.get $rpt))
             (then (call $apply_descriptor (call $fn_def_scope (local.get $rpt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (local.get $rpd)))
-            (else (call $apply_descriptor (call $val_payload (local.get $rpt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (local.get $rpd))))))
+            (else (call $apply_descriptor (call $val_payload (local.get $rpt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (local.get $rpd))))
+          (i32.store (i32.const 664) (i32.const 0))
+          (if (call $err) (then (return (call $v_undef))))  ;; a genuine exception (e.g. a descriptor getter threw) propagates
+          (return (call $mk_bool (i32.eqz (i32.load (i32.const 668)))))))
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 207))  ;; Reflect.getOwnPropertyDescriptor(target, key)
     (then (return (call $call_native (i32.const 156) (local.get $argc) (local.get $argv) (call $v_undef)))))
