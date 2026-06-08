@@ -444,7 +444,11 @@
       (if (local.get $aprops)
         (then
           (let $apslot i32 (call $scope_find_local (local.get $aprops) (local.get $akey)))
-          (if (local.get $apslot) (then (return (i64.load (local.get $apslot)))))))
+          (if (local.get $apslot)
+            (then
+              (if (call $entry_is_accessor (local.get $apslot))  ;; a named accessor (defineProperty get/set on an array) → invoke getter
+                (then (let $apg i64 (i64.load (call $val_payload (i64.load (local.get $apslot))))) (if (call $is_function (local.get $apg)) (then (return (call $call_fn0 (local.get $apg) (local.get $cont))))) (return (call $v_undef))))
+              (return (i64.load (local.get $apslot)))))))
       ;; methods from Array.prototype (reg 160)
       (let $ap i32 (i32.load (i32.const 160)))
       (if (local.get $ap)
@@ -945,8 +949,10 @@
           (if (i32.and (local.get $anoext) (i32.gt_s (local.get $ln) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
           (call $arr_set_length (local.get $a) (local.get $ln))
           (return)))
-      ;; named property on an array (a.foo, a[2**32-1], …) → @12 scope. Non-extensible
-      ;; refuses adding a NOT-already-present named property.
+      ;; named property on an array (a.foo, a[2**32-1], …) → @12 scope. An existing
+      ;; accessor fires its setter; an existing data prop respects [[Writable]].
+      (if (local.get $ap12) (then (if (call $arr_deopt_set (local.get $a) (local.get $askey) (local.get $val) (local.get $cont)) (then (return)))))
+      ;; Non-extensible refuses adding a NOT-already-present named property.
       (if (i32.and (local.get $anoext) (i32.eqz (i32.ne (call $scope_find_local (call $arr_props (local.get $a)) (local.get $askey)) (i32.const 0))))
         (then (call $set_fail) (return)))
       (call $scope_define (call $arr_props (local.get $a)) (local.get $askey) (local.get $val))
