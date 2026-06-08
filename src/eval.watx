@@ -3929,7 +3929,7 @@
         (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 102)) (i32.le_s (local.get $id) (i32.const 104)))  ;; match/replace/search
         (i32.or (i32.eq (local.get $id) (i32.const 109)) (i32.or (i32.eq (local.get $id) (i32.const 141))  ;; replaceAll
         (i32.or (i32.eq (local.get $id) (i32.const 113)) (i32.or (i32.eq (local.get $id) (i32.const 114))  ;; trimStart/trimEnd
-        (i32.or (i32.eq (local.get $id) (i32.const 138)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.or (i32.eq (local.get $id) (i32.const 173)) (i32.eq (local.get $id) (i32.const 299))))))))))))) ;; substr/localeCompare/matchAll/@@iterator
+        (i32.or (i32.eq (local.get $id) (i32.const 138)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.or (i32.eq (local.get $id) (i32.const 173)) (i32.or (i32.eq (local.get $id) (i32.const 299)) (i32.eq (local.get $id) (i32.const 447)))))))))))))) ;; substr/localeCompare/matchAll/@@iterator/codePointAt
   ;; RequireObjectCoercible: null/undefined `this` → TypeError
   (if (i32.and (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv))) (local.get $smeth))
     (then (call $throw_type (cstring "TypeError") (cstring "String.prototype method called on null or undefined")) (return (call $v_undef))))
@@ -3992,7 +3992,7 @@
         (if (local.get $clok) (then (set! $clres (local.get $clp))))
         (set! $clp (i32.add (local.get $clp) (i32.const 1))) (br $cll)))
       (return (call $num (f64.convert_i32_s (local.get $clres))))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18)))
+  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18))) (i32.eq (local.get $id) (i32.const 447)))  ;; +codePointAt
     (then
       ;; unwrap a String wrapper's boxed primitive directly — to_str(wrapper)
       ;; would re-enter this very toString (native 18) and recurse forever.
@@ -4016,6 +4016,14 @@
           (if (i32.or (i32.lt_s (local.get $i) (i32.const 0)) (i32.ge_s (local.get $i) (local.get $slen)))
             (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
           (return (call $num (f64.convert_i32_s (call $str_byte (local.get $s) (local.get $i)))))))
+      (if (i32.eq (local.get $id) (i32.const 447))  ;; codePointAt(pos) — like charCodeAt but out-of-range → undefined (full surrogate decode is future UTF-16 work)
+        (then
+          (let $cpv f64 (call $to_num (local.get $a0)))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $cpi i32 (call $to_int_idx (local.get $cpv)))
+          (if (i32.or (i32.lt_s (local.get $cpi) (i32.const 0)) (i32.ge_s (local.get $cpi) (local.get $slen)))
+            (then (return (call $v_undef))))
+          (return (call $num (f64.convert_i32_s (call $str_byte (local.get $s) (local.get $cpi)))))))
       (if (i32.eq (local.get $id) (i32.const 13))  ;; indexOf(searchString[, position])
         (then
           (if (call $is_symbol (local.get $a0)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
@@ -7202,6 +7210,7 @@
   ;; length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 197)) (i32.eq (local.get $id) (i32.const 198))) (then (return (i32.const 1))))  ;; Symbol.for / Symbol.keyFor
   (if (i32.or (i32.eq (local.get $id) (i32.const 445)) (i32.eq (local.get $id) (i32.const 446))) (then (return (i32.const 1))))  ;; JSON.rawJSON / isRawJSON
+  (if (i32.eq (local.get $id) (i32.const 447)) (then (return (i32.const 1))))  ;; String codePointAt
   (if (i32.or (i32.eq (local.get $id) (i32.const 40)) (i32.or (i32.eq (local.get $id) (i32.const 41)) (i32.or (i32.eq (local.get $id) (i32.const 42)) (i32.or (i32.eq (local.get $id) (i32.const 43)) (i32.or (i32.eq (local.get $id) (i32.const 44)) (i32.or (i32.eq (local.get $id) (i32.const 48)) (i32.eq (local.get $id) (i32.const 49))))))))
     (then (return (i32.const 1))))  ;; Math.abs/floor/ceil/round/sqrt/trunc/sign
   (if (i32.or (i32.eq (local.get $id) (i32.const 170)) (i32.or (i32.eq (local.get $id) (i32.const 4)) (i32.or (i32.eq (local.get $id) (i32.const 5)) (i32.or (i32.eq (local.get $id) (i32.const 6)) (i32.or (i32.eq (local.get $id) (i32.const 7)) (i32.or (i32.eq (local.get $id) (i32.const 8)) (i32.eq (local.get $id) (i32.const 51))))))))
@@ -7864,7 +7873,7 @@
   (call $scope_define (local.get $sp) (cstring "__prim__") (call $mk_str (cstring "")))  ;; String.prototype is a String object ("")
   (call $scope_define (local.get $sp) (cstring "charAt") (call $mk_native (i32.const 11) (cstring "charAt")))
   (call $scope_define (local.get $sp) (cstring "charCodeAt") (call $mk_native (i32.const 12) (cstring "charCodeAt")))
-  (call $scope_define (local.get $sp) (cstring "codePointAt") (call $mk_native (i32.const 12) (cstring "codePointAt")))
+  (call $scope_define (local.get $sp) (cstring "codePointAt") (call $mk_native (i32.const 447) (cstring "codePointAt")))
   (call $scope_define (local.get $sp) (cstring "indexOf") (call $mk_native (i32.const 13) (cstring "indexOf")))
   (call $scope_define (local.get $sp) (cstring "slice") (call $mk_native (i32.const 14) (cstring "slice")))
   (call $scope_define (local.get $sp) (cstring "substring") (call $mk_native (i32.const 15) (cstring "substring")))
