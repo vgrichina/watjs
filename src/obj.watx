@@ -1148,6 +1148,11 @@
             (then (set! $sproto (call $mk_obj (call $obj_new (i32.const 8)))) (i64.store (i32.add (local.get $sfn) (i32.const 16)) (local.get $sproto))))
           (let $svk i32 (call $to_prop_key (local.get $key)))
           (let $svs i32 (call $scope_find_local (call $val_payload (local.get $sproto)) (local.get $svk)))
+          ;; `name`/`length` are non-writable own props by default (set at creation in the
+          ;; fn struct, reported {W:false} by getOwnPropertyDescriptor) — a plain assignment
+          ;; is refused unless they have been redefined as a writable @16 entry.
+          (if (i32.and (i32.eqz (local.get $svs)) (i32.or (call $str_eq (local.get $svk) (cstring "name")) (call $str_eq (local.get $svk) (cstring "length"))))
+            (then (call $set_fail) (return)))
           (if (local.get $svs)
             (then
               (if (call $entry_is_accessor (local.get $svs))  ;; named accessor on a user function → fire setter
