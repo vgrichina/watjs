@@ -2526,6 +2526,7 @@
           (let $sdT i32 (call $vm_tmpname))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sdT))  ;; STOREVAR disc
           (let $slsave i32 (call $vm_loop_enter))
+          (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: switch completion starts undefined
           (i32.store (i32.const 216) (i32.load (i32.add (local.get $slsave) (i32.const 8))))  ;; continue passes through to enclosing loop
           (i32.store (i32.const 220) (i32.load (i32.add (local.get $slsave) (i32.const 12))))
           (let $sbodies i32 (call $heap_alloc (i32.const 1024)))  ;; per-clause body cursor (source order)

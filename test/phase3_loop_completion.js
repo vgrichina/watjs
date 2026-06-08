@@ -12,4 +12,9 @@ eq(eval('2; do {5;} while(false)'), 5);
 // a body that yields a value still reports it
 eq(eval('0; for(var i=0;i<3;i++){ i; }'), 2);
 eq(eval('9; while(false){}'), undefined);
+eq(eval('1; switch(0){ case 0: }'), undefined);   // empty matched clause
+eq(eval('2; switch(0){ case 0: 3; }'), 3);
+eq(eval('1; switch(9){ case 0: 3; }'), undefined);  // no match
+eq(eval('2; switch(0){ default: }'), undefined);    // empty default
+eq(eval('1; switch(0){ case 0: 5; break; }'), 5);
 print("ok");
