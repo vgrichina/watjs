@@ -4237,9 +4237,9 @@
   (let $g i32 (call $obj_new (i32.const 4)))
   (if (i32.load (i32.const 488)) (then (i32.store (local.get $g) (i32.load (i32.const 488)))))  ;; inherit %Iterator.prototype%
   (call $scope_define (local.get $g) (cstring "@@ctx") (call $num (f64.convert_i32_s (local.get $ctx))))
-  (call $scope_define (local.get $g) (cstring "next") (call $mk_native (i32.const 150) (cstring "next")))
-  (call $scope_define (local.get $g) (cstring "return") (call $mk_native (i32.const 420) (cstring "return")))
-  (call $scope_define (local.get $g) (cstring "throw") (call $mk_native (i32.const 421) (cstring "throw")))
+  (call $scope_define_attr (local.get $g) (cstring "next") (call $mk_native (i32.const 150) (cstring "next")) (i32.const 12))  ;; methods are DontEnum {W,C}
+  (call $scope_define_attr (local.get $g) (cstring "return") (call $mk_native (i32.const 420) (cstring "return")) (i32.const 12))
+  (call $scope_define_attr (local.get $g) (cstring "throw") (call $mk_native (i32.const 421) (cstring "throw")) (i32.const 12))
   (call $mk_obj (local.get $g)))
 
 ;; gen.next(): resume the generator context, return { value, done }

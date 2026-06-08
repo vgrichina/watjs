@@ -8208,5 +8208,6 @@
   (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $datef))))  ;; Date statics (now/UTC)
   (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $objf))))
   (call $scope_clear_enum (local.get $refo))  ;; Reflect.* methods are DontEnum
+  (call $scope_clear_enum (i32.load (i32.const 324)))  ;; RegExp.prototype (test/exec/toString/@@-methods are DontEnum)
   (call $scope_clear_enum (call $fn_props (call $val_payload (local.get $symf)))))  ;; Symbol.* (well-known symbols, for/keyFor) are DontEnum
 
