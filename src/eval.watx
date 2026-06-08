@@ -3219,16 +3219,38 @@
         (set! $rapos (i32.add (local.get $ridx) (local.get $slen)))
         (br $ral)))
       (return (call $mk_str (local.get $raout)))))
-  (if (i32.eq (local.get $id) (i32.const 110))  ;; Array.of(...args)
+  (if (i32.eq (local.get $id) (i32.const 110))  ;; Array.of(...items) — this = constructor C
     (then
-      (let $ofa i32 (call $arr_new (i32.const 4)))
-      (let $ofi i32 (i32.const 0))
-      (block $ofe (loop $ofl
-        (br_if $ofe (i32.ge_s (local.get $ofi) (local.get $argc)))
-        (call $arr_push (local.get $ofa) (call $argn (local.get $argv) (local.get $argc) (local.get $ofi)))
-        (set! $ofi (i32.add (local.get $ofi) (i32.const 1)))
-        (br $ofl)))
-      (return (call $mk_arr (local.get $ofa)))))
+      (let $oflen i32 (local.get $argc))
+      ;; C custom (a constructor that isn't the default %Array%) → Construct(C, [len]); else plain array
+      (let $ofAslot i32 (call $scope_find_local (i32.load (i32.const 152)) (cstring "Array")))
+      (let $ofcustom i32 (i32.and (call $is_constructor (local.get $thisv))
+        (i32.eqz (i32.and (i32.ne (local.get $ofAslot) (i32.const 0)) (call $strict_eq (local.get $thisv) (i64.load (local.get $ofAslot)))))))
+      (if (i32.eqz (local.get $ofcustom))
+        (then
+          (let $ofa i32 (call $arr_new (i32.const 4)))
+          (let $ofi i32 (i32.const 0))
+          (block $ofe (loop $ofl
+            (br_if $ofe (i32.ge_s (local.get $ofi) (local.get $oflen)))
+            (call $arr_push (local.get $ofa) (call $argn (local.get $argv) (local.get $argc) (local.get $ofi)))
+            (set! $ofi (i32.add (local.get $ofi) (i32.const 1)))
+            (br $ofl)))
+          (return (call $mk_arr (local.get $ofa)))))
+      ;; A = Construct(C, [len]); CreateDataProperty(A, k, items[k]); Set(A, "length", len)
+      (let $ofcb i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $ofcb) (call $num (f64.convert_i32_s (local.get $oflen))))
+      (let $ofA i64 (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $ofcb)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $ofk i32 (i32.const 0))
+      (block $ofce (loop $ofcl
+        (br_if $ofce (i32.ge_s (local.get $ofk) (local.get $oflen)))
+        (call $set_prop (local.get $ofA) (call $num (f64.convert_i32_s (local.get $ofk))) (call $argn (local.get $argv) (local.get $argc) (local.get $ofk)))
+        (if (call $err) (then (return (call $v_undef))))
+        (set! $ofk (i32.add (local.get $ofk) (i32.const 1)))
+        (br $ofcl)))
+      (call $set_prop (local.get $ofA) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (local.get $oflen))))
+      (if (call $err) (then (return (call $v_undef))))
+      (return (local.get $ofA))))
   (if (i32.eq (local.get $id) (i32.const 111))  ;; Array.from(src[, mapFn])
     (then
       (let $frs i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
