@@ -7398,6 +7398,10 @@
     (then (return (call $call_bound (local.get $fn) (local.get $argc) (local.get $argv)))))
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232526))  ;; VM-fn → run on the VM
     (then (return (call $vm_call_fn (local.get $fn) (local.get $argc) (local.get $argv) (local.get $thisv)))))
+  (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232527))  ;; generator fn → create a generator object (NOT a native id!)
+    (then (return (call $vm_make_generator (local.get $fn) (local.get $argc) (local.get $argv) (i32.load (i32.const 204))))))
+  (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232528))  ;; async fn → returns a promise
+    (then (return (call $vm_make_async (local.get $fn) (local.get $argc) (local.get $argv) (i32.load (i32.const 204))))))
   (if i64 (i32.load (local.get $fn))
     (then (call $call_native (i32.load (local.get $fn)) (local.get $argc) (local.get $argv) (local.get $thisv)))
     (else (call $v_undef))))  ;; @0==0 (production user fn) no longer exists
@@ -7407,11 +7411,13 @@
   (if (i32.eqz (call $is_function (local.get $fnval))) (then (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $fnval)))
   (let $argv i32 (call $heap_alloc (i32.const 8)))
-  (if i64 (i32.eq (i32.load (local.get $fn)) (i32.const 1448232526))  ;; VM-fn → run on the VM
-    (then (call $vm_call_fn (local.get $fn) (i32.const 0) (local.get $argv) (local.get $thisv)))
-  (else (if i64 (i32.load (local.get $fn))
+  (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232540)) (then (return (call $call_bound (local.get $fn) (i32.const 0) (local.get $argv)))))  ;; bound fn
+  (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232526)) (then (return (call $vm_call_fn (local.get $fn) (i32.const 0) (local.get $argv) (local.get $thisv)))))  ;; VM-fn
+  (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232527)) (then (return (call $vm_make_generator (local.get $fn) (i32.const 0) (local.get $argv) (i32.load (i32.const 204))))))  ;; generator fn
+  (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232528)) (then (return (call $vm_make_async (local.get $fn) (i32.const 0) (local.get $argv) (i32.load (i32.const 204))))))  ;; async fn
+  (if i64 (i32.load (local.get $fn))
     (then (call $call_native (i32.load (local.get $fn)) (i32.const 0) (local.get $argv) (local.get $thisv)))
-    (else (call $v_undef))))))  ;; @0==0 (production user fn) no longer exists
+    (else (call $v_undef))))  ;; @0==0 (production user fn) no longer exists
 
 ;; [[Construct]] a value with args in $argbuf (argc i64s). Handles bound fns
 ;; (prepend bound args, recurse on target), native ctors (incl. Number/String/
