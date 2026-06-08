@@ -42,6 +42,11 @@
   (if (i32.gt_u (local.get $end) (local.get $cur))
     (then (drop (memory.grow (i32.div_u (i32.add (i32.sub (local.get $end) (local.get $cur)) (i32.const 65535)) (i32.const 65536))))))
   (call $set_heap_ptr (local.get $end))
+  ;; zero the block: many allocation sites rely on zero-initialised fields (null
+  ;; scope parents, 0 counts, absent slots). Reused heap (after heap_init reset, or
+  ;; re-grown over a prior eval's data) holds stale bytes, so an un-zeroed field
+  ;; could be a garbage pointer → OOB on deref. (memory.fill is the bulk-memory op.)
+  (memory.fill (local.get $p) (i32.const 0) (i32.sub (local.get $end) (local.get $p)))
   (local.get $p))
 
 ;; --- registers: source & lexer ---
