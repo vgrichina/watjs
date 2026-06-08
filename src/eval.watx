@@ -4796,22 +4796,8 @@
           ;; elements live in a byte buffer; $arr is a materialized copy here)
           (let $tasort i32 (if i32 (call $is_object (local.get $thisv)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0))) (else (i32.const 0))))
           (let $tanum i32 (i32.and (local.get $tasort) (i32.eqz (call $is_function (local.get $a0)))))  ;; numeric default
-          (let $i i32 (i32.const 1))
-          (block $oe (loop $ol
-            (br_if $oe (i32.ge_s (local.get $i) (local.get $n)))
-            (let $cur i64 (call $arr_get (local.get $arr) (local.get $i)))
-            (let $j i32 (i32.sub (local.get $i) (i32.const 1)))
-            (block $ie2 (loop $il2
-              (br_if $ie2 (i32.lt_s (local.get $j) (i32.const 0)))
-              ;; compare arr[j] vs cur: >0 means arr[j] should come after cur
-              (let $cmp i32 (if i32 (local.get $tanum) (then (call $num_cmp (call $arr_get (local.get $arr) (local.get $j)) (local.get $cur))) (else (call $sort_cmp (local.get $a0) (call $arr_get (local.get $arr) (local.get $j)) (local.get $cur)))))
-              (br_if $ie2 (i32.le_s (local.get $cmp) (i32.const 0)))
-              (call $arr_set (local.get $arr) (i32.add (local.get $j) (i32.const 1)) (call $arr_get (local.get $arr) (local.get $j)))
-              (set! $j (i32.sub (local.get $j) (i32.const 1)))
-              (br $il2)))
-            (call $arr_set (local.get $arr) (i32.add (local.get $j) (i32.const 1)) (local.get $cur))
-            (set! $i (i32.add (local.get $i) (i32.const 1)))
-            (br $ol)))
+          (call $merge_sort (local.get $arr) (local.get $n) (local.get $a0) (local.get $tanum))  ;; stable O(n log n)
+          (if (call $err) (then (return (call $v_undef))))
           ;; write the sorted values back to a TypedArray receiver
           (if (local.get $tasort)
             (then
@@ -7126,6 +7112,51 @@
 ;; re-scan the body via cursor restore, capture return value.
 
 ;; comparator for Array#sort: cmpFn(a,b) sign, or default string compare
+;; comparison respecting the TypedArray numeric-default mode
+(func $sort_cmp2 (param $fn i64) (param $a i64) (param $b i64) (param $tanum i32) (result i32) (effects)
+  (if (local.get $tanum) (then (return (call $num_cmp (local.get $a) (local.get $b)))))
+  (call $sort_cmp (local.get $fn) (local.get $a) (local.get $b)))
+
+;; STABLE bottom-up merge sort of the materialized array $arr[0,n) in place. O(n log n)
+;; comparator calls (vs insertion sort's O(n^2)) so large arrays don't exhaust the heap.
+;; Stops early if a comparator throws (err flag). Ties take the left run first (stable).
+(func $merge_sort (param $arr i32) (param $n i32) (param $fn i64) (param $tanum i32) (effects)
+  (if (i32.le_s (local.get $n) (i32.const 1)) (then (return)))
+  (let $tmp i32 (call $arr_new (local.get $n)))
+  (let $fi i32 (i32.const 0))
+  (block $fe (loop $fl (br_if $fe (i32.ge_s (local.get $fi) (local.get $n))) (call $arr_push (local.get $tmp) (call $v_undef)) (set! $fi (i32.add (local.get $fi) (i32.const 1))) (br $fl)))
+  (let $width i32 (i32.const 1))
+  (block $we (loop $wl
+    (br_if $we (i32.ge_s (local.get $width) (local.get $n)))
+    (let $lo i32 (i32.const 0))
+    (block $oe (loop $ol
+      (br_if $oe (i32.ge_s (local.get $lo) (local.get $n)))
+      (let $mid i32 (i32.add (local.get $lo) (local.get $width)))
+      (if (i32.gt_s (local.get $mid) (local.get $n)) (then (set! $mid (local.get $n))))
+      (let $hi i32 (i32.add (local.get $lo) (i32.mul (local.get $width) (i32.const 2))))
+      (if (i32.gt_s (local.get $hi) (local.get $n)) (then (set! $hi (local.get $n))))
+      (let $iL i32 (local.get $lo)) (let $iR i32 (local.get $mid)) (let $k i32 (local.get $lo))
+      (block $me (loop $ml
+        (br_if $me (i32.ge_s (local.get $k) (local.get $hi)))
+        (let $takeLeft i32 (i32.const 0))
+        (if (i32.ge_s (local.get $iL) (local.get $mid))
+          (then (set! $takeLeft (i32.const 0)))
+          (else (if (i32.ge_s (local.get $iR) (local.get $hi))
+            (then (set! $takeLeft (i32.const 1)))
+            (else (set! $takeLeft (i32.le_s (call $sort_cmp2 (local.get $fn) (call $arr_get (local.get $arr) (local.get $iL)) (call $arr_get (local.get $arr) (local.get $iR)) (local.get $tanum)) (i32.const 0)))))))
+        (if (call $err) (then (return)))  ;; a throwing comparator → abort (error propagates)
+        (if (local.get $takeLeft)
+          (then (call $arr_set (local.get $tmp) (local.get $k) (call $arr_get (local.get $arr) (local.get $iL))) (set! $iL (i32.add (local.get $iL) (i32.const 1))))
+          (else (call $arr_set (local.get $tmp) (local.get $k) (call $arr_get (local.get $arr) (local.get $iR))) (set! $iR (i32.add (local.get $iR) (i32.const 1)))))
+        (set! $k (i32.add (local.get $k) (i32.const 1)))
+        (br $ml)))
+      (set! $lo (i32.add (local.get $lo) (i32.mul (local.get $width) (i32.const 2))))
+      (br $ol)))
+    (let $ci i32 (i32.const 0))
+    (block $ce (loop $cl (br_if $ce (i32.ge_s (local.get $ci) (local.get $n))) (call $arr_set (local.get $arr) (local.get $ci) (call $arr_get (local.get $tmp) (local.get $ci))) (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $cl)))
+    (set! $width (i32.mul (local.get $width) (i32.const 2)))
+    (br $wl))))
+
 (func $sort_cmp (param $fn i64) (param $a i64) (param $b i64) (result i32) (effects)
   (if i32 (call $is_function (local.get $fn))
     (then
