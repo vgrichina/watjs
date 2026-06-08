@@ -6014,21 +6014,30 @@
         (if (local.get $ss)
           (then
             (let $cn i32 (call $scope_count (local.get $ss)))
-            (let $i i32 (i32.const 0))
-            (block $ce (loop $cl
-              (br_if $ce (i32.ge_s (local.get $i) (local.get $cn)))
-              (let $en i32 (call $scope_entry (local.get $ss) (local.get $i)))
-              ;; only enumerable own props; Get the value (invokes a getter) then Set
-              (if (i32.and (i32.ne (call $entry_enumerable (i32.add (local.get $en) (i32.const 8))) (i32.const 0))
-                           (i32.eqz (call $str_eq (i32.load (local.get $en)) (cstring "__prim__"))))
-                (then
-                  (let $akey i64 (call $mk_str (i32.load (local.get $en))))
-                  (let $aval i64 (call $get_prop (local.get $sv) (local.get $akey)))
-                  (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))
-                  (call $set_prop (local.get $t) (local.get $akey) (local.get $aval))
-                  (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))))
-              (set! $i (i32.add (local.get $i) (i32.const 1)))
-              (br $cl)))))
+            ;; OwnPropertyKeys order: string keys (insertion order) in pass 0, then symbol keys in pass 1
+            (let $a80pass i32 (i32.const 0))
+            (block $ape (loop $apl
+              (br_if $ape (i32.ge_s (local.get $a80pass) (i32.const 2)))
+              (let $i i32 (i32.const 0))
+              (block $ce (loop $cl
+                (br_if $ce (i32.ge_s (local.get $i) (local.get $cn)))
+                (let $en i32 (call $scope_entry (local.get $ss) (local.get $i)))
+                (let $ek i32 (i32.load (local.get $en)))
+                (let $a80sym i32 (i32.or (i32.eq (call $str_indexof (local.get $ek) (cstring "@@sym:")) (i32.const 0)) (i32.eq (call $str_indexof (local.get $ek) (cstring "@@symfor:")) (i32.const 0))))
+                ;; this pass copies only string keys (pass 0) or only symbol keys (pass 1)
+                (if (i32.and (i32.eq (local.get $a80sym) (local.get $a80pass))
+                      (i32.and (i32.ne (call $entry_enumerable (i32.add (local.get $en) (i32.const 8))) (i32.const 0))
+                               (i32.eqz (call $str_eq (local.get $ek) (cstring "__prim__")))))
+                  (then
+                    (let $akey i64 (call $mk_str (local.get $ek)))
+                    (let $aval i64 (call $get_prop (local.get $sv) (local.get $akey)))
+                    (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))
+                    (call $set_prop (local.get $t) (local.get $akey) (local.get $aval))
+                    (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))))
+                (set! $i (i32.add (local.get $i) (i32.const 1)))
+                (br $cl)))
+              (set! $a80pass (i32.add (local.get $a80pass) (i32.const 1)))
+              (br $apl)))))
         (set! $k (i32.add (local.get $k) (i32.const 1)))
         (br $al)))
       (i32.store (i32.const 392) (local.get $a80save))
