@@ -4173,6 +4173,24 @@
         (set! $ei (i32.add (local.get $ei) (i32.const 1)))
         (br $epl)))
       (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $epairs))))))
+  (if (i32.eq (local.get $id) (i32.const 440))  ;; Set.prototype.entries (this = set) → iterator over [v,v] pairs
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Set.prototype.entries called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@sk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Set.prototype.entries called on incompatible receiver")) (return (call $v_undef))))
+      (let $sek i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
+      (let $sepairs i32 (call $arr_new (i32.const 4)))
+      (let $sei i32 (i32.const 0))
+      (block $sepe (loop $sepl
+        (br_if $sepe (i32.ge_s (local.get $sei) (call $arr_len (local.get $sek))))
+        (let $sepair i32 (call $arr_new (i32.const 2)))
+        (call $arr_push (local.get $sepair) (call $arr_get (local.get $sek) (local.get $sei)))
+        (call $arr_push (local.get $sepair) (call $arr_get (local.get $sek) (local.get $sei)))
+        (call $arr_push (local.get $sepairs) (call $mk_arr (local.get $sepair)))
+        (set! $sei (i32.add (local.get $sei) (i32.const 1)))
+        (br $sepl)))
+      (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $sepairs))))))
   (if (i32.eq (local.get $id) (i32.const 171))  ;; Number.prototype.toExponential(d)
     (then
       (let $exv f64 (call $num_this (local.get $thisv)))
@@ -7953,6 +7971,7 @@
   (call $scope_define (local.get $setproto) (cstring "values") (call $mk_native (i32.const 175) (cstring "values")))
   (call $scope_define (local.get $setproto) (cstring "keys") (call $mk_native (i32.const 175) (cstring "keys")))
   (call $scope_define (local.get $setproto) (cstring "@@iterator") (call $mk_native (i32.const 175) (cstring "values")))
+  (call $scope_define (local.get $setproto) (cstring "entries") (call $mk_native (i32.const 440) (cstring "entries")))
   (call $scope_define (local.get $setproto) (cstring "union") (call $mk_native (i32.const 310) (cstring "union")))
   (call $scope_define (local.get $setproto) (cstring "intersection") (call $mk_native (i32.const 311) (cstring "intersection")))
   (call $scope_define (local.get $setproto) (cstring "difference") (call $mk_native (i32.const 312) (cstring "difference")))
