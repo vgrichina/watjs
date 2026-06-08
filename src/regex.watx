@@ -153,7 +153,7 @@
                 (if (call $err) (then (return (cstring ""))))
                 (if (i32.eqz (call $is_undefined (local.get $gv))) (then (set! $out (call $str_concat (local.get $out) (call $to_str (local.get $gv))))))
                 (set! $i (i32.add (local.get $ne) (i32.const 1))) (br $l)))))
-        (if (i32.and (i32.ge_s (local.get $nx) (i32.const 49)) (i32.le_s (local.get $nx) (i32.const 57)))  ;; $1-$9 (maybe $nn)
+        (if (i32.and (i32.ge_s (local.get $nx) (i32.const 48)) (i32.le_s (local.get $nx) (i32.const 57)))  ;; $0-$9 — a 2-digit $nn (e.g. $01) takes precedence, else 1-digit $n (n>=1)
           (then
             (let $d1 i32 (i32.sub (local.get $nx) (i32.const 48)))
             (let $two i32 (i32.const -1))
@@ -161,9 +161,9 @@
               (then (let $c2 i32 (call $str_byte (local.get $repl) (i32.add (local.get $i) (i32.const 2))))
                 (if (i32.and (i32.ge_s (local.get $c2) (i32.const 48)) (i32.le_s (local.get $c2) (i32.const 57)))
                   (then (set! $two (i32.add (i32.mul (local.get $d1) (i32.const 10)) (i32.sub (local.get $c2) (i32.const 48))))))))
-            (if (i32.and (i32.ge_s (local.get $two) (i32.const 1)) (i32.le_s (local.get $two) (local.get $ncap)))  ;; two-digit group
+            (if (i32.and (i32.ge_s (local.get $two) (i32.const 1)) (i32.le_s (local.get $two) (local.get $ncap)))  ;; two-digit group $nn (01..ncap)
               (then (set! $out (call $str_concat (local.get $out) (call $sub_cap (local.get $result) (local.get $two)))) (set! $i (i32.add (local.get $i) (i32.const 3))) (br $l)))
-            (if (i32.le_s (local.get $d1) (local.get $ncap))  ;; single-digit group
+            (if (i32.and (i32.ge_s (local.get $d1) (i32.const 1)) (i32.le_s (local.get $d1) (local.get $ncap)))  ;; single-digit group $n ($0 is not a capture)
               (then (set! $out (call $str_concat (local.get $out) (call $sub_cap (local.get $result) (local.get $d1)))) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))))))
     (set! $out (call $str_concat (local.get $out) (call $substr (local.get $repl) (local.get $i) (i32.const 1))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
