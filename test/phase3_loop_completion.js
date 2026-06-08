@@ -17,4 +17,8 @@ eq(eval('2; switch(0){ case 0: 3; }'), 3);
 eq(eval('1; switch(9){ case 0: 3; }'), undefined);  // no match
 eq(eval('2; switch(0){ default: }'), undefined);    // empty default
 eq(eval('1; switch(0){ case 0: 5; break; }'), 5);
+eq(eval('1; if (true) {}'), undefined);
+eq(eval('1; if (false) {}'), undefined);
+eq(eval('1; if (true) 5;'), 5);
+eq(eval('1; if (false) 5; else 6;'), 6);
 print("ok");

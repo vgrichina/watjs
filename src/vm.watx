@@ -2488,6 +2488,7 @@
       (if (call $tok_is_kw (cstring "if"))
         (then
           (call $next_token) (call $next_token)  ;; 'if' '('
+          (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: IfStatement does UpdateEmpty(result, undefined)
           (call $vm_c_expr (local.get $code))
           (call $next_token)  ;; ')'
           (let $p1 i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → else/end
