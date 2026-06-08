@@ -6637,7 +6637,7 @@
           (let $fsrc i32 (local.get $arr))
           (let $fdepth i32 (i32.const 1))
           (if (i32.eq (local.get $id) (i32.const 31))  ;; flat: optional depth arg (Infinity → full)
-            (then (if (i32.ge_s (local.get $argc) (i32.const 1))
+            (then (if (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (local.get $a0))))  ;; undefined depth → default 1
               (then
                 (let $fdf f64 (call $to_num (local.get $a0)))
                 (set! $fdepth (if i32 (f64.ne (local.get $fdf) (local.get $fdf)) (then (i32.const 0))   ;; NaN → 0
