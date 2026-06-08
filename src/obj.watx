@@ -1052,7 +1052,31 @@
               (i64.store (i32.add (local.get $sbuf) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
               (i64.store (i32.add (local.get $sbuf) (i32.const 16)) (local.get $val))
               (i64.store (i32.add (local.get $sbuf) (i32.const 24)) (local.get $cont))
-              (drop (call $call_val (local.get $strap) (i32.const 4) (local.get $sbuf) (call $proxy_handler (local.get $cont))))
+              (let $sres i32 (call $truthy (call $call_val (local.get $strap) (i32.const 4) (local.get $sbuf) (call $proxy_handler (local.get $cont)))))
+              (if (call $err) (then (return)))
+              (if (i32.eqz (local.get $sres))
+                (then (call $set_fail) (return)))  ;; trap refused the write → strict throws
+              ;; trap returned true → invariant against a non-configurable own
+              ;; property of target: a non-writable data property's value must
+              ;; SameValue V, and a setterless accessor cannot be written
+              (let $sdb i32 (call $heap_alloc (i32.const 16)))
+              (i64.store (local.get $sdb) (local.get $ptgt))
+              (i64.store (i32.add (local.get $sdb) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
+              (let $sdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $sdb) (call $v_undef)))
+              (if (call $err) (then (return)))
+              (if (i32.eqz (call $is_undefined (local.get $sdesc)))
+                (then
+                  (if (i32.eqz (call $truthy (call $get_prop (local.get $sdesc) (call $mk_str (cstring "configurable")))))
+                    (then
+                      (if (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $sdesc)))
+                        (then  ;; data property
+                          (if (i32.eqz (call $truthy (call $get_prop (local.get $sdesc) (call $mk_str (cstring "writable")))))
+                            (then
+                              (if (i32.eqz (call $same_value (local.get $val) (call $get_prop (local.get $sdesc) (call $mk_str (cstring "value")))))
+                                (then (call $throw_type (cstring "TypeError") (cstring "proxy set: cannot change non-writable non-configurable data property")) (return))))))
+                        (else  ;; accessor property
+                          (if (call $is_undefined (call $get_prop (local.get $sdesc) (call $mk_str (cstring "set"))))
+                            (then (call $throw_type (cstring "TypeError") (cstring "proxy set: cannot write non-configurable accessor without setter")) (return)))))))))
               (return)))
           (call $set_prop (local.get $ptgt) (local.get $key) (local.get $val))
           (return)))
