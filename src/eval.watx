@@ -2488,6 +2488,8 @@
       (if (i32.eq (local.get $id) (i32.const 125))  ;; forEach(cb)
         (then
           (let $mcb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (if (i32.eqz (call $is_function (local.get $mcb)))  ;; callback must be callable (checked before iterating)
+            (then (call $throw_type (cstring "TypeError") (cstring "Map.prototype.forEach callback is not a function")) (return (call $v_undef))))
           (let $mi i32 (i32.const 0))
           (block $mfe (loop $mfl
             (br_if $mfe (i32.ge_s (local.get $mi) (call $arr_len (local.get $mk))))
@@ -2568,6 +2570,8 @@
       (if (i32.eq (local.get $id) (i32.const 134))  ;; forEach(cb)
         (then
           (let $scb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (if (i32.eqz (call $is_function (local.get $scb)))  ;; callback must be callable (checked before iterating)
+            (then (call $throw_type (cstring "TypeError") (cstring "Set.prototype.forEach callback is not a function")) (return (call $v_undef))))
           (let $si i32 (i32.const 0))
           (block $sfe (loop $sfl
             (br_if $sfe (i32.ge_s (local.get $si) (call $arr_len (local.get $sk))))
