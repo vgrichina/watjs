@@ -3029,6 +3029,74 @@
           (if (i32.and (local.get $hasWr) (i32.eqz (call $truthy (call $get_prop (local.get $desc) (call $mk_str (cstring "writable"))))))
             (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot redefine a non-configurable writable property as non-writable")) (return))))))))
 
+;; Proxy [[GetOwnProperty]]: validate the trap result `raw` against the target and
+;; return the normalized descriptor (CompletePropertyDescriptor) or undefined.
+;; Throws a TypeError on a spec invariant violation.
+(func $proxy_gopd_check (param $raw i64) (param $tgt i64) (param $key i64) (result i64) (effects)
+  ;; step 5: result must be Object or undefined
+  (if (i32.eqz (i32.or (call $is_undefined (local.get $raw)) (i32.or (call $is_object (local.get $raw)) (i32.or (call $is_function (local.get $raw)) (call $is_array (local.get $raw))))))
+    (then (call $throw_type (cstring "TypeError") (cstring "proxy getOwnPropertyDescriptor: trap result must be an object or undefined")) (return (call $v_undef))))
+  (let $gqb i32 (call $heap_alloc (i32.const 16)))
+  (i64.store (local.get $gqb) (local.get $tgt))
+  (i64.store (i32.add (local.get $gqb) (i32.const 8)) (local.get $key))
+  (let $tdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $gqb) (call $v_undef)))
+  (if (call $err) (then (return (call $v_undef))))
+  (let $gqext i32 (call $truthy (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $tgt)) (call $v_undef))))
+  (if (call $err) (then (return (call $v_undef))))
+  ;; step 7: trap returned undefined
+  (if (call $is_undefined (local.get $raw))
+    (then
+      (if (call $is_undefined (local.get $tdesc)) (then (return (call $v_undef))))
+      (if (i32.eqz (call $truthy (call $get_prop (local.get $tdesc) (call $mk_str (cstring "configurable")))))
+        (then (call $throw_type (cstring "TypeError") (cstring "proxy getOwnPropertyDescriptor: cannot report a non-configurable property as non-existent")) (return (call $v_undef))))
+      (if (i32.eqz (local.get $gqext))
+        (then (call $throw_type (cstring "TypeError") (cstring "proxy getOwnPropertyDescriptor: cannot report an existing property as non-existent on a non-extensible target")) (return (call $v_undef))))
+      (return (call $v_undef))))
+  ;; step 9: ToPropertyDescriptor validation
+  (let $qHasVal i32 (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $raw))))
+  (let $qHasWr i32 (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $raw))))
+  (let $qHasGet i32 (call $truthy (call $js_in (call $mk_str (cstring "get")) (local.get $raw))))
+  (let $qHasSet i32 (call $truthy (call $js_in (call $mk_str (cstring "set")) (local.get $raw))))
+  (if (i32.and (i32.or (local.get $qHasVal) (local.get $qHasWr)) (i32.or (local.get $qHasGet) (local.get $qHasSet)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Invalid property descriptor. Cannot both specify accessors and a value or writable attribute")) (return (call $v_undef))))
+  (if (local.get $qHasGet)
+    (then (let $qg i64 (call $get_prop (local.get $raw) (call $mk_str (cstring "get"))))
+      (if (i32.eqz (i32.or (call $is_undefined (local.get $qg)) (call $is_function (local.get $qg))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Getter must be a function")) (return (call $v_undef))))))
+  (if (local.get $qHasSet)
+    (then (let $qs i64 (call $get_prop (local.get $raw) (call $mk_str (cstring "set"))))
+      (if (i32.eqz (i32.or (call $is_undefined (local.get $qs)) (call $is_function (local.get $qs))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Setter must be a function")) (return (call $v_undef))))))
+  ;; CompletePropertyDescriptor → normalized descriptor object
+  (let $qIsAcc i32 (i32.or (local.get $qHasGet) (local.get $qHasSet)))
+  (let $qConf i32 (call $truthy (call $get_prop (local.get $raw) (call $mk_str (cstring "configurable")))))
+  (let $norm i32 (call $obj_new (i32.const 4)))
+  (if (local.get $qIsAcc)
+    (then
+      (call $scope_define (local.get $norm) (cstring "get") (if i64 (local.get $qHasGet) (then (call $get_prop (local.get $raw) (call $mk_str (cstring "get")))) (else (call $v_undef))))
+      (call $scope_define (local.get $norm) (cstring "set") (if i64 (local.get $qHasSet) (then (call $get_prop (local.get $raw) (call $mk_str (cstring "set")))) (else (call $v_undef)))))
+    (else
+      (call $scope_define (local.get $norm) (cstring "value") (if i64 (local.get $qHasVal) (then (call $get_prop (local.get $raw) (call $mk_str (cstring "value")))) (else (call $v_undef))))
+      (call $scope_define (local.get $norm) (cstring "writable") (call $mk_bool (i32.and (local.get $qHasWr) (call $truthy (call $get_prop (local.get $raw) (call $mk_str (cstring "writable")))))))))
+  (call $scope_define (local.get $norm) (cstring "enumerable") (call $mk_bool (call $truthy (call $get_prop (local.get $raw) (call $mk_str (cstring "enumerable"))))))
+  (call $scope_define (local.get $norm) (cstring "configurable") (call $mk_bool (local.get $qConf)))
+  ;; step 19: resultDesc non-configurable
+  (if (i32.eqz (local.get $qConf))
+    (then
+      (if (call $is_undefined (local.get $tdesc))
+        (then (call $throw_type (cstring "TypeError") (cstring "proxy getOwnPropertyDescriptor: cannot report a non-existent property as non-configurable")) (return (call $v_undef))))
+      (if (call $truthy (call $get_prop (local.get $tdesc) (call $mk_str (cstring "configurable"))))
+        (then (call $throw_type (cstring "TypeError") (cstring "proxy getOwnPropertyDescriptor: cannot report a configurable property as non-configurable")) (return (call $v_undef))))
+      ;; 19b: data result, writable false, target writable true
+      (if (i32.eqz (local.get $qIsAcc))
+        (then
+          (if (i32.eqz (call $truthy (call $get_prop (call $mk_obj (local.get $norm)) (call $mk_str (cstring "writable")))))
+            (then
+              (if (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $tdesc)))
+                (then (if (call $truthy (call $get_prop (local.get $tdesc) (call $mk_str (cstring "writable"))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "proxy getOwnPropertyDescriptor: cannot report a writable property as non-writable non-configurable")) (return (call $v_undef)))))))))) ))
+  (call $mk_obj (local.get $norm)))
+
 (func $call_native (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   (if (i32.eq (local.get $id) (i32.const 1))  ;; print (console.log style)
     (then
@@ -3889,6 +3957,15 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv)))))
         (then (set! $thisv (call $to_object (local.get $thisv)))))
+      ;; Proxy: HasOwnProperty = [[GetOwnProperty]](P) is not undefined (dispatches the trap)
+      (if (call $is_proxy (local.get $thisv))
+        (then
+          (let $hopb i32 (call $heap_alloc (i32.const 16)))
+          (i64.store (local.get $hopb) (local.get $thisv))
+          (i64.store (i32.add (local.get $hopb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (let $hopd i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $hopb) (call $v_undef)))
+          (if (call $err) (then (return (call $v_undef))))
+          (return (call $mk_bool (i32.eqz (call $is_undefined (local.get $hopd)))))))
       (if (call $is_function (local.get $thisv))
         (then (return (call $mk_bool (call $fn_own (call $val_payload (local.get $thisv)) (local.get $ks))))))
       (if (call $is_array (local.get $thisv))
@@ -3912,6 +3989,15 @@
       (if (i32.or (call $is_null (local.get $how)) (call $is_undefined (local.get $how)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (let $hok i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      ;; Proxy: HasOwnProperty = [[GetOwnProperty]](P) is not undefined (dispatches the trap)
+      (if (call $is_proxy (local.get $how))
+        (then
+          (let $hownb i32 (call $heap_alloc (i32.const 16)))
+          (i64.store (local.get $hownb) (local.get $how))
+          (i64.store (i32.add (local.get $hownb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (let $hownd i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $hownb) (call $v_undef)))
+          (if (call $err) (then (return (call $v_undef))))
+          (return (call $mk_bool (i32.eqz (call $is_undefined (local.get $hownd)))))))
       (if (call $is_function (local.get $how))
         (then (return (call $mk_bool (call $fn_own (call $val_payload (local.get $how)) (local.get $hok))))))
       (if (call $is_array (local.get $how))
@@ -6329,7 +6415,10 @@
           (let $gdpt i64 (call $proxy_trap (local.get $ob) (cstring "getOwnPropertyDescriptor")))
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_function (local.get $gdpt))
-            (then (return (call $proxy_call2 (local.get $gdpt) (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))) (call $proxy_handler (local.get $ob)))))
+            (then
+              (let $gdraw i64 (call $proxy_call2 (local.get $gdpt) (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))) (call $proxy_handler (local.get $ob))))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (call $proxy_gopd_check (local.get $gdraw) (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))))))
             (else
               (let $gdb i32 (call $heap_alloc (i32.const 16)))
               (i64.store (local.get $gdb) (call $proxy_target (local.get $ob)))
