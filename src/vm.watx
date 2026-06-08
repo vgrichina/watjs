@@ -3318,10 +3318,11 @@
         ;; non-arrow plain call → new.target is undefined (arrows inherit lexically)
         (if (i32.eqz (i32.and (local.get $cflags) (i32.const 2)))
           (then (call $scope_define (local.get $cns) (cstring "@@newtarget") (call $v_undef))))
-        (if (i32.eqz (i32.and (local.get $cflags) (i32.const 2)))  ;; non-arrow → bind own `this`
-          (then (call $scope_define (local.get $cns) (cstring "this")  ;; method→receiver; plain call→ undefined (strict) / global (sloppy)
-            (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase))))
-              (else (if i64 (i32.and (local.get $cflags) (i32.const 4)) (then (call $v_undef)) (else (call $mk_obj (local.get $gscope)))))))))
+        (if (i32.eqz (i32.and (local.get $cflags) (i32.const 2)))  ;; non-arrow → bind own `this` (OrdinaryCallBindThis: sloppy coerces)
+          (then (call $scope_define (local.get $cns) (cstring "this")
+            (call $coerce_this
+              (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef)))
+              (local.get $cflags)))))
         (if (i32.eq (local.get $op) (i32.const 21))  ;; TAILCALL: reuse current frame
           (then (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12)))))
           (else  ;; CALL / CALLM: push a new frame; result base drops callee (+ receiver)
@@ -4265,6 +4266,17 @@
       (call $scope_define (local.get $r) (cstring "done") (call $mk_bool (call $vm_done (local.get $ctx))))))
   (call $mk_obj (local.get $r)))
 
+;; OrdinaryCallBindThis coercion of a `this` value for a non-arrow function.
+;; cflags bit2 (4) = strict. Strict: pass through unchanged. Sloppy: null/undefined
+;; → the global object, a primitive → its wrapper object (ToObject), object → as-is.
+(func $coerce_this (param $thisv i64) (param $cflags i32) (result i64) (effects)
+  (if (i32.and (local.get $cflags) (i32.const 4)) (then (return (local.get $thisv))))  ;; strict
+  (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
+    (then (return (call $mk_obj (i32.load (i32.const 204))))))  ;; sloppy null/undefined → global
+  (if (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (i32.or (call $is_function (local.get $thisv)) (call $is_proxy (local.get $thisv)))))
+    (then (return (local.get $thisv))))  ;; already an object
+  (call $to_object (local.get $thisv)))  ;; sloppy primitive → wrapper
+
 ;; native->VM bridge: invoke a VM-fn (magic-marked struct) from engine code
 ;; (e.g. Array.prototype.map calling its callback). Runs the function body in a
 ;; fresh context to completion and returns its result. Enables higher-order
@@ -4285,10 +4297,7 @@
   ;; `arguments` — both resolve lexically through the captured scope.
   (let $vcflags i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))))
   (if (i32.eqz (i32.and (local.get $vcflags) (i32.const 2)))
-    (then (call $scope_define (local.get $ns) (cstring "this")  ;; receiver; or undefined (strict) / global (sloppy) when none given
-      (if i64 (call $is_undefined (local.get $thisv))
-        (then (if i64 (i32.and (local.get $vcflags) (i32.const 4)) (then (call $v_undef)) (else (call $mk_obj (i32.load (i32.const 204))))))
-        (else (local.get $thisv))))))
+    (then (call $scope_define (local.get $ns) (cstring "this") (call $coerce_this (local.get $thisv) (local.get $vcflags)))))
   ;; bind `arguments` so callbacks invoked by native methods (forEach/map/sort/…) can use it
   (if (i32.eqz (i32.and (local.get $vcflags) (i32.const 1)))
     (then (call $scope_define (local.get $ns) (cstring "arguments") (call $vm_make_arguments_argv (local.get $ns) (local.get $fn) (local.get $argv) (local.get $argc)))))
