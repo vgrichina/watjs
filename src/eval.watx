@@ -302,7 +302,7 @@
 ;; GetSetRecord(other): validate set-like; store has@464 keys@472 size@456 (i32, Inf→MAX).
 ;; returns 1 on success; 0 on error (with $err set).
 (func $gsr (param $other i64) (result i32) (effects)
-  (if (i32.eqz (call $is_object (local.get $other)))
+  (if (i32.eqz (i32.or (call $is_object (local.get $other)) (i32.or (call $is_array (local.get $other)) (i32.or (call $is_function (local.get $other)) (call $is_proxy (local.get $other))))))  ;; any Object qualifies (arrays/functions/proxies too)
     (then (call $throw_type (cstring "TypeError") (cstring "Set-like argument must be an object")) (return (i32.const 0))))
   (let $d f64 (call $to_num (call $get_prop (local.get $other) (call $mk_str (cstring "size")))))
   (if (call $err) (then (return (i32.const 0))))
