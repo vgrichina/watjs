@@ -3187,6 +3187,9 @@
             (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $pxres))
             (set! $sp (i32.add (local.get $sp) (i32.const 8)))
             (br $disp)))
+        ;; callee must be callable (function or proxy — proxy handled above); else TypeError
+        (if (i32.eqz (call $is_function (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
+          (then (call $throw_type (cstring "TypeError") (cstring "called value is not a function")) (set! $sp (local.get $rbase)) (br $disp)))
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
         (if (i32.eq (i32.load (local.get $cfn)) (i32.const 1448232527))  ;; generator function → return an iterator
           (then
