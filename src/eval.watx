@@ -6358,19 +6358,9 @@
             (br_if $tse (i32.ge_s (local.get $tsi) (local.get $n)))
             (call $arr_push (local.get $tsr) (call $arr_get (local.get $arr) (local.get $tsi)))
             (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $tsl)))
-          ;; insertion sort the copy
-          (set! $tsi (i32.const 1))
-          (block $oe (loop $ol
-            (br_if $oe (i32.ge_s (local.get $tsi) (local.get $n)))
-            (let $cur i64 (call $arr_get (local.get $tsr) (local.get $tsi)))
-            (let $j i32 (i32.sub (local.get $tsi) (i32.const 1)))
-            (block $ie2 (loop $il2
-              (br_if $ie2 (i32.lt_s (local.get $j) (i32.const 0)))
-              (br_if $ie2 (i32.le_s (call $sort_cmp (local.get $a0) (call $arr_get (local.get $tsr) (local.get $j)) (local.get $cur)) (i32.const 0)))
-              (call $arr_set (local.get $tsr) (i32.add (local.get $j) (i32.const 1)) (call $arr_get (local.get $tsr) (local.get $j)))
-              (set! $j (i32.sub (local.get $j) (i32.const 1))) (br $il2)))
-            (call $arr_set (local.get $tsr) (i32.add (local.get $j) (i32.const 1)) (local.get $cur))
-            (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $ol)))
+          ;; stable O(n log n) merge sort the copy (was O(n^2) insertion → crashed on large n)
+          (call $merge_sort (local.get $tsr) (local.get $n) (local.get $a0) (i32.const 0))
+          (if (call $err) (then (return (call $v_undef))))
           (return (call $mk_arr (local.get $tsr)))))
       (if (i32.eq (local.get $id) (i32.const 276))  ;; toSpliced(start, deleteCount, ...items) → new spliced array
         (then
