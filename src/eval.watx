@@ -4415,6 +4415,23 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Reflect.set called on non-object")) (return (call $v_undef))))
       (let $rsval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
       (let $rsrecv i64 (if i64 (i32.ge_s (local.get $argc) (i32.const 4)) (then (call $argn (local.get $argv) (local.get $argc) (i32.const 3))) (else (local.get $rstgt))))
+      ;; Proxy target: dispatch the 'set' trap and return ToBoolean(result); no trap → [[Set]] on the target.
+      (if (call $is_proxy (local.get $rstgt))
+        (then
+          (let $rsh i64 (call $proxy_handler (local.get $rstgt)))
+          (let $rstrap i64 (call $get_prop (local.get $rsh) (call $mk_str (cstring "set"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $rstb i32 (call $heap_alloc (i32.const 32)))
+          (i64.store (local.get $rstb) (call $proxy_target (local.get $rstgt)))
+          (i64.store (i32.add (local.get $rstb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (i64.store (i32.add (local.get $rstb) (i32.const 16)) (local.get $rsval))
+          (i64.store (i32.add (local.get $rstb) (i32.const 24)) (local.get $rsrecv))
+          (if (call $is_function (local.get $rstrap))
+            (then
+              (let $rstr i64 (call $call_val (local.get $rstrap) (i32.const 4) (local.get $rstb) (local.get $rsh)))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (call $mk_bool (call $truthy (local.get $rstr)))))
+            (else (return (call $call_native (i32.const 201) (i32.const 3) (local.get $rstb) (call $v_undef)))))))  ;; no trap → [[Set]] on the target (receiver defaults to target — our repr can't define-on-proxy-receiver)
       ;; OrdinarySetWithOwnDescriptor when the receiver differs from the target (object case):
       ;; an accessor in the target's chain fires its setter with this=receiver; a writable data
       ;; prop (or none) is written/created on the RECEIVER, not the target.
