@@ -1543,6 +1543,26 @@
 ;; emit a CLOSURE for a class field initializer: function(){ return <init> }.
 ;; cursor must be at the init expression. Captures the class-def scope (CLOSURE),
 ;; runs with `this` = the instance (non-arrow). Leaves the closure on the stack.
+;; a static-initialization block: a 0-param thunk whose body is the `{ ... }` block
+;; (cursor at '{'), returning undefined. Run with this=ctor at class definition.
+(func $vm_emit_block_thunk (param $code i32) (effects)
+  (let $bpj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
+  (let $bentry i32 (call $vm_emit_cursor))
+  (call $vm_c_stmt (local.get $code))  ;; the `{ ... }` block
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; PUSH undefined (no value)
+  (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET
+  (call $vm_patch (local.get $code) (local.get $bpj))
+  (let $bfn i32 (call $heap_alloc (i32.const 36)))
+  (i32.store (local.get $bfn) (i32.const 1448232526))
+  (i32.store (i32.add (local.get $bfn) (i32.const 4)) (local.get $bentry))
+  (i32.store (i32.add (local.get $bfn) (i32.const 8)) (i32.const 0))     ;; np
+  (i32.store (i32.add (local.get $bfn) (i32.const 12)) (local.get $code))
+  (i64.store (i32.add (local.get $bfn) (i32.const 16)) (call $v_undef))  ;; proto
+  (i32.store (i32.add (local.get $bfn) (i32.const 24)) (i32.const 0))    ;; closureScope (CLOSURE fills at runtime)
+  (i32.store (i32.add (local.get $bfn) (i32.const 28)) (i32.const 0))    ;; name
+  (i32.store (i32.add (local.get $bfn) (i32.const 32)) (i32.const 0))    ;; flags 0 (own `this`)
+  (call $vm_emit_op (local.get $code) (i32.const 61)) (call $vm_emit_op (local.get $code) (local.get $bfn)))  ;; CLOSURE
+
 (func $vm_emit_field_thunk (param $code i32) (effects)
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
   (let $entry i32 (call $vm_emit_cursor))
@@ -2070,6 +2090,17 @@
         (if (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.eq (call $tok_kind) (i32.const 18))))
           (then (call $cursor_restore (local.get $stc)))
           (else (set! $isstatic (i32.const 1))))))  ;; confirmed `static` modifier
+    ;; static initialization block: `static { ... }` → append [@@staticblock, blockThunk] to staticT
+    (if (i32.and (local.get $isstatic) (i32.eq (call $tok_kind) (i32.const 17)))
+      (then
+        (set! $hasstatic (i32.const 1))
+        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $staticT))  ;; LOADVAR staticT
+        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (cstring "@@staticblock")))  ;; PUSH sentinel name
+        (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND name
+        (call $vm_emit_block_thunk (local.get $code))  ;; → blockThunk on stack
+        (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk
+        (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP array
+        (br $cml)))  ;; next class member
     (if (i32.eq (call $tok_kind) (i32.const 12)) (then (set! $isgen (i32.const 1)) (call $next_token)))  ;; `*` generator method
     (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed](){} method  |  [computed] = field
       (then
@@ -3047,10 +3078,19 @@
     (br_if $fe (i32.ge_s (i32.add (local.get $fi) (i32.const 1)) (local.get $fln)))
     (let $fname i64 (call $arr_get (local.get $fa) (local.get $fi)))
     (let $fthunk i64 (call $arr_get (local.get $fa) (i32.add (local.get $fi) (i32.const 1))))
-    (call $set_prop (local.get $thisobj) (local.get $fname)
-      (if i64 (call $is_function (local.get $fthunk))
-        (then (call $call_val (local.get $fthunk) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $thisobj)))
-        (else (local.get $fthunk))))  ;; undefined sentinel → undefined
+    ;; a static initialization block (sentinel name) just RUNS for side effects (this=ctor),
+    ;; no property assignment. (NEST the guard: i32.and evaluates both, and val_payload on a
+    ;; non-string fname — e.g. a computed numeric key — would deref garbage.)
+    (let $fisblock i32 (i32.const 0))
+    (if (call $is_string (local.get $fname))
+      (then (if (call $str_eq (call $val_payload (local.get $fname)) (cstring "@@staticblock")) (then (set! $fisblock (i32.const 1))))))
+    (if (local.get $fisblock)
+      (then (drop (call $call_val (local.get $fthunk) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $thisobj))))
+      (else
+        (call $set_prop (local.get $thisobj) (local.get $fname)
+          (if i64 (call $is_function (local.get $fthunk))
+            (then (call $call_val (local.get $fthunk) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $thisobj)))
+            (else (local.get $fthunk))))))  ;; undefined sentinel → undefined
     (if (call $err) (then (return)))
     (set! $fi (i32.add (local.get $fi) (i32.const 2)))
     (br $fl)))
