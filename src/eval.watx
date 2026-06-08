@@ -6738,7 +6738,7 @@
           (return (call $num (f64.const -1)))))
       (if (i32.eq (local.get $id) (i32.const 23))  ;; join(sep)
         (then
-          (let $sep i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 1)) (then (call $to_str (local.get $a0))) (else (cstring ","))))
+          (let $sep i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (local.get $a0)))) (then (call $to_str (local.get $a0))) (else (cstring ","))))  ;; undefined separator → ","
           (let $out i32 (cstring ""))
           (let $i i32 (i32.const 0))
           (block $je (loop $jl
