@@ -4430,10 +4430,18 @@
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 202))  ;; Reflect.has(target, key)
     (then (return (call $js_in (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
-  (if (i32.eq (local.get $id) (i32.const 203))  ;; Reflect.deleteProperty(target, key) → true
+  (if (i32.eq (local.get $id) (i32.const 203))  ;; Reflect.deleteProperty(target, key) → boolean
     (then
       (let $rdt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $is_object (local.get $rdt)) (then (drop (call $scope_delete (call $val_payload (local.get $rdt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+      (if (call $is_object (local.get $rdt))
+        (then
+          (let $rdo i32 (call $val_payload (local.get $rdt)))
+          (let $rdk i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (let $rdsl i32 (call $scope_find_local (local.get $rdo) (local.get $rdk)))
+          (if (local.get $rdsl)
+            (then
+              (if (i32.eqz (call $entry_configurable (local.get $rdsl))) (then (return (call $v_false))))  ;; non-configurable own prop → [[Delete]] returns false
+              (drop (call $scope_delete (local.get $rdo) (local.get $rdk)))))))
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 204))  ;; Reflect.ownKeys(target) → getOwnPropertyNames
     (then (return (call $call_native (i32.const 112) (local.get $argc) (local.get $argv) (call $v_undef)))))
