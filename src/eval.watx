@@ -4413,19 +4413,47 @@
       (let $rstgt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eqz (i32.or (call $is_object (local.get $rstgt)) (i32.or (call $is_array (local.get $rstgt)) (i32.or (call $is_function (local.get $rstgt)) (call $is_proxy (local.get $rstgt))))))
         (then (call $throw_type (cstring "TypeError") (cstring "Reflect.set called on non-object")) (return (call $v_undef))))
-      ;; for a plain object, a failed [[Set]] returns false (not throw): own non-writable
-      ;; data prop, or a new key on a non-extensible/frozen target. (An own accessor or
-      ;; chain lookup falls through to set_prop, which fires the setter.)
+      (let $rsval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      (let $rsrecv i64 (if i64 (i32.ge_s (local.get $argc) (i32.const 4)) (then (call $argn (local.get $argv) (local.get $argc) (i32.const 3))) (else (local.get $rstgt))))
+      ;; OrdinarySetWithOwnDescriptor when the receiver differs from the target (object case):
+      ;; an accessor in the target's chain fires its setter with this=receiver; a writable data
+      ;; prop (or none) is written/created on the RECEIVER, not the target.
+      (if (i32.and (call $is_object (local.get $rstgt)) (i32.eqz (call $strict_eq (local.get $rsrecv) (local.get $rstgt))))
+        (then
+          (let $rsks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (let $rstsl i32 (call $scope_find (call $val_payload (local.get $rstgt)) (local.get $rsks)))  ;; own or inherited descriptor on target
+          (if (local.get $rstsl)
+            (then
+              (if (call $entry_is_accessor (local.get $rstsl))
+                (then
+                  (let $rstset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $rstsl))) (i32.const 8))))
+                  (if (i32.eqz (call $is_function (local.get $rstset))) (then (return (call $v_false))))  ;; accessor without a setter
+                  (let $rssetb i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $rssetb) (local.get $rsval))
+                  (drop (call $call_val (local.get $rstset) (i32.const 1) (local.get $rssetb) (local.get $rsrecv)))
+                  (if (call $err) (then (return (call $v_undef))))
+                  (return (call $v_true))))
+              (if (i32.eqz (call $entry_writable (local.get $rstsl))) (then (return (call $v_false))))))  ;; non-writable target data → false
+          ;; data (writable) or no descriptor → define a data property on the receiver
+          (if (i32.eqz (call $is_object (local.get $rsrecv))) (then (return (call $v_false))))  ;; receiver not an Object
+          (let $rsrcvo i32 (call $val_payload (local.get $rsrecv)))
+          (let $rsrcvsl i32 (call $scope_find_local (local.get $rsrcvo) (local.get $rsks)))
+          (if (local.get $rsrcvsl)
+            (then
+              (if (call $entry_is_accessor (local.get $rsrcvsl)) (then (return (call $v_false))))  ;; receiver own accessor → can't define data
+              (if (i32.eqz (call $entry_writable (local.get $rsrcvsl))) (then (return (call $v_false))))))  ;; receiver own non-writable → false
+          (call $scope_define (local.get $rsrcvo) (local.get $rsks) (local.get $rsval))
+          (return (call $v_true))))
+      ;; receiver === target (the common 3-arg case): a failed [[Set]] returns false (not throw)
       (if (call $is_object (local.get $rstgt))
         (then
           (let $rso i32 (call $val_payload (local.get $rstgt)))
-          (let $rsks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-          (let $rsslot i32 (call $scope_find_local (local.get $rso) (local.get $rsks)))
+          (let $rsks2 i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (let $rsslot i32 (call $scope_find_local (local.get $rso) (local.get $rsks2)))
           (if (local.get $rsslot)
             (then (if (i32.eqz (call $entry_is_accessor (local.get $rsslot))) (then (if (i32.eqz (call $entry_writable (local.get $rsslot))) (then (return (call $v_false)))))))
             (else (if (i32.or (i32.ne (call $scope_find_local (local.get $rso) (cstring "@@noext")) (i32.const 0)) (i32.ne (call $scope_find_local (local.get $rso) (cstring "@@frozen")) (i32.const 0)))
               (then (return (call $v_false))))))))
-      (call $set_prop (local.get $rstgt) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      (call $set_prop (local.get $rstgt) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (local.get $rsval))
       (if (call $err) (then (return (call $v_undef))))  ;; a setter/proxy trap threw → propagate
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 202))  ;; Reflect.has(target, key)
