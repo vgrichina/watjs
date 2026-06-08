@@ -4501,6 +4501,21 @@
   (if (i32.eq (local.get $id) (i32.const 203))  ;; Reflect.deleteProperty(target, key) → boolean
     (then
       (let $rdt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; Proxy: dispatch the deleteProperty trap → ToBoolean(result); no trap → [[Delete]] on target
+      (if (call $is_proxy (local.get $rdt))
+        (then
+          (let $rdph i64 (call $proxy_handler (local.get $rdt)))
+          (let $dptrap i64 (call $get_prop (local.get $rdph) (call $mk_str (cstring "deleteProperty"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $dpb i32 (call $heap_alloc (i32.const 16)))
+          (i64.store (local.get $dpb) (call $proxy_target (local.get $rdt)))
+          (i64.store (i32.add (local.get $dpb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (if (call $is_function (local.get $dptrap))
+            (then
+              (let $dpr i64 (call $call_val (local.get $dptrap) (i32.const 2) (local.get $dpb) (local.get $rdph)))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (call $mk_bool (call $truthy (local.get $dpr)))))
+            (else (return (call $call_native (i32.const 203) (i32.const 2) (local.get $dpb) (call $v_undef)))))))  ;; no trap → Reflect.deleteProperty(target, key)
       (if (call $is_object (local.get $rdt))
         (then
           (let $rdo i32 (call $val_payload (local.get $rdt)))
