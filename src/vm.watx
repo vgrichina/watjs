@@ -2505,6 +2505,7 @@
         (then
           (call $next_token) (call $next_token)  ;; 'while' '('
           (let $lsave i32 (call $vm_loop_enter))
+          (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
           (let $top i32 (call $vm_emit_cursor))
           (call $vm_c_expr (local.get $code))
           (call $next_token)  ;; ')'
@@ -2596,6 +2597,7 @@
         (then
           (call $next_token)
           (let $dlsave i32 (call $vm_loop_enter))
+          (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
           (let $dtop i32 (call $vm_emit_cursor))
           (call $vm_c_stmt (local.get $code))  ;; body
           (call $vm_patch_conts (local.get $code) (call $vm_emit_cursor))  ;; continue → cond
@@ -2634,6 +2636,7 @@
             (then
               (call $next_token)  ;; 'of' / 'in'
               (let $ofls i32 (call $vm_loop_enter))
+          (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
               (let $itn i32 (call $vm_tmpname))
               (let $rn i32 (call $vm_tmpname))
               (call $vm_c_expr (local.get $code))                  ;; the iterable / object
@@ -2692,6 +2695,7 @@
               (return)))
           (call $cursor_restore (local.get $ofdetect))  ;; not for-of → regular for
           (let $flsave i32 (call $vm_loop_enter))
+          (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
           ;; init (consumes up to ';')
           (if (i32.ne (call $tok_kind) (i32.const 21))
             (then
@@ -3826,6 +3830,10 @@
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.const 288) (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 90))  ;; RESETCOMPLETION — completion register := undefined (no stack effect)
+      (then                                       ;; a loop's completion is undefined unless its body yields a value (spec ForBodyEvaluation: "Let V be undefined")
+        (i64.store (i32.const 288) (call $v_undef))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 2))  ;; ADD — js_add (string concat + numeric)
       (then
