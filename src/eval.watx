@@ -265,7 +265,7 @@
   (call $scope_define (local.get $h) (cstring "@@ictr") (call $num (f64.const 0)))
   (call $scope_define (local.get $h) (cstring "@@idone") (call $v_false))
   (call $scope_define (local.get $h) (cstring "@@iinner") (call $v_undef))
-  (call $scope_define (local.get $h) (cstring "next") (call $mk_native (i32.const 348) (cstring "next")))
+  (call $scope_define_attr (local.get $h) (cstring "next") (call $mk_native (i32.const 348) (cstring "next")) (i32.const 12))  ;; DontEnum
   (call $scope_define (local.get $h) (cstring "return") (call $mk_native (i32.const 354) (cstring "return")))
   (call $mk_obj (local.get $h)))
 
@@ -1155,9 +1155,9 @@
       (call $scope_define (local.get $sao) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $saelem))))
       (call $scope_define (local.get $sao) (cstring "@@tabuf") (call $num (f64.convert_i32_s (i32.add (local.get $sabuf) (i32.mul (local.get $sabeg) (local.get $sabpe))))))
       (call $scope_define (local.get $sao) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $sanew))))
-      (call $scope_define (local.get $sao) (cstring "length") (call $num (f64.convert_i32_s (local.get $sanew))))
-      (call $scope_define (local.get $sao) (cstring "byteLength") (call $num (f64.convert_i32_s (i32.mul (local.get $sanew) (local.get $sabpe)))))
-      (call $scope_define (local.get $sao) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $sabpe))))
+      (call $scope_define_attr (local.get $sao) (cstring "length") (call $num (f64.convert_i32_s (local.get $sanew))) (i32.const 12))  ;; DontEnum
+      (call $scope_define_attr (local.get $sao) (cstring "byteLength") (call $num (f64.convert_i32_s (i32.mul (local.get $sanew) (local.get $sabpe)))) (i32.const 12))
+      (call $scope_define_attr (local.get $sao) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $sabpe))) (i32.const 12))
       (return (call $mk_obj (local.get $sao)))))
   ;; TypedArray.prototype.set(source[, offset]) (396)
   (if (i32.eq (local.get $id) (i32.const 396))
@@ -1363,9 +1363,9 @@
   (call $scope_define (local.get $to) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $elem))))
   (call $scope_define (local.get $to) (cstring "@@tabuf") (call $num (f64.convert_i32_s (local.get $buf))))
   (call $scope_define (local.get $to) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $len))))
-  (call $scope_define (local.get $to) (cstring "length") (call $num (f64.convert_i32_s (local.get $len))))
-  (call $scope_define (local.get $to) (cstring "byteLength") (call $num (f64.convert_i32_s (i32.mul (local.get $len) (local.get $bpe)))))
-  (call $scope_define (local.get $to) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $bpe))))
+  (call $scope_define_attr (local.get $to) (cstring "length") (call $num (f64.convert_i32_s (local.get $len))) (i32.const 12))  ;; DontEnum
+  (call $scope_define_attr (local.get $to) (cstring "byteLength") (call $num (f64.convert_i32_s (i32.mul (local.get $len) (local.get $bpe)))) (i32.const 12))
+  (call $scope_define_attr (local.get $to) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $bpe))) (i32.const 12))
   (call $mk_obj (local.get $to)))
 
 ;; build a symbol value from an internal key string and a description string.
@@ -2152,7 +2152,7 @@
       (call $scope_define (local.get $cco) (cstring "@@cidx") (call $num (f64.const 0)))
       (call $scope_define (local.get $cco) (cstring "@@cinner") (call $v_undef))
       (call $scope_define (local.get $cco) (cstring "@@cdone") (call $v_false))
-      (call $scope_define (local.get $cco) (cstring "next") (call $mk_native (i32.const 351) (cstring "next")))
+      (call $scope_define_attr (local.get $cco) (cstring "next") (call $mk_native (i32.const 351) (cstring "next")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $cco)))))
   ;; Iterator.concat helper .next() (351)
   (if (i32.eq (local.get $id) (i32.const 351))
@@ -2257,7 +2257,7 @@
       (call $scope_define (local.get $zo) (cstring "@@zdf") (call $mk_arr (local.get $zdf)))
       (call $scope_define (local.get $zo) (cstring "@@zkeys") (call $mk_arr (call $arr_new (i32.const 1))))  ;; empty → array results
       (call $scope_define (local.get $zo) (cstring "@@zalldone") (call $v_false))
-      (call $scope_define (local.get $zo) (cstring "next") (call $mk_native (i32.const 356) (cstring "next")))
+      (call $scope_define_attr (local.get $zo) (cstring "next") (call $mk_native (i32.const 356) (cstring "next")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $zo)))))
   ;; Iterator.zip helper .next() (356)
   (if (i32.eq (local.get $id) (i32.const 356))
@@ -2396,7 +2396,7 @@
       (call $scope_define (local.get $zkobj) (cstring "@@zdf") (call $mk_arr (local.get $zkdf)))
       (call $scope_define (local.get $zkobj) (cstring "@@zkeys") (call $mk_arr (local.get $zkkeys)))
       (call $scope_define (local.get $zkobj) (cstring "@@zalldone") (call $v_false))
-      (call $scope_define (local.get $zkobj) (cstring "next") (call $mk_native (i32.const 356) (cstring "next")))
+      (call $scope_define_attr (local.get $zkobj) (cstring "next") (call $mk_native (i32.const 356) (cstring "next")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $zkobj)))))
   (call $v_undef))
 
@@ -3753,7 +3753,7 @@
       (call $scope_define (local.get $itobj) (cstring "@@kind")
         (call $num (f64.convert_i32_s (if i32 (i32.eq (local.get $id) (i32.const 95)) (then (i32.const 2))
           (else (if i32 (i32.eq (local.get $id) (i32.const 96)) (then (i32.const 0)) (else (i32.const 1))))))))
-      (call $scope_define (local.get $itobj) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")))
+      (call $scope_define_attr (local.get $itobj) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $itobj)))))
   (if (i32.eq (local.get $id) (i32.const 94))  ;; array-iterator .next()
     (then
@@ -4605,7 +4605,7 @@
       (let $it i32 (call $obj_new (i32.const 4)))
       (call $scope_define (local.get $it) (cstring "@@aobj") (local.get $thisv))
       (call $scope_define (local.get $it) (cstring "@@ai") (call $num (f64.const 0)))
-      (call $scope_define (local.get $it) (cstring "next") (call $mk_native (i32.const 144) (cstring "next")))
+      (call $scope_define_attr (local.get $it) (cstring "next") (call $mk_native (i32.const 144) (cstring "next")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $it)))))
   (if (i32.eq (local.get $id) (i32.const 144))  ;; arguments-iterator .next() (this = iterator)
     (then
@@ -5562,7 +5562,7 @@
       (call $scope_define (local.get $rmait) (cstring "@@ms") (local.get $maS))
       (call $scope_define (local.get $rmait) (cstring "@@mglobal") (call $num (f64.convert_i32_s (call $str_has_char (local.get $maFlags) (i32.const 103)))))
       (call $scope_define (local.get $rmait) (cstring "@@mdone") (call $v_false))
-      (call $scope_define (local.get $rmait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")))
+      (call $scope_define_attr (local.get $rmait) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $rmait)))))
   (if (i32.eq (local.get $id) (i32.const 174))  ;; RegExpStringIterator .next() — RegExpExec(matcher, S) per call
     (then
