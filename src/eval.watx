@@ -3227,24 +3227,45 @@
       ;; RequireObjectCoercible(this) — this handler precedes the shared string null-guard
       (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "String.prototype.replaceAll called on null or undefined")) (return (call $v_undef))))
-      (if (call $is_symbol (local.get $thisv))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $rasv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $is_symbol (local.get $rasv))  ;; ToString(searchValue) on a Symbol throws (non-regex)
-        (then (if (i32.eqz (call $is_regexp (local.get $rasv)))
-          (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))))
-      ;; a RegExp search must be global; then — IF it still has a @@replace method —
-      ;; it's exactly replace(...) (global → all). If @@replace was overridden to
-      ;; undefined, fall through to the string algorithm with ToString(searchValue).
-      (if (call $is_regexp (local.get $rasv))
+      ;; step 2: if searchValue is neither undefined nor null — IsRegExp / flags / @@replace.
+      ;; Only object searchValues can carry @@match/@@replace; a primitive (e.g. a string
+      ;; separator) skips straight to the string algorithm without touching @@replace
+      ;; (so it never triggers a poisoned String.prototype[@@replace] getter).
+      (if (i32.or (call $is_object (local.get $rasv)) (i32.or (call $is_regexp (local.get $rasv)) (call $is_function (local.get $rasv))))
         (then
-          (call $re_apply_flags (local.get $rasv))
-          (if (i32.eqz (i32.load (i32.const 276))) (then (call $throw_type (cstring "TypeError") (cstring "replaceAll must be called with a global RegExp")) (return (call $v_undef))))
+          ;; a. isRegExp = IsRegExp(searchValue) (via @@match, abrupt)
+          (let $isre i32 (call $is_regexp_spec (local.get $rasv)))
+          (if (call $err) (then (return (call $v_undef))))
+          ;; b. if isRegExp: flags must be coercible and ToString(flags) must contain "g"
+          (if (local.get $isre)
+            (then
+              (let $flags i64 (call $get_prop (local.get $rasv) (call $mk_str (cstring "flags"))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.or (call $is_null (local.get $flags)) (call $is_undefined (local.get $flags)))  ;; RequireObjectCoercible(flags)
+                (then (call $throw_type (cstring "TypeError") (cstring "replaceAll: regexp flags is null or undefined")) (return (call $v_undef))))
+              (let $flstr i32 (call $to_str (local.get $flags)))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.lt_s (call $str_find (local.get $flstr) (cstring "g") (i32.const 0)) (i32.const 0))
+                (then (call $throw_type (cstring "TypeError") (cstring "replaceAll must be called with a global RegExp")) (return (call $v_undef))))))
+          ;; c. replacer = GetMethod(searchValue, @@replace)
           (let $rarep i64 (call $get_prop (local.get $rasv) (call $make_symbol (cstring "@@replace") (cstring "Symbol.replace"))))
           (if (call $err) (then (return (call $v_undef))))
-          (if (call $is_function (local.get $rarep))
-            (then (return (call $call_native (i32.const 103) (local.get $argc) (local.get $argv) (local.get $thisv)))))))
+          ;; d. replacer not undefined/null → must be callable → Call(replacer, searchValue, « O, replaceValue ») with O unstringified
+          (if (i32.eqz (i32.or (call $is_undefined (local.get $rarep)) (call $is_null (local.get $rarep))))
+            (then
+              (if (i32.eqz (call $is_function (local.get $rarep)))
+                (then (call $throw_type (cstring "TypeError") (cstring "[Symbol.replace] is not a function")) (return (call $v_undef))))
+              (let $rcb i32 (call $heap_alloc (i32.const 16)))
+              (i64.store (local.get $rcb) (local.get $thisv))
+              (i64.store (i32.add (local.get $rcb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+              (return (call $call_val (local.get $rarep) (i32.const 2) (local.get $rcb) (local.get $rasv)))))))
+      ;; step 3-4: ToString(O) then ToString(searchValue) — a Symbol throws here
+      (if (call $is_symbol (local.get $thisv))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $rals i32 (call $to_str (local.get $thisv)))
+      (if (call $is_symbol (local.get $rasv))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $rasearch i32 (call $to_str (local.get $rasv)))
       (let $rarepl i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (let $raisfn i32 (call $is_function (local.get $rarepl)))
