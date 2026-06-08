@@ -6623,7 +6623,7 @@
       (if (i32.eq (local.get $id) (i32.const 29))  ;; fill(v[, start[, end]])
         (then
           (let $fstart i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
-          (let $fend i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))
+          (let $fend i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 3)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))  ;; undefined end → length
           (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.add (local.get $n) (local.get $fstart))) (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.const 0))))))
           (if (i32.lt_s (local.get $fend) (i32.const 0)) (then (set! $fend (i32.add (local.get $n) (local.get $fend)))))
           (if (i32.gt_s (local.get $fend) (local.get $n)) (then (set! $fend (local.get $n))))
@@ -6638,7 +6638,7 @@
         (then
           (let $ct i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
           (let $cs i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
-          (let $ce i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))
+          (let $ce i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 3)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))  ;; undefined end → length
           (if (i32.lt_s (local.get $ct) (i32.const 0)) (then (set! $ct (i32.add (local.get $n) (local.get $ct))) (if (i32.lt_s (local.get $ct) (i32.const 0)) (then (set! $ct (i32.const 0))))))
           (if (i32.lt_s (local.get $cs) (i32.const 0)) (then (set! $cs (i32.add (local.get $n) (local.get $cs))) (if (i32.lt_s (local.get $cs) (i32.const 0)) (then (set! $cs (i32.const 0))))))
           (if (i32.lt_s (local.get $ce) (i32.const 0)) (then (set! $ce (i32.add (local.get $n) (local.get $ce)))))
