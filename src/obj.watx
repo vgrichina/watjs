@@ -840,7 +840,10 @@
   (if (i32.eqz (i32.or (call $is_object (local.get $h)) (call $is_function (local.get $h))))
     (then (call $throw_type (cstring "TypeError") (cstring "Proxy handler has been revoked")) (return (call $v_undef))))
   (let $t i64 (call $get_prop (local.get $h) (call $mk_str (local.get $name))))
+  (if (call $err) (then (return (call $v_undef))))
   (if (i32.or (call $is_undefined (local.get $t)) (call $is_null (local.get $t))) (then (return (call $v_undef))))
+  (if (i32.eqz (i32.or (call $is_function (local.get $t)) (call $is_proxy (local.get $t))))  ;; GetMethod: a present non-callable trap → TypeError
+    (then (call $throw_type (cstring "TypeError") (cstring "proxy trap is not callable")) (return (call $v_undef))))
   (local.get $t))
 ;; IsRegExp-ish: an object carrying the RegExp internal source slot
 (func $is_regexp (param $v i64) (result i32) (effects)
