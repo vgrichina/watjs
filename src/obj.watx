@@ -823,6 +823,17 @@
   (i64.load (call $scope_find_local (call $val_payload (local.get $cont)) (cstring "@@phandler"))))
 (func $proxy_target (param $cont i64) (result i64) (effects)
   (i64.load (call $scope_find_local (call $val_payload (local.get $cont)) (cstring "@@ptarget"))))
+;; create a Proxy exotic from (target, handler); both must be objects (else TypeError).
+;; Shared by `new Proxy(...)` and Proxy.revocable(...).
+(func $make_proxy (param $ptgt i64) (param $phnd i64) (result i64) (effects)
+  (if (i32.eqz (i32.or (call $is_object (local.get $ptgt)) (i32.or (call $is_array (local.get $ptgt)) (i32.or (call $is_function (local.get $ptgt)) (call $is_proxy (local.get $ptgt))))))
+    (then (call $throw_type (cstring "TypeError") (cstring "Cannot create proxy with a non-object as target")) (return (call $v_undef))))
+  (if (i32.eqz (i32.or (call $is_object (local.get $phnd)) (i32.or (call $is_array (local.get $phnd)) (i32.or (call $is_function (local.get $phnd)) (call $is_proxy (local.get $phnd))))))
+    (then (call $throw_type (cstring "TypeError") (cstring "Cannot create proxy with a non-object as handler")) (return (call $v_undef))))
+  (let $pxo i32 (call $obj_new (i32.const 4)))
+  (call $scope_define (local.get $pxo) (cstring "@@ptarget") (local.get $ptgt))
+  (call $scope_define (local.get $pxo) (cstring "@@phandler") (local.get $phnd))
+  (call $mk_obj (local.get $pxo)))
 ;; trap fn for `name` on the handler, or v_undef if absent (revoked handler → TypeError)
 (func $proxy_trap (param $cont i64) (param $name i32) (result i64) (effects)
   (let $h i64 (call $proxy_handler (local.get $cont)))

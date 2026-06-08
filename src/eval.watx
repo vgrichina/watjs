@@ -4388,11 +4388,34 @@
       (call $scope_define (local.get $abo) (cstring "@@ablen") (call $num (f64.convert_i32_s (local.get $abn))))
       (return (call $mk_obj (local.get $abo)))))
   (if (i32.eq (local.get $id) (i32.const 209))  ;; new Proxy(target, handler)
+    (then (return (call $make_proxy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
+  (if (i32.eq (local.get $id) (i32.const 450))  ;; Proxy.revocable(target, handler) → { proxy, revoke }
     (then
-      (let $pxo i32 (call $obj_new (i32.const 4)))
-      (call $scope_define (local.get $pxo) (cstring "@@ptarget") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (call $scope_define (local.get $pxo) (cstring "@@phandler") (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-      (return (call $mk_obj (local.get $pxo)))))
+      (let $rvp i64 (call $make_proxy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (call $err) (then (return (call $v_undef))))
+      ;; revoke = a bound function over [proxy] calling the revoke native (449)
+      (let $rvbuf i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $rvbuf) (local.get $rvp))
+      (let $rvbf i32 (call $heap_alloc (i32.const 40)))
+      (i32.store (local.get $rvbf) (i32.const 1448232540))  ;; bound magic
+      (i32.store (i32.add (local.get $rvbf) (i32.const 8)) (i32.const 0))   ;; .length 0
+      (i32.store (i32.add (local.get $rvbf) (i32.const 12)) (i32.const 0))  ;; props
+      (i64.store (i32.add (local.get $rvbf) (i32.const 16)) (call $v_undef))  ;; boundThis
+      (i64.store (i32.add (local.get $rvbf) (i32.const 24)) (call $mk_native (i32.const 449) (cstring "")))  ;; target = revoke native (anonymous)
+      (i32.store (i32.add (local.get $rvbf) (i32.const 32)) (i32.const 1))  ;; boundArgc
+      (i32.store (i32.add (local.get $rvbf) (i32.const 36)) (local.get $rvbuf))  ;; boundArgs = [proxy]
+      (let $rvres i32 (call $obj_new (i32.const 2)))
+      (call $scope_define (local.get $rvres) (cstring "proxy") (local.get $rvp))
+      (call $scope_define (local.get $rvres) (cstring "revoke") (call $mk_fn (local.get $rvbf)))
+      (return (call $mk_obj (local.get $rvres)))))
+  (if (i32.eq (local.get $id) (i32.const 449))  ;; revoke(proxy) — null out the proxy's target/handler
+    (then
+      (let $rvx i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_proxy (local.get $rvx))
+        (then
+          (call $scope_define (call $val_payload (local.get $rvx)) (cstring "@@ptarget") (call $v_null))
+          (call $scope_define (call $val_payload (local.get $rvx)) (cstring "@@phandler") (call $v_null))))
+      (return (call $v_undef))))
   ;; Reflect property-operation methods require Type(target) is Object
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 200)) (i32.le_s (local.get $id) (i32.const 207)))
               (i32.and (i32.ge_s (local.get $id) (i32.const 332)) (i32.le_s (local.get $id) (i32.const 334))))
@@ -7301,6 +7324,7 @@
 (func $native_arity (param $id i32) (result i32) (effects)
   ;; length 2
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 441)) (i32.le_s (local.get $id) (i32.const 444))) (then (return (i32.const 2))))  ;; Map/WeakMap getOrInsert / getOrInsertComputed
+  (if (i32.eq (local.get $id) (i32.const 450)) (then (return (i32.const 2))))  ;; Proxy.revocable
   (if (i32.or (i32.eq (local.get $id) (i32.const 45)) (i32.or (i32.eq (local.get $id) (i32.const 46)) (i32.or (i32.eq (local.get $id) (i32.const 47)) (i32.or (i32.eq (local.get $id) (i32.const 52)) (i32.eq (local.get $id) (i32.const 224))))))
     (then (return (i32.const 2))))  ;; Math.max, min, pow, hypot, imul
   (if (i32.or (i32.eq (local.get $id) (i32.const 14)) (i32.or (i32.eq (local.get $id) (i32.const 15)) (i32.or (i32.eq (local.get $id) (i32.const 24)) (i32.or (i32.eq (local.get $id) (i32.const 50)) (i32.eq (local.get $id) (i32.const 156))))))
@@ -8106,7 +8130,8 @@
   (call $scope_define (local.get $refo) (cstring "setPrototypeOf") (call $mk_native (i32.const 334) (cstring "setPrototypeOf")))
   (call $scope_define_attr (local.get $refo) (cstring "@@toStringTag") (call $mk_str (cstring "Reflect")) (i32.const 4))  ;; toString → [object Reflect]; {W:false,E:false,C:true}
   (call $scope_define (local.get $g) (cstring "Reflect") (call $mk_obj (local.get $refo)))
-  (drop (call $def_native (local.get $g) (cstring "Proxy") (i32.const 209)))
+  (let $proxyf i64 (call $def_native (local.get $g) (cstring "Proxy") (i32.const 209)))
+  (call $set_prop (local.get $proxyf) (call $mk_str (cstring "revocable")) (call $mk_native (i32.const 450) (cstring "revocable")))
   ;; DataView/SharedArrayBuffer/%TypedArray.prototype% (reg 528) must exist before the
   ;; per-type TA prototypes chain to it
   (call $setup_dataview)
