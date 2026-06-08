@@ -623,7 +623,11 @@
           (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
           (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
           (let $vinh i32 (call $fn_inherited_slot (local.get $ks)))
-          (if (local.get $vinh) (then (return (i64.load (local.get $vinh)))))
+          (if (local.get $vinh)
+            (then
+              (if (call $entry_is_accessor (local.get $vinh))  ;; inherited accessor (e.g. defined on Function.prototype) → invoke getter
+                (then (let $vig i64 (i64.load (call $val_payload (i64.load (local.get $vinh))))) (if (call $is_function (local.get $vig)) (then (return (call $call_fn0 (local.get $vig) (local.get $cont))))) (return (call $v_undef))))
+              (return (i64.load (local.get $vinh)))))
           (return (call $v_undef))))
       (if (call $str_eq (local.get $ks) (cstring "prototype"))
         (then
@@ -654,7 +658,11 @@
       (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
       (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
       (let $ninh i32 (call $fn_inherited_slot (local.get $ks)))
-      (if (local.get $ninh) (then (return (i64.load (local.get $ninh)))))
+      (if (local.get $ninh)
+        (then
+          (if (call $entry_is_accessor (local.get $ninh))  ;; inherited accessor → invoke getter
+            (then (let $nig i64 (i64.load (call $val_payload (i64.load (local.get $ninh))))) (if (call $is_function (local.get $nig)) (then (return (call $call_fn0 (local.get $nig) (local.get $cont))))) (return (call $v_undef))))
+          (return (i64.load (local.get $ninh)))))
       (return (call $v_undef))))
   ;; symbol: .description / .toString / .valueOf
   (if (call $is_symbol (local.get $cont))
@@ -667,7 +675,11 @@
       (if (call $str_eq (local.get $sks) (cstring "@@toPrimitive")) (then (return (call $mk_native (i32.const 438) (cstring "[Symbol.toPrimitive]")))))
       ;; inherit Object.prototype methods (hasOwnProperty, isPrototypeOf, …) for a primitive symbol
       (let $sinh i32 (call $fn_inherited_slot (local.get $sks)))
-      (if (local.get $sinh) (then (return (i64.load (local.get $sinh)))))
+      (if (local.get $sinh)
+        (then
+          (if (call $entry_is_accessor (local.get $sinh))  ;; inherited accessor → invoke getter
+            (then (let $sig i64 (i64.load (call $val_payload (i64.load (local.get $sinh))))) (if (call $is_function (local.get $sig)) (then (return (call $call_fn0 (local.get $sig) (local.get $cont))))) (return (call $v_undef))))
+          (return (i64.load (local.get $sinh)))))
       (return (call $v_undef))))
   ;; undefined / null → TypeError
   (call $throw_type (cstring "TypeError") (cstring "cannot read property of null or undefined"))
