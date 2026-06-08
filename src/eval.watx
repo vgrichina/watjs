@@ -1853,7 +1853,18 @@
       (let $pt i64 (call $proxy_trap (local.get $ov) (cstring "getPrototypeOf")))
       (if (call $err) (then (return (call $v_null))))
       (if (call $is_function (local.get $pt))
-        (then (return (call $proxy_call2 (local.get $pt) (call $proxy_target (local.get $ov)) (call $v_undef) (call $proxy_handler (local.get $ov)))))
+        (then
+          (let $pgpt i64 (call $proxy_target (local.get $ov)))
+          (let $pgres i64 (call $proxy_call2 (local.get $pt) (local.get $pgpt) (call $v_undef) (call $proxy_handler (local.get $ov))))
+          (if (call $err) (then (return (call $v_null))))
+          ;; invariant: the trap result must be an Object or null
+          (if (i32.eqz (i32.or (call $is_null (local.get $pgres)) (i32.or (call $is_object (local.get $pgres)) (i32.or (call $is_array (local.get $pgres)) (call $is_function (local.get $pgres))))))
+            (then (call $throw_type (cstring "TypeError") (cstring "proxy getPrototypeOf must return an object or null")) (return (call $v_null))))
+          ;; invariant: if the target is non-extensible, the result must be the target's actual prototype
+          (if (i32.and (call $is_object (local.get $pgpt)) (i32.ne (call $scope_find_local (call $val_payload (local.get $pgpt)) (cstring "@@noext")) (i32.const 0)))
+            (then (if (i32.eqz (call $same_value (local.get $pgres) (call $js_get_prototype (local.get $pgpt))))
+              (then (call $throw_type (cstring "TypeError") (cstring "proxy getPrototypeOf inconsistent with non-extensible target")) (return (call $v_null))))))
+          (return (local.get $pgres)))
         (else (return (call $js_get_prototype (call $proxy_target (local.get $ov))))))))
   (if (call $is_array (local.get $ov)) (then (return (call $mk_obj (i32.load (i32.const 160))))))
   (if (call $is_function (local.get $ov))
