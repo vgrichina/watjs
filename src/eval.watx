@@ -408,21 +408,94 @@
       (then (call $arr_push (local.get $out) (call $mk_str (local.get $kp2)))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $kl))))
 
+;; membership test by SameValue over a key array
+(func $key_in_arr (param $arr i32) (param $k i64) (result i32) (effects)
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (call $arr_len (local.get $arr))))
+    (if (call $strict_eq (local.get $k) (call $arr_get (local.get $arr) (local.get $i))) (then (return (i32.const 1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i32.const 0))
+
+;; Proxy [[OwnPropertyKeys]] with a present trap: CreateListFromArrayLike with
+;; key-type + duplicate validation, then the non-configurable / non-extensible
+;; invariants. Returns the validated key array (i32); throws a TypeError otherwise.
+(func $proxy_own_keys (param $px i64) (param $trap i64) (result i32) (effects)
+  (let $tgt i64 (call $proxy_target (local.get $px)))
+  (let $rawv i64 (call $call_val (local.get $trap) (i32.const 1) (call $argv1 (local.get $tgt)) (call $proxy_handler (local.get $px))))
+  (if (call $err) (then (return (call $arr_new (i32.const 1)))))
+  (if (i32.eqz (i32.or (call $is_object (local.get $rawv)) (i32.or (call $is_array (local.get $rawv)) (call $is_function (local.get $rawv)))))
+    (then (call $throw_type (cstring "TypeError") (cstring "proxy ownKeys: trap result must be an object")) (return (call $arr_new (i32.const 1)))))
+  (let $lenf f64 (call $to_num (call $get_prop (local.get $rawv) (call $mk_str (cstring "length")))))
+  (if (call $err) (then (return (call $arr_new (i32.const 1)))))
+  (let $n i32 (if i32 (f64.ge (local.get $lenf) (f64.const 0)) (then (i32.trunc_f64_s (local.get $lenf))) (else (i32.const 0))))
+  (let $keys i32 (call $arr_new (i32.const 8)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $el i64 (call $get_prop (local.get $rawv) (call $num (f64.convert_i32_s (local.get $i)))))
+    (if (call $err) (then (return (call $arr_new (i32.const 1)))))
+    (if (i32.eqz (i32.or (call $is_string (local.get $el)) (call $is_symbol (local.get $el))))
+      (then (call $throw_type (cstring "TypeError") (cstring "proxy ownKeys: trap result must contain only String and Symbol keys")) (return (call $arr_new (i32.const 1)))))
+    (if (call $key_in_arr (local.get $keys) (local.get $el))
+      (then (call $throw_type (cstring "TypeError") (cstring "proxy ownKeys: trap result must not contain duplicate keys")) (return (call $arr_new (i32.const 1)))))
+    (call $arr_push (local.get $keys) (local.get $el))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  ;; --- invariants ---
+  (let $ext i32 (call $truthy (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $tgt)) (call $v_undef))))
+  (if (call $err) (then (return (call $arr_new (i32.const 1)))))
+  ;; target's own keys: names ++ symbols
+  (let $tnv i64 (call $call_native (i32.const 112) (i32.const 1) (call $argv1 (local.get $tgt)) (call $v_undef)))
+  (if (call $err) (then (return (call $arr_new (i32.const 1)))))
+  (let $tsv i64 (call $call_native (i32.const 248) (i32.const 1) (call $argv1 (local.get $tgt)) (call $v_undef)))
+  (if (call $err) (then (return (call $arr_new (i32.const 1)))))
+  (let $tkeys i32 (call $arr_new (i32.const 8)))
+  (let $tna i32 (call $val_payload (local.get $tnv)))
+  (let $ti i32 (i32.const 0))
+  (block $tne (loop $tnl
+    (br_if $tne (i32.ge_s (local.get $ti) (call $arr_len (local.get $tna))))
+    (call $arr_push (local.get $tkeys) (call $arr_get (local.get $tna) (local.get $ti)))
+    (set! $ti (i32.add (local.get $ti) (i32.const 1))) (br $tnl)))
+  (let $tsa i32 (call $val_payload (local.get $tsv)))
+  (set! $ti (i32.const 0))
+  (block $tse (loop $tsl
+    (br_if $tse (i32.ge_s (local.get $ti) (call $arr_len (local.get $tsa))))
+    (call $arr_push (local.get $tkeys) (call $arr_get (local.get $tsa) (local.get $ti)))
+    (set! $ti (i32.add (local.get $ti) (i32.const 1))) (br $tsl)))
+  ;; check each target key: non-configurable keys must appear; on a non-extensible
+  ;; target every key must appear
+  (set! $ti (i32.const 0))
+  (block $cke (loop $ckl
+    (br_if $cke (i32.ge_s (local.get $ti) (call $arr_len (local.get $tkeys))))
+    (let $tk i64 (call $arr_get (local.get $tkeys) (local.get $ti)))
+    (let $found i32 (call $key_in_arr (local.get $keys) (local.get $tk)))
+    (let $dckb i32 (call $heap_alloc (i32.const 16)))
+    (i64.store (local.get $dckb) (local.get $tgt))
+    (i64.store (i32.add (local.get $dckb) (i32.const 8)) (local.get $tk))
+    (let $dck i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $dckb) (call $v_undef)))
+    (if (call $err) (then (return (call $arr_new (i32.const 1)))))
+    (let $ncfg i32 (i32.and (i32.eqz (call $is_undefined (local.get $dck))) (i32.eqz (call $truthy (call $get_prop (local.get $dck) (call $mk_str (cstring "configurable")))))))
+    (if (i32.and (local.get $ncfg) (i32.eqz (local.get $found)))
+      (then (call $throw_type (cstring "TypeError") (cstring "proxy ownKeys: a non-configurable key of the target is missing from the result")) (return (call $arr_new (i32.const 1)))))
+    (if (i32.and (i32.eqz (local.get $ext)) (i32.eqz (local.get $found)))
+      (then (call $throw_type (cstring "TypeError") (cstring "proxy ownKeys: a key of a non-extensible target is missing from the result")) (return (call $arr_new (i32.const 1)))))
+    (set! $ti (i32.add (local.get $ti) (i32.const 1))) (br $ckl)))
+  ;; non-extensible: the result may not contain keys absent from the target
+  (if (i32.and (i32.eqz (local.get $ext)) (i32.ne (call $arr_len (local.get $keys)) (call $arr_len (local.get $tkeys))))
+    (then (call $throw_type (cstring "TypeError") (cstring "proxy ownKeys: result contains a key absent from a non-extensible target")) (return (call $arr_new (i32.const 1)))))
+  (local.get $keys))
+
 ;; own enumerable (or all, if $allNames) key strings of any value → fresh array.
 ;; Arrays yield "0".."len-1" then their @12 named-property keys.
 (func $own_enum_keys (param $a i64) (param $allNames i32) (result i32) (effects)
   (let $out i32 (call $arr_new (i32.const 16)))
-  ;; Proxy: ownKeys trap returns the key list (else forward to target)
+  ;; Proxy: ownKeys trap returns the validated key list (else forward to target)
   (if (call $is_proxy (local.get $a))
     (then
       (let $okt i64 (call $proxy_trap (local.get $a) (cstring "ownKeys")))
       (if (call $err) (then (return (local.get $out))))
       (if (call $is_function (local.get $okt))
-        (then
-          (let $okr i64 (call $call_val (local.get $okt) (i32.const 1) (call $argv1 (call $proxy_target (local.get $a))) (call $proxy_handler (local.get $a))))
-          (if (call $err) (then (return (local.get $out))))
-          (if (call $is_array (local.get $okr)) (then (return (call $val_payload (local.get $okr)))))
-          (return (local.get $out)))
+        (then (return (call $proxy_own_keys (local.get $a) (local.get $okt))))
         (else (return (call $own_enum_keys (call $proxy_target (local.get $a)) (local.get $allNames)))))))
   (if (call $is_array (local.get $a))
     (then
