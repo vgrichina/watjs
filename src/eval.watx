@@ -2954,6 +2954,81 @@
       (return (call $v_undef))))
   (call $v_undef))
 
+;; Proxy [[DefineOwnProperty]] invariant: after the trap returns true, validate
+;; the user descriptor `desc` against the target's current own descriptor per
+;; ValidateAndApplyPropertyDescriptor + the two extra proxy clauses (16b/16c).
+;; Throws a TypeError on violation; otherwise returns silently.
+(func $proxy_dp_check (param $tgt i64) (param $key i64) (param $desc i64) (effects)
+  (let $pdb i32 (call $heap_alloc (i32.const 16)))
+  (i64.store (local.get $pdb) (local.get $tgt))
+  (i64.store (i32.add (local.get $pdb) (i32.const 8)) (local.get $key))
+  (let $cur i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $pdb) (call $v_undef)))  ;; getOwnPropertyDescriptor(tgt,key)
+  (if (call $err) (then (return)))
+  (let $ext i32 (call $truthy (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $tgt)) (call $v_undef))))
+  (if (call $err) (then (return)))
+  (let $hasCfg i32 (call $truthy (call $js_in (call $mk_str (cstring "configurable")) (local.get $desc))))
+  (let $dCfg i32 (call $truthy (call $get_prop (local.get $desc) (call $mk_str (cstring "configurable")))))
+  (let $setCfgFalse i32 (i32.and (local.get $hasCfg) (i32.eqz (local.get $dCfg))))
+  ;; targetDesc undefined
+  (if (call $is_undefined (local.get $cur))
+    (then
+      (if (i32.eqz (local.get $ext))
+        (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot add property to a non-extensible target")) (return)))
+      (if (local.get $setCfgFalse)
+        (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot define a non-configurable property absent on target")) (return)))
+      (return)))
+  ;; targetDesc exists
+  (let $curCfg i32 (call $truthy (call $get_prop (local.get $cur) (call $mk_str (cstring "configurable")))))
+  (let $curIsData i32 (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $cur))))
+  (let $hasEnum i32 (call $truthy (call $js_in (call $mk_str (cstring "enumerable")) (local.get $desc))))
+  (let $hasVal i32 (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $desc))))
+  (let $hasWr i32 (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $desc))))
+  (let $hasGet i32 (call $truthy (call $js_in (call $mk_str (cstring "get")) (local.get $desc))))
+  (let $hasSet i32 (call $truthy (call $js_in (call $mk_str (cstring "set")) (local.get $desc))))
+  ;; 16b: cannot redefine a configurable target property as non-configurable
+  (if (i32.and (local.get $setCfgFalse) (local.get $curCfg))
+    (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: incompatible non-configurable redefinition")) (return)))
+  ;; 16a IsCompatible — only restrictive when the target property is non-configurable
+  (if (i32.eqz (local.get $curCfg))
+    (then
+      (if (i32.and (local.get $hasCfg) (local.get $dCfg))
+        (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot make a non-configurable property configurable")) (return)))
+      (if (local.get $hasEnum)
+        (then
+          (if (i32.ne (call $truthy (call $get_prop (local.get $cur) (call $mk_str (cstring "enumerable")))) (call $truthy (call $get_prop (local.get $desc) (call $mk_str (cstring "enumerable")))))
+            (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot change enumerability of a non-configurable property")) (return)))))
+      ;; generic descriptor (no value/writable/get/set) imposes no further constraint
+      (if (i32.or (local.get $hasVal) (i32.or (local.get $hasWr) (i32.or (local.get $hasGet) (local.get $hasSet))))
+        (then
+          ;; kind mismatch
+          (if (i32.and (i32.or (local.get $hasVal) (local.get $hasWr)) (i32.eqz (local.get $curIsData)))
+            (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot change accessor to data on a non-configurable property")) (return)))
+          (if (i32.and (i32.or (local.get $hasGet) (local.get $hasSet)) (local.get $curIsData))
+            (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot change data to accessor on a non-configurable property")) (return)))
+          (if (local.get $curIsData)
+            (then
+              (if (i32.eqz (call $truthy (call $get_prop (local.get $cur) (call $mk_str (cstring "writable")))))
+                (then  ;; current non-writable data
+                  (if (i32.and (local.get $hasWr) (call $truthy (call $get_prop (local.get $desc) (call $mk_str (cstring "writable")))))
+                    (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot make a non-writable property writable")) (return)))
+                  (if (local.get $hasVal)
+                    (then (if (i32.eqz (call $same_value (call $get_prop (local.get $desc) (call $mk_str (cstring "value"))) (call $get_prop (local.get $cur) (call $mk_str (cstring "value")))))
+                      (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot change the value of a non-writable property")) (return))))))))
+            (else  ;; current accessor
+              (if (local.get $hasSet)
+                (then (if (i32.eqz (call $same_value (call $get_prop (local.get $desc) (call $mk_str (cstring "set"))) (call $get_prop (local.get $cur) (call $mk_str (cstring "set")))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot change the setter of a non-configurable accessor")) (return)))))
+              (if (local.get $hasGet)
+                (then (if (i32.eqz (call $same_value (call $get_prop (local.get $desc) (call $mk_str (cstring "get"))) (call $get_prop (local.get $cur) (call $mk_str (cstring "get")))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot change the getter of a non-configurable accessor")) (return)))))))))))
+  ;; 16c: a non-configurable writable data property cannot be redefined non-writable
+  (if (i32.and (local.get $curIsData) (i32.eqz (local.get $curCfg)))
+    (then
+      (if (call $truthy (call $get_prop (local.get $cur) (call $mk_str (cstring "writable"))))
+        (then
+          (if (i32.and (local.get $hasWr) (i32.eqz (call $truthy (call $get_prop (local.get $desc) (call $mk_str (cstring "writable"))))))
+            (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: cannot redefine a non-configurable writable property as non-writable")) (return))))))))
+
 (func $call_native (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   (if (i32.eq (local.get $id) (i32.const 1))  ;; print (console.log style)
     (then
@@ -4600,7 +4675,10 @@
             (then
               (let $rdfr i64 (call $call_val (local.get $rdftrap) (i32.const 3) (local.get $rdfb) (local.get $rdfh)))
               (if (call $err) (then (return (call $v_undef))))
-              (return (call $mk_bool (call $truthy (local.get $rdfr)))))
+              (if (i32.eqz (call $truthy (local.get $rdfr))) (then (return (call $v_false))))
+              (call $proxy_dp_check (call $proxy_target (local.get $rpt)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (local.get $rpd))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (call $v_true)))
             (else (return (call $call_native (i32.const 206) (i32.const 3) (local.get $rdfb) (call $v_undef)))))))
       (if (i32.and (i32.or (call $is_object (local.get $rpt)) (i32.or (call $is_function (local.get $rpt)) (call $is_array (local.get $rpt)))) (i32.or (call $is_object (local.get $rpd)) (i32.or (call $is_function (local.get $rpd)) (call $is_array (local.get $rpd)))))
         (then
@@ -6075,7 +6153,11 @@
               (i64.store (local.get $dpb) (call $proxy_target (local.get $ob)))
               (i64.store (i32.add (local.get $dpb) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $ky))))
               (i64.store (i32.add (local.get $dpb) (i32.const 16)) (local.get $de))
-              (drop (call $call_val (local.get $dppt) (i32.const 3) (local.get $dpb) (call $proxy_handler (local.get $ob))))
+              (let $dpres i32 (call $truthy (call $call_val (local.get $dppt) (i32.const 3) (local.get $dpb) (call $proxy_handler (local.get $ob)))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.eqz (local.get $dpres))
+                (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: trap returned falsish")) (return (call $v_undef))))
+              (call $proxy_dp_check (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))) (local.get $de))
               (if (call $err) (then (return (call $v_undef)))))
             (else
               (let $dpb2 i32 (call $heap_alloc (i32.const 24)))
