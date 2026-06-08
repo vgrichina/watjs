@@ -6047,10 +6047,15 @@
       (let $crd i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (i32.and (i32.gt_s (local.get $argc) (i32.const 1)) (call $is_null (local.get $crd)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert null to object")) (return (call $v_undef))))
-      (if (call $is_object (local.get $crd))
+      (if (i32.or (call $is_object (local.get $crd)) (i32.or (call $is_function (local.get $crd)) (call $is_array (local.get $crd))))
         (then
-          (let $cps i32 (call $val_payload (local.get $crd)))
-          (let $ccnt i32 (call $scope_count (local.get $cps)))
+          ;; Properties own-prop scope by type (object payload / array @12 / fn def-scope)
+          (let $cps i32 (if i32 (call $is_object (local.get $crd))
+            (then (call $val_payload (local.get $crd)))
+            (else (if i32 (call $is_array (local.get $crd))
+              (then (call $arr_props (call $val_payload (local.get $crd))))
+              (else (call $fn_def_scope (local.get $crd)))))))
+          (let $ccnt i32 (if i32 (local.get $cps) (then (call $scope_count (local.get $cps))) (else (i32.const 0))))
           (let $ci i32 (i32.const 0))
           (block $cce (loop $ccl
             (br_if $cce (i32.ge_s (local.get $ci) (local.get $ccnt)))
