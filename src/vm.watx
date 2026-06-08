@@ -4266,7 +4266,15 @@
   (let $ctx i32 (call $heap_alloc (i32.const 40)))
   (i32.store (local.get $ctx) (i32.load (i32.add (local.get $fn) (i32.const 12))))          ;; code buffer
   (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.load (i32.add (local.get $fn) (i32.const 4))))  ;; ip = entry
-  (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 8192)))  ;; own operand stack
+  ;; operand stack from a reuse pool (reg 648 = free-list head). The operand stack is
+  ;; NEVER captured by a closure (only the locals scope is), so it's safe to recycle on
+  ;; return — this kills the per-call 8KB leak that exhausted the heap (e.g. Array.sort
+  ;; with a comparator on >~50 elements). Each free buffer's first word = next-free ptr.
+  (let $opst i32 (i32.load (i32.const 648)))
+  (if (local.get $opst)
+    (then (i32.store (i32.const 648) (i32.load (local.get $opst))))  ;; pop the free-list head
+    (else (set! $opst (call $heap_alloc (i32.const 8192)))))         ;; pool empty → fresh
+  (i32.store (i32.add (local.get $ctx) (i32.const 8)) (local.get $opst))  ;; own operand stack
   (i32.store (i32.add (local.get $ctx) (i32.const 12)) (i32.const 0))
   (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 0))
   (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $ns))
@@ -4279,6 +4287,10 @@
     (br_if $e (call $vm_done (local.get $ctx)))
     (set! $rv (call $vm_step (local.get $ctx) (call $v_undef)))
     (br $l)))
+  ;; return the operand-stack buffer to the pool (the run loop has completed; nothing
+  ;; references it — the result $rv is a value, the scope is separate)
+  (i32.store (local.get $opst) (i32.load (i32.const 648)))
+  (i32.store (i32.const 648) (local.get $opst))
   (local.get $rv))
 
 ;; ── minimal promises + async/await ──

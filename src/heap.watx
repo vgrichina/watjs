@@ -27,7 +27,8 @@
 ;; Initialize the heap pointer to HEAP_BASE (131072).
 (func $heap_init (effects)
   (call $set_heap_ptr (i32.const 131072))
-  (i32.store (i32.const 16) (i32.const 0)))  ;; clear ERR
+  (i32.store (i32.const 16) (i32.const 0))   ;; clear ERR
+  (i32.store (i32.const 648) (i32.const 0)))  ;; clear the operand-stack reuse pool (stale buffers point into the reclaimed heap)
 
 ;; Bump-allocate `size` bytes, 8-byte aligned. Returns the block pointer.
 ;; Grows linear memory on demand (up to the module max of 512 pages / 32 MB)
