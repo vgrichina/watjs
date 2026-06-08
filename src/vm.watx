@@ -2439,11 +2439,20 @@
           (if (local.get $hascatch)
             (then
               (call $next_token)  ;; 'catch'
-              (if (i32.eq (call $tok_kind) (i32.const 15))  ;; catch (e) — optional binding
+              (if (i32.eq (call $tok_kind) (i32.const 15))  ;; catch (...) — optional binding
                 (then
                   (call $next_token)  ;; '('
-                  (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; bind name
-                  (call $next_token) (call $next_token))  ;; var ')'
+                  (if (i32.or (i32.eq (call $tok_kind) (i32.const 17)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; catch ({…}) / catch ([…]) destructuring
+                    (then
+                      ;; bind the exception to a fresh temp, then destructure it into the
+                      ;; pattern's names at the start of the catch handler (before the body)
+                      (let $catchtmp i32 (call $vm_tmpname))
+                      (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $catchtmp))
+                      (call $vm_c_destructure_param (local.get $code) (local.get $catchtmp))  ;; consumes the pattern
+                      (call $next_token))  ;; ')'
+                    (else
+                      (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; simple binding
+                      (call $next_token) (call $next_token))))  ;; var ')'
                 (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@catch"))))  ;; catch {} — bind to a throwaway
               (call $vm_c_stmt (local.get $code))  ;; catch block (return here also runs finally)
               (if (local.get $prefin) (then (call $vm_finally_pop)))  ;; finally code itself is emitted with the entry popped
