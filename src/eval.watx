@@ -4158,7 +4158,15 @@
           (if (call $err) (then (return (call $v_undef))))
           (let $xtg i64 (call $proxy_target (local.get $xo)))
           (if (call $is_function (local.get $xpt))
-            (then (return (call $mk_bool (call $truthy (call $proxy_call2 (local.get $xpt) (local.get $xtg) (call $v_undef) (call $proxy_handler (local.get $xo)))))))
+            (then
+              (let $xtrapres i32 (call $truthy (call $proxy_call2 (local.get $xpt) (local.get $xtg) (call $v_undef) (call $proxy_handler (local.get $xo)))))
+              (if (call $err) (then (return (call $v_undef))))
+              ;; invariant: trap result must equal the target's actual [[IsExtensible]]
+              (let $xtgext i32 (call $truthy (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $xtg)) (call $v_undef))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.ne (local.get $xtrapres) (local.get $xtgext))
+                (then (call $throw_type (cstring "TypeError") (cstring "proxy isExtensible inconsistent with target")) (return (call $v_undef))))
+              (return (call $mk_bool (local.get $xtrapres))))
             (else (return (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $xtg)) (call $v_undef)))))))
       (if (call $is_array (local.get $xo))
         (then (let $xap i32 (i32.load (i32.add (call $val_payload (local.get $xo)) (i32.const 12)))) (return (call $mk_bool (i32.eqz (if i32 (local.get $xap) (then (call $scope_find_local (local.get $xap) (cstring "@@noext"))) (else (i32.const 0))))))))
