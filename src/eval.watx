@@ -4443,8 +4443,26 @@
               (if (i32.eqz (call $entry_configurable (local.get $rdsl))) (then (return (call $v_false))))  ;; non-configurable own prop → [[Delete]] returns false
               (drop (call $scope_delete (local.get $rdo) (local.get $rdk)))))))
       (return (call $v_true))))
-  (if (i32.eq (local.get $id) (i32.const 204))  ;; Reflect.ownKeys(target) → getOwnPropertyNames
-    (then (return (call $call_native (i32.const 112) (local.get $argc) (local.get $argv) (call $v_undef)))))
+  (if (i32.eq (local.get $id) (i32.const 204))  ;; Reflect.ownKeys(target) → own string keys ++ own symbol keys
+    (then
+      (let $oknames i64 (call $call_native (i32.const 112) (local.get $argc) (local.get $argv) (call $v_undef)))  ;; getOwnPropertyNames (indices, then strings)
+      (if (call $err) (then (return (call $v_undef))))
+      (let $oksyms i64 (call $call_native (i32.const 248) (local.get $argc) (local.get $argv) (call $v_undef)))  ;; getOwnPropertySymbols
+      (if (call $err) (then (return (call $v_undef))))
+      (let $okres i32 (call $arr_new (i32.const 8)))
+      (let $okna i32 (call $val_payload (local.get $oknames)))
+      (let $oki i32 (i32.const 0))
+      (block $oke1 (loop $okl1
+        (br_if $oke1 (i32.ge_s (local.get $oki) (call $arr_len (local.get $okna))))
+        (call $arr_push (local.get $okres) (call $arr_get (local.get $okna) (local.get $oki)))
+        (set! $oki (i32.add (local.get $oki) (i32.const 1))) (br $okl1)))
+      (let $oksa i32 (call $val_payload (local.get $oksyms)))
+      (set! $oki (i32.const 0))
+      (block $oke2 (loop $okl2
+        (br_if $oke2 (i32.ge_s (local.get $oki) (call $arr_len (local.get $oksa))))
+        (call $arr_push (local.get $okres) (call $arr_get (local.get $oksa) (local.get $oki)))
+        (set! $oki (i32.add (local.get $oki) (i32.const 1))) (br $okl2)))
+      (return (call $mk_arr (local.get $okres)))))
   (if (i32.eq (local.get $id) (i32.const 205))  ;; Reflect.getPrototypeOf(target)
     (then (return (call $call_native (i32.const 82) (local.get $argc) (local.get $argv) (call $v_undef)))))
   (if (i32.eq (local.get $id) (i32.const 206))  ;; Reflect.defineProperty(target, key, desc) → true
