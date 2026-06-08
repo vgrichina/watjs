@@ -5194,20 +5194,26 @@
       (call $re_apply_flags (local.get $thisv))
       (let $tpat i32 (call $re_pat_of (local.get $thisv)))
       (let $sub i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-      ;; global/sticky: stateful — start at lastIndex, update it (mirrors exec)
+      ;; global ('g') / sticky ('y') are stateful: start at lastIndex, update it (mirrors exec).
+      ;; Sticky must ANCHOR at lastIndex (no forward scan).
       (let $tglobal i32 (i32.load (i32.const 276)))
-      (let $tlastix i32 (if i32 (local.get $tglobal)
-        (then (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")))))) (else (i32.const 0))))
-      (let $tstart i32 (if i32 (local.get $tglobal)
+      (let $tsticky i32 (i32.load (i32.const 644)))
+      (let $tstateful i32 (i32.or (local.get $tglobal) (local.get $tsticky)))
+      (let $tlastix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))))  ;; ToLength always runs (valueOf side effect)
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (local.get $tstateful)) (then (set! $tlastix (i32.const 0))))
+      (let $tstart i32 (if i32 (local.get $tstateful)
         (then (if i32 (i32.gt_s (local.get $tlastix) (call $str_len (local.get $sub)))
                 (then (i32.const -1))
-                (else (call $re_search_str_from (local.get $tpat) (local.get $sub) (local.get $tlastix)))))
+                (else (if i32 (local.get $tsticky)
+                        (then (call $re_match_str_at (local.get $tpat) (local.get $sub) (local.get $tlastix)))
+                        (else (call $re_search_str_from (local.get $tpat) (local.get $sub) (local.get $tlastix)))))))
         (else (call $re_search_str (local.get $tpat) (local.get $sub)))))
       (if (i32.lt_s (local.get $tstart) (i32.const 0))
         (then
-          (if (local.get $tglobal) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0)))))
+          (if (local.get $tstateful) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0)))))
           (return (call $v_false))))
-      (if (local.get $tglobal) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.convert_i32_s (i32.load (i32.const 168)))))))
+      (if (local.get $tstateful) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.convert_i32_s (i32.load (i32.const 168)))))))
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 167))  ;; regex.exec(str) (this = regex) → [match, ...caps] | null
     (then
