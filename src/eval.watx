@@ -5696,11 +5696,16 @@
       ;; ToObject(Properties): null/undefined → TypeError
       (if (i32.or (call $is_null (local.get $de)) (call $is_undefined (local.get $de)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
-      (if (i32.and (call $is_object (local.get $ob)) (call $is_object (local.get $de)))
+      (if (i32.and (call $is_object (local.get $ob)) (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
         (then
           (let $os i32 (call $val_payload (local.get $ob)))
-          (let $ps i32 (call $val_payload (local.get $de)))
-          (let $cnt i32 (call $scope_count (local.get $ps)))
+          ;; own-property scope of the Properties argument by type (object payload / array @12 / fn def-scope)
+          (let $ps i32 (if i32 (call $is_object (local.get $de))
+            (then (call $val_payload (local.get $de)))
+            (else (if i32 (call $is_array (local.get $de))
+              (then (call $arr_props (call $val_payload (local.get $de))))
+              (else (call $fn_def_scope (local.get $de)))))))
+          (let $cnt i32 (if i32 (local.get $ps) (then (call $scope_count (local.get $ps))) (else (i32.const 0))))
           (let $i i32 (i32.const 0))
           (block $dpe (loop $dpl
             (br_if $dpe (i32.ge_s (local.get $i) (local.get $cnt)))
