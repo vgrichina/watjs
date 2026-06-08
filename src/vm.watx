@@ -3618,7 +3618,23 @@
               (let $okv i64 (call $arr_get (local.get $okeys) (local.get $oi)))
               (call $set_prop (local.get $oobj) (local.get $okv) (call $get_prop (local.get $osrc) (local.get $okv)))
               (set! $oi (i32.add (local.get $oi) (i32.const 1)))
-              (br $osl))))
+              (br $osl)))
+            ;; CopyDataProperties also copies own ENUMERABLE symbol-keyed properties (after string keys)
+            (if (call $is_object (local.get $osrc))
+              (then
+                (let $oss i32 (call $val_payload (local.get $osrc)))
+                (let $osc i32 (call $scope_count (local.get $oss)))
+                (let $osyi i32 (i32.const 0))
+                (block $syse (loop $sysl
+                  (br_if $syse (i32.ge_s (local.get $osyi) (local.get $osc)))
+                  (let $syent i32 (call $scope_entry (local.get $oss) (local.get $osyi)))
+                  (let $sysk i32 (i32.load (local.get $syent)))
+                  (if (i32.or (i32.eq (call $str_indexof (local.get $sysk) (cstring "@@sym:")) (i32.const 0)) (i32.eq (call $str_indexof (local.get $sysk) (cstring "@@symfor:")) (i32.const 0)))
+                    (then (if (call $entry_enumerable (i32.add (local.get $syent) (i32.const 8)))
+                      (then
+                        (let $symval i64 (call $make_symbol (local.get $sysk) (local.get $sysk)))
+                        (call $set_prop (local.get $oobj) (local.get $symval) (call $get_prop (local.get $osrc) (local.get $symval)))))))
+                  (set! $osyi (i32.add (local.get $osyi) (i32.const 1))) (br $sysl))))))
           (else (if (call $is_string (local.get $osrc))
             (then  ;; string → copy each char as index property "0".."n-1"
               (let $ostr i32 (call $val_payload (local.get $osrc)))
