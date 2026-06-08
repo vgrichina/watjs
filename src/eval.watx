@@ -4790,7 +4790,7 @@
     (then (call $throw_type (cstring "TypeError") (cstring "comparator is not a function")) (return (call $v_undef))))
   ;; --- array3 methods (this = array): 74 find, 75 findIndex, 76 some, 77 every, 78 sort ---
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 74)) (i32.le_s (local.get $id) (i32.const 78)))
-        (i32.or (call $is_array (local.get $thisv)) (call $is_object (local.get $thisv))))  ;; generic on array-likes
+        (i32.or (call $is_array (local.get $thisv)) (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))))  ;; generic on array-likes
     (then
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
@@ -4837,7 +4837,7 @@
       (return (call $v_true))))  ;; every (none failed)
   ;; --- array2 methods (this = array): 70 concat, 71 reverse, 72 filter, 73 reduce ---
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 70)) (i32.le_s (local.get $id) (i32.const 73)))
-        (i32.or (call $is_array (local.get $thisv)) (call $is_object (local.get $thisv))))  ;; generic on array-likes
+        (i32.or (call $is_array (local.get $thisv)) (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))))  ;; generic on array-likes
     (then
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
@@ -4918,7 +4918,7 @@
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl)))
           (return (local.get $racc))))
       (return (call $v_undef))))
-  (if (i32.and (i32.eq (local.get $id) (i32.const 137)) (i32.or (call $is_array (local.get $thisv)) (call $is_object (local.get $thisv))))  ;; reduceRight(fn[, init]) — generic
+  (if (i32.and (i32.eq (local.get $id) (i32.const 137)) (i32.or (call $is_array (local.get $thisv)) (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))))  ;; reduceRight(fn[, init]) — generic
     (then
       (let $rarr i32 (call $alike_arr (local.get $thisv)))
       (let $rfn i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -6339,7 +6339,7 @@
   ;; object case is bounded to ids 20-36 (the array-method range) so unrelated
   ;; object-receiver natives (Date getters 182+, Reflect 200+, …) don't land here.
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 20))
-        (i32.or (call $is_array (local.get $thisv)) (i32.and (call $is_object (local.get $thisv))
+        (i32.or (call $is_array (local.get $thisv)) (i32.and (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))
           (i32.or (i32.le_s (local.get $id) (i32.const 36)) (i32.or (i32.eq (local.get $id) (i32.const 225)) (i32.or (i32.eq (local.get $id) (i32.const 168)) (i32.and (i32.ge_s (local.get $id) (i32.const 273)) (i32.le_s (local.get $id) (i32.const 276)))))))))
     (then
       (let $arr i32 (call $alike_arr (local.get $thisv)))
