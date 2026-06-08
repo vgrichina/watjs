@@ -457,6 +457,45 @@
     (then (call $push_scope_keys (local.get $out) (call $val_payload (local.get $a)) (local.get $allNames))))
   (local.get $out))
 
+;; for-in enumeration (EnumerateObjectProperties): own + INHERITED enumerable
+;; string keys, walking the [[Prototype]] chain. A key already visited at a lower
+;; level — enumerable OR not — shadows the same key higher up (so a non-enumerable
+;; own prop hides an inherited enumerable one). Returns an Array of string-key values.
+(func $for_in_keys (param $v i64) (result i32) (effects)
+  (let $result i32 (call $arr_new (i32.const 16)))
+  (let $seen i32 (call $scope_new (i32.const 0) (i32.const 16)))
+  ;; ToObject for non-string primitives (a string keeps its index-char enumeration
+  ;; via own_enum_keys); booleans/numbers/bigints/symbols box so the wrapper's
+  ;; prototype chain (Boolean/Number/… .prototype) is enumerated.
+  (let $cur i64 (local.get $v))
+  (if (i32.or (call $is_number (local.get $v)) (i32.or (call $is_boolean (local.get $v)) (i32.or (call $is_bigint (local.get $v)) (call $is_symbol (local.get $v)))))
+    (then (set! $cur (call $to_object (local.get $v)))))
+  (block $done (loop $up
+    (br_if $done (i32.eqz (i32.or (call $is_object (local.get $cur))
+      (i32.or (call $is_array (local.get $cur))
+        (i32.or (call $is_string (local.get $cur)) (call $is_proxy (local.get $cur)))))))
+    ;; yield this level's enumerable own keys that weren't shadowed lower down
+    (let $ek i32 (call $own_enum_keys (local.get $cur) (i32.const 0)))
+    (let $en i32 (call $arr_len (local.get $ek)))
+    (let $i i32 (i32.const 0))
+    (block $e1 (loop $l1
+      (br_if $e1 (i32.ge_s (local.get $i) (local.get $en)))
+      (let $kv i64 (call $arr_get (local.get $ek) (local.get $i)))
+      (if (i32.eqz (call $scope_find_local (local.get $seen) (call $val_payload (local.get $kv))))
+        (then (call $arr_push (local.get $result) (local.get $kv))))
+      (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l1)))
+    ;; mark ALL own keys (incl. non-enumerable) as seen → shadow higher levels
+    (let $ak i32 (call $own_enum_keys (local.get $cur) (i32.const 1)))
+    (let $an i32 (call $arr_len (local.get $ak)))
+    (set! $i (i32.const 0))
+    (block $e2 (loop $l2
+      (br_if $e2 (i32.ge_s (local.get $i) (local.get $an)))
+      (call $scope_define (local.get $seen) (call $val_payload (call $arr_get (local.get $ak) (local.get $i))) (call $v_true))
+      (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l2)))
+    (set! $cur (call $js_get_prototype (local.get $cur)))
+    (br $up)))
+  (local.get $result))
+
 ;; ── function calls & native builtins ──
 
 (func $argn (param $argv i32) (param $argc i32) (param $i i32) (result i64) (effects)

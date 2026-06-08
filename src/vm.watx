@@ -4126,31 +4126,11 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t)) (call $vm_get_iter (i64.load (i32.add (local.get $stack) (local.get $t)))))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 56))  ;; GETKEYS — replace top object with an array of its own keys (for-in)
+    (if (i32.eq (local.get $op) (i32.const 56))  ;; GETKEYS — replace top with an array of for-in keys (own + inherited enumerable, chain-walked)
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (let $kv i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
-        ;; arrays enumerate index strings then their named props
-        (if (call $is_array (local.get $kv))
-          (then
-            (i64.store (i32.add (local.get $stack) (local.get $t)) (call $mk_arr (call $own_enum_keys (local.get $kv) (i32.const 0))))
-            (br $disp)))
-        ;; strings enumerate numeric index strings "0".."n-1"
-        (if (call $is_string (local.get $kv))
-          (then
-            (let $kn i32 (call $str_len (call $val_payload (local.get $kv))))
-            (let $ka i32 (call $arr_new (local.get $kn)))
-            (let $ki i32 (i32.const 0))
-            (block $ke (loop $kl
-              (br_if $ke (i32.ge_s (local.get $ki) (local.get $kn)))
-              (call $arr_push (local.get $ka) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $ki)))))
-              (set! $ki (i32.add (local.get $ki) (i32.const 1)))
-              (br $kl)))
-            (i64.store (i32.add (local.get $stack) (local.get $t)) (call $mk_arr (local.get $ka)))
-            (br $disp)))
-        (let $kav i32 (call $heap_alloc (i32.const 8)))
-        (i64.store (local.get $kav) (local.get $kv))
-        (i64.store (i32.add (local.get $stack) (local.get $t)) (call $call_native (i32.const 10) (i32.const 1) (local.get $kav) (call $v_undef)))  ;; Object.keys
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (call $mk_arr (call $for_in_keys (local.get $kv))))
         (br $disp)))
     (if (i32.and (i32.ge_s (local.get $op) (i32.const 37)) (i32.le_s (local.get $op) (i32.const 43)))  ;; & | ^ << >> >>> **
       (then
