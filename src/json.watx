@@ -257,7 +257,7 @@
     (call $jp_adv)  ;; consume :
     (let $val i64 (call $jp_value))
     (if (call $err) (then (return (call $v_undef))))
-    (call $set_prop (call $mk_obj (local.get $o)) (call $mk_str (local.get $key)) (local.get $val))
+    (call $scope_define (local.get $o) (local.get $key) (local.get $val))  ;; CreateDataProperty: own enumerable data prop (so "__proto__" is a real own prop, not the setter)
     (call $jp_ws)
     (let $c i32 (call $jp_cur))
     (if (i32.eq (local.get $c) (i32.const 44)) (then (call $jp_adv) (br $members)))
