@@ -14,4 +14,11 @@ if (r5.test('abc') !== true || r5.lastIndex !== 5) throw "plain regex lastIndex 
 // global still works
 var r6 = /a/g; r6.lastIndex = 2;
 if (r6.test('abcabc') !== true || r6.lastIndex !== 4) throw "global";
+// Set(lastIndex, ..., true): a non-writable lastIndex throws TypeError (exec & test)
+var rw=/c/y; rw.lastIndex=1; Object.defineProperty(rw,"lastIndex",{writable:false});
+var t1=false; try{ rw.test("abc"); }catch(e){ t1=e instanceof TypeError; }
+if(!t1) throw "test non-writable lastIndex must throw";
+var rw2=/c/y; rw2.lastIndex=1; Object.defineProperty(rw2,"lastIndex",{writable:false});
+var t2=false; try{ rw2.exec("abc"); }catch(e){ t2=e instanceof TypeError; }
+if(!t2) throw "exec non-writable lastIndex must throw";
 print("ok");

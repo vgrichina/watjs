@@ -5211,9 +5211,9 @@
         (else (call $re_search_str (local.get $tpat) (local.get $sub)))))
       (if (i32.lt_s (local.get $tstart) (i32.const 0))
         (then
-          (if (local.get $tstateful) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0)))))
+          (if (local.get $tstateful) (then (call $re_set_lastindex (local.get $thisv) (call $num (f64.const 0))) (if (call $err) (then (return (call $v_undef))))))
           (return (call $v_false))))
-      (if (local.get $tstateful) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.convert_i32_s (i32.load (i32.const 168)))))))
+      (if (local.get $tstateful) (then (call $re_set_lastindex (local.get $thisv) (call $num (f64.convert_i32_s (i32.load (i32.const 168))))) (if (call $err) (then (return (call $v_undef))))))
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 167))  ;; regex.exec(str) (this = regex) → [match, ...caps] | null
     (then
@@ -5242,10 +5242,10 @@
         (else (call $re_search_str (local.get $pat) (local.get $sub)))))
       (if (i32.lt_s (local.get $start) (i32.const 0))
         (then
-          (if (local.get $restateful) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0)))))
+          (if (local.get $restateful) (then (call $re_set_lastindex (local.get $thisv) (call $num (f64.const 0))) (if (call $err) (then (return (call $v_undef))))))
           (return (call $v_null))))
       (let $end i32 (i32.load (i32.const 168)))
-      (if (local.get $restateful) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.convert_i32_s (local.get $end))))))
+      (if (local.get $restateful) (then (call $re_set_lastindex (local.get $thisv) (call $num (f64.convert_i32_s (local.get $end)))) (if (call $err) (then (return (call $v_undef))))))
       (let $r i32 (call $arr_new (i32.const 2)))
       (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))
       (let $gi i32 (i32.const 1))
