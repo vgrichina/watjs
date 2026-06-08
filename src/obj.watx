@@ -864,6 +864,9 @@
       ;; named property in the @12 scope?
       (let $anp i32 (i32.load (i32.add (local.get $aip) (i32.const 12))))
       (if (local.get $anp) (then (if (call $scope_find_local (local.get $anp) (call $to_prop_key (local.get $key))) (then (return (call $v_true))))))
+      ;; inherited: walk Array.prototype (reg 160) → Object.prototype (scope_find walks parents)
+      (let $aproto i32 (i32.load (i32.const 160)))
+      (if (local.get $aproto) (then (if (call $scope_find (local.get $aproto) (call $to_prop_key (local.get $key))) (then (return (call $v_true))))))
       (return (call $v_false))))
   (if (call $is_function (local.get $obj))
     (then
