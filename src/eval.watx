@@ -6970,7 +6970,16 @@
         (then (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.div (f64.const 1) (f64.const 0))) (else (f64.const 0))))  ;; |x|>1
       (else (if f64 (f64.lt (local.get $ax) (f64.const 1))
         (then (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.const 0)) (else (f64.div (f64.const 1) (f64.const 0)))))  ;; |x|<1
-        (else (f64.div (f64.const 0) (f64.const 0)))))))))  ;; |x|==1 → NaN for non-finite exponent
+        ;; |x|==1: NaN only for ±Infinity exponent (spec). For finite y: 1^y==1;
+        ;; (-1)^y == 1 (even) / -1 (odd) for integer y, NaN for non-integer y.
+        (else (if f64 (f64.eq (f64.abs (local.get $y)) (f64.div (f64.const 1) (f64.const 0)))
+          (then (f64.div (f64.const 0) (f64.const 0)))  ;; ±Inf exponent → NaN
+          (else (if f64 (f64.gt (local.get $x) (f64.const 0))
+            (then (f64.const 1))  ;; x==1 → 1
+            (else (if f64 (f64.ne (local.get $y) (f64.trunc (local.get $y)))
+              (then (f64.div (f64.const 0) (f64.const 0)))  ;; (-1)^non-integer → NaN
+              (else (if f64 (f64.eq (f64.sub (f64.abs (local.get $y)) (f64.mul (f64.const 2) (f64.trunc (f64.div (f64.abs (local.get $y)) (f64.const 2))))) (f64.const 0))
+                (then (f64.const 1)) (else (f64.const -1))))))))))))))))  ;; (-1)^even=1, odd=-1
   (let $n i32 (i32.trunc_f64_s (f64.abs (local.get $y))))
   (let $r f64 (f64.const 1))
   (let $i i32 (i32.const 0))
@@ -8121,6 +8130,9 @@
   (if (i32.load (i32.const 184)) (then (i32.store (i32.load (i32.const 184)) (local.get $objproto))))  ;; Boolean.prototype
   (if (i32.load (i32.const 308)) (then (i32.store (i32.load (i32.const 308)) (local.get $objproto))))  ;; Date.prototype
   (if (i32.load (i32.const 324)) (then (i32.store (i32.load (i32.const 324)) (local.get $objproto))))  ;; RegExp.prototype
+  (i32.store (local.get $mo) (local.get $objproto))  ;; Math object: [[Prototype]] === Object.prototype (it's built before objproto exists)
+  (i32.store (local.get $refo) (local.get $objproto))  ;; Reflect: same — built before objproto
+  (i32.store (local.get $jo) (local.get $objproto))  ;; JSON: same
   ;; Function global — minimal; its .prototype is an empty callable so that
   ;; Function.prototype.call / .apply / .bind resolve (used heavily by the
   ;; test262 propertyHelper harness).
