@@ -2411,6 +2411,7 @@
       (if (call $tok_is_kw (cstring "try"))
         (then
           (call $next_token)  ;; 'try'
+          (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: try completion starts undefined
           ;; pre-scan: the finally block is parsed last, but `return` inside the
           ;; try/catch body must run it first — locate its '{' cursor now.
           (let $prefin i32 (i32.const 0))
