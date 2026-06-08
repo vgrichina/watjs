@@ -5538,7 +5538,7 @@
       ;; global: reset lastIndex, loop RegExpExec accumulating Get(result,"0")
       (let $muni i32 (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "unicode")))))
       (if (call $err) (then (return (call $v_undef))))
-      (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0)))
+      (call $re_set_lastindex (local.get $thisv) (call $num (f64.const 0)))
       (if (call $err) (then (return (call $v_undef))))
       (let $marr i32 (call $arr_new (i32.const 4)))
       (let $mn i32 (i32.const 0))
@@ -5555,7 +5555,7 @@
           (then
             (let $mli i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))))
             (if (call $err) (then (return (call $v_undef))))
-            (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.convert_i32_s (i32.add (local.get $mli) (i32.const 1)))))
+            (call $re_set_lastindex (local.get $thisv) (call $num (f64.convert_i32_s (i32.add (local.get $mli) (i32.const 1)))))
             (if (call $err) (then (return (call $v_undef))))))
         (br $mmL)))
       (if (i32.eqz (local.get $mn)) (then (return (call $v_null))))
@@ -5568,14 +5568,14 @@
       (if (call $err) (then (return (call $v_undef))))
       (let $hprev i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))  ;; previousLastIndex (raw)
       (if (call $err) (then (return (call $v_undef))))
-      (if (i32.eqz (call $same_value (local.get $hprev) (call $num (f64.const 0))))  ;; set 0 only if not already +0
-        (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0))) (if (call $err) (then (return (call $v_undef))))))
+      (if (i32.eqz (call $same_value (local.get $hprev) (call $num (f64.const 0))))  ;; Set(rx,"lastIndex",+0,true) only if not already +0
+        (then (call $re_set_lastindex (local.get $thisv) (call $num (f64.const 0))) (if (call $err) (then (return (call $v_undef))))))
       (let $hres i64 (call $regexp_exec (local.get $thisv) (local.get $hS)))
       (if (call $err) (then (return (call $v_undef))))
       (let $hcur i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))  ;; restore if exec changed it
       (if (call $err) (then (return (call $v_undef))))
       (if (i32.eqz (call $same_value (local.get $hcur) (local.get $hprev)))
-        (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (local.get $hprev)) (if (call $err) (then (return (call $v_undef))))))
+        (then (call $re_set_lastindex (local.get $thisv) (local.get $hprev)) (if (call $err) (then (return (call $v_undef))))))
       (if (call $is_null (local.get $hres)) (then (return (call $num (f64.const -1)))))
       (return (call $get_prop (local.get $hres) (call $mk_str (cstring "index"))))))
   (if (i32.eq (local.get $id) (i32.const 426))  ;; RegExp.prototype[@@matchAll](string) — spec protocol

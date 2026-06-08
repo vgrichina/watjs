@@ -176,9 +176,16 @@
   (if (call $is_object (local.get $rx))
     (then
       (let $sl i32 (call $scope_find_local (call $val_payload (local.get $rx)) (cstring "lastIndex")))
+      ;; Set(...,Throw=true): a non-writable data prop, or an accessor with no setter,
+      ;; throws a TypeError. An accessor WITH a setter falls through to set_prop so the
+      ;; setter runs (and may throw its own error).
       (if (local.get $sl)
-        (then (if (i32.eqz (call $entry_writable (local.get $sl)))
-          (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'lastIndex'")) (return)))))))
+        (then
+          (if (call $entry_is_accessor (local.get $sl))
+            (then (if (i32.eqz (call $is_function (i64.load (i32.add (call $val_payload (i64.load (local.get $sl))) (i32.const 8)))))
+              (then (call $throw_type (cstring "TypeError") (cstring "Cannot set property 'lastIndex' which has only a getter")) (return))))
+            (else (if (i32.eqz (call $entry_writable (local.get $sl)))
+              (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'lastIndex'")) (return)))))))))
   (call $set_prop (local.get $rx) (call $mk_str (cstring "lastIndex")) (local.get $v)))
 
 ;; index of `ndl` in `hay` at/after `from`, or -1
