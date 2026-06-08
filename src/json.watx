@@ -395,6 +395,10 @@
             (else (if (call $is_string (local.get $pv)) (then (set! $v (call $mk_str (call $to_str (local.get $v)))))
               (else (set! $v (local.get $pv))))))  ;; boolean / bigint
           (if (call $err) (then (return (i32.const 0))))))))
+  ;; raw JSON (JSON.rawJSON): a null-proto object with [[IsRawJSON]] → emit its text verbatim
+  (if (call $is_object (local.get $v))
+    (then (if (call $scope_find_local (call $val_payload (local.get $v)) (cstring "@@israwjson"))
+      (then (return (call $val_payload (call $get_prop (local.get $v) (call $mk_str (cstring "rawJSON")))))))))
   ;; primitives
   (if (call $is_null (local.get $v)) (then (return (cstring "null"))))
   (if (call $is_boolean (local.get $v)) (then (return (if i32 (call $val_payload (local.get $v)) (then (cstring "true")) (else (cstring "false"))))))

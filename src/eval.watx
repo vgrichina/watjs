@@ -5153,6 +5153,36 @@
         (set! $ri (i32.sub (local.get $ri) (i32.const 1))) (br $rdl)))
       (return (local.get $racc2))))
   ;; --- static object/array/number/string methods (ids 80-87) ---
+  (if (i32.eq (local.get $id) (i32.const 446))  ;; JSON.isRawJSON(x)
+    (then
+      (let $irx i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; nest: i32.and evals both operands, so only deref val_payload when it IS an object
+      (if (i32.eqz (call $is_object (local.get $irx))) (then (return (call $v_false))))
+      (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $irx)) (cstring "@@israwjson")) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 445))  ;; JSON.rawJSON(text) → frozen null-proto { rawJSON } with [[IsRawJSON]]
+    (then
+      (if (call $is_symbol (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))  ;; ToString(Symbol) throws
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
+      (let $rjs i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $rjn i32 (call $str_len (local.get $rjs)))
+      (if (i32.eqz (local.get $rjn))  ;; empty → SyntaxError
+        (then (call $throw_type (cstring "SyntaxError") (cstring "Unexpected end of JSON input")) (return (call $v_undef))))
+      (let $rjc0 i32 (call $str_byte (local.get $rjs) (i32.const 0)))
+      (let $rjc1 i32 (call $str_byte (local.get $rjs) (i32.sub (local.get $rjn) (i32.const 1))))
+      ;; leading/trailing JSON whitespace (tab \t=9, LF=10, CR=13, space=32) → SyntaxError
+      (if (i32.or (i32.eq (local.get $rjc0) (i32.const 9)) (i32.or (i32.eq (local.get $rjc0) (i32.const 10)) (i32.or (i32.eq (local.get $rjc0) (i32.const 13)) (i32.or (i32.eq (local.get $rjc0) (i32.const 32))
+            (i32.or (i32.eq (local.get $rjc1) (i32.const 9)) (i32.or (i32.eq (local.get $rjc1) (i32.const 10)) (i32.or (i32.eq (local.get $rjc1) (i32.const 13)) (i32.eq (local.get $rjc1) (i32.const 32)))))))))
+        (then (call $throw_type (cstring "SyntaxError") (cstring "Unexpected whitespace at start or end of raw JSON")) (return (call $v_undef))))
+      ;; validate: must parse as one complete JSON value (json_parse throws SyntaxError otherwise)
+      (drop (call $json_parse (local.get $rjs)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $rjo i32 (call $scope_new (i32.const 0) (i32.const 4)))  ;; null prototype
+      (call $scope_define_attr (local.get $rjo) (cstring "rawJSON") (call $mk_str (local.get $rjs)) (i32.const 2))  ;; {E:true,W:false,C:false} (frozen data prop)
+      (call $scope_define_attr (local.get $rjo) (cstring "@@israwjson") (call $v_true) (i32.const 0))
+      (call $scope_define_attr (local.get $rjo) (cstring "@@frozen") (call $v_true) (i32.const 0))
+      (call $scope_define_attr (local.get $rjo) (cstring "@@noext") (call $v_true) (i32.const 0))
+      (return (call $mk_obj (local.get $rjo)))))
   (if (i32.eq (local.get $id) (i32.const 105))  ;; JSON.stringify(value, replacer, space)
     (then
       (let $js i32 (call $json_stringify
@@ -7171,6 +7201,7 @@
     (then (return (i32.const 2))))  ;; String slice/substring, Array slice, parseInt, getOwnPropertyDescriptor
   ;; length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 197)) (i32.eq (local.get $id) (i32.const 198))) (then (return (i32.const 1))))  ;; Symbol.for / Symbol.keyFor
+  (if (i32.or (i32.eq (local.get $id) (i32.const 445)) (i32.eq (local.get $id) (i32.const 446))) (then (return (i32.const 1))))  ;; JSON.rawJSON / isRawJSON
   (if (i32.or (i32.eq (local.get $id) (i32.const 40)) (i32.or (i32.eq (local.get $id) (i32.const 41)) (i32.or (i32.eq (local.get $id) (i32.const 42)) (i32.or (i32.eq (local.get $id) (i32.const 43)) (i32.or (i32.eq (local.get $id) (i32.const 44)) (i32.or (i32.eq (local.get $id) (i32.const 48)) (i32.eq (local.get $id) (i32.const 49))))))))
     (then (return (i32.const 1))))  ;; Math.abs/floor/ceil/round/sqrt/trunc/sign
   (if (i32.or (i32.eq (local.get $id) (i32.const 170)) (i32.or (i32.eq (local.get $id) (i32.const 4)) (i32.or (i32.eq (local.get $id) (i32.const 5)) (i32.or (i32.eq (local.get $id) (i32.const 6)) (i32.or (i32.eq (local.get $id) (i32.const 7)) (i32.or (i32.eq (local.get $id) (i32.const 8)) (i32.eq (local.get $id) (i32.const 51))))))))
@@ -8264,6 +8295,8 @@
   (call $scope_define_attr (local.get $jo) (cstring "@@toStringTag") (call $mk_str (cstring "JSON")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $jo) (cstring "stringify") (call $mk_native (i32.const 105) (cstring "stringify")))
   (call $scope_define (local.get $jo) (cstring "parse") (call $mk_native (i32.const 106) (cstring "parse")))
+  (call $scope_define (local.get $jo) (cstring "rawJSON") (call $mk_native (i32.const 445) (cstring "rawJSON")))
+  (call $scope_define (local.get $jo) (cstring "isRawJSON") (call $mk_native (i32.const 446) (cstring "isRawJSON")))
   ;; Object with .keys
   (let $objf i64 (call $def_native (local.get $g) (cstring "Object") (i32.const 9)))
   (call $set_prop (local.get $objf) (call $mk_str (cstring "keys")) (call $mk_native (i32.const 10) (cstring "keys")))
