@@ -4552,6 +4552,22 @@
     (then
       (let $rpt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $rpd i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      ;; Proxy: dispatch the defineProperty trap → ToBoolean(result); no trap → on the target
+      (if (call $is_proxy (local.get $rpt))
+        (then
+          (let $rdfh i64 (call $proxy_handler (local.get $rpt)))
+          (let $rdftrap i64 (call $get_prop (local.get $rdfh) (call $mk_str (cstring "defineProperty"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $rdfb i32 (call $heap_alloc (i32.const 24)))
+          (i64.store (local.get $rdfb) (call $proxy_target (local.get $rpt)))
+          (i64.store (i32.add (local.get $rdfb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (i64.store (i32.add (local.get $rdfb) (i32.const 16)) (local.get $rpd))
+          (if (call $is_function (local.get $rdftrap))
+            (then
+              (let $rdfr i64 (call $call_val (local.get $rdftrap) (i32.const 3) (local.get $rdfb) (local.get $rdfh)))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (call $mk_bool (call $truthy (local.get $rdfr)))))
+            (else (return (call $call_native (i32.const 206) (i32.const 3) (local.get $rdfb) (call $v_undef)))))))
       (if (i32.and (i32.or (call $is_object (local.get $rpt)) (i32.or (call $is_function (local.get $rpt)) (call $is_array (local.get $rpt)))) (i32.or (call $is_object (local.get $rpd)) (i32.or (call $is_function (local.get $rpd)) (call $is_array (local.get $rpd)))))
         (then
           (if (call $is_function (local.get $rpt))
