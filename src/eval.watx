@@ -695,7 +695,7 @@
     (then (call $throw_type (cstring "TypeError") (cstring "Array species is not a constructor")) (return (call $v_undef))))
   (let $sab i32 (call $heap_alloc (i32.const 8)))
   (i64.store (local.get $sab) (call $num (f64.convert_i32_s (local.get $len))))
-  (call $vm_construct (local.get $sspec) (i32.const 1) (local.get $sab)))
+  (call $vm_construct (local.get $sspec) (i32.const 1) (local.get $sab) (local.get $sspec)))
 
 ;; SpeciesConstructor(O, defaultConstructor): C=Get(O,"constructor"); undefined→default;
 ;; non-object→TypeError; S=Get(C,@@species); undefined/null→default; IsConstructor(S)→S; else TypeError.
@@ -3679,7 +3679,7 @@
       ;; A = Construct(C, [len]); CreateDataProperty(A, k, items[k]); Set(A, "length", len)
       (let $ofcb i32 (call $heap_alloc (i32.const 8)))
       (i64.store (local.get $ofcb) (call $num (f64.convert_i32_s (local.get $oflen))))
-      (let $ofA i64 (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $ofcb)))
+      (let $ofA i64 (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $ofcb) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef))))
       (let $ofk i32 (i32.const 0))
       (block $ofce (loop $ofcl
@@ -3781,7 +3781,7 @@
       (let $frcb i32 (call $heap_alloc (i32.const 8)))
       (i64.store (local.get $frcb) (call $num (f64.convert_i32_s (local.get $frlen2))))
       ;; iterator source → Construct(C) (no args); array-like → Construct(C, [len])
-      (let $frA i64 (call $vm_construct (local.get $thisv) (if i32 (local.get $frmapped) (then (i32.const 0)) (else (i32.const 1))) (local.get $frcb)))
+      (let $frA i64 (call $vm_construct (local.get $thisv) (if i32 (local.get $frmapped) (then (i32.const 0)) (else (i32.const 1))) (local.get $frcb) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef))))
       (let $frk i32 (i32.const 0))
       (block $frce (loop $frcl
@@ -4983,7 +4983,7 @@
         (set! $rci (i32.add (local.get $rci) (i32.const 1))) (br $rcl)))
       ;; Proxy target → [[Construct]] via vm_construct (construct trap)
       (if (call $is_proxy (local.get $rcf))
-        (then (return (call $vm_construct (local.get $rcf) (local.get $rcn) (local.get $rcbuf)))))
+        (then (return (call $vm_construct (local.get $rcf) (local.get $rcn) (local.get $rcbuf) (local.get $rcnt)))))
       (let $rcfn i32 (call $val_payload (local.get $rcf)))
       ;; native constructor → use its own return value
       (if (i32.lt_s (i32.load (local.get $rcfn)) (i32.const 1448232526))
@@ -4992,6 +4992,7 @@
       (let $rcobj i32 (call $obj_new (i32.const 8)))
       (let $rcproto i64 (call $get_prop (local.get $rcnt) (call $mk_str (cstring "prototype"))))
       (if (call $is_object (local.get $rcproto)) (then (i32.store (local.get $rcobj) (call $val_payload (local.get $rcproto)))))
+      (i64.store (i32.const 656) (local.get $rcnt))  ;; park newTarget for vm_call_fn to bind as new.target
       (let $rcres i64 (call $call_val (local.get $rcf) (local.get $rcn) (local.get $rcbuf) (call $mk_obj (local.get $rcobj))))
       (if (i32.or (call $is_object (local.get $rcres)) (i32.or (call $is_array (local.get $rcres)) (call $is_function (local.get $rcres))))
         (then (return (local.get $rcres)))
@@ -5922,7 +5923,7 @@
       (let $maCa2 i32 (call $heap_alloc (i32.const 16)))
       (i64.store (local.get $maCa2) (local.get $maa))
       (i64.store (i32.add (local.get $maCa2) (i32.const 8)) (call $mk_str (cstring "g")))
-      (let $maRx i64 (call $vm_construct (local.get $maDef2) (i32.const 2) (local.get $maCa2)))
+      (let $maRx i64 (call $vm_construct (local.get $maDef2) (i32.const 2) (local.get $maCa2) (local.get $maDef2)))
       (if (call $err) (then (return (call $v_undef))))
       (let $maArgs2 i32 (call $heap_alloc (i32.const 8)))
       (i64.store (local.get $maArgs2) (call $mk_str (call $to_str (local.get $thisv))))
@@ -6104,7 +6105,7 @@
       (let $spCargs i32 (call $heap_alloc (i32.const 16)))
       (i64.store (local.get $spCargs) (local.get $thisv))
       (i64.store (i32.add (local.get $spCargs) (i32.const 8)) (call $mk_str (local.get $spNF)))
-      (let $splitter i64 (call $vm_construct (local.get $spC) (i32.const 2) (local.get $spCargs)))
+      (let $splitter i64 (call $vm_construct (local.get $spC) (i32.const 2) (local.get $spCargs) (local.get $spC)))
       (if (call $err) (then (return (call $v_undef))))
       (let $spA i32 (call $arr_new (i32.const 4)))
       ;; lim = limit undefined ? ~unlimited : ToUint32(limit)
@@ -6223,7 +6224,7 @@
       (let $maCargs i32 (call $heap_alloc (i32.const 16)))
       (i64.store (local.get $maCargs) (local.get $thisv))
       (i64.store (i32.add (local.get $maCargs) (i32.const 8)) (call $mk_str (local.get $maFlags)))
-      (let $matcher i64 (call $vm_construct (local.get $maC) (i32.const 2) (local.get $maCargs)))
+      (let $matcher i64 (call $vm_construct (local.get $maC) (i32.const 2) (local.get $maCargs) (local.get $maC)))
       (if (call $err) (then (return (call $v_undef))))
       (let $maLi f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")))))  ;; matcher.lastIndex = ToLength(R.lastIndex)
       (if (call $err) (then (return (call $v_undef))))
@@ -8026,7 +8027,7 @@
 ;; (prepend bound args, recurse on target), native ctors (incl. Number/String/
 ;; Boolean wrappers), and VM-fn ctors (fresh object, proto = cf.prototype, run
 ;; body, use a returned object else the new object). Throws on a non-constructor.
-(func $vm_construct (param $cf i64) (param $argc i32) (param $argbuf i32) (result i64) (effects)
+(func $vm_construct (param $cf i64) (param $argc i32) (param $argbuf i32) (param $nt i64) (result i64) (effects)
   ;; Proxy: construct trap (target, argsArray, newTarget) else [[Construct]] the target
   (if (call $is_proxy (local.get $cf))
     (then
@@ -8044,14 +8045,14 @@
           (let $cb i32 (call $heap_alloc (i32.const 24)))
           (i64.store (local.get $cb) (local.get $ctgt))
           (i64.store (i32.add (local.get $cb) (i32.const 8)) (call $mk_arr (local.get $carr)))
-          (i64.store (i32.add (local.get $cb) (i32.const 16)) (local.get $cf))  ;; newTarget = the proxy
+          (i64.store (i32.add (local.get $cb) (i32.const 16)) (local.get $nt))  ;; newTarget forwarded
           (let $cres i64 (call $call_val (local.get $cpt) (i32.const 3) (local.get $cb) (call $proxy_handler (local.get $cf))))
           (if (call $err) (then (return (call $v_undef))))
           ;; invariant: a construct trap must return an Object
           (if (i32.eqz (i32.or (call $is_object (local.get $cres)) (i32.or (call $is_array (local.get $cres)) (call $is_function (local.get $cres)))))
             (then (call $throw_type (cstring "TypeError") (cstring "proxy [[Construct]] must return an object")) (return (call $v_undef))))
           (return (local.get $cres)))
-        (else (return (call $vm_construct (local.get $ctgt) (local.get $argc) (local.get $argbuf)))))))
+        (else (return (call $vm_construct (local.get $ctgt) (local.get $argc) (local.get $argbuf) (local.get $nt)))))))
   (if (i32.eqz (call $is_function (local.get $cf)))
     (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (return (call $v_undef))))
   (let $fn i32 (call $val_payload (local.get $cf)))
@@ -8074,7 +8075,9 @@
         (br_if $cce (i32.ge_s (local.get $cj) (local.get $argc)))
         (i64.store (i32.add (local.get $cb) (i32.mul (i32.add (local.get $ba) (local.get $cj)) (i32.const 8))) (i64.load (i32.add (local.get $argbuf) (i32.mul (local.get $cj) (i32.const 8)))))
         (set! $cj (i32.add (local.get $cj) (i32.const 1))) (br $ccl)))
-      (return (call $vm_construct (local.get $bt) (local.get $tot) (local.get $cb)))))
+      ;; bound [[Construct]]: if newTarget is the bound fn itself, retarget to the bound target
+      (return (call $vm_construct (local.get $bt) (local.get $tot) (local.get $cb)
+        (if i64 (call $strict_eq (local.get $nt) (local.get $cf)) (then (local.get $bt)) (else (local.get $nt)))))))
   ;; native constructor
   (if (i32.lt_s (local.get $magic) (i32.const 1448232526))
     (then
@@ -8085,10 +8088,16 @@
           (if i32 (i32.eq (local.get $magic) (i32.const 4)) (then (i32.load (i32.const 164)))
             (else (if i32 (i32.eq (local.get $magic) (i32.const 5)) (then (i32.load (i32.const 156))) (else (i32.load (i32.const 184))))))))))
       (return (call $call_native (local.get $magic) (local.get $argc) (local.get $argbuf) (call $v_undef)))))
-  ;; VM-function constructor
+  ;; VM-function constructor — instance proto from newTarget.prototype
+  ;; (OrdinaryCreateFromConstructor), falling back to cf.prototype
   (let $obj i32 (call $obj_new (i32.const 8)))
-  (let $proto i64 (call $get_prop (local.get $cf) (call $mk_str (cstring "prototype"))))
+  (let $proto i64 (call $get_prop (local.get $nt) (call $mk_str (cstring "prototype"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_object (local.get $proto)))
+    (then (set! $proto (call $get_prop (local.get $cf) (call $mk_str (cstring "prototype"))))))
   (if (call $is_object (local.get $proto)) (then (i32.store (local.get $obj) (call $val_payload (local.get $proto)))))
+  ;; park newTarget for vm_call_fn to bind as new.target inside the body
+  (i64.store (i32.const 656) (local.get $nt))
   (let $res i64 (call $call_val (local.get $cf) (local.get $argc) (local.get $argbuf) (call $mk_obj (local.get $obj))))
   (if i64 (i32.or (call $is_object (local.get $res)) (i32.or (call $is_array (local.get $res)) (call $is_function (local.get $res))))
     (then (local.get $res))
