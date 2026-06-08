@@ -485,6 +485,47 @@
     (then (call $throw_type (cstring "TypeError") (cstring "proxy ownKeys: result contains a key absent from a non-extensible target")) (return (call $arr_new (i32.const 1)))))
   (local.get $keys))
 
+;; [[SetPrototypeOf]] shared by Object.setPrototypeOf (throws on false) and
+;; Reflect.setPrototypeOf (returns the boolean). Returns 1 on success, 0 on a
+;; soft failure (cycle / proxy trap returned false); throws a TypeError only on
+;; a hard proxy invariant violation (caller must check $err).
+(func $setproto_internal (param $o i64) (param $proto i64) (result i32) (effects)
+  (if (call $is_proxy (local.get $o))
+    (then
+      (let $sph i64 (call $proxy_handler (local.get $o)))
+      (let $sptrap i64 (call $proxy_trap (local.get $o) (cstring "setPrototypeOf")))
+      (if (call $err) (then (return (i32.const 0))))
+      (let $sptgt i64 (call $proxy_target (local.get $o)))
+      (if (i32.eqz (call $is_function (local.get $sptrap)))
+        (then (return (call $setproto_internal (local.get $sptgt) (local.get $proto)))))
+      (let $sptb i32 (call $heap_alloc (i32.const 16)))
+      (i64.store (local.get $sptb) (local.get $sptgt))
+      (i64.store (i32.add (local.get $sptb) (i32.const 8)) (local.get $proto))
+      (let $sptres i32 (call $truthy (call $call_val (local.get $sptrap) (i32.const 2) (local.get $sptb) (local.get $sph))))
+      (if (call $err) (then (return (i32.const 0))))
+      (if (i32.eqz (local.get $sptres)) (then (return (i32.const 0))))
+      (let $spext i32 (call $truthy (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $sptgt)) (call $v_undef))))
+      (if (call $err) (then (return (i32.const 0))))
+      (if (local.get $spext) (then (return (i32.const 1))))
+      (let $sptp i64 (call $js_get_prototype (local.get $sptgt)))
+      (if (call $err) (then (return (i32.const 0))))
+      (if (i32.eqz (call $same_value (local.get $proto) (local.get $sptp)))
+        (then (call $throw_type (cstring "TypeError") (cstring "proxy setPrototypeOf: cannot change the prototype of a non-extensible target")) (return (i32.const 0))))
+      (return (i32.const 1))))
+  (if (call $is_object (local.get $o))
+    (then
+      (let $spsc i32 (call $val_payload (local.get $o)))
+      (let $spnewp i32 (if i32 (call $is_object (local.get $proto)) (then (call $val_payload (local.get $proto))) (else (i32.const 0))))
+      (let $spwc i32 (local.get $spnewp))
+      (block $spcyc (loop $spcycl
+        (br_if $spcyc (i32.eqz (local.get $spwc)))
+        (if (i32.eq (local.get $spwc) (local.get $spsc)) (then (return (i32.const 0))))  ;; cyclic → soft false
+        (set! $spwc (call $scope_parent (local.get $spwc)))
+        (br $spcycl)))
+      (i32.store (local.get $spsc) (local.get $spnewp))
+      (return (i32.const 1))))
+  (i32.const 1))
+
 ;; own enumerable (or all, if $allNames) key strings of any value → fresh array.
 ;; Arrays yield "0".."len-1" then their @12 named-property keys.
 (func $own_enum_keys (param $a i64) (param $allNames i32) (result i32) (effects)
@@ -4680,8 +4721,17 @@
     (then (return (call $call_native (i32.const 163) (local.get $argc) (local.get $argv) (call $v_undef)))))
   (if (i32.eq (local.get $id) (i32.const 333))  ;; Reflect.preventExtensions(target) → true
     (then (drop (call $call_native (i32.const 162) (local.get $argc) (local.get $argv) (call $v_undef))) (return (call $v_true))))
-  (if (i32.eq (local.get $id) (i32.const 334))  ;; Reflect.setPrototypeOf(target, proto) → true
-    (then (drop (call $call_native (i32.const 243) (local.get $argc) (local.get $argv) (call $v_undef))) (return (call $v_true))))
+  (if (i32.eq (local.get $id) (i32.const 334))  ;; Reflect.setPrototypeOf(target, proto) → boolean
+    (then
+      (let $rspt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $rspp i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.eqz (i32.or (call $is_object (local.get $rspt)) (i32.or (call $is_array (local.get $rspt)) (i32.or (call $is_function (local.get $rspt)) (call $is_proxy (local.get $rspt))))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Reflect.setPrototypeOf called on non-object")) (return (call $v_undef))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $rspp)) (call $is_null (local.get $rspp))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Reflect.setPrototypeOf: proto must be an object or null")) (return (call $v_undef))))
+      (let $rspok i32 (call $setproto_internal (local.get $rspt) (local.get $rspp)))
+      (if (call $err) (then (return (call $v_undef))))
+      (return (call $mk_bool (local.get $rspok)))))
   (if (i32.eq (local.get $id) (i32.const 200))  ;; Reflect.get(target, key)
     (then (return (call $get_prop (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
   (if (i32.eq (local.get $id) (i32.const 201))  ;; Reflect.set(target, key, value[, receiver]) → boolean
@@ -6767,30 +6817,12 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Object.setPrototypeOf called on null or undefined")) (return (call $v_undef))))
       (if (i32.eqz (i32.or (call $is_object (local.get $spp)) (call $is_null (local.get $spp))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
-      (if (call $is_proxy (local.get $spo))
+      (if (i32.or (call $is_proxy (local.get $spo)) (call $is_object (local.get $spo)))
         (then
-          (let $sppt i64 (call $proxy_trap (local.get $spo) (cstring "setPrototypeOf")))
+          (let $spok i32 (call $setproto_internal (local.get $spo) (local.get $spp)))
           (if (call $err) (then (return (call $v_undef))))
-          (if (call $is_function (local.get $sppt))
-            (then (drop (call $proxy_call2 (local.get $sppt) (call $proxy_target (local.get $spo)) (local.get $spp) (call $proxy_handler (local.get $spo)))) (if (call $err) (then (return (call $v_undef)))))
-            (else
-              (let $spb i32 (call $heap_alloc (i32.const 16)))
-              (i64.store (local.get $spb) (call $proxy_target (local.get $spo)))
-              (i64.store (i32.add (local.get $spb) (i32.const 8)) (local.get $spp))
-              (drop (call $call_native (i32.const 243) (i32.const 2) (local.get $spb) (call $v_undef)))))
-          (return (local.get $spo))))
-      (if (call $is_object (local.get $spo))
-        (then
-          (let $sposc i32 (call $val_payload (local.get $spo)))
-          (let $newp i32 (if i32 (call $is_object (local.get $spp)) (then (call $val_payload (local.get $spp))) (else (i32.const 0))))
-          ;; reject a cyclic prototype (would make scope_find loop forever)
-          (let $wc i32 (local.get $newp))
-          (block $cyc (loop $cycl
-            (br_if $cyc (i32.eqz (local.get $wc)))
-            (if (i32.eq (local.get $wc) (local.get $sposc)) (then (call $throw_type (cstring "TypeError") (cstring "Cyclic __proto__ value")) (return (call $v_undef))))
-            (set! $wc (call $scope_parent (local.get $wc)))
-            (br $cycl)))
-          (i32.store (local.get $sposc) (local.get $newp))))
+          (if (i32.eqz (local.get $spok))
+            (then (call $throw_type (cstring "TypeError") (cstring "Object.setPrototypeOf: [[SetPrototypeOf]] returned false")) (return (call $v_undef))))))
       (return (local.get $spo))))
   (if (i32.eq (local.get $id) (i32.const 82))  ;; Object.getPrototypeOf(o)
     (then
