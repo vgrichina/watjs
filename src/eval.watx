@@ -2509,6 +2509,38 @@
           (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@mv") (call $mk_arr (call $arr_new (i32.const 4))))
           (return (call $v_undef))))
       (return (call $v_undef))))
+  ;; ── Map.prototype.getOrInsert(441) / getOrInsertComputed(442) — the "upsert" proposal ──
+  (if (i32.or (i32.eq (local.get $id) (i32.const 441)) (i32.eq (local.get $id) (i32.const 442)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@mk")))
+        (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
+      ;; getOrInsertComputed: callbackfn must be callable (checked before the lookup)
+      (if (i32.eq (local.get $id) (i32.const 442))
+        (then (if (i32.eqz (call $is_function (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (then (call $throw_type (cstring "TypeError") (cstring "getOrInsertComputed callbackfn is not a function")) (return (call $v_undef))))))
+      (let $gmk i32 (call $coll_arr (local.get $thisv) (cstring "@@mk")))
+      (let $gmv i32 (call $coll_arr (local.get $thisv) (cstring "@@mv")))
+      (let $gkey i64 (call $norm_zero (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))  ;; -0 → +0 for storage
+      (let $gidx i32 (call $map_find (local.get $gmk) (local.get $gkey)))
+      (if (i32.ge_s (local.get $gidx) (i32.const 0)) (then (return (call $arr_get (local.get $gmv) (local.get $gidx)))))  ;; present → existing value
+      (if (i32.eq (local.get $id) (i32.const 441))  ;; getOrInsert(key, value)
+        (then
+          (let $gval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (call $arr_push (local.get $gmk) (local.get $gkey)) (call $arr_push (local.get $gmv) (local.get $gval))
+          (return (local.get $gval))))
+      ;; getOrInsertComputed(key, callbackfn): value = callbackfn(key); re-check (callback may have mutated the map) then set
+      (let $gcb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $gcbuf i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $gcbuf) (local.get $gkey))
+      (let $gcval i64 (call $call_val (local.get $gcb) (i32.const 1) (local.get $gcbuf) (call $v_undef)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $gidx2 i32 (call $map_find (local.get $gmk) (local.get $gkey)))
+      (if (i32.ge_s (local.get $gidx2) (i32.const 0))
+        (then (call $arr_set (local.get $gmv) (local.get $gidx2) (local.get $gcval)))
+        (else (call $arr_push (local.get $gmk) (local.get $gkey)) (call $arr_push (local.get $gmv) (local.get $gcval))))
+      (return (local.get $gcval))))
   ;; ── Set (id 130 ctor, 131 add, 132 has, 133 delete, 134 forEach, 135 size, 136 clear) ──
   (if (i32.eq (local.get $id) (i32.const 130))  ;; new Set()
     (then
@@ -3457,8 +3489,8 @@
       (if (local.get $hinf) (then (return (call $num (local.get $hpinf)))))
       (if (local.get $hnan) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
       (return (call $num (f64.sqrt (local.get $hs))))))
-  ;; Map/Set/WeakMap/WeakSet (120-136, 310-316, 320-328) — handled in $native_collections
-  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 120)) (i32.le_s (local.get $id) (i32.const 136))) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316))) (i32.and (i32.ge_s (local.get $id) (i32.const 320)) (i32.le_s (local.get $id) (i32.const 328)))))
+  ;; Map/Set/WeakMap/WeakSet (120-136, 310-316, 320-328) + Map upsert (441-442) — in $native_collections
+  (if (i32.or (i32.or (i32.eq (local.get $id) (i32.const 441)) (i32.eq (local.get $id) (i32.const 442))) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 120)) (i32.le_s (local.get $id) (i32.const 136))) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 310)) (i32.le_s (local.get $id) (i32.const 316))) (i32.and (i32.ge_s (local.get $id) (i32.const 320)) (i32.le_s (local.get $id) (i32.const 328))))))
     (then (return (call $native_collections (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   ;; WeakRef / FinalizationRegistry (358-362) — handled in a separate fn to keep call_native small
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
@@ -7098,6 +7130,7 @@
 ;; Only high-confidence arities are listed (an exhaustive id→arity table is TODO).
 (func $native_arity (param $id i32) (result i32) (effects)
   ;; length 2
+  (if (i32.or (i32.eq (local.get $id) (i32.const 441)) (i32.eq (local.get $id) (i32.const 442))) (then (return (i32.const 2))))  ;; Map getOrInsert / getOrInsertComputed
   (if (i32.or (i32.eq (local.get $id) (i32.const 45)) (i32.or (i32.eq (local.get $id) (i32.const 46)) (i32.or (i32.eq (local.get $id) (i32.const 47)) (i32.or (i32.eq (local.get $id) (i32.const 52)) (i32.eq (local.get $id) (i32.const 224))))))
     (then (return (i32.const 2))))  ;; Math.max, min, pow, hypot, imul
   (if (i32.or (i32.eq (local.get $id) (i32.const 14)) (i32.or (i32.eq (local.get $id) (i32.const 15)) (i32.or (i32.eq (local.get $id) (i32.const 24)) (i32.or (i32.eq (local.get $id) (i32.const 50)) (i32.eq (local.get $id) (i32.const 156))))))
@@ -7952,6 +7985,8 @@
   (i32.store (i32.const 344) (local.get $mapproto))
   (call $scope_define (local.get $mapproto) (cstring "set") (call $mk_native (i32.const 121) (cstring "set")))
   (call $scope_define (local.get $mapproto) (cstring "get") (call $mk_native (i32.const 122) (cstring "get")))
+  (call $scope_define (local.get $mapproto) (cstring "getOrInsert") (call $mk_native (i32.const 441) (cstring "getOrInsert")))
+  (call $scope_define (local.get $mapproto) (cstring "getOrInsertComputed") (call $mk_native (i32.const 442) (cstring "getOrInsertComputed")))
   (call $scope_define (local.get $mapproto) (cstring "has") (call $mk_native (i32.const 123) (cstring "has")))
   (call $scope_define (local.get $mapproto) (cstring "delete") (call $mk_native (i32.const 124) (cstring "delete")))
   (call $scope_define (local.get $mapproto) (cstring "forEach") (call $mk_native (i32.const 125) (cstring "forEach")))
