@@ -519,15 +519,16 @@
       (let $phsl i32 (call $scope_find_local (local.get $o) (cstring "@@phandler")))
       (if (local.get $phsl)
         (then
-          (let $ptgt i64 (i64.load (call $scope_find_local (local.get $o) (cstring "@@ptarget"))))
-          (let $gtrap i64 (call $get_prop (i64.load (local.get $phsl)) (call $mk_str (cstring "get"))))
+          (let $gtrap i64 (call $proxy_trap (local.get $cont) (cstring "get")))  ;; revoked / non-callable → TypeError
+          (if (call $err) (then (return (call $v_undef))))
+          (let $ptgt i64 (call $proxy_target (local.get $cont)))
           (if (call $is_function (local.get $gtrap))
             (then
               (let $gbuf i32 (call $heap_alloc (i32.const 24)))
               (i64.store (local.get $gbuf) (local.get $ptgt))
               (i64.store (i32.add (local.get $gbuf) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
               (i64.store (i32.add (local.get $gbuf) (i32.const 16)) (local.get $cont))
-              (return (call $call_val (local.get $gtrap) (i32.const 3) (local.get $gbuf) (i64.load (local.get $phsl))))))
+              (return (call $call_val (local.get $gtrap) (i32.const 3) (local.get $gbuf) (call $proxy_handler (local.get $cont))))))
           (return (call $get_prop (local.get $ptgt) (local.get $key)))))
       ;; TypedArray: numeric index (number OR canonical numeric-string) → read from the byte buffer
       (let $tael i32 (call $scope_find_local (local.get $o) (cstring "@@taelem")))
@@ -998,8 +999,9 @@
       (let $phsl i32 (call $scope_find_local (local.get $o) (cstring "@@phandler")))
       (if (local.get $phsl)
         (then
-          (let $ptgt i64 (i64.load (call $scope_find_local (local.get $o) (cstring "@@ptarget"))))
-          (let $strap i64 (call $get_prop (i64.load (local.get $phsl)) (call $mk_str (cstring "set"))))
+          (let $strap i64 (call $proxy_trap (local.get $cont) (cstring "set")))  ;; revoked / non-callable → TypeError
+          (if (call $err) (then (return)))
+          (let $ptgt i64 (call $proxy_target (local.get $cont)))
           (if (call $is_function (local.get $strap))
             (then
               (let $sbuf i32 (call $heap_alloc (i32.const 32)))
@@ -1007,7 +1009,7 @@
               (i64.store (i32.add (local.get $sbuf) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
               (i64.store (i32.add (local.get $sbuf) (i32.const 16)) (local.get $val))
               (i64.store (i32.add (local.get $sbuf) (i32.const 24)) (local.get $cont))
-              (drop (call $call_val (local.get $strap) (i32.const 4) (local.get $sbuf) (i64.load (local.get $phsl))))
+              (drop (call $call_val (local.get $strap) (i32.const 4) (local.get $sbuf) (call $proxy_handler (local.get $cont))))
               (return)))
           (call $set_prop (local.get $ptgt) (local.get $key) (local.get $val))
           (return)))
