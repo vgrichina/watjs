@@ -2764,7 +2764,8 @@
           (call $next_token) (call $next_token)  ;; 'for' '('
           ;; detect for-of:  [var] IDENT of E
           (let $ofdetect i32 (call $cursor_save))
-          (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (call $next_token)))
+          (let $ofdecl i32 (i32.const 0))  ;; 1 = var/let/const head (binding); 0 = assignment-target head
+          (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (set! $ofdecl (i32.const 1)) (call $next_token)))
           (let $ofvar i32 (i32.const 0))
           (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $ofvar (call $ident_name)) (call $next_token)))
           ;; destructuring pattern as the loop variable: for (var [a,b] of E) / for (var {x} of E).
@@ -2823,7 +2824,10 @@
                   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@ofdt"))  ;; STOREVAR temp
                   (let $ofbody i32 (call $cursor_save))
                   (call $cursor_restore (local.get $ofpatcur))
+                  (let $ofsm i32 (i32.load (i32.const 676)))  ;; no declarator → assignment destructuring (ident targets assign, not define)
+                  (i32.store (i32.const 676) (if i32 (local.get $ofdecl) (then (i32.const 0)) (else (i32.const 1))))
                   (call $vm_c_destructure_param (local.get $code) (cstring "@@ofdt"))
+                  (i32.store (i32.const 676) (local.get $ofsm))
                   (call $cursor_restore (local.get $ofbody)))
                 (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))  ;; STOREVAR x
               (call $vm_c_stmt (local.get $code))  ;; body
