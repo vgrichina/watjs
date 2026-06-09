@@ -27,3 +27,11 @@ try { delete null.x; } catch (e) { if (e instanceof TypeError) nthrew++; }
 try { delete undefined.y; } catch (e) { if (e instanceof TypeError) nthrew++; }
 try { delete null[0]; } catch (e) { if (e instanceof TypeError) nthrew++; }
 assert(nthrew === 3, "delete on null/undefined base throws TypeError");
+
+// var/let/const bindings are non-configurable → not deletable
+var dv = 1; assert(delete dv === false, "delete var → false");
+let dl = 2; assert(delete dl === false, "delete let → false");
+const dc = 3; assert(delete dc === false, "delete const → false");
+// but still reassignable (var/let) and redeclarable (var)
+dv = 9; assert(dv === 9, "var still writable");
+var dv = 10; assert(dv === 10, "var redeclarable");

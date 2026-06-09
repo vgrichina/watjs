@@ -4246,14 +4246,14 @@
         (let $dcnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
-        (call $scope_define_attr (local.get $scope) (local.get $dcnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 22))  ;; E|C + const-bit(16), non-writable
+        (call $scope_define_attr (local.get $scope) (local.get $dcnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 18))  ;; E + const-bit(16); non-writable, non-configurable (lexical binding)
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 89))  ;; DEFINIT (operand: name) — `var/let NAME = e`: define a
       (then                                       ;; WRITABLE binding in the CURRENT scope (so it shadows an
         (let $dinm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))  ;; outer/global of the same name, instead of assigning up the chain)
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
-        (call $scope_define_attr (local.get $scope) (local.get $dinm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 14))  ;; E|C|W
+        (call $scope_define_attr (local.get $scope) (local.get $dinm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 10))  ;; E|W; non-configurable (var/let binding not deletable)
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 80))  ;; STOREVAR_STRICT — strict assignment: ReferenceError if the binding is undeclared
       (then
@@ -4274,7 +4274,7 @@
         ;; define = undefined in the current scope ONLY if absent (a bare redeclare
         ;; must not reset an already-assigned binding)
         (if (i32.eqz (call $scope_find_local (local.get $scope) (local.get $dvnm)))
-          (then (call $scope_define (local.get $scope) (local.get $dvnm) (call $v_undef))))
+          (then (call $scope_define_attr (local.get $scope) (local.get $dvnm) (call $v_undef) (i32.const 10))))  ;; E|W; non-configurable (var binding not deletable)
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 10))  ;; PRINT
       (then
