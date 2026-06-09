@@ -2489,14 +2489,21 @@
           (if (local.get $hascatch) (then (call $vm_patch (local.get $code) (local.get $jcatch))))
           ;; finally on the normal path. A finally that completes normally DISCARDS its own
           ;; completion value (the try/catch value V wins) — save mem 288 across the block.
+          ;; PUSHCOMPLETION saves V; RESETCOMPLETION makes the finally's own completion start
+          ;; undefined (so an abrupt exit with no value — `finally{break}` — yields undefined);
+          ;; SETCOMPLETION restores V on NORMAL completion (a value-less normal finally discards
+          ;; its value). An abrupt exit (break/continue/return/throw) skips SETCOMPLETION, so the
+          ;; finally's own value/abrupt-completion wins.
           (if (local.get $hascatch)
             (then (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "finally")))
               (then (call $next_token)
-                (call $vm_emit_op (local.get $code) (i32.const 91))  ;; PUSHCOMPLETION (save V)
+                (call $vm_emit_op (local.get $code) (i32.const 91))
+                (call $vm_emit_op (local.get $code) (i32.const 90))
                 (call $vm_c_stmt (local.get $code))
-                (call $vm_emit_op (local.get $code) (i32.const 71)))))  ;; SETCOMPLETION (restore V; discard finally's value)
+                (call $vm_emit_op (local.get $code) (i32.const 71)))))
             (else (call $cursor_restore (local.get $fincur))
               (call $vm_emit_op (local.get $code) (i32.const 91))
+              (call $vm_emit_op (local.get $code) (i32.const 90))
               (call $vm_c_stmt (local.get $code))
               (call $vm_emit_op (local.get $code) (i32.const 71))))
           (return)))
