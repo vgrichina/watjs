@@ -6595,6 +6595,9 @@
     (then
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $ky i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      ;; ToObject(O): null/undefined → TypeError
+      (if (i32.or (call $is_null (local.get $ob)) (call $is_undefined (local.get $ob)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Object.getOwnPropertyDescriptor called on null or undefined")) (return (call $v_undef))))
       ;; Proxy: getOwnPropertyDescriptor trap (else forward to target)
       (if (call $is_proxy (local.get $ob))
         (then
