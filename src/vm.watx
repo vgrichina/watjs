@@ -1865,6 +1865,9 @@
   (if (i32.eq (call $tok_kind) (i32.const 17))  ;; { object pattern }
     (then
       (call $next_token)  ;; consume {
+      ;; RequireObjectCoercible(src) — an object pattern (even empty `{}`) throws on null/undefined
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $srcTmp))  ;; LOADVAR src
+      (call $vm_emit_op (local.get $code) (i32.const 92))  ;; REQUIRECOERCIBLE
       (let $exclArr i32 (call $arr_new (i32.const 4)))  ;; keys already bound (for ...rest exclusion)
       (block $oe (loop $ol
         (br_if $oe (i32.eq (call $tok_kind) (i32.const 18)))  ;; }
@@ -3885,6 +3888,13 @@
       (then                                       ;; (used to save V across a finally block, whose own normal value is discarded)
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (i64.load (i32.const 288)))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 92))  ;; REQUIRECOERCIBLE — pop TOS; throw TypeError if it is null/undefined
+      (then                                       ;; (object destructuring does RequireObjectCoercible(value) even for an empty pattern)
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $rcv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (if (i32.or (call $is_null (local.get $rcv)) (call $is_undefined (local.get $rcv)))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot destructure null or undefined")) (br $disp)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 2))  ;; ADD — js_add (string concat + numeric)
       (then
