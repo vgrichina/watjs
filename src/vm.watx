@@ -667,17 +667,36 @@
           (call $vm_emit_op (local.get $code) (i32.const 32))                                           ;; DUP → leave value as the expression result
           (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; plain assign: strict→80 / sloppy→85 (implicit global)
           (return)))
-      (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43)))  ;; NAME += -= *= /= expr
+      (if (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.eq (call $tok_kind) (i32.const 58)))  ;; NAME += -= *= /= **= expr
         (then
           (let $pcop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))   ;; ADD
                           (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))   ;; SUB
-                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4)) (else (i32.const 5))))))))  ;; MUL/DIV
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4))
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 58)) (then (i32.const 43)) (else (i32.const 5))))))))))  ;; MUL/POW/DIV
           (call $next_token)
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; LOADVAR
           (call $vm_c_expr (local.get $code))                                                          ;; RHS
           (call $vm_emit_op (local.get $code) (local.get $pcop))
           (call $vm_emit_op (local.get $code) (i32.const 32))                                           ;; DUP result
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR
+          (return)))
+      (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))  ;; NAME ||= &&= ??= (expression form — leaves the resulting value)
+        (then
+          (let $ljop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 59)) (then (i32.const 28))   ;; ||=→JMPT_PEEK
+                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 60)) (then (i32.const 27)) (else (i32.const 68))))))  ;; &&=→JMPF_PEEK, ??=→JMP_NN
+          (call $next_token)
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; LOADVAR a → [a]
+          (let $ljp1 i32 (call $vm_emit_jump (local.get $code) (local.get $ljop)))  ;; short-circuit → keep a (value already on stack)
+          (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP a
+          (let $ljafs i32 (call $vm_emit_cursor))
+          (call $vm_c_expr (local.get $code))  ;; eval RHS → [b]
+          (if (call $vm_is_anon_fn_def (local.get $ljafs))  ;; `x ||= <anon fn>` → x.name = "x"
+            (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $vn))))
+          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → leave value as the expression result
+          (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; assign (strict 80 / sloppy 85)
+          (let $ljp2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
+          (call $vm_patch (local.get $code) (local.get $ljp1))  ;; keep-branch: [a] already on stack
+          (call $vm_patch (local.get $code) (local.get $ljp2))
           (return)))
       (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; postfix i++ / i--
         (then
@@ -2989,7 +3008,10 @@
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; LOADVAR a → [a]
           (let $p1 i32 (call $vm_emit_jump (local.get $code) (local.get $jop)))  ;; short-circuit → keep a
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP a
+          (let $sjafs i32 (call $vm_emit_cursor))
           (call $vm_c_expr (local.get $code))                  ;; eval RHS → [b]
+          (if (call $vm_is_anon_fn_def (local.get $sjafs))  ;; `x ||= <anon fn>` → x.name = "x"
+            (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $an))))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR a (pops)
           (let $p2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
           (call $vm_patch (local.get $code) (local.get $p1))   ;; keep-branch: [a]
