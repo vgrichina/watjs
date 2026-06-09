@@ -1155,6 +1155,24 @@
 ;; compile a `delete` operand: evaluate the base, and turn the FINAL member
 ;; access into a DELETE (op 70). Non-final accesses compile as normal GETs.
 (func $vm_c_delete_operand (param $code i32) (effects)
+  ;; delete of a non-reference unary expression (void/typeof/!/~/+/-/delete) → evaluate, discard, true
+  (if (i32.or (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.or (call $tok_is_kw (cstring "void")) (i32.or (call $tok_is_kw (cstring "typeof")) (call $tok_is_kw (cstring "delete")))))
+        (i32.or (i32.eq (call $tok_kind) (i32.const 33)) (i32.eq (call $tok_kind) (i32.const 47))))  ;; ! ~
+    (then
+      (call $vm_c_unary (local.get $code))
+      (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP value
+      (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1)))  ;; non-reference → true
+      (return)))
+  ;; bare identifier (a plain non-keyword identifier, no member access) → DELETEVAR
+  (if (i32.and (i32.eq (call $tok_kind) (i32.const 3))
+        (i32.eqz (i32.or (call $tok_is_kw (cstring "new")) (i32.or (call $tok_is_kw (cstring "function")) (i32.or (call $tok_is_kw (cstring "class"))
+          (i32.or (call $tok_is_kw (cstring "this")) (i32.or (call $tok_is_kw (cstring "super")) (i32.or (call $tok_is_kw (cstring "true")) (i32.or (call $tok_is_kw (cstring "false")) (call $tok_is_kw (cstring "null")))))))))))
+    (then
+      (call $look_save)
+      (let $din i32 (call $ident_name)) (call $next_token)
+      (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))))  ;; not '.'/'[' → bare identifier delete
+        (then (call $vm_emit_op (local.get $code) (i32.const 95)) (call $vm_emit_op (local.get $code) (local.get $din)) (return)))
+      (call $look_restore)))  ;; member access follows → fall through to the reference path
   (call $vm_c_primary (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
@@ -4147,6 +4165,26 @@
       (then
         (set! $scope (call $scope_parent (local.get $scope)))
         (call $set_cur_scope (local.get $scope))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 95))  ;; DELETEVAR (operand: name) — delete an identifier reference
+      (then
+        (let $dvn i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $dvcur i32 (local.get $scope))
+        (let $dvr i64 (call $v_true))  ;; unresolvable reference → true
+        (block $dve (loop $dvl
+          (br_if $dve (i32.eqz (local.get $dvcur)))
+          (let $dvslot i32 (call $scope_find_local (local.get $dvcur) (local.get $dvn)))
+          (if (local.get $dvslot)
+            (then
+              (if (call $entry_configurable (local.get $dvslot))
+                (then (drop (call $scope_delete (local.get $dvcur) (local.get $dvn))) (set! $dvr (call $v_true)))
+                (else (set! $dvr (call $v_false))))  ;; non-configurable binding → false
+              (br $dve)))
+          (set! $dvcur (call $scope_parent (local.get $dvcur)))
+          (br $dvl)))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $dvr))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 2))  ;; ADD — js_add (string concat + numeric)
       (then
