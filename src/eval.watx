@@ -1129,6 +1129,9 @@
   ;; SharedArrayBuffer (383 ctor, 384 byteLength getter) — structurally like ArrayBuffer
   (if (i32.eq (local.get $id) (i32.const 383))  ;; new SharedArrayBuffer(byteLength)
     (then
+      (if (f64.ge (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (f64.const 2147483640.0))
+        (then (call $throw_type (cstring "RangeError") (cstring "Invalid array buffer length")) (return (call $v_undef))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $sabn i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
       (let $sabd i32 (call $heap_alloc (i32.add (local.get $sabn) (i32.const 8))))
@@ -4723,6 +4726,10 @@
   (if (i32.eq (local.get $id) (i32.const 395)) (then (return (call $ta_make (i32.const 10) (local.get $argc) (local.get $argv)))))  ;; BigUint64Array
   (if (i32.eq (local.get $id) (i32.const 219))  ;; new ArrayBuffer(byteLength)
     (then
+      ;; a byteLength too large to allocate (i32 backing) → RangeError, not an OOB trap
+      (if (f64.ge (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (f64.const 2147483640.0))
+        (then (call $throw_type (cstring "RangeError") (cstring "Invalid array buffer length")) (return (call $v_undef))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $abn i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
       (let $abd i32 (call $heap_alloc (i32.add (local.get $abn) (i32.const 8))))
