@@ -1485,6 +1485,9 @@
   (let $buf i32 (i32.const 0))
   (if (call $is_number (local.get $a0))
     (then
+      ;; a byte size too large to allocate (i32-backed) → RangeError, not an OOB trap
+      (if (f64.ge (f64.mul (call $to_num (local.get $a0)) (f64.convert_i32_s (local.get $bpe))) (f64.const 2147483640.0))
+        (then (call $throw_type (cstring "RangeError") (cstring "Invalid typed array length")) (return (call $v_undef))))
       (set! $len (call $to_index (local.get $a0)))  ;; ToIndex: RangeError on negative/Infinity/>2^53 (no trap)
       (if (call $err) (then (return (call $v_undef))))
       (set! $buf (call $heap_alloc (i32.add (i32.mul (local.get $len) (local.get $bpe)) (i32.const 8))))
