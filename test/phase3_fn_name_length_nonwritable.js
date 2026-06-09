@@ -28,4 +28,9 @@ function strictTest(){ 'use strict'; var h = function(){}; h.name = "x"; }
 var threw = false;
 try { strictTest(); } catch(e){ threw = e instanceof TypeError; }
 if (!threw) throw "strict assignment to fn.name must throw";
+// native + bound function name/length: strict assignment throws, sloppy ignored
+function te(fn){ try{fn();return false;}catch(e){return e instanceof TypeError;} }
+if (!te(function(){ 'use strict'; Function.length = 42; })) throw "strict native length must throw";
+if (!te(function(){ 'use strict'; Array.prototype.map.name = 'x'; })) throw "strict native name must throw";
+Array.prototype.map.length = 9; if (Array.prototype.map.length !== 1) throw "sloppy native length ignored";
 print("ok");
