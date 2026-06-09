@@ -22,3 +22,9 @@ assert(n === 1 + 2 + 42, "for-of uses overridden @@iterator");
 var s = [...[1, 2, 3]];
 assert(s[2] === 42, "spread uses overridden @@iterator");
 delete Array.prototype[Symbol.iterator];  // restore for any later tests in this file
+
+// (3) A generator has its own `arguments` object.
+function* ga() { yield arguments.length; yield arguments[0]; }
+var ita = ga(7, 8, 9);
+assert(ita.next().value === 3, "generator arguments.length");
+assert(ita.next().value === 7, "generator arguments[0]");
