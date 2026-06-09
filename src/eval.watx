@@ -4190,7 +4190,7 @@
       (let $itix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
       (let $itkind i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@kind"))))))
       (let $itres i32 (call $obj_new (i32.const 2)))
-      (let $itlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@len"))))))  ;; snapshotted at creation
+      (let $itlen i32 (call $arr_len (local.get $itarr)))  ;; LIVE array length — spec reads array.[[Length]] on each next() (so growth/shrink mid-iteration is observed)
       (if (i32.ge_s (local.get $itix) (local.get $itlen))
         (then
           (call $scope_define (local.get $itres) (cstring "value") (call $v_undef))
