@@ -20,3 +20,9 @@ outer2: for (i = 0; i < 3; i++) { for (var k = 0; k < 3; k++) { break outer2; } 
 assert(i === 0, "labeled break same line");
 function* g2() { yield 5; }
 assert(g2().next().value === 5, "yield EXPR same line");
+
+// yield EXPRESSION form (not statement) also honors the restricted production
+function* ge() { var x = yield
+  1; return x; }
+var ite = ge(); ite.next();
+assert(ite.next(99).value === 99, "yield-expr + newline → yield undefined");
