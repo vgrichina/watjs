@@ -2767,7 +2767,10 @@
           (let $ofdecl i32 (i32.const 0))  ;; 1 = var/let/const head (binding); 0 = assignment-target head
           (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (set! $ofdecl (i32.const 1)) (call $next_token)))
           (let $ofvar i32 (i32.const 0))
-          (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $ofvar (call $ident_name)) (call $next_token)))
+          (if (i32.eq (call $tok_kind) (i32.const 3))
+            (then (set! $ofvar (call $ident_name))
+              (if (local.get $ofdecl) (then (if (call $vm_strict_lhs_check (local.get $ofvar)) (then (return)))))  ;; strict: `for (var eval|arguments ...)` → SyntaxError
+              (call $next_token)))
           ;; destructuring pattern as the loop variable: for (var [a,b] of E) / for (var {x} of E).
           ;; Capture the pattern cursor; bind via vm_c_destructure_param (iterator protocol for
           ;; arrays incl. inner-close, property access for objects, member targets, defaults).
