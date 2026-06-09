@@ -1675,6 +1675,30 @@
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tmp))  ;; LOADVAR → value
           (return (i32.const 1))))
       (return (i32.const 0))))
+  (if (i32.eq (call $tok_kind) (i32.const 17))  ;; '{' bare object pattern (expr position): {pat}=RHS (cover grammar)
+    (then
+      (let $ps i32 (call $cursor_save))
+      (call $vm_skip_balanced)  ;; past matching '}'
+      (let $isda i32 (i32.eq (call $tok_kind) (i32.const 24)))  ;; '=' follows?
+      (call $cursor_restore (local.get $ps))  ;; rewind to '{'
+      (if (local.get $isda)
+        (then
+          (let $ps2 i32 (call $cursor_save))   ;; at '{'
+          (call $vm_skip_balanced)
+          (call $next_token)  ;; consume '='
+          (call $vm_c_expr (local.get $code))  ;; RHS → [val]
+          (let $tmp i32 (call $vm_tmpname))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $tmp))  ;; STOREVAR tmp
+          (let $rs i32 (call $cursor_save))    ;; after RHS
+          (call $cursor_restore (local.get $ps2))  ;; back to '{'
+          (let $savemode3 i32 (i32.load (i32.const 676)))  ;; assignment-destructuring mode
+          (i32.store (i32.const 676) (i32.const 1))
+          (call $vm_c_destructure_param (local.get $code) (local.get $tmp))
+          (i32.store (i32.const 676) (local.get $savemode3))
+          (call $cursor_restore (local.get $rs))   ;; skip past RHS
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tmp))  ;; LOADVAR → value
+          (return (i32.const 1))))
+      (return (i32.const 0))))
   (if (i32.eq (call $tok_kind) (i32.const 15))  ;; '(' — maybe ({pat} = RHS)
     (then
       (let $ps i32 (call $cursor_save))
