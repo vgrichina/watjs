@@ -6441,7 +6441,15 @@
         (then (call $apply_descriptor (call $val_payload (local.get $ob)) (call $to_prop_key (local.get $ky)) (local.get $de))))
       ;; functions: define into the function's own-prop scope (native @12 / VM @16)
       (if (call $is_function (local.get $ob))
-        (then (call $apply_descriptor (call $fn_def_scope (local.get $ob)) (call $to_prop_key (local.get $ky)) (local.get $de))))
+        (then
+          (let $fdk i32 (call $to_prop_key (local.get $ky)))
+          ;; length/name are virtual {W:false,E:false,C:true} props not yet materialized in
+          ;; the scope; seed them so a partial redefine preserves the configurable attribute
+          ;; (and a second defineProperty doesn't see a phantom non-configurable property)
+          (if (i32.and (i32.eqz (call $scope_find_local (call $fn_def_scope (local.get $ob)) (local.get $fdk)))
+                       (i32.or (call $str_eq (local.get $fdk) (cstring "length")) (call $str_eq (local.get $fdk) (cstring "name"))))
+            (then (call $scope_define_attr (call $fn_def_scope (local.get $ob)) (local.get $fdk) (call $get_prop (local.get $ob) (call $mk_str (local.get $fdk))) (i32.const 4))))
+          (call $apply_descriptor (call $fn_def_scope (local.get $ob)) (local.get $fdk) (local.get $de))))
       ;; arrays: a data descriptor at a canonical index writes the element (accessor
       ;; descriptors at indices aren't supported by the dense store — left as-is);
       ;; named props go to the @12 scope via apply_descriptor.
