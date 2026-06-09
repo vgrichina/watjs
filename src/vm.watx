@@ -2487,11 +2487,18 @@
           ;; Lnormal: normal + catch paths converge here
           (call $vm_patch (local.get $code) (local.get $jnorm))
           (if (local.get $hascatch) (then (call $vm_patch (local.get $code) (local.get $jcatch))))
-          ;; finally on the normal path
+          ;; finally on the normal path. A finally that completes normally DISCARDS its own
+          ;; completion value (the try/catch value V wins) — save mem 288 across the block.
           (if (local.get $hascatch)
             (then (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "finally")))
-              (then (call $next_token) (call $vm_c_stmt (local.get $code)))))  ;; finally (single copy: all paths reach here)
-            (else (call $cursor_restore (local.get $fincur)) (call $vm_c_stmt (local.get $code))))  ;; finally (normal copy)
+              (then (call $next_token)
+                (call $vm_emit_op (local.get $code) (i32.const 91))  ;; PUSHCOMPLETION (save V)
+                (call $vm_c_stmt (local.get $code))
+                (call $vm_emit_op (local.get $code) (i32.const 71)))))  ;; SETCOMPLETION (restore V; discard finally's value)
+            (else (call $cursor_restore (local.get $fincur))
+              (call $vm_emit_op (local.get $code) (i32.const 91))
+              (call $vm_c_stmt (local.get $code))
+              (call $vm_emit_op (local.get $code) (i32.const 71))))
           (return)))
       (if (call $tok_is_kw (cstring "print"))
         (then
@@ -3866,6 +3873,11 @@
     (if (i32.eq (local.get $op) (i32.const 90))  ;; RESETCOMPLETION — completion register := undefined (no stack effect)
       (then                                       ;; a loop's completion is undefined unless its body yields a value (spec ForBodyEvaluation: "Let V be undefined")
         (i64.store (i32.const 288) (call $v_undef))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 91))  ;; PUSHCOMPLETION — push the completion register onto the stack
+      (then                                       ;; (used to save V across a finally block, whose own normal value is discarded)
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (i64.load (i32.const 288)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 2))  ;; ADD — js_add (string concat + numeric)
       (then
