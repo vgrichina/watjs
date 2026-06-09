@@ -447,6 +447,28 @@
   (i32.and (i32.eq (i32.load (i32.const 680)) (local.get $start))
            (i32.eq (i32.load (i32.const 684)) (call $vm_emit_cursor))))
 
+;; compound-assignment operator tokens (NAME/member op= expr): += -= *= /= (40-43),
+;; **= (58), %= &= |= ^= <<= >>= >>>= (62-68). NOT the logical ||= &&= ??= (59-61).
+(func $is_compound_assign (param $tok i32) (result i32)
+  (i32.or (i32.and (i32.ge_s (local.get $tok) (i32.const 40)) (i32.le_s (local.get $tok) (i32.const 43)))
+    (i32.or (i32.eq (local.get $tok) (i32.const 58))
+            (i32.and (i32.ge_s (local.get $tok) (i32.const 62)) (i32.le_s (local.get $tok) (i32.const 68))))))
+;; map a compound-assign token to the VM binary op it applies (ADD2 SUB3 MUL4 DIV5 MOD22
+;; AND37 OR38 XOR39 SHL40 SHR41 USHR42 POW43)
+(func $compound_cop (param $tok i32) (result i32)
+  (if (i32.eq (local.get $tok) (i32.const 40)) (then (return (i32.const 2))))   ;; += → ADD
+  (if (i32.eq (local.get $tok) (i32.const 41)) (then (return (i32.const 3))))   ;; -= → SUB
+  (if (i32.eq (local.get $tok) (i32.const 42)) (then (return (i32.const 4))))   ;; *= → MUL
+  (if (i32.eq (local.get $tok) (i32.const 43)) (then (return (i32.const 5))))   ;; /= → DIV
+  (if (i32.eq (local.get $tok) (i32.const 58)) (then (return (i32.const 43))))  ;; **= → POW
+  (if (i32.eq (local.get $tok) (i32.const 62)) (then (return (i32.const 22))))  ;; %= → MOD
+  (if (i32.eq (local.get $tok) (i32.const 63)) (then (return (i32.const 37))))  ;; &= → AND
+  (if (i32.eq (local.get $tok) (i32.const 64)) (then (return (i32.const 38))))  ;; |= → OR
+  (if (i32.eq (local.get $tok) (i32.const 65)) (then (return (i32.const 39))))  ;; ^= → XOR
+  (if (i32.eq (local.get $tok) (i32.const 66)) (then (return (i32.const 40))))  ;; <<= → SHL
+  (if (i32.eq (local.get $tok) (i32.const 67)) (then (return (i32.const 41))))  ;; >>= → SHR
+  (i32.const 42))  ;; 68 >>>= → USHR
+
 ;; ── compiler: source → bytecode (precedence-climbing, reuses the lexer) ──
 (func $vm_c_primary (param $code i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 1))  ;; NUM literal
@@ -667,12 +689,9 @@
           (call $vm_emit_op (local.get $code) (i32.const 32))                                           ;; DUP → leave value as the expression result
           (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; plain assign: strict→80 / sloppy→85 (implicit global)
           (return)))
-      (if (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.eq (call $tok_kind) (i32.const 58)))  ;; NAME += -= *= /= **= expr
+      (if (call $is_compound_assign (call $tok_kind))  ;; NAME += -= *= /= %= **= &= |= ^= <<= >>= >>>= expr
         (then
-          (let $pcop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))   ;; ADD
-                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))   ;; SUB
-                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4))
-                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 58)) (then (i32.const 43)) (else (i32.const 5))))))))))  ;; MUL/POW/DIV
+          (let $pcop i32 (call $compound_cop (call $tok_kind)))
           (call $next_token)
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; LOADVAR
           (call $vm_c_expr (local.get $code))                                                          ;; RHS
@@ -887,12 +906,9 @@
             (call $vm_patch (local.get $code) (local.get $ip1))  ;; keep-branch: [old]
             (call $vm_patch (local.get $code) (local.get $ip2))
             (br $e)))
-        (if (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.eq (call $tok_kind) (i32.const 58)))  ;; arr[i] += -= *= /= **= v
+        (if (call $is_compound_assign (call $tok_kind))  ;; arr[i] += -= *= /= %= **= &= |= ^= <<= >>= >>>= v
           (then
-            (let $icop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))
-                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))
-                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4))
-                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 58)) (then (i32.const 43)) (else (i32.const 5))))))))))
+            (let $icop i32 (call $compound_cop (call $tok_kind)))
             (call $next_token)
             (let $ck i32 (call $vm_tmpname)) (let $cv i32 (call $vm_tmpname))
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; STOREVAR @@k=key → [obj]
@@ -973,12 +989,9 @@
             (call $vm_patch (local.get $code) (local.get $mp1))  ;; keep-branch: [old]
             (call $vm_patch (local.get $code) (local.get $mp2))
             (br $e)))
-        (if (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.eq (call $tok_kind) (i32.const 58)))  ;; obj.key += -= *= /= **= v
+        (if (call $is_compound_assign (call $tok_kind))  ;; obj.key += -= *= /= %= **= &= |= ^= <<= >>= >>>= v
           (then
-            (let $mcop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))
-                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))
-                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4))
-                            (else (if i32 (i32.eq (call $tok_kind) (i32.const 58)) (then (i32.const 43)) (else (i32.const 5))))))))))  ;; MUL/POW/DIV
+            (let $mcop i32 (call $compound_cop (call $tok_kind)))
             (call $next_token)
             (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP obj
             (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP (old)
@@ -2987,7 +3000,7 @@
       ;; assignment:  NAME = expr ;   |  NAME op= expr ;
       (call $look_save)
       (let $an i32 (call $ident_name)) (call $next_token)
-      (if (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61))) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))))  ;; = / op= / ||= / ++ / --
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (call $is_compound_assign (call $tok_kind)) (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61))) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))))  ;; = / op= / ||= / ++ / --
         (then (if (call $vm_strict_lhs_check (local.get $an)) (then (return)))))  ;; strict: eval/arguments target → SyntaxError
       (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '='
         (then
@@ -3019,12 +3032,9 @@
           (call $vm_patch (local.get $code) (local.get $p2))
           (drop (call $eat (i32.const 21)))
           (return)))
-      (if (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 40)) (i32.le_s (call $tok_kind) (i32.const 43))) (i32.eq (call $tok_kind) (i32.const 58)))  ;; += -= *= /= **=
+      (if (call $is_compound_assign (call $tok_kind))  ;; += -= *= /= %= **= &= |= ^= <<= >>= >>>=
         (then
-          (let $cop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 40)) (then (i32.const 2))   ;; ADD
-                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 41)) (then (i32.const 3))   ;; SUB
-                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 42)) (then (i32.const 4))
-                          (else (if i32 (i32.eq (call $tok_kind) (i32.const 58)) (then (i32.const 43)) (else (i32.const 5))))))))))  ;; MUL/POW/DIV
+          (let $cop i32 (call $compound_cop (call $tok_kind)))
           (call $next_token)
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; LOADVAR
           (call $vm_c_expr (local.get $code))                                                                       ;; RHS
