@@ -1582,7 +1582,7 @@ function generateWasm(forms, loweredForms, checkResult) {
     content.push(...encodeULEB128(1)); // 1 memory
     content.push(0x01); // has max
     content.push(...encodeULEB128(16)); // initial: 16 pages (1MB)
-    content.push(...encodeULEB128(512)); // max: 512 pages (32MB)
+    content.push(...encodeULEB128(16384)); // max: 16384 pages (1GB); grows lazily via memory.grow (no GC yet, so large-string/array builds need headroom)
     allBytes.push(...encodeSection(5, content));
   }
   
