@@ -800,6 +800,17 @@
 
 ;; get-or-create a function's .prototype object value
 (func $fn_get_prototype (param $fn i32) (result i64) (effects)
+  ;; VM functions (magic 526..528) store .prototype at @16, NOT in the @12 props
+  ;; scope (@12 is the code buffer for VM fns — reading it as a scope OOB-crashes).
+  (if (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
+    (then
+      (let $vp i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
+      (if (call $is_object (local.get $vp)) (then (return (local.get $vp))))
+      (let $vpo i32 (call $obj_new (i32.const 8)))
+      (let $vpv i64 (call $mk_obj (local.get $vpo)))
+      (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vpv))
+      (call $scope_define_attr (local.get $vpo) (cstring "constructor") (call $mk_fn (local.get $fn)) (i32.const 12))
+      (return (local.get $vpv))))
   (let $props i32 (call $fn_props (local.get $fn)))
   (let $slot i32 (call $scope_find_local (local.get $props) (cstring "prototype")))
   (if i64 (local.get $slot) (then (i64.load (local.get $slot)))
