@@ -2541,6 +2541,8 @@
       (if (call $tok_is_kw (cstring "throw"))
         (then
           (call $next_token)
+          (if (call $nl_before)  ;; `throw` [no LineTerminator here] Expression — newline → SyntaxError
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Illegal newline after throw")) (return)))
           (call $vm_c_expr (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW
           (drop (call $eat (i32.const 21)))
