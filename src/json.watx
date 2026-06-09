@@ -524,14 +524,19 @@
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
     (let $el i64 (call $arr_get (local.get $ra) (local.get $i)))
-    ;; unwrap Number/String wrapper
-    (if (call $is_object (local.get $el))
-      (then
-        (let $ps i32 (call $scope_find_local (call $val_payload (local.get $el)) (cstring "__prim__")))
-        (if (local.get $ps) (then (set! $el (i64.load (local.get $ps)))))))
     (let $key i32 (i32.const 0))
     (if (call $is_string (local.get $el)) (then (set! $key (call $val_payload (local.get $el)))))
     (if (call $is_number (local.get $el)) (then (set! $key (call $num_to_str (call $tonum_raw (local.get $el))))))
+    ;; a String/Number WRAPPER object → ToString(object) which invokes its (possibly
+    ;; overridden) toString; a Boolean wrapper (or any other object) is ignored.
+    (if (call $is_object (local.get $el))
+      (then
+        (let $ps i32 (call $scope_find_local (call $val_payload (local.get $el)) (cstring "__prim__")))
+        (if (local.get $ps)
+          (then
+            (let $pv i64 (i64.load (local.get $ps)))
+            (if (i32.or (call $is_string (local.get $pv)) (call $is_number (local.get $pv)))
+              (then (set! $key (call $to_str (local.get $el)))))))))
     (if (local.get $key)
       (then
         ;; dedup
