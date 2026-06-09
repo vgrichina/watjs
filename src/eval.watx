@@ -6760,7 +6760,7 @@
             (let $rj i32 (i32.const 0))
             (block $exe (loop $exl
               (br_if $exe (i32.ge_s (local.get $rj) (local.get $rxn)))
-              (if (call $str_eq (local.get $rkp) (call $val_payload (call $arr_get (local.get $rxa) (local.get $rj)))) (then (set! $rex (i32.const 1)) (br $exe)))
+              (if (call $str_eq (local.get $rkp) (call $to_prop_key (call $arr_get (local.get $rxa) (local.get $rj)))) (then (set! $rex (i32.const 1)) (br $exe)))  ;; to_prop_key: exclusion entries may be non-string (computed/number keys)
               (set! $rj (i32.add (local.get $rj) (i32.const 1))) (br $exl)))
             (if (i32.eqz (local.get $rex))
               (then (call $set_prop (call $mk_obj (local.get $robj)) (local.get $rk) (call $get_prop (local.get $rsrc) (local.get $rk)))))

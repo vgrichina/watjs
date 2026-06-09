@@ -1888,7 +1888,10 @@
       ;; RequireObjectCoercible(src) — an object pattern (even empty `{}`) throws on null/undefined
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $srcTmp))  ;; LOADVAR src
       (call $vm_emit_op (local.get $code) (i32.const 92))  ;; REQUIRECOERCIBLE
-      (let $exclArr i32 (call $arr_new (i32.const 4)))  ;; keys already bound (for ...rest exclusion)
+      ;; runtime exclusion list for ...rest (so computed keys can be added too)
+      (let $exclT i32 (call $vm_tmpname))
+      (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $exclT))  ;; STOREVAR exclT
       (block $oe (loop $ol
         (br_if $oe (i32.eq (call $tok_kind) (i32.const 18)))  ;; }
         (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...rest — bind remaining own enumerable props
@@ -1897,7 +1900,7 @@
             (let $restnm i32 (call $ident_name)) (call $next_token)
             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_native (i32.const 301) (cstring "")))  ;; PUSH objRest
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $srcTmp))  ;; LOADVAR src
-            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_arr (local.get $exclArr)))  ;; PUSH exclArr
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $exclT))  ;; LOADVAR exclT (runtime exclusion list)
             (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (i32.const 2))  ;; CALL 2
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $restnm))  ;; STOREVAR rest
             (br $oe)))
@@ -1909,6 +1912,10 @@
             (drop (call $eat (i32.const 20)))  ;; ']'
             (let $ckt i32 (call $vm_tmpname))
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ckt))  ;; STOREVAR ckt
+            ;; add the computed key to the ...rest exclusion list (objRest to_prop_key's it)
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $exclT))  ;; LOADVAR exclT
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ckt))  ;; LOADVAR ckt
+            (call $vm_emit_op (local.get $code) (i32.const 52)) (call $vm_emit_op (local.get $code) (i32.const 11))  ;; APPEND; POP
             (drop (call $eat (i32.const 37)))  ;; ':'
             (let $cnested i32 (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17))))
             (let $cbind i32 (i32.const 0))
@@ -1937,7 +1944,9 @@
             (br_if $oe (i32.eqz (call $eat (i32.const 22))))
             (br $ol)))
         (let $key i32 (call $ident_name)) (call $next_token)
-        (call $arr_push (local.get $exclArr) (call $mk_str (local.get $key)))
+        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $exclT))  ;; LOADVAR exclT
+        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $key)))  ;; PUSH key
+        (call $vm_emit_op (local.get $code) (i32.const 52)) (call $vm_emit_op (local.get $code) (i32.const 11))  ;; APPEND; POP
         (let $bind i32 (local.get $key))
         (let $nested i32 (i32.const 0))
         (let $omem i32 (i32.const 0))  ;; member target (assignment form): key: o.y
