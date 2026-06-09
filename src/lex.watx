@@ -493,11 +493,33 @@
   (call $set_tok (i32.const 57) (i32.add (local.get $start) (i32.const 1)) (local.get $patlen)))
 
 ;; Read the next token into the TOK_* registers.
+;; was there a LineTerminator in the trivia skipped before the CURRENT token?
+;; (reg 688; set by next_token). Used for ASI restricted productions
+;; (return/throw/break/continue + postfix ++/-- + yield no-LineTerminator-here).
+(func $nl_before (result i32) (effects) (i32.load (i32.const 688)))
+(func $range_has_nl (param $from i32) (param $to i32) (result i32) (effects)
+  (let $i i32 (local.get $from))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $to)))
+    (let $b i32 (i32.load8_u (i32.add (call $src) (local.get $i))))
+    (if (i32.or (i32.eq (local.get $b) (i32.const 10)) (i32.eq (local.get $b) (i32.const 13))) (then (return (i32.const 1))))  ;; \n \r
+    (if (i32.and (i32.eq (local.get $b) (i32.const 226))  ;; LS/PS: E2 80 A8/A9
+          (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 2)) (local.get $to))
+            (i32.and (i32.eq (i32.load8_u (i32.add (call $src) (i32.add (local.get $i) (i32.const 1)))) (i32.const 128))
+              (i32.or (i32.eq (i32.load8_u (i32.add (call $src) (i32.add (local.get $i) (i32.const 2)))) (i32.const 168))
+                      (i32.eq (i32.load8_u (i32.add (call $src) (i32.add (local.get $i) (i32.const 2)))) (i32.const 169))))))
+      (then (return (i32.const 1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l)))
+  (i32.const 0))
+
 (func $next_token (effects)
   (let $prevk i32 (call $tok_kind))
   (let $prevs i32 (call $tok_start))
   (let $prevl i32 (call $tok_len))
+  (let $nlpb i32 (call $pos))
   (call $skip_trivia)
+  (i32.store (i32.const 688) (call $range_has_nl (local.get $nlpb) (call $pos)))  ;; record LineTerminator-before-token
   (let $c i32 (call $ch_at (i32.const 0)))
   (let $c1 i32 (call $ch_at (i32.const 1)))
   (let $c2 i32 (call $ch_at (i32.const 2)))

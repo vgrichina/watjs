@@ -2400,7 +2400,7 @@
       (if (call $tok_is_kw (cstring "return"))
         (then
           (call $next_token)
-          (if (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0))))
+          (if (i32.or (call $nl_before) (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0)))))  ;; ASI: newline after `return` → return;
             (then
               (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
               (call $vm_finally_emit_all (local.get $code))  ;; run enclosing finally blocks first
@@ -2472,7 +2472,7 @@
       (if (call $tok_is_kw (cstring "break"))
         (then
           (call $next_token)
-          (if (i32.eq (call $tok_kind) (i32.const 3))  ;; break LABEL → that labeled loop's break list
+          (if (i32.and (i32.eqz (call $nl_before)) (i32.eq (call $tok_kind) (i32.const 3)))  ;; break LABEL (no newline between) → that labeled loop's break list
             (then
               (let $be i32 (call $vm_label_find (call $ident_name))) (call $next_token)
               (if (local.get $be) (then (call $vm_label_add (local.get $be) (i32.const 0) (call $vm_emit_jump (local.get $code) (i32.const 12))))))
@@ -2486,7 +2486,7 @@
       (if (call $tok_is_kw (cstring "continue"))
         (then
           (call $next_token)
-          (if (i32.eq (call $tok_kind) (i32.const 3))  ;; continue LABEL
+          (if (i32.and (i32.eqz (call $nl_before)) (i32.eq (call $tok_kind) (i32.const 3)))  ;; continue LABEL (no newline between)
             (then
               (let $ce i32 (call $vm_label_find (call $ident_name))) (call $next_token)
               (if (local.get $ce) (then (call $vm_label_add (local.get $ce) (i32.const 1) (call $vm_emit_jump (local.get $code) (i32.const 12))))))
@@ -2500,6 +2500,13 @@
       (if (i32.and (i32.load (i32.const 672)) (call $tok_is_kw (cstring "yield")))  ;; yield-statement only inside a generator; else `yield` is an identifier (expression statement)
         (then
           (call $next_token)
+          (if (call $nl_before)  ;; `yield` [no LineTerminator here] — newline → yield undefined (operand on next line is a separate statement)
+            (then
+              (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+              (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD undefined
+              (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP resume
+              (drop (call $eat (i32.const 21)))
+              (return)))
           (if (i32.eq (call $tok_kind) (i32.const 12))  ;; yield* E — delegate: yield each value of E's iterator
             (then
               (call $next_token)  ;; consume '*'
