@@ -4009,6 +4009,9 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $dobj i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $dres i64 (call $v_true))
+        ;; `delete null.x` / `delete undefined.x` → ToObject(base) throws TypeError
+        (if (i32.or (call $is_null (local.get $dobj)) (call $is_undefined (local.get $dobj)))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (br $disp)))
         ;; Proxy: deleteProperty trap, else delete on the target
         (if (call $is_proxy (local.get $dobj))
           (then

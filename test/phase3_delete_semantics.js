@@ -20,3 +20,10 @@ var o = { x: 1 };
 assert(delete o.x === true && !('x' in o), "delete configurable own prop");
 Object.defineProperty(o, 'y', { value: 2, configurable: false });
 assert(delete o.y === false && ('y' in o), "delete non-configurable own prop → false");
+
+// delete on a null/undefined base → TypeError (ToObject throws)
+var nthrew = 0;
+try { delete null.x; } catch (e) { if (e instanceof TypeError) nthrew++; }
+try { delete undefined.y; } catch (e) { if (e instanceof TypeError) nthrew++; }
+try { delete null[0]; } catch (e) { if (e instanceof TypeError) nthrew++; }
+assert(nthrew === 3, "delete on null/undefined base throws TypeError");
