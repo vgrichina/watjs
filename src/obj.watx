@@ -873,6 +873,14 @@
   (let $pxo i32 (call $obj_new (i32.const 4)))
   (call $scope_define (local.get $pxo) (cstring "@@ptarget") (local.get $ptgt))
   (call $scope_define (local.get $pxo) (cstring "@@phandler") (local.get $phnd))
+  ;; callability is fixed at creation (a [[Call]] slot) — `typeof` reflects it even
+  ;; after the proxy is revoked (when @@ptarget is null).
+  (call $scope_define (local.get $pxo) (cstring "@@pcallable")
+    (call $mk_bool (if i32 (call $is_function (local.get $ptgt)) (then (i32.const 1))
+      (else (if i32 (call $is_proxy (local.get $ptgt))  ;; nested proxy: read its internal slot directly
+        (then (let $tpcs i32 (call $scope_find_local (call $val_payload (local.get $ptgt)) (cstring "@@pcallable")))
+              (if i32 (local.get $tpcs) (then (call $truthy (i64.load (local.get $tpcs)))) (else (i32.const 0))))
+        (else (i32.const 0)))))))
   (call $mk_obj (local.get $pxo)))
 ;; trap fn for `name` on the handler, or v_undef if absent (revoked handler → TypeError)
 (func $proxy_trap (param $cont i64) (param $name i32) (result i64) (effects)

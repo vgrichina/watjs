@@ -8198,7 +8198,9 @@
   ;; MUST nest: i32.and evaluates both, so proxy_target(v) would deref a non-proxy
   ;; (e.g. null) payload and crash. [[watx-gotchas]]
   (if (call $is_proxy (local.get $v))
-    (then (if (call $is_function (call $proxy_target (local.get $v))) (then (return (call $mk_str (cstring "function")))))))
+    (then  ;; read the internal @@pcallable slot directly (get_prop would route through the get trap)
+      (let $pcs i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "@@pcallable")))
+      (if (local.get $pcs) (then (if (call $truthy (i64.load (local.get $pcs))) (then (return (call $mk_str (cstring "function")))))))))
   (call $mk_str (cstring "object")))  ;; null, object, array
 
 ;; ── primary ──
