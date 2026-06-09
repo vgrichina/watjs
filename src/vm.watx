@@ -2788,7 +2788,8 @@
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
               (let $itn i32 (call $vm_tmpname))
               (let $rn i32 (call $vm_tmpname))
-              (call $vm_c_expr (local.get $code))                  ;; the iterable / object
+              ;; for-in RHS is an Expression (comma allowed); for-of RHS is an AssignmentExpression (no comma)
+              (if (local.get $isin) (then (call $vm_c_commaexpr (local.get $code))) (else (call $vm_c_expr (local.get $code))))  ;; the iterable / object
               (if (local.get $isin) (then (call $vm_emit_op (local.get $code) (i32.const 56))))  ;; for-in: object → keys array
               (call $vm_emit_op (local.get $code) (i32.const 45))  ;; GETITER
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; STOREVAR it
