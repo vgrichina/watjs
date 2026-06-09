@@ -2843,7 +2843,14 @@
           (if (i32.eq (local.get $sdefidx) (i32.const -1))
             (then (call $vm_patch (local.get $code) (local.get $sdefjmp))))  ;; no default → no-match jumps to end
           (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → end
+          ;; `continue` inside the switch was appended to the ENCLOSING loop's continue
+          ;; list (216/220); vm_loop_exit would reset the count and drop those jumps
+          ;; (→ unpatched JMP → OOB), so preserve the live list across the restore.
+          (let $scont216 i32 (i32.load (i32.const 216)))
+          (let $scont220 i32 (i32.load (i32.const 220)))
           (call $vm_loop_exit (local.get $slsave))
+          (i32.store (i32.const 216) (local.get $scont216))
+          (i32.store (i32.const 220) (local.get $scont220))
           (call $cursor_restore (local.get $sendlex))  ;; lexer resumes after the switch
           (return)))
       (if (call $tok_is_kw (cstring "do"))  ;; do body while ( cond ) ;
