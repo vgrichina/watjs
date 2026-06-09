@@ -3514,8 +3514,8 @@
           (let $bgf f64 (call $tonum_raw (local.get $bgv)))
           (if (i32.or (f64.ne (local.get $bgf) (local.get $bgf)) (f64.ne (local.get $bgf) (f64.nearest (local.get $bgf))))
             (then (call $throw_type (cstring "RangeError") (cstring "The number is not a safe integer")) (return (call $v_undef))))
-          (return (call $mk_bigint (i64.trunc_f64_s (local.get $bgf))))))
-      (if (call $is_string (local.get $bgv)) (then (return (call $mk_bigint (i64.trunc_f64_s (call $str_to_num (call $val_payload (local.get $bgv))))))))
+          (return (call $mk_bigint (call $f64_sat_i64 (local.get $bgf))))))  ;; saturating (i64-limited BigInt; avoids trap on huge values)
+      (if (call $is_string (local.get $bgv)) (then (return (call $mk_bigint (call $f64_sat_i64 (call $str_to_num (call $val_payload (local.get $bgv))))))))
       (call $throw_type (cstring "TypeError") (cstring "Cannot convert to a BigInt")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 5))  ;; String(x)
     (then

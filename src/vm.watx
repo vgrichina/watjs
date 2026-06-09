@@ -469,13 +469,21 @@
   (if (i32.eq (local.get $tok) (i32.const 67)) (then (return (i32.const 41))))  ;; >>= → SHR
   (i32.const 42))  ;; 68 >>>= → USHR
 
+;; f64 → i64 with saturation (no trap): NaN → 0, out-of-range clamps to i64 min/max.
+;; Used where an f64 (possibly beyond i64) is converted to our i64-limited BigInt.
+(func $f64_sat_i64 (param $x f64) (result i64)
+  (if i64 (f64.ne (local.get $x) (local.get $x)) (then (i64.const 0))  ;; NaN
+    (else (if i64 (f64.ge (local.get $x) (f64.const 9223372036854775808.0)) (then (i64.const 9223372036854775807))  ;; >= 2^63
+      (else (if i64 (f64.lt (local.get $x) (f64.const -9223372036854775808.0)) (then (i64.const -9223372036854775808))  ;; < -2^63
+        (else (i64.trunc_f64_s (local.get $x)))))))))
+
 ;; ── compiler: source → bytecode (precedence-climbing, reuses the lexer) ──
 (func $vm_c_primary (param $code i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 1))  ;; NUM literal
     (then
       (call $vm_emit_op (local.get $code) (i32.const 1))      ;; PUSH
       (if (i32.load (i32.const 304))  ;; BigInt literal (123n)
-        (then (call $vm_emit_val (local.get $code) (call $mk_bigint (i64.trunc_f64_s (call $tok_num)))))
+        (then (call $vm_emit_val (local.get $code) (call $mk_bigint (call $f64_sat_i64 (call $tok_num)))))  ;; saturating: a literal beyond i64 (our BigInt is i64) clamps instead of trapping
         (else (call $vm_emit_val (local.get $code) (call $num (call $tok_num)))))
       (call $next_token)
       (return)))
