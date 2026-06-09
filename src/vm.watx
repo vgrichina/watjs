@@ -757,6 +757,7 @@
                       (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token))  ;; '[' expr ']' → key on stack
                       (else (set! $oaname (if i32 (i32.eq (call $tok_kind) (i32.const 2)) (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))) (else (call $ident_name)))) (call $next_token)
                             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $oaname)))))
+                    (i32.store (i32.const 692) (i32.const 1))  ;; accessor → no .prototype
                     (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; pushes the accessor fn
                     (if (local.get $oaname)  ;; accessor .name = "get "/"set " + key
                       (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (call $str_concat (if i32 (local.get $isget) (then (cstring "get ")) (else (cstring "set "))) (local.get $oaname)))))
@@ -765,6 +766,7 @@
                     (then
                       (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $oki)))
                       (i32.store (i32.const 236) (local.get $ogen))  ;; *gen(){} → generator method
+                      (i32.store (i32.const 692) (i32.const 1))  ;; method → no .prototype (gated on !generator in fnbody)
                       (call $vm_c_fnbody (local.get $code) (i32.const 0))
                       (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))  ;; method .name = key
                       (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
@@ -1369,7 +1371,8 @@
   (let $genf i32 (i32.load (i32.const 236)))   ;; capture this fn's gen/async flags before the body can clobber mem
   (let $asyncf i32 (i32.load (i32.const 232)))
   (let $classf i32 (i32.load (i32.const 404)))  ;; this fn is a class constructor (set by vm_c_class)
-  (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0)) (i32.store (i32.const 404) (i32.const 0))  ;; clear so nested fns don't inherit
+  (let $noproto i32 (i32.load (i32.const 692)))  ;; reg 692: this fn is a method/accessor (non-constructor → no .prototype)
+  (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0)) (i32.store (i32.const 404) (i32.const 0)) (i32.store (i32.const 692) (i32.const 0))  ;; clear so nested fns don't inherit
   (let $savefin i32 (i32.load (i32.const 320)))  ;; nested fn: a return runs only THIS fn's finallys
   (i32.store (i32.const 320) (i32.const 0))
   (let $savehc i32 (i32.load (i32.const 372)))  ;; nested fn: its own hoist list
@@ -1527,8 +1530,9 @@
   ;; .name: the declared name (named fn decl/expr), or 0 → "" until inferred
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $np) (i32.const 4))) (local.get $selfname))
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))
-    (i32.or (if i32 (local.get $thisstrict) (then (i32.const 4)) (else (i32.const 0)))  ;; bit2 strict
-            (if i32 (local.get $classf) (then (i32.const 8)) (else (i32.const 0)))))  ;; bit3 class constructor (no plain call)
+    (i32.or (i32.or (if i32 (local.get $thisstrict) (then (i32.const 4)) (else (i32.const 0)))  ;; bit2 strict
+            (if i32 (local.get $classf) (then (i32.const 8)) (else (i32.const 0))))  ;; bit3 class constructor (no plain call)
+            (if i32 (i32.and (local.get $noproto) (i32.eqz (local.get $genf))) (then (i32.const 64)) (else (i32.const 0)))))  ;; bit6 method/accessor → no .prototype (generator methods keep theirs)
   ;; .length = ExpectedArgumentCount: params before the first one with a default or the rest param
   (let $explen i32 (local.get $np))
   (let $eli i32 (i32.const 0))
@@ -2295,6 +2299,7 @@
               (else (if i32 (i32.eq (call $tok_kind) (i32.const 1)) (then (call $num_to_str (call $tok_num))) (else (call $ident_name))))))
             (call $next_token)
             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $ganame)))))  ;; literal key
+        (i32.store (i32.const 692) (i32.const 1))  ;; class accessor → no .prototype
         (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; accessor fn → [proto, key, fn]
         (if (local.get $ganame)  ;; accessor .name = "get "/"set " + key
           (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (call $str_concat (if i32 (local.get $gsi) (then (cstring "get ")) (else (cstring "set "))) (local.get $ganame)))))
@@ -2327,6 +2332,7 @@
         (else
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
           (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync))
+          (i32.store (i32.const 692) (i32.const 1))  ;; class method → no .prototype (gated on !generator in fnbody)
           (call $vm_c_fnbody (local.get $code) (i32.const 0))
           (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; method .name = key
           (call $vm_emit_op (local.get $code) (i32.const 73)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; DEFMETH (non-enumerable)

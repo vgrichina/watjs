@@ -620,6 +620,9 @@
           (let $vproto i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
           (if (call $str_eq (local.get $ks) (cstring "prototype"))
             (then
+              ;; arrows (bit1) and methods/accessors (bit6) are non-constructors → no .prototype
+              (if (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 66))
+                (then (return (call $v_undef))))
               (if (i32.eqz (call $is_object (local.get $vproto)))  ;; lazily create .prototype (constructor functions)
                 (then
                   (set! $vproto (call $mk_obj (call $obj_new (i32.const 8))))
@@ -767,9 +770,9 @@
     (then
       (if (call $str_eq (local.get $ks) (cstring "name"))  ;; VM fns own .name unless deleted (flag bit4=16)
         (then (return (i32.eqz (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 16))))))
-      ;; .prototype is an own property of every non-arrow VM fn (arrow flag = bit1)
+      ;; .prototype is an own property of every constructor VM fn (not arrow bit1, not method/accessor bit6)
       (if (call $str_eq (local.get $ks) (cstring "prototype"))
-        (then (return (i32.eqz (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 2))))))
+        (then (return (i32.eqz (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 66))))))
       (let $vp i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
       (if (call $is_object (local.get $vp))
         (then (if (call $scope_find_local (call $val_payload (local.get $vp)) (local.get $ks)) (then (return (i32.const 1))))))
