@@ -411,16 +411,23 @@
         (else (return (cstring "null"))))))
   (if (call $is_bigint (local.get $v))
     (then (call $throw_type (cstring "TypeError") (cstring "Do not know how to serialize a BigInt")) (return (i32.const 0))))
-  (if (call $is_array (local.get $v)) (then (return (call $jstr_arr (local.get $v) (local.get $indent)))))
+  (if (call $json_isarray (local.get $v)) (then (return (call $jstr_arr (local.get $v) (local.get $indent)))))  ;; IsArray (sees through proxies)
   (if (call $is_object (local.get $v)) (then (return (call $jstr_obj (local.get $v) (local.get $indent)))))
   (i32.const 0))  ;; undefined / function → omit
+
+;; IsArray that sees through Proxies (SerializeJSONProperty uses IsArray, not a tag check)
+(func $json_isarray (param $v i64) (result i32) (effects)
+  (let $x i64 (local.get $v))
+  (block $e (loop $l (br_if $e (i32.eqz (call $is_proxy (local.get $x)))) (set! $x (call $proxy_target (local.get $x))) (br $l)))
+  (call $is_array (local.get $x)))
 
 (func $jstr_arr (param $v i64) (param $indent i32) (result i32) (effects)
   (let $p i32 (call $val_payload (local.get $v)))
   (if (call $jstk_has (local.get $p)) (then (call $throw_type (cstring "TypeError") (cstring "Converting circular structure to JSON")) (return (i32.const 0))))
   (call $jstk_push (local.get $p))
-  (let $aa i32 (call $val_payload (local.get $v)))
-  (let $n i32 (call $arr_len (local.get $aa)))
+  ;; length via Get (proxy-aware) so a Proxy-over-array serializes as an array
+  (let $n i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $v) (call $mk_str (cstring "length"))))))
+  (if (call $err) (then (call $jstk_pop) (return (i32.const 0))))
   (let $gap i32 (i32.load (i32.const 416)))
   (let $ni i32 (local.get $indent))
   (if (local.get $gap) (then (set! $ni (call $str_concat (local.get $indent) (local.get $gap)))))
