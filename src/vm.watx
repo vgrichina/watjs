@@ -4057,17 +4057,30 @@
         (let $asctor i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left in place
         (call $vm_apply_fields (local.get $asctor) (local.get $asarr))
         (br $disp)))
-    (if (i32.or (i32.eq (local.get $op) (i32.const 74)) (i32.eq (local.get $op) (i32.const 75)))  ;; CLOSEITER: 74 break (propagate return's throw) / 75 throw (suppress it)
+    (if (i32.or (i32.eq (local.get $op) (i32.const 74)) (i32.eq (local.get $op) (i32.const 75)))  ;; CLOSEITER: 74 normal/break (IteratorClose) / 75 throw-completion (suppress return's own error)
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $itv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (if (call $is_object (local.get $itv))
           (then
-            (let $cierr i32 (call $err))  ;; in-flight exception (op 75 restores it → suppresses return()'s own throw)
-            (let $retv i64 (call $get_prop (local.get $itv) (call $mk_str (cstring "return"))))
-            (if (call $is_function (local.get $retv))
-              (then (drop (call $call_val (local.get $retv) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $itv)))))
-            (if (i32.eq (local.get $op) (i32.const 75)) (then (call $set_err (local.get $cierr))))))
+            (if (i32.eq (local.get $op) (i32.const 75))
+              (then  ;; throw-completion: the original exception always wins — call return() but ignore its result/errors
+                (let $cierr i32 (call $err))
+                (let $retv75 i64 (call $get_prop (local.get $itv) (call $mk_str (cstring "return"))))
+                (if (call $is_function (local.get $retv75))
+                  (then (drop (call $call_val (local.get $retv75) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $itv)))))
+                (call $set_err (local.get $cierr)))
+              (else  ;; normal/break completion: full IteratorClose
+                (let $retv74 i64 (call $get_prop (local.get $itv) (call $mk_str (cstring "return"))))
+                (if (call $err) (then (br $disp)))  ;; GetMethod threw (e.g. a getter) → propagate
+                (if (i32.eqz (i32.or (call $is_undefined (local.get $retv74)) (call $is_null (local.get $retv74))))  ;; return present (not null/undefined)
+                  (then
+                    (if (i32.eqz (call $is_function (local.get $retv74)))  ;; present but not callable → TypeError (GetMethod)
+                      (then (call $throw_type (cstring "TypeError") (cstring "iterator return is not a function")) (br $disp)))
+                    (let $cres i64 (call $call_val (local.get $retv74) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $itv)))
+                    (if (call $err) (then (br $disp)))  ;; return() threw → propagate
+                    (if (i32.eqz (i32.or (call $is_object (local.get $cres)) (i32.or (call $is_array (local.get $cres)) (call $is_function (local.get $cres)))))
+                      (then (call $throw_type (cstring "TypeError") (cstring "iterator return() returned a non-object")) (br $disp)))))))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 35))  ;; SETIDX — [obj, key, val]
       (then
