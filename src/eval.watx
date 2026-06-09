@@ -6619,7 +6619,7 @@
             (then
               (let $ldr i32 (call $obj_new (i32.const 4)))
               (call $scope_define (local.get $ldr) (cstring "value") (call $num (f64.convert_i32_s (call $arr_len (local.get $aobj)))))
-              (call $scope_define (local.get $ldr) (cstring "writable") (call $v_true))
+              (call $scope_define (local.get $ldr) (cstring "writable") (call $mk_bool (call $arr_len_writable (local.get $aobj))))  ;; honor a non-writable length (defineProperty / freeze)
               (call $scope_define (local.get $ldr) (cstring "enumerable") (call $v_false))
               (call $scope_define (local.get $ldr) (cstring "configurable") (call $v_false))
               (return (call $mk_obj (local.get $ldr)))))
