@@ -8036,7 +8036,7 @@
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232526))  ;; VM-fn → run on the VM
     (then (return (call $vm_call_fn (local.get $fn) (local.get $argc) (local.get $argv) (local.get $thisv)))))
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232527))  ;; generator fn → create a generator object (NOT a native id!)
-    (then (return (call $vm_make_generator (local.get $fn) (local.get $argc) (local.get $argv) (i32.load (i32.const 204))))))
+    (then (return (call $vm_make_generator (local.get $fn) (local.get $argc) (local.get $argv) (i32.load (i32.const 204)) (local.get $thisv)))))
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232528))  ;; async fn → returns a promise
     (then (return (call $vm_make_async (local.get $fn) (local.get $argc) (local.get $argv) (i32.load (i32.const 204))))))
   (if i64 (i32.load (local.get $fn))
@@ -8050,7 +8050,7 @@
   (let $argv i32 (call $heap_alloc (i32.const 8)))
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232540)) (then (return (call $call_bound (local.get $fn) (i32.const 0) (local.get $argv)))))  ;; bound fn
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232526)) (then (return (call $vm_call_fn (local.get $fn) (i32.const 0) (local.get $argv) (local.get $thisv)))))  ;; VM-fn
-  (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232527)) (then (return (call $vm_make_generator (local.get $fn) (i32.const 0) (local.get $argv) (i32.load (i32.const 204))))))  ;; generator fn
+  (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232527)) (then (return (call $vm_make_generator (local.get $fn) (i32.const 0) (local.get $argv) (i32.load (i32.const 204)) (local.get $thisv)))))  ;; generator fn
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232528)) (then (return (call $vm_make_async (local.get $fn) (i32.const 0) (local.get $argv) (i32.load (i32.const 204))))))  ;; async fn
   (if i64 (i32.load (local.get $fn))
     (then (call $call_native (i32.load (local.get $fn)) (i32.const 0) (local.get $argv) (local.get $thisv)))

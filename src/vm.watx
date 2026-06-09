@@ -257,15 +257,8 @@
 ;; append the elements of an iterable `srcv` onto array `dst` (for `...spread`):
 ;; arrays/strings directly, any other object via the iterator protocol (next()).
 (func $spread_into (param $dst i32) (param $srcv i64) (effects)
-  (if (call $is_array (local.get $srcv))
-    (then
-      (let $sa i32 (call $val_payload (local.get $srcv)))
-      (let $si i32 (i32.const 0))
-      (block $ae (loop $al
-        (br_if $ae (i32.ge_s (local.get $si) (call $arr_len (local.get $sa))))
-        (call $arr_push (local.get $dst) (call $arr_get (local.get $sa) (local.get $si)))
-        (set! $si (i32.add (local.get $si) (i32.const 1))) (br $al)))
-      (return)))
+  ;; arrays go through the iterator protocol (below) so an overridden
+  ;; Array.prototype[Symbol.iterator] is honored, matching $vm_get_iter.
   (if (call $is_string (local.get $srcv))
     (then
       (let $ssp i32 (call $val_payload (local.get $srcv)))
@@ -276,7 +269,7 @@
         (call $arr_push (local.get $dst) (call $str_char_at (local.get $ssp) (local.get $sci)))
         (set! $sci (i32.add (local.get $sci) (i32.const 1))) (br $sl)))
       (return)))
-  (if (call $is_object (local.get $srcv))
+  (if (i32.or (call $is_array (local.get $srcv)) (call $is_object (local.get $srcv)))
     (then
       (let $it i64 (call $vm_get_iter (local.get $srcv)))
       (let $nf i64 (call $get_prop (local.get $it) (call $mk_str (cstring "next"))))
@@ -300,7 +293,13 @@
 
 (func $vm_get_iter (param $v i64) (result i64) (effects)
   (if (call $is_array (local.get $v))
-    (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
+    (then
+      ;; GetIterator: call the array's @@iterator (honors an overridden Array.prototype[Symbol.iterator]);
+      ;; fall back to the built-in array iterator (native 97) only if it is somehow absent.
+      (let $aitf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@iterator"))))
+      (if (call $is_function (local.get $aitf))
+        (then (return (call $call_val (local.get $aitf) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
+      (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
   (if (call $is_string (local.get $v))  ;; string → array of single-char strings, then array iterator
     (then
       (let $sp i32 (call $val_payload (local.get $v)))
@@ -3449,7 +3448,8 @@
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
         (if (i32.eq (i32.load (local.get $cfn)) (i32.const 1448232527))  ;; generator function → return an iterator
           (then
-            (let $gv i64 (call $vm_make_generator (local.get $cfn) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8))) (local.get $gscope)))
+            (let $gv i64 (call $vm_make_generator (local.get $cfn) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8))) (local.get $gscope)
+              (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (i32.sub (local.get $cbase) (i32.const 8))))) (else (call $v_undef)))))  ;; receiver `this`
             (set! $sp (local.get $rbase))
             (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $gv))
             (set! $sp (i32.add (local.get $sp) (i32.const 8)))
@@ -4472,9 +4472,10 @@
 
 ;; create a generator object from a function* — a suspended VM context plus a
 ;; `next` method. Calling gen() does NOT run the body; each gen.next() resumes.
-(func $vm_make_generator (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (result i64) (effects)
+(func $vm_make_generator (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (param $thisv i64) (result i64) (effects)
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
-  (let $ns i32 (call $scope_new (call $vm_fn_parent (local.get $fn) (local.get $gscope)) (i32.add (local.get $np) (i32.const 4))))
+  (let $ns i32 (call $scope_new (call $vm_fn_parent (local.get $fn) (local.get $gscope)) (i32.add (local.get $np) (i32.const 5))))
+  (call $scope_define (local.get $ns) (cstring "this") (local.get $thisv))  ;; receiver captured at call time (generator body resumes with the right `this`)
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
