@@ -1588,9 +1588,10 @@
   ;; .name: the declared name (named fn decl/expr), or 0 → "" until inferred
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $np) (i32.const 4))) (local.get $selfname))
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))
-    (i32.or (i32.or (if i32 (local.get $thisstrict) (then (i32.const 4)) (else (i32.const 0)))  ;; bit2 strict
+    (i32.or (i32.or (i32.or (if i32 (local.get $thisstrict) (then (i32.const 4)) (else (i32.const 0)))  ;; bit2 strict
             (if i32 (local.get $classf) (then (i32.const 8)) (else (i32.const 0))))  ;; bit3 class constructor (no plain call)
-            (if i32 (i32.and (local.get $noproto) (i32.eqz (local.get $genf))) (then (i32.const 64)) (else (i32.const 0)))))  ;; bit6 method/accessor → no .prototype (generator methods keep theirs)
+            (if i32 (i32.and (local.get $noproto) (i32.eqz (local.get $genf))) (then (i32.const 64)) (else (i32.const 0))))  ;; bit6 method/accessor → no .prototype (generator methods keep theirs)
+            (if i32 (i32.and (local.get $genf) (local.get $asyncf)) (then (i32.const 128)) (else (i32.const 0)))))  ;; bit7 async generator (its result object's next/return/throw return promises)
   ;; .length = ExpectedArgumentCount: params before the first one with a default or the rest param
   (let $explen i32 (local.get $np))
   (let $eli i32 (i32.const 0))
@@ -2316,7 +2317,16 @@
         (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk
         (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP array
         (br $cml)))  ;; next class member
-    (if (i32.eq (call $tok_kind) (i32.const 12)) (then (set! $isgen (i32.const 1)) (call $next_token)))  ;; `*` generator method
+    ;; `async` modifier (unless the member is named "async", e.g. `async(){}` / `async = 1`,
+    ;; or a LineTerminator follows — then `async` is the method name per [no LineTerminator here]).
+    (if (call $str_eq (call $ident_name) (cstring "async"))
+      (then
+        (let $asc i32 (call $cursor_save))
+        (call $next_token)
+        (if (i32.or (call $nl_before) (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.eq (call $tok_kind) (i32.const 18)))))
+          (then (call $cursor_restore (local.get $asc)))
+          (else (set! $isasync (i32.const 1))))))  ;; confirmed `async` modifier
+    (if (i32.eq (call $tok_kind) (i32.const 12)) (then (set! $isgen (i32.const 1)) (call $next_token)))  ;; `*` generator method (async `*` → async generator)
     (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed](){} method  |  [computed] = field
       (then
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
@@ -4713,6 +4723,12 @@
   (call $scope_define_attr (local.get $g) (cstring "next") (call $mk_native (i32.const 150) (cstring "next")) (i32.const 12))  ;; methods are DontEnum {W,C}
   (call $scope_define_attr (local.get $g) (cstring "return") (call $mk_native (i32.const 420) (cstring "return")) (i32.const 12))
   (call $scope_define_attr (local.get $g) (cstring "throw") (call $mk_native (i32.const 421) (cstring "throw")) (i32.const 12))
+  ;; async generator (fn flag bit7): mark the object so next/return/throw return promises,
+  ;; and expose Symbol.asyncIterator → this (native 342 = Iterator.prototype[@@iterator] → this).
+  (if (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))) (i32.const 128))
+    (then
+      (call $scope_define (local.get $g) (cstring "@@asyncgen") (call $v_true))
+      (call $scope_define_attr (local.get $g) (cstring "@@asyncIterator") (call $mk_native (i32.const 342) (cstring "[Symbol.asyncIterator]")) (i32.const 12))))
   (call $mk_obj (local.get $g)))
 
 ;; the @@ctx of a generator object, or 0 + a thrown TypeError if the receiver is not a

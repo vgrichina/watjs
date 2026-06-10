@@ -3999,7 +3999,18 @@
         (br $fel2)))
       (return (call $mk_obj (local.get $feo)))))
   (if (i32.eq (local.get $id) (i32.const 150))  ;; generator .next([v]) — resumes the VM context
-    (then (return (call $vm_gen_result (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+    (then
+      (let $gnres i64 (call $vm_gen_result (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      ;; async generator: .next() returns a Promise of {value,done} (rejected if the body threw).
+      ;; NOTE: guard is_object with a nested `if` — i32.and is NOT short-circuit, so calling
+      ;; scope_find_local(val_payload(thisv)) on a non-object (e.g. .next.call(3)) would OOB.
+      (if (call $is_object (local.get $thisv))
+        (then
+          (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@asyncgen")) (i32.const 0))
+            (then
+              (if (call $err) (then (let $gnerr i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $gnerr)))))
+              (return (call $mk_promise (i32.const 1) (local.get $gnres)))))))
+      (return (local.get $gnres))))
   (if (i32.eq (local.get $id) (i32.const 420))  ;; generator.return(value) → close, { value, done:true }
     (then
       (let $grctx i32 (call $gen_ctx_or_throw (local.get $thisv)))
