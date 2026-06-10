@@ -3723,8 +3723,8 @@
             (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $pxcres))
             (set! $sp (i32.add (local.get $sp) (i32.const 8)))
             (br $disp)))
-        ;; the callee must be a function; `new 1` / `new {}` / `new "s"` → TypeError
-        (if (i32.eqz (call $is_function (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
+        ;; the callee must be a constructor; `new 1`/`new {}`/`new (()=>{})`/`new {m(){}}.m` → TypeError
+        (if (i32.eqz (call $is_constructor (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
           (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (set! $sp (local.get $cbase)) (br $disp)))
         (let $cfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))))
         ;; bound function: [[Construct]] the target with bound args prepended
@@ -3806,8 +3806,8 @@
         (let $nsargc i32 (call $arr_len (local.get $nsarr)))
         (let $nsdata i32 (call $arr_data (local.get $nsarr)))
         (let $nscbase i32 (i32.sub (local.get $sp) (i32.const 8)))  ;; ctor slot
-        ;; callee must be a function
-        (if (i32.eqz (call $is_function (i64.load (i32.add (local.get $stack) (local.get $nscbase)))))
+        ;; callee must be a constructor
+        (if (i32.eqz (call $is_constructor (i64.load (i32.add (local.get $stack) (local.get $nscbase)))))
           (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (set! $sp (local.get $nscbase)) (br $disp)))
         (let $nscfn i32 (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $nscbase)))))
         ;; bound function: [[Construct]] the target with bound args + spread args
