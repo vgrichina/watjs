@@ -11,3 +11,9 @@ assert(g.next().value === 10, "next 1");
 assert(g.next().value === 20, "next 2");
 var r = g.return(99);
 assert(r.value === 99 && r.done === true, "return value/done");
+
+// Symbol.prototype.toString on a foreign receiver → TypeError (not an OOB on sym_desc)
+assert(throwsType(function () { Symbol.prototype.toString.call(3); }), "Symbol.toString on number");
+assert(throwsType(function () { Symbol.prototype.toString.call({}); }), "Symbol.toString on object");
+assert(Symbol("hi").toString() === "Symbol(hi)", "normal symbol toString");
+assert(Object(Symbol("w")).toString() === "Symbol(w)", "symbol wrapper toString");

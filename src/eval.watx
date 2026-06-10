@@ -4723,6 +4723,8 @@
       (if (call $is_object (local.get $thisv))
         (then (let $sws i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
           (if (local.get $sws) (then (if (call $is_symbol (i64.load (local.get $sws))) (then (set! $thisv (i64.load (local.get $sws)))))))))
+      (if (i32.eqz (call $is_symbol (local.get $thisv)))  ;; foreign receiver → TypeError, not an OOB on sym_desc
+        (then (call $throw_type (cstring "TypeError") (cstring "Symbol.prototype.toString requires that 'this' be a Symbol")) (return (call $v_undef))))
       (let $sdd i32 (call $sym_desc (local.get $thisv)))  ;; 0 → absent description
       (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (if i32 (local.get $sdd) (then (local.get $sdd)) (else (cstring "")))) (cstring ")"))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 210)) (i32.le_s (local.get $id) (i32.const 218)))  ;; TypedArray constructors
