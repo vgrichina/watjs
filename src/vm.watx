@@ -2473,6 +2473,7 @@
       (block $be (loop $bl
         (br_if $be (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
         (br_if $be (i32.eq (call $tok_kind) (i32.const 0)))
+        (br_if $be (call $err))  ;; a compile-time SyntaxError stops the parser advancing → break (else infinite loop)
         (call $vm_c_stmt (local.get $code))
         (br $bl)))
       (call $next_token)  ;; consume '}'
@@ -2844,6 +2845,7 @@
               (br_if $sbse (i32.eq (call $tok_kind) (i32.const 18)))
               (br_if $sbse (i32.eq (call $tok_kind) (i32.const 0)))
               (br_if $sbse (i32.or (call $tok_is_kw (cstring "case")) (call $tok_is_kw (cstring "default"))))
+              (br_if $sbse (call $err))  ;; compile-time SyntaxError halts cursor advance → break (else infinite loop)
               (call $vm_c_stmt (local.get $code))
               (br $sbsl)))
             (set! $si (i32.add (local.get $si) (i32.const 1)))
