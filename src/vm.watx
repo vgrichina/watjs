@@ -4243,6 +4243,14 @@
         (let $nm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (let $slot i32 (call $scope_find (local.get $scope) (local.get $nm)))
+        ;; binding lives on a `with` object → GetValue via get_prop (invokes any getter)
+        (let $lwo i64 (i64.load (i32.const 492)))
+        (if (i64.ne (local.get $lwo) (i64.const 0))
+          (then
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $get_prop (local.get $lwo) (call $mk_str (local.get $nm))))
+            (if (call $err) (then (br $disp)))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
         ;; unresolvable reference → ReferenceError (GetValue), unless this is a
         ;; soft load for `typeof x`, which must yield undefined without throwing
         (if (i32.and (i32.eqz (local.get $slot)) (i32.eq (local.get $op) (i32.const 8)))
@@ -4258,6 +4266,10 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         ;; assign up the scope chain (so closures update outer vars); define locally if unbound
         (let $svslot i32 (call $scope_find (local.get $scope) (local.get $nm)))
+        ;; binding lives on a `with` object → PutValue via set_prop (invokes any setter)
+        (let $swo i64 (i64.load (i32.const 492)))
+        (if (i64.ne (local.get $swo) (i64.const 0))
+          (then (call $set_prop (local.get $swo) (call $mk_str (local.get $nm)) (i64.load (i32.add (local.get $stack) (local.get $sp)))) (br $disp)))
         (if (local.get $svslot)
           (then
             ;; const binding (the only non-writable, non-accessor scope slot) → TypeError
@@ -4272,6 +4284,10 @@
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $saslot i32 (call $scope_find (local.get $scope) (local.get $sanm)))
+        ;; binding lives on a `with` object → PutValue via set_prop (invokes any setter)
+        (let $sawo i64 (i64.load (i32.const 492)))
+        (if (i64.ne (local.get $sawo) (i64.const 0))
+          (then (call $set_prop (local.get $sawo) (call $mk_str (local.get $sanm)) (i64.load (i32.add (local.get $stack) (local.get $sp)))) (br $disp)))
         (if (local.get $saslot)
           (then
             ;; const lexical binding (const-bit 16) → TypeError in ALL modes

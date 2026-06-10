@@ -73,6 +73,10 @@
 
 ;; find value-slot for `name` walking up the scope chain; 0 if unbound.
 (func $scope_find (param $s i32) (param $name i32) (result i32) (effects)
+  ;; reg 492 = the `with`-object the binding resolved on (0 = ordinary binding). LOADVAR/
+  ;; STOREVAR read it to route through get_prop/set_prop (invoking getters/setters) instead
+  ;; of reading a raw slot — which is wrong for accessors and stale once a getter mutates.
+  (i64.store (i32.const 492) (i64.const 0))
   (let $cur i32 (local.get $s))
   (let $slot i32 (i32.const 0))
   (block $brk (loop $cont
@@ -82,7 +86,9 @@
     ;; `with` scope: delegate to the bound object's properties (skipping @@unscopables)
     (let $wo i64 (call $scope_withobj (local.get $cur)))
     (if (i64.ne (local.get $wo) (i64.const 0))
-      (then (set! $slot (call $with_find_slot (local.get $wo) (local.get $name))) (br_if $brk (local.get $slot))))
+      (then
+        (set! $slot (call $with_find_slot (local.get $wo) (local.get $name)))
+        (if (local.get $slot) (then (i64.store (i32.const 492) (local.get $wo)) (br $brk)))))
     (set! $cur (call $scope_parent (local.get $cur)))
     (br $cont)))
   (local.get $slot))
