@@ -2885,7 +2885,9 @@
           ;; detect for-of:  [var] IDENT of E
           (let $ofdetect i32 (call $cursor_save))
           (let $ofdecl i32 (i32.const 0))  ;; 1 = var/let/const head (binding); 0 = assignment-target head
-          (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))) (then (set! $ofdecl (i32.const 1)) (call $next_token)))
+          (let $ofisvar i32 (i32.const 0))  ;; 1 = `var` (for the annex-B `for(var x=init in E)` sloppy exception)
+          (if (call $tok_is_kw (cstring "var")) (then (set! $ofdecl (i32.const 1)) (set! $ofisvar (i32.const 1)) (call $next_token))
+            (else (if (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))) (then (set! $ofdecl (i32.const 1)) (call $next_token)))))
           (let $ofvar i32 (i32.const 0))
           (if (i32.eq (call $tok_kind) (i32.const 3))
             (then (set! $ofvar (call $ident_name))
@@ -2902,6 +2904,31 @@
               (set! $ofpatcur (call $cursor_save))
               (call $vm_skip_balanced)
               (set! $ofvar (i32.const -1))))  ;; pattern-mode sentinel
+          ;; a for-of/for-in head ForDeclaration/ForBinding may NOT have an `= Initializer`:
+          ;; `for (let x = 1 of E)` / `for (var [a] = e in E)` are early SyntaxErrors. Detect
+          ;; a declaration with `=` followed (bracket-balanced) by a top-level `of`/`in`.
+          (if (i32.and (local.get $ofdecl) (i32.eq (call $tok_kind) (i32.const 24)))
+            (then
+              (let $hidet i32 (call $cursor_save))  ;; at '='
+              (call $next_token)  ;; consume '='
+              (let $hidep i32 (i32.const 0))
+              (block $hie (loop $hil
+                (let $hik i32 (call $tok_kind))
+                (br_if $hie (i32.eqz (local.get $hik)))  ;; EOF
+                (if (i32.or (i32.eq (local.get $hik) (i32.const 15)) (i32.or (i32.eq (local.get $hik) (i32.const 19)) (i32.eq (local.get $hik) (i32.const 17)))) (then (set! $hidep (i32.add (local.get $hidep) (i32.const 1)))))
+                (if (i32.or (i32.eq (local.get $hik) (i32.const 16)) (i32.or (i32.eq (local.get $hik) (i32.const 20)) (i32.eq (local.get $hik) (i32.const 18)))) (then (set! $hidep (i32.sub (local.get $hidep) (i32.const 1)))))
+                (if (i32.le_s (local.get $hidep) (i32.const 0))
+                  (then
+                    (br_if $hie (i32.or (i32.eq (local.get $hik) (i32.const 21)) (i32.or (i32.eq (local.get $hik) (i32.const 22)) (i32.lt_s (local.get $hidep) (i32.const 0)))))  ;; ';'/','/')' → regular-for init, no error
+                    (if (i32.eq (local.get $hik) (i32.const 3))
+                      (then
+                        (if (call $tok_is_kw (cstring "of"))  ;; for-of head with init → always SyntaxError
+                          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "for-of loop head may not have an initializer")) (return)))
+                        (if (call $tok_is_kw (cstring "in"))  ;; for-in head with init: allowed ONLY for sloppy `var` (annex B.3.6)
+                          (then (if (i32.eqz (i32.and (local.get $ofisvar) (i32.eqz (i32.load (i32.const 388)))))
+                            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "for-in loop head declaration may not have an initializer")) (return)))))))))
+                (call $next_token) (br $hil)))
+              (call $cursor_restore (local.get $hidet))))  ;; restore to '=' so the regular-for init parser runs
           (let $isof i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of")))))
           (let $isin i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "in")))))
           (if (i32.or (local.get $isof) (local.get $isin))
