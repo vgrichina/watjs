@@ -2305,8 +2305,8 @@
     (br_if $cme (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
     (br_if $cme (i32.eq (call $tok_kind) (i32.const 0)))
     (if (call $eat (i32.const 21)) (then (br $cml)))  ;; stray ';' between members
-    ;; leading modifiers: `static` then `*` (generator). `async` is left untouched
-    ;; (async methods/generators unsupported — handling them flips accidental passes).
+    ;; leading modifiers: `static`, then `async`, then `*` (generator). `async *` is an async
+    ;; generator method; `async` alone is an async method (both parsed below).
     (let $isgen i32 (i32.const 0))
     (let $isasync i32 (i32.const 0))
     (let $isstatic i32 (i32.const 0))
@@ -2447,8 +2447,8 @@
 
 ;; statement compiler — emits bytecode (control flow via jumps, not re-scanning)
 (func $vm_c_stmt (param $code i32) (effects)
-  ;; `with` is a reserved word in strict mode → early SyntaxError (sloppy `with` is
-  ;; valid but unsupported; those aren't negative tests, so only flag it in strict).
+  ;; `with` is a reserved word in strict mode → early SyntaxError. Sloppy `with` is supported
+  ;; (see the `with` handler below + scope_find's with-object delegation).
   (if (i32.and (i32.load (i32.const 388)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "with"))))
     (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Strict mode code may not include a with statement")) (return)))
   ;; labeled statement:  IDENT : stmt   (the next loop picks up the pending label)
