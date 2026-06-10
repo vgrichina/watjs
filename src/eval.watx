@@ -4045,6 +4045,18 @@
       (return (local.get $thisv))))  ;; pass the original promise through
   (if (i32.eq (local.get $id) (i32.const 414))  ;; Promise.reject(r)
     (then (return (call $mk_promise (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 452))  ;; async continuation: awaited promise fulfilled → resume with its value
+    (then
+      (let $acx i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@actx"))))))
+      (call $async_drive (local.get $acx) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@arp"))) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 453))  ;; async continuation: awaited promise rejected → resume by throwing the reason
+    (then
+      (let $acx2 i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@actx"))))))
+      (let $arp2 i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@arp"))))
+      (call $set_err (i32.const 1)) (call $set_err_val (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (call $async_drive (local.get $acx2) (local.get $arp2) (call $v_undef))
+      (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 415))  ;; executor resolve(v) — `this` is the bound promise
     (then (call $promise_settle (local.get $thisv) (i32.const 1) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 416))  ;; executor reject(r) — `this` is the bound promise

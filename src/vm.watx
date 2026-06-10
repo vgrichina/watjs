@@ -5012,6 +5012,37 @@
     (br $l)))
   (call $mk_obj (local.get $ao)))
 
+;; Drive an async-function context to its next await/completion. A settled await resumes
+;; inline; an await of a PENDING promise registers a continuation that re-enters this driver
+;; when the promise settles (true suspension). Settles `rp` (the call's result promise) on
+;; completion. Reactions still fire eagerly (no microtask ordering yet).
+(func $async_drive (param $ctx i32) (param $rp i64) (param $resume0 i64) (effects)
+  (let $resume i64 (local.get $resume0))
+  (block $e (loop $l
+    (let $v i64 (call $vm_step (local.get $ctx) (local.get $resume)))
+    (if (call $vm_done (local.get $ctx))
+      (then
+        (if (call $err)
+          (then (let $ae i64 (call $err_val)) (call $set_err (i32.const 0)) (call $promise_settle (local.get $rp) (i32.const 2) (local.get $ae)))
+          (else (call $promise_resolve_with (local.get $rp) (local.get $v))))
+        (return)))
+    ;; suspended at AWAIT; $v = awaited value. Pending promise → register continuation, suspend.
+    ;; (nested if: i32.and is NOT short-circuit, so promise_state must not run on a non-promise)
+    (if (call $vm_is_promise (local.get $v))
+      (then (if (i32.eq (call $promise_state (local.get $v)) (i32.const 0))
+        (then (call $async_register_cont (local.get $v) (local.get $ctx) (local.get $rp)) (return)))))
+    (set! $resume (call $vm_await_unwrap (local.get $v)))  ;; settled → value (rejected sets err → throws into the body)
+    (br $l))))
+(func $async_register_cont (param $aw i64) (param $ctx i32) (param $rp i64) (effects)
+  (let $co i32 (call $obj_new (i32.const 4)))
+  (call $scope_define (local.get $co) (cstring "@@actx") (call $num (f64.convert_i32_s (local.get $ctx))))
+  (call $scope_define (local.get $co) (cstring "@@arp") (local.get $rp))
+  (let $cov i64 (call $mk_obj (local.get $co)))
+  (call $promise_add_reaction (local.get $aw)
+    (call $promise_bound_settler (i32.const 452) (local.get $cov))   ;; onFulfilled → resume with value
+    (call $promise_bound_settler (i32.const 453) (local.get $cov))   ;; onRejected → resume by throwing
+    (call $mk_promise (i32.const 0) (call $v_undef))))                ;; reaction result (unused)
+
 (func $vm_make_async (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (result i64) (effects)
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
   (let $ns i32 (call $scope_new (call $vm_fn_parent (local.get $fn) (local.get $gscope)) (i32.add (local.get $np) (i32.const 4))))
@@ -5035,14 +5066,11 @@
   (i32.store (i32.add (local.get $ctx) (i32.const 28)) (local.get $gscope))
   (i32.store (i32.add (local.get $ctx) (i32.const 32)) (i32.const 0))
   (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 0))
-  (let $rv i64 (call $v_undef))
-  (let $resume i64 (call $v_undef))
-  (block $e (loop $l
-    (let $v i64 (call $vm_step (local.get $ctx) (local.get $resume)))
-    (if (call $vm_done (local.get $ctx)) (then (set! $rv (local.get $v)) (br $e)))
-    (set! $resume (call $vm_await_unwrap (local.get $v)))  ;; v = awaited value → resolve it
-    (br $l)))
-  (call $vm_promise (local.get $rv)))
+  ;; result promise, created upfront so a suspended await can settle the SAME promise the
+  ;; caller holds when the awaited promise resolves later.
+  (let $rp i64 (call $mk_promise (i32.const 0) (call $v_undef)))
+  (call $async_drive (local.get $ctx) (local.get $rp) (call $v_undef))
+  (local.get $rp))
 
 ;; run a whole program on the VM (variables, if/while via jumps, print). Drives
 ;; vm_step to HALT — real stateful execution, all state in linear memory.
