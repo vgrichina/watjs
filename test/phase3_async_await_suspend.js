@@ -1,39 +1,16 @@
-// async functions suspend on `await` of a PENDING promise and resume when it settles
-// (was: await unwrapped only already-settled promises → pending gave undefined).
-// Reactions fire eagerly here, so resolving synchronously drives the continuation.
-var out = {};
-
-// await a deferred promise
-var R; var p = new Promise(function (r) { R = r; });
-(async function () { out.a = await p; })();
-R(9);
-if (out.a !== 9) throw new Error("await deferred: " + out.a);
-
-// await a deferred rejection → throws into the async body (catchable)
-var J; var pr = new Promise(function (res, rej) { J = rej; });
-(async function () { try { await pr; } catch (e) { out.b = e; } })();
-J("boom");
-if (out.b !== "boom") throw new Error("await rejected: " + out.b);
-
-// two sequential awaits of deferred promises
-var R1, R2;
-var p1 = new Promise(function (r) { R1 = r; });
-var p2 = new Promise(function (r) { R2 = r; });
-(async function () { out.c = (await p1) + (await p2); })();
-R1(3); R2(4);
-if (out.c !== 7) throw new Error("two awaits: " + out.c);
-
-// async function's returned value resolves its promise; returning a promise adopts it
-(async function () { return 5; })().then(function (v) { out.d = v; });
-if (out.d !== 5) throw new Error("async return: " + out.d);
-(async function () { return Promise.resolve(8); })().then(function (v) { out.e = v; });
-if (out.e !== 8) throw new Error("async return promise (adopt): " + out.e);
-
-// await of a non-promise resumes inline with the value
-(async function () { out.f = await 42; })();
-if (out.f !== 42) throw new Error("await non-promise: " + out.f);
-
-// the async result is a fresh Promise (not the awaited one)
-var inner = Promise.resolve(1);
-var result = (async function () { return inner; })();
-if (typeof result.then !== "function") throw new Error("async returns a promise");
+// async functions suspend on await of a pending promise and resume when it settles.
+function defer(v) { var R; var p = new Promise(function (r) { R = r; }); Promise.resolve().then(function () { R(v); }); return p; }
+function deferReject(v) { var J; var p = new Promise(function (_, j) { J = j; }); Promise.resolve().then(function () { J(v); }); return p; }
+function check(c, m) { if (!c) throw new Error(m); }
+(async function () {
+  check((await defer(9)) === 9, "await deferred");
+  var rej; try { await deferReject("boom"); } catch (e) { rej = e; }
+  check(rej === "boom", "await rejected");
+  check(((await defer(3)) + (await defer(4))) === 7, "two awaits");
+  check((await (async function () { return 5; })()) === 5, "async return");
+  check((await (async function () { return Promise.resolve(8); })()) === 8, "async return promise (adopt)");
+  check((await 42) === 42, "await non-promise");
+  var r = (async function () { return 1; })();
+  check(typeof r.then === "function", "async returns a promise");
+  print("PASS");
+})().then(undefined, function (e) { print("FAIL: " + e.message); });

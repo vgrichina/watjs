@@ -9,4 +9,5 @@ p("toString", ae.toString());                     // AggregateError: msg
 p("no-msg", new AggregateError([]).message);      // (empty)
 p("isarray-arr-proxy", Array.isArray(new Proxy([], {}))); // true
 p("isarray-obj-proxy", Array.isArray(new Proxy({}, {}))); // false
-p("any", (function () { var r; Promise.any([Promise.reject(1), Promise.reject(2)]).catch(function (e) { r = (e instanceof AggregateError) + "," + e.errors.join(","); }); return r; })()); // true,1,2
+// Promise.any rejects as a microtask, so print the result inside .catch (runs during the drain).
+Promise.any([Promise.reject(1), Promise.reject(2)]).catch(function (e) { p("any", (e instanceof AggregateError) + "," + e.errors.join(",")); }); // true,1,2

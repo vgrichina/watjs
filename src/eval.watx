@@ -4057,8 +4057,8 @@
       (call $set_err (i32.const 1)) (call $set_err_val (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (call $async_drive (local.get $acx2) (local.get $arp2) (call $v_undef))
       (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 415))  ;; executor resolve(v) — `this` is the bound promise
-    (then (call $promise_settle (local.get $thisv) (i32.const 1) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 415))  ;; executor resolve(v) — `this` is the bound promise (adopts a thenable v)
+    (then (call $promise_resolve_with (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 416))  ;; executor reject(r) — `this` is the bound promise
     (then (call $promise_settle (local.get $thisv) (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 417))  ;; BigInt.prototype.toString([radix])
