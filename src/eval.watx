@@ -4084,15 +4084,45 @@
       (return (call $mk_bigint (i64.shr_s (i64.shl (local.get $aniv) (local.get $ansh)) (local.get $ansh))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 410)) (i32.le_s (local.get $id) (i32.const 413)))  ;; Promise.all/race/allSettled/any
     (then
-      (let $pitems i32 (call $arr_new (i32.const 8)))
-      (call $spread_into (local.get $pitems) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $err) (then (return (call $v_undef))))
-      (let $pn i32 (call $arr_len (local.get $pitems)))
+      ;; Spec-style interleaved iteration: resolve each item via C.resolve (C = this) AS we
+      ;; iterate, so an infinite iterator whose C.resolve throws stops after one step instead
+      ;; of hanging (the old code materialized the whole iterable first via spread_into).
+      (let $pcons i64 (local.get $thisv))  ;; C
+      ;; NewPromiseCapability(C): C must be a constructor (throws, does NOT reject)
+      (if (i32.eqz (call $is_constructor (local.get $pcons)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Promise.all/race/any/allSettled called on a non-constructor")) (return (call $v_undef))))
+      (let $pcres i64 (call $get_prop (local.get $pcons) (call $mk_str (cstring "resolve"))))  ;; C.resolve
+      (if (call $err) (then (let $pe0 i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $pe0)))))
+      (if (i32.eqz (call $is_function (local.get $pcres)))
+        (then (return (call $mk_promise (i32.const 2) (call $make_error (cstring "TypeError") (cstring "Promise resolve is not a function"))))))
+      (let $pit i64 (call $vm_get_iter (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))  ;; GetIterator
+      (if (call $err) (then (let $pe1 i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $pe1)))))
+      (let $pnf i64 (call $get_prop (local.get $pit) (call $mk_str (cstring "next"))))
+      (if (i32.or (call $err) (i32.eqz (call $is_function (local.get $pnf))))
+        (then (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (call $make_error (cstring "TypeError") (cstring "iterator.next is not a function"))))))
       (let $pacc i32 (call $arr_new (i32.const 8)))  ;; values / settled-objects / reasons
-      (let $pi i32 (i32.const 0))
+      (let $pnbuf i32 (call $heap_alloc (i32.const 8)))
+      (let $prbuf i32 (call $heap_alloc (i32.const 8)))  ;; arg buffer for C.resolve(value)
       (block $pae (loop $pal
-        (br_if $pae (i32.ge_s (local.get $pi) (local.get $pn)))
-        (let $pe i64 (call $vm_promise (call $arr_get (local.get $pitems) (local.get $pi))))  ;; Promise.resolve each
+        (let $pr i64 (call $call_val (local.get $pnf) (i32.const 0) (local.get $pnbuf) (local.get $pit)))  ;; iter.next()
+        (br_if $pae (call $err))
+        (let $prdone i64 (call $get_prop (local.get $pr) (call $mk_str (cstring "done"))))
+        (br_if $pae (call $err))
+        (br_if $pae (call $truthy (local.get $prdone)))
+        (let $prval i64 (call $get_prop (local.get $pr) (call $mk_str (cstring "value"))))
+        (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))
+        (i64.store (local.get $prbuf) (local.get $prval))
+        (let $pe i64 (call $call_val (local.get $pcres) (i32.const 1) (local.get $prbuf) (local.get $pcons)))  ;; C.resolve(value)
+        (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))
+        ;; spec invokes pe.then(resolveElement, rejectElement); we collect results synchronously
+        ;; below, but still perform the Get+Invoke of `then` so a throwing then/getter rejects
+        ;; (and closes the iterator) instead of looping forever on an infinite iterator.
+        (let $pthen i64 (call $get_prop (local.get $pe) (call $mk_str (cstring "then"))))
+        (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))
+        (if (call $is_function (local.get $pthen))
+          (then
+            (drop (call $call_val (local.get $pthen) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $pe)))
+            (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))))
         (let $pes i32 (call $promise_state (local.get $pe)))
         (let $pev i64 (call $get_prop (local.get $pe) (call $mk_str (cstring "@@pval"))))
         (if (i32.eq (local.get $id) (i32.const 411))  ;; race → first settled wins
@@ -4112,8 +4142,9 @@
               (then (call $scope_define (local.get $pso) (cstring "status") (call $mk_str (cstring "fulfilled"))) (call $scope_define (local.get $pso) (cstring "value") (local.get $pev)))
               (else (call $scope_define (local.get $pso) (cstring "status") (call $mk_str (cstring "rejected"))) (call $scope_define (local.get $pso) (cstring "reason") (local.get $pev))))
             (call $arr_push (local.get $pacc) (call $mk_obj (local.get $pso)))))
-        (set! $pi (i32.add (local.get $pi) (i32.const 1)))
         (br $pal)))
+      ;; loop exited via error → reject with the pending error
+      (if (call $err) (then (let $pe2 i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $pe2)))))
       (if (i32.eq (local.get $id) (i32.const 411)) (then (return (call $mk_promise (i32.const 0) (call $v_undef)))))  ;; race on empty → pending
       (if (i32.eq (local.get $id) (i32.const 413))  ;; any: all rejected → AggregateError
         (then
