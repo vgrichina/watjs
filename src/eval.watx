@@ -4045,10 +4045,10 @@
       (return (local.get $thisv))))  ;; pass the original promise through
   (if (i32.eq (local.get $id) (i32.const 414))  ;; Promise.reject(r)
     (then (return (call $mk_promise (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
-  (if (i32.eq (local.get $id) (i32.const 415))  ;; executor resolve(v)
-    (then (if (i32.eqz (i32.load (i32.const 612))) (then (i32.store (i32.const 612) (i32.const 1)) (i64.store (i32.const 616) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 416))  ;; executor reject(r)
-    (then (if (i32.eqz (i32.load (i32.const 612))) (then (i32.store (i32.const 612) (i32.const 2)) (i64.store (i32.const 616) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 415))  ;; executor resolve(v) — `this` is the bound promise
+    (then (call $promise_settle (local.get $thisv) (i32.const 1) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 416))  ;; executor reject(r) — `this` is the bound promise
+    (then (call $promise_settle (local.get $thisv) (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 417))  ;; BigInt.prototype.toString([radix])
     (then
       ;; unwrap a BigInt wrapper object (Object(5n)) to its primitive
@@ -4697,25 +4697,17 @@
       (let $pexec i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eqz (call $is_function (local.get $pexec)))
         (then (call $throw_type (cstring "TypeError") (cstring "Promise resolver is not a function")) (return (call $v_undef))))
-      ;; resolve/reject write the settle-state regs (612 state, 616 value); save/
-      ;; restore around the executor so nested `new Promise` calls don't clobber it.
-      (let $psave_st i32 (i32.load (i32.const 612)))
-      (let $psave_v i64 (i64.load (i32.const 616)))
-      (i32.store (i32.const 612) (i32.const 0))
+      ;; Create a pending promise and give the executor resolve/reject bound to it, so a
+      ;; resolve/reject called LATER (after the executor returns) still settles this promise
+      ;; and fires its registered reactions.
+      (let $prom i64 (call $mk_promise (i32.const 0) (call $v_undef)))
       (let $peav i32 (call $heap_alloc (i32.const 16)))
-      (i64.store (local.get $peav) (call $mk_native (i32.const 415) (cstring "resolve")))
-      (i64.store (i32.add (local.get $peav) (i32.const 8)) (call $mk_native (i32.const 416) (cstring "reject")))
+      (i64.store (local.get $peav) (call $promise_bound_settler (i32.const 415) (local.get $prom)))
+      (i64.store (i32.add (local.get $peav) (i32.const 8)) (call $promise_bound_settler (i32.const 416) (local.get $prom)))
       (drop (call $call_val (local.get $pexec) (i32.const 2) (local.get $peav) (call $v_undef)))
-      (let $presult i64 (call $v_undef))
-      (if (call $err)  ;; executor threw → rejected
-        (then (let $pte i64 (call $err_val)) (call $set_err (i32.const 0)) (set! $presult (call $mk_promise (i32.const 2) (local.get $pte))))
-        (else
-          (let $pst i32 (i32.load (i32.const 612)))
-          (if (i32.eq (local.get $pst) (i32.const 1)) (then (set! $presult (call $vm_promise (i64.load (i32.const 616)))))      ;; resolved (adopt thenable)
-            (else (if (i32.eq (local.get $pst) (i32.const 2)) (then (set! $presult (call $mk_promise (i32.const 2) (i64.load (i32.const 616)))))  ;; rejected
-              (else (set! $presult (call $mk_promise (i32.const 0) (call $v_undef)))))))))  ;; never settled → pending
-      (i32.store (i32.const 612) (local.get $psave_st)) (i64.store (i32.const 616) (local.get $psave_v))  ;; restore
-      (return (local.get $presult))))
+      (if (call $err)  ;; executor threw → reject (a no-op if already settled)
+        (then (let $pte i64 (call $err_val)) (call $set_err (i32.const 0)) (call $promise_settle (local.get $prom) (i32.const 2) (local.get $pte))))
+      (return (local.get $prom))))
   (if (i32.eq (local.get $id) (i32.const 193))  ;; promise resolve(v) (this = the promise) — set @@pval
     (then
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@pval")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))

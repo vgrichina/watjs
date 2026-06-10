@@ -4891,10 +4891,82 @@
     (then
       (if (call $is_function (local.get $onR)) (then (return (call $promise_run_handler (local.get $onR) (local.get $val)))))
       (return (call $mk_promise (i32.const 2) (local.get $val)))))  ;; propagate
-  (call $mk_promise (i32.const 0) (call $v_undef)))  ;; pending (no queue) → pending result
+  ;; pending → register the reaction so it fires when the promise later settles
+  (let $tres i64 (call $mk_promise (i32.const 0) (call $v_undef)))
+  (call $promise_add_reaction (local.get $p) (local.get $onF) (local.get $onR) (local.get $tres))
+  (local.get $tres))
 ;; legacy single-arg then (used by async-return paths)
 (func $vm_promise_then (param $pv i64) (param $cb i64) (result i64) (effects)
   (call $promise_then (local.get $pv) (local.get $cb) (call $v_undef)))
+
+;; ── deferred resolution: per-promise reactions, settled synchronously on resolve/reject ──
+;; (no microtask queue yet — handlers fire eagerly when the promise transitions, which fixes
+;; `new Promise(r=>…later…r(v))` + `.then` registered while pending. Microtask ORDERING and
+;; async-fn await-suspension are still TODO.) Reactions live flat in @@reactions:
+;; [onFulfilled, onRejected, resultPromise] per registration.
+(func $promise_reactions_arr (param $p i64) (result i32) (effects)
+  (let $sl i32 (call $scope_find_local (call $val_payload (local.get $p)) (cstring "@@reactions")))
+  (if (i32.eqz (local.get $sl)) (then (return (i32.const 0))))
+  (call $val_payload (i64.load (local.get $sl))))
+(func $promise_add_reaction (param $p i64) (param $onF i64) (param $onR i64) (param $result i64) (effects)
+  (let $po i32 (call $val_payload (local.get $p)))
+  (let $sl i32 (call $scope_find_local (local.get $po) (cstring "@@reactions")))
+  (let $arr i32 (if i32 (local.get $sl) (then (call $val_payload (i64.load (local.get $sl))))
+                  (else (let $na i32 (call $arr_new (i32.const 6))) (call $scope_define (local.get $po) (cstring "@@reactions") (call $mk_arr (local.get $na))) (local.get $na))))
+  (call $arr_push (local.get $arr) (local.get $onF))
+  (call $arr_push (local.get $arr) (local.get $onR))
+  (call $arr_push (local.get $arr) (local.get $result)))
+;; resolve `result` with the handler output `out` (adopt a promise, else fulfill)
+(func $promise_resolve_with (param $result i64) (param $out i64) (effects)
+  (if (call $vm_is_promise (local.get $out))
+    (then
+      (let $ost i32 (call $promise_state (local.get $out)))
+      (if (i32.eq (local.get $ost) (i32.const 0))
+        (then (call $promise_add_reaction (local.get $out) (call $v_undef) (call $v_undef) (local.get $result)) (return)))  ;; pending → chain
+      (call $promise_settle (local.get $result) (local.get $ost) (call $get_prop (local.get $out) (call $mk_str (cstring "@@pval")))) (return)))
+  (call $promise_settle (local.get $result) (i32.const 1) (local.get $out)))
+;; transition `p` (if still pending) and run its registered reactions
+(func $promise_settle (param $p i64) (param $state i32) (param $val i64) (effects)
+  (if (i32.ne (call $promise_state (local.get $p)) (i32.const 0)) (then (return)))  ;; resolve/reject is one-shot
+  ;; resolve(thenable): adopt an engine promise's eventual state instead of fulfilling with it
+  (if (i32.and (i32.eq (local.get $state) (i32.const 1)) (call $vm_is_promise (local.get $val)))
+    (then
+      (let $ist i32 (call $promise_state (local.get $val)))
+      (if (i32.eq (local.get $ist) (i32.const 0))
+        (then (call $promise_add_reaction (local.get $val) (call $v_undef) (call $v_undef) (local.get $p)) (return)))
+      (set! $state (local.get $ist)) (set! $val (call $get_prop (local.get $val) (call $mk_str (cstring "@@pval"))))))
+  (call $set_prop (local.get $p) (call $mk_str (cstring "@@pstate")) (call $num (f64.convert_i32_s (local.get $state))))
+  (call $set_prop (local.get $p) (call $mk_str (cstring "@@pval")) (local.get $val))
+  (call $promise_fire_reactions (local.get $p)))
+(func $promise_fire_reactions (param $p i64) (effects)
+  (let $arr i32 (call $promise_reactions_arr (local.get $p)))
+  (if (i32.eqz (local.get $arr)) (then (return)))
+  (let $st i32 (call $promise_state (local.get $p)))
+  (let $val i64 (call $get_prop (local.get $p) (call $mk_str (cstring "@@pval"))))
+  (let $n i32 (call $arr_len (local.get $arr)))
+  ;; clear BEFORE running (a handler may add new reactions to a chained promise, not this one)
+  (call $scope_define (call $val_payload (local.get $p)) (cstring "@@reactions") (call $mk_arr (call $arr_new (i32.const 1))))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $h i64 (if i64 (i32.eq (local.get $st) (i32.const 1)) (then (call $arr_get (local.get $arr) (local.get $i))) (else (call $arr_get (local.get $arr) (i32.add (local.get $i) (i32.const 1))))))
+    (let $result i64 (call $arr_get (local.get $arr) (i32.add (local.get $i) (i32.const 2))))
+    (if (call $is_function (local.get $h))
+      (then (call $promise_resolve_with (local.get $result) (call $promise_run_handler (local.get $h) (local.get $val))))
+      (else (call $promise_settle (local.get $result) (local.get $st) (local.get $val))))  ;; no handler → passthrough/propagate
+    (set! $i (i32.add (local.get $i) (i32.const 3)))
+    (br $l))))
+;; a native (415 resolve / 416 reject) bound to its promise as `this`
+(func $promise_bound_settler (param $nid i32) (param $promise i64) (result i64) (effects)
+  (let $bf i32 (call $heap_alloc (i32.const 44)))
+  (i32.store (local.get $bf) (i32.const 1448232540))                                  ;; bound magic
+  (i32.store (i32.add (local.get $bf) (i32.const 8)) (i32.const 1))                    ;; .length
+  (i32.store (i32.add (local.get $bf) (i32.const 12)) (i32.const 0))                   ;; props
+  (i64.store (i32.add (local.get $bf) (i32.const 16)) (local.get $promise))           ;; bound this = the promise
+  (i64.store (i32.add (local.get $bf) (i32.const 24)) (call $mk_native (local.get $nid) (cstring "")))  ;; target native
+  (i32.store (i32.add (local.get $bf) (i32.const 32)) (i32.const 0))                   ;; bargc
+  (i32.store (i32.add (local.get $bf) (i32.const 36)) (i32.const 0))                   ;; bargs
+  (call $mk_fn (local.get $bf)))
 
 ;; call an async function: run its body, driving each await to the resolved
 ;; value, and return a promise of the body's return value.
