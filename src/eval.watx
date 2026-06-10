@@ -4002,7 +4002,8 @@
     (then (return (call $vm_gen_result (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 420))  ;; generator.return(value) → close, { value, done:true }
     (then
-      (let $grctx i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ctx"))))))
+      (let $grctx i32 (call $gen_ctx_or_throw (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
       (i32.store (i32.add (local.get $grctx) (i32.const 16)) (i32.const 1))  ;; mark done (finally blocks not run — limitation)
       (let $grr i32 (call $obj_new (i32.const 2)))
       (call $scope_define (local.get $grr) (cstring "value") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -4010,7 +4011,8 @@
       (return (call $mk_obj (local.get $grr)))))
   (if (i32.eq (local.get $id) (i32.const 421))  ;; generator.throw(e) → throw at the suspension point
     (then
-      (let $gtctx i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ctx"))))))
+      (let $gtctx i32 (call $gen_ctx_or_throw (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
       ;; basic model (no in-body try/catch resumption): close and propagate the error
       (i32.store (i32.add (local.get $gtctx) (i32.const 16)) (i32.const 1))
       (call $set_err (i32.const 1))

@@ -4670,9 +4670,20 @@
   (call $scope_define_attr (local.get $g) (cstring "throw") (call $mk_native (i32.const 421) (cstring "throw")) (i32.const 12))
   (call $mk_obj (local.get $g)))
 
+;; the @@ctx of a generator object, or 0 + a thrown TypeError if the receiver is not a
+;; generator (next/return/throw must reject a foreign `this` instead of trapping on trunc(NaN)).
+(func $gen_ctx_or_throw (param $genv i64) (result i32) (effects)
+  (if (i32.eqz (call $is_object (local.get $genv)))
+    (then (call $throw_type (cstring "TypeError") (cstring "not a generator")) (return (i32.const 0))))
+  (let $gcs i32 (call $scope_find_local (call $val_payload (local.get $genv)) (cstring "@@ctx")))
+  (if (i32.eqz (local.get $gcs))
+    (then (call $throw_type (cstring "TypeError") (cstring "not a generator")) (return (i32.const 0))))
+  (i32.trunc_f64_s (call $to_num (i64.load (local.get $gcs)))))
+
 ;; gen.next(): resume the generator context, return { value, done }
 (func $vm_gen_result (param $genv i64) (param $resumeval i64) (result i64) (effects)
-  (let $ctx i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $genv) (call $mk_str (cstring "@@ctx"))))))
+  (let $ctx i32 (call $gen_ctx_or_throw (local.get $genv)))
+  (if (call $err) (then (return (call $v_undef))))
   (let $r i32 (call $obj_new (i32.const 2)))
   (if (call $vm_done (local.get $ctx))
     (then
