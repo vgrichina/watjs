@@ -59,10 +59,11 @@ function collect(targets) {
 let wasmBytes;
 async function runSource(src) {
   let thrown = null, panic = null, mem = null;
+  const out = [];
   const dec = new TextDecoder();
   const rd = (p, l) => dec.decode(new Uint8Array(mem.buffer, p, l));
   const imports = { env: {
-    print: () => {}, host_throw: (p, l) => { thrown = rd(p, l); },
+    print: (p, l) => { out.push(rd(p, l)); }, host_throw: (p, l) => { thrown = rd(p, l); },
     host_panic: (p, l) => { panic = rd(p, l); }, now_ms: () => 0,
   }};
   let inst;
@@ -78,7 +79,7 @@ async function runSource(src) {
     rc = inst.exports.eval(ptr, bytes.length);
   } catch (e) { return { threw: true, reason: 'trap: ' + e.message }; }
   if (panic !== null) return { threw: true, reason: 'PANIC: ' + panic };
-  return { threw: rc !== 0, reason: thrown };
+  return { threw: rc !== 0, reason: thrown, out: out.join('\n') };
 }
 
 (async () => {
@@ -88,6 +89,7 @@ async function runSource(src) {
   const files = collect(targets.length ? targets : ['test262/cases']);
   const sta = fs.readFileSync(path.join(HARNESS, 'sta.js'), 'utf8');
   const assertSrc = fs.readFileSync(path.join(HARNESS, 'assert.js'), 'utf8');
+  const donePrint = fs.readFileSync(path.join(HARNESS, 'doneprintHandle.js'), 'utf8');
 
   let pass = 0, fail = 0, skip = 0;
   const fails = [];
@@ -95,10 +97,13 @@ async function runSource(src) {
     const src = fs.readFileSync(f, 'utf8');
     const meta = parseFrontmatter(src);
     const rel = path.relative(ROOT, f);
-    if (meta.flags.includes('module') || meta.flags.includes('async')) { skip++; console.log(`skip ${rel} (${meta.flags.join(',')})`); continue; }
+    if (meta.flags.includes('module')) { skip++; console.log(`skip ${rel} (${meta.flags.join(',')})`); continue; }
+    const isAsync = meta.flags.includes('async');
     let full = '';
     if (!meta.flags.includes('raw')) {
       full += sta + '\n' + assertSrc + '\n';
+      // async tests signal completion/failure via $DONE → print; provide its handler.
+      if (isAsync) full += donePrint + '\n';
       for (const inc of meta.includes) {
         const ip = path.join(HARNESS, inc);
         if (fs.existsSync(ip)) full += fs.readFileSync(ip, 'utf8') + '\n';
@@ -107,10 +112,14 @@ async function runSource(src) {
     // $MAX_ITERATIONS: test262 host hook for tail-call tests (substituted by the driver).
     full += src.replace(/\$MAX_ITERATIONS/g, '100000');
     const r = await runSource(full);
+    // async: pass iff $DONE() printed AsyncTestComplete and no AsyncTestFailure (the engine
+    // settles promises synchronously, so a passing async test completes during eval).
     const wantThrow = !!meta.negative;
-    const ok = r.threw === wantThrow;
+    const ok = isAsync
+      ? (!r.threw && /Test262:AsyncTestComplete/.test(r.out) && !/Test262:AsyncTestFailure/.test(r.out))
+      : (r.threw === wantThrow);
     if (ok) { pass++; console.log(`ok   ${rel}`); }
-    else { fail++; fails.push({ rel, r, wantThrow }); console.log(`FAIL ${rel}  — ${wantThrow ? 'expected throw, none' : 'unexpected: ' + r.reason}`); }
+    else { fail++; fails.push({ rel, r, wantThrow }); console.log(`FAIL ${rel}  — ${isAsync ? 'async: ' + (r.out.match(/Test262:\S+/)||['no $DONE'])[0] : (wantThrow ? 'expected throw, none' : 'unexpected: ' + r.reason)}`); }
   }
   console.log(`\n${pass} passed, ${fail} failed, ${skip} skipped  (of ${files.length})`);
   process.exit(fail ? 1 : 0);
