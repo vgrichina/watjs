@@ -4795,6 +4795,9 @@
   (call $vm_promise (local.get $r)))
 ;; promise.then(onF, onR)
 (func $promise_then (param $p i64) (param $onF i64) (param $onR i64) (result i64) (effects)
+  ;; then/catch require an actual Promise as `this` (else promise_state truncs NaN → trap)
+  (if (i32.eqz (call $vm_is_promise (local.get $p)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Promise.prototype.then called on incompatible receiver")) (return (call $v_undef))))
   (let $st i32 (call $promise_state (local.get $p)))
   (let $val i64 (call $get_prop (local.get $p) (call $mk_str (cstring "@@pval"))))
   (if (i32.eq (local.get $st) (i32.const 1))  ;; fulfilled
