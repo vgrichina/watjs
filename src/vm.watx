@@ -3656,7 +3656,8 @@
             (br $disp)))
         (if (i32.eq (i32.load (local.get $cfn)) (i32.const 1448232528))  ;; async function → returns a promise
           (then
-            (let $av i64 (call $vm_make_async (local.get $cfn) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8))) (local.get $gscope)))
+            (let $av i64 (call $vm_make_async (local.get $cfn) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8))) (local.get $gscope)
+              (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (i32.sub (local.get $cbase) (i32.const 8))))) (else (call $v_undef)))))  ;; receiver `this`
             (set! $sp (local.get $rbase))
             (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $av))
             (set! $sp (i32.add (local.get $sp) (i32.const 8)))
@@ -5139,9 +5140,12 @@
     (call $promise_bound_settler (i32.const 458) (local.get $cov))     ;; resume with value
     (call $promise_bound_settler (i32.const 459) (local.get $cov)))))  ;; resume by throwing
 
-(func $vm_make_async (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (result i64) (effects)
+(func $vm_make_async (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (param $thisv i64) (result i64) (effects)
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
-  (let $ns i32 (call $scope_new (call $vm_fn_parent (local.get $fn) (local.get $gscope)) (i32.add (local.get $np) (i32.const 4))))
+  (let $ns i32 (call $scope_new (call $vm_fn_parent (local.get $fn) (local.get $gscope)) (i32.add (local.get $np) (i32.const 5))))
+  ;; bind receiver `this` (non-arrow async fns/methods); arrows keep lexical `this` via the parent chain
+  (if (i32.eqz (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))) (i32.const 2)))
+    (then (call $scope_define (local.get $ns) (cstring "this") (local.get $thisv))))
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
