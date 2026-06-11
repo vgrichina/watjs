@@ -592,8 +592,8 @@
           (if (i32.eq (call $tok_kind) (i32.const 15))  ;; super(...) → call parent ctor with this
             (then
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))   ;; receiver
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
-              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@super"))  ;; parent ctor
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@homeproto"))  ;; this ctor's home prototype (lexical level)
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@super"))  ;; parent ctor (home.@@super, not this.@@super)
               (call $next_token)
               (let $sargc i32 (i32.const 0))
               (if (i32.ne (call $tok_kind) (i32.const 16))
@@ -1665,8 +1665,8 @@
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))
   (let $entry i32 (call $vm_emit_cursor))
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))   ;; receiver
-  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
-  (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@super"))  ;; parent ctor
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@homeproto"))  ;; this ctor's home prototype (lexical level)
+  (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@super"))  ;; parent ctor (home.@@super, not this.@@super)
   (call $vm_emit_op (local.get $code) (i32.const 86)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; SUPERCALL, 0 args
   (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP super result
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
@@ -3724,6 +3724,8 @@
             (call $coerce_this
               (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef)))
               (local.get $cflags)))))
+        (if (i32.and (local.get $cflags) (i32.const 8))  ;; class ctor → @@homeproto for lexical super()
+          (then (call $scope_define (local.get $cns) (cstring "@@homeproto") (call $get_prop (call $mk_fn (local.get $cfn)) (call $mk_str (cstring "prototype"))))))
         (if (i32.eq (local.get $op) (i32.const 21))  ;; TAILCALL: reuse current frame
           (then (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12)))))
           (else  ;; CALL / CALLM: push a new frame; result base drops callee (+ receiver)
@@ -3837,6 +3839,7 @@
           (then (call $scope_define (local.get $cns) (cstring "arguments") (call $vm_make_arguments (local.get $cns) (local.get $cfn) (local.get $stack) (local.get $cbase) (local.get $argc)))))
         (call $scope_define (local.get $cns) (cstring "@@newtarget") (i64.load (i32.add (local.get $stack) (local.get $cbase))))  ;; new.target = the constructor
         (call $scope_define (local.get $cns) (cstring "this") (call $mk_obj (local.get $newo)))
+        (call $scope_define (local.get $cns) (cstring "@@homeproto") (local.get $cproto))  ;; home prototype (carries @@super) for lexical super()
         (call $vm_run_field_inits (call $mk_obj (local.get $newo)) (local.get $cproto))  ;; per-instance field initializers
         (let $fr i32 (call $heap_alloc (i32.const 24)))
         (i32.store (local.get $fr) (local.get $ip))
@@ -4834,11 +4837,24 @@
   (let $vcflags i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))))
   (if (i32.eqz (i32.and (local.get $vcflags) (i32.const 2)))
     (then (call $scope_define (local.get $ns) (cstring "this") (call $coerce_this (local.get $thisv) (local.get $vcflags)))))
+  ;; class ctor → bind @@homeproto = this ctor's home prototype (its .prototype, which carries
+  ;; @@super) so super() resolves THIS level's parent, not this.@@super (which a multi-level
+  ;; C-extends-B-extends-A chain resolves to the outermost @@super → infinite recursion).
+  (if (i32.and (local.get $vcflags) (i32.const 8))
+    (then (call $scope_define (local.get $ns) (cstring "@@homeproto") (call $get_prop (call $mk_fn (local.get $fn)) (call $mk_str (cstring "prototype"))))))
   ;; new.target: $vm_construct parks the newTarget in reg 656 (raw 0 = none) just
   ;; before this call; consume it here so `new.target` is bound inside the body
   ;; (a plain call leaves it 0 → new.target resolves lexically/undefined).
   (let $vcnt i64 (i64.load (i32.const 656)))
   (i64.store (i32.const 656) (i64.const 0))
+  ;; a class ctor (bit3) reached via a plain call (no parked newTarget) — e.g. a bound
+  ;; class ctor called without `new`, since call_bound routes through vm_call_fn and
+  ;; bypasses the CALL-op no-new check — must throw, not run the body. (Previously this
+  ;; threw only incidentally because super() failed on the bad `this`; now super()
+  ;; resolves via @@homeproto regardless, so the check has to be explicit here.)
+  (if (i32.and (local.get $vcflags) (i32.const 8))
+    (then (if (i64.eqz (local.get $vcnt))
+      (then (call $throw_type (cstring "TypeError") (cstring "Class constructor cannot be invoked without 'new'")) (return (call $v_undef))))))
   (if (i32.and (i64.ne (local.get $vcnt) (i64.const 0)) (i32.eqz (i32.and (local.get $vcflags) (i32.const 2))))
     (then (call $scope_define (local.get $ns) (cstring "@@newtarget") (local.get $vcnt))))
   ;; bind `arguments` so callbacks invoked by native methods (forEach/map/sort/…) can use it
