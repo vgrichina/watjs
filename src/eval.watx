@@ -933,9 +933,10 @@
 ;; TypedArray element types: 0 int8,1 uint8,2 uint8clamped,3 int16,4 uint16,
 ;; 5 int32,6 uint32,7 float32,8 float64.
 (func $ta_bpe (param $elem i32) (result i32) (effects)
-  (if i32 (i32.le_s (local.get $elem) (i32.const 2)) (then (i32.const 1))
+  (if i32 (i32.eq (local.get $elem) (i32.const 11)) (then (i32.const 2))  ;; 11 Float16 = 2 bytes
+    (else (if i32 (i32.le_s (local.get $elem) (i32.const 2)) (then (i32.const 1))
     (else (if i32 (i32.le_s (local.get $elem) (i32.const 4)) (then (i32.const 2))
-    (else (if i32 (i32.ge_s (local.get $elem) (i32.const 8)) (then (i32.const 8)) (else (i32.const 4))))))))  ;; 8 Float64, 9 BigInt64, 10 BigUint64 = 8 bytes
+    (else (if i32 (i32.ge_s (local.get $elem) (i32.const 8)) (then (i32.const 8)) (else (i32.const 4))))))))))  ;; 8 Float64, 9 BigInt64, 10 BigUint64 = 8 bytes
 
 ;; read element idx (as f64) from a typed-array byte buffer.
 (func $ta_read (param $buf i32) (param $idx i32) (param $elem i32) (result f64) (effects)
@@ -947,13 +948,15 @@
   (else (if f64 (i32.eq (local.get $elem) (i32.const 5)) (then (f64.convert_i32_s (i32.load (local.get $a))))
   (else (if f64 (i32.eq (local.get $elem) (i32.const 6)) (then (f64.convert_i32_u (i32.load (local.get $a))))
   (else (if f64 (i32.eq (local.get $elem) (i32.const 7)) (then (f64.promote_f32 (f32.load (local.get $a))))
-  (else (f64.load (local.get $a)))))))))))))))))
+  (else (if f64 (i32.eq (local.get $elem) (i32.const 11)) (then (call $f16_decode (i32.load16_u (local.get $a))))
+  (else (f64.load (local.get $a)))))))))))))))))))
 
 ;; write f64 value to element idx of a typed-array byte buffer (ToInt for int types).
 (func $ta_write (param $buf i32) (param $idx i32) (param $elem i32) (param $val f64) (effects)
   (let $a i32 (i32.add (local.get $buf) (i32.mul (local.get $idx) (call $ta_bpe (local.get $elem)))))
   (if (i32.eq (local.get $elem) (i32.const 8)) (then (f64.store (local.get $a) (local.get $val)) (return)))
   (if (i32.eq (local.get $elem) (i32.const 7)) (then (f32.store (local.get $a) (f32.demote_f64 (local.get $val))) (return)))
+  (if (i32.eq (local.get $elem) (i32.const 11)) (then (i32.store16 (local.get $a) (call $f16_encode (local.get $val))) (return)))  ;; Float16
   (if (i32.eq (local.get $elem) (i32.const 2))  ;; uint8clamped: clamp 0..255
     (then
       (let $cv f64 (local.get $val))
@@ -968,13 +971,13 @@
 
 ;; read element idx as a JS value: BigInt64/BigUint64 (elem 9/10) → BigInt, else Number
 (func $ta_read_val (param $buf i32) (param $idx i32) (param $elem i32) (result i64) (effects)
-  (if i64 (i32.ge_s (local.get $elem) (i32.const 9))
+  (if i64 (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10)))
     (then (call $mk_bigint (i64.load (i32.add (local.get $buf) (i32.mul (local.get $idx) (i32.const 8))))))
     (else (call $num (call $ta_read (local.get $buf) (local.get $idx) (local.get $elem))))))
 ;; store a JS value into element idx: BigInt64/BigUint64 require a BigInt (ToBigInt),
 ;; else ToNumber. Sets $err on a bad BigInt coercion.
 (func $ta_store_val (param $buf i32) (param $idx i32) (param $elem i32) (param $val i64) (effects)
-  (if (i32.ge_s (local.get $elem) (i32.const 9))
+  (if (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10)))
     (then
       (if (i32.eqz (call $is_bigint (local.get $val)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert value to a BigInt")) (return)))
@@ -1040,7 +1043,9 @@
       (else  ;; normal: (1 + mant/1024) * 2^(exp-15)
         (let $pw f64 (f64.reinterpret_i64 (i64.shl (i64.extend_i32_s (i32.add (i32.sub (local.get $exp) (i32.const 15)) (i32.const 1023))) (i64.const 52))))
         (set! $v (f64.mul (f64.add (f64.const 1) (f64.div (f64.convert_i32_u (local.get $mant)) (f64.const 1024))) (local.get $pw)))))))
-  (if f64 (local.get $sign) (then (f64.neg (local.get $v))) (else (local.get $v))))
+  ;; apply sign only to non-NaN (negating a NaN yields a -NaN bit pattern that the
+  ;; NaN-boxing would alias to undefined); JS NaN is sign-agnostic anyway
+  (if f64 (i32.and (local.get $sign) (f64.eq (local.get $v) (local.get $v))) (then (f64.neg (local.get $v))) (else (local.get $v))))
 
 ;; encode f64 $x to an IEEE-754 binary16 bit pattern (round-half-even)
 (func $f16_encode (param $x f64) (result i32) (effects)
@@ -1274,6 +1279,7 @@
       (if (i32.eq (local.get $tte) (i32.const 6)) (then (return (call $mk_str (cstring "Uint32Array")))))
       (if (i32.eq (local.get $tte) (i32.const 7)) (then (return (call $mk_str (cstring "Float32Array")))))
       (if (i32.eq (local.get $tte) (i32.const 8)) (then (return (call $mk_str (cstring "Float64Array")))))
+      (if (i32.eq (local.get $tte) (i32.const 11)) (then (return (call $mk_str (cstring "Float16Array")))))
       (if (i32.eq (local.get $tte) (i32.const 9)) (then (return (call $mk_str (cstring "BigInt64Array")))))
       (return (call $mk_str (cstring "BigUint64Array")))))
   ;; TypedArray.prototype.buffer (406) / byteOffset (407) accessors
@@ -1548,9 +1554,10 @@
 (func $ta_ctor_elem (param $ctor i64) (result i32) (effects)
   (if (i32.eqz (call $is_function (local.get $ctor))) (then (return (i32.const -1))))
   (let $cid i32 (i32.load (call $val_payload (local.get $ctor))))
-  (if i32 (i32.and (i32.ge_s (local.get $cid) (i32.const 210)) (i32.le_s (local.get $cid) (i32.const 218))) (then (i32.sub (local.get $cid) (i32.const 210)))
+  (if i32 (i32.eq (local.get $cid) (i32.const 478)) (then (i32.const 11))  ;; Float16Array
+    (else (if i32 (i32.and (i32.ge_s (local.get $cid) (i32.const 210)) (i32.le_s (local.get $cid) (i32.const 218))) (then (i32.sub (local.get $cid) (i32.const 210)))
     (else (if i32 (i32.eq (local.get $cid) (i32.const 394)) (then (i32.const 9))
-      (else (if i32 (i32.eq (local.get $cid) (i32.const 395)) (then (i32.const 10)) (else (i32.const -1))))))))
+      (else (if i32 (i32.eq (local.get $cid) (i32.const 395)) (then (i32.const 10)) (else (i32.const -1))))))))))
 
 (func $ta_make (param $elem i32) (param $argc i32) (param $argv i32) (result i64) (effects)
   (let $bpe i32 (call $ta_bpe (local.get $elem)))
@@ -5097,6 +5104,7 @@
       (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (if i32 (local.get $sdd) (then (local.get $sdd)) (else (cstring "")))) (cstring ")"))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 210)) (i32.le_s (local.get $id) (i32.const 218)))  ;; TypedArray constructors
     (then (return (call $ta_make (i32.sub (local.get $id) (i32.const 210)) (local.get $argc) (local.get $argv)))))
+  (if (i32.eq (local.get $id) (i32.const 478)) (then (return (call $ta_make (i32.const 11) (local.get $argc) (local.get $argv)))))  ;; Float16Array
   (if (i32.eq (local.get $id) (i32.const 394)) (then (return (call $ta_make (i32.const 9) (local.get $argc) (local.get $argv)))))   ;; BigInt64Array
   (if (i32.eq (local.get $id) (i32.const 395)) (then (return (call $ta_make (i32.const 10) (local.get $argc) (local.get $argv)))))  ;; BigUint64Array
   (if (i32.eq (local.get $id) (i32.const 219))  ;; new ArrayBuffer(byteLength)
@@ -8229,6 +8237,7 @@
   (if (i32.eq (local.get $id) (i32.const 391)) (then (return (i32.const 2))))
   (if (i32.eq (local.get $id) (i32.const 392)) (then (return (i32.const 1))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395))) (then (return (i32.const 3))))  ;; BigInt64Array/BigUint64Array ctor length 3
+  (if (i32.eq (local.get $id) (i32.const 478)) (then (return (i32.const 3))))  ;; Float16Array ctor length 3
   (if (i32.or (i32.eq (local.get $id) (i32.const 396)) (i32.eq (local.get $id) (i32.const 397))) (then (return (i32.const 1))))  ;; TA set/subarray length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 398)) (i32.eq (local.get $id) (i32.const 399))) (then (return (i32.const 1))))  ;; TA from/of length 1
   ;; typed map/filter/with(400/401/405)=1, slice(402)=2, toReversed(403)=0, toSorted(404)=1
@@ -8276,6 +8285,7 @@
     (then (return (i32.const 1))))  ;; WeakMap, WeakSet, WeakRef, FinalizationRegistry
   (if (i32.or (i32.eq (local.get $id) (i32.const 363)) (i32.or (i32.eq (local.get $id) (i32.const 383)) (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395)))))
     (then (return (i32.const 1))))  ;; DataView, SharedArrayBuffer, BigInt64Array, BigUint64Array
+  (if (i32.eq (local.get $id) (i32.const 478)) (then (return (i32.const 1))))  ;; Float16Array
   (i32.const 0))
 
 ;; (Math.* / prototype methods / parseInt / Symbol(196) / …) is NOT a constructor.
@@ -8288,6 +8298,7 @@
     (then (return (i32.const 1))))  ;; TypedArrays + ArrayBuffer
   (if (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395)))
     (then (return (i32.const 1))))  ;; BigInt64Array, BigUint64Array
+  (if (i32.eq (local.get $id) (i32.const 478)) (then (return (i32.const 1))))  ;; Float16Array
   (if (i32.or (i32.eq (local.get $id) (i32.const 320)) (i32.eq (local.get $id) (i32.const 325)))
     (then (return (i32.const 1))))  ;; WeakMap, WeakSet
   (if (i32.eq (local.get $id) (i32.const 335)) (then (return (i32.const 1))))  ;; Iterator (abstract, but a constructor)
@@ -8990,6 +9001,7 @@
   (call $ta_type_setup (call $def_native (local.get $g) (cstring "Uint32Array") (i32.const 216)) (i32.const 6))
   (call $ta_type_setup (call $def_native (local.get $g) (cstring "Float32Array") (i32.const 217)) (i32.const 7))
   (call $ta_type_setup (call $def_native (local.get $g) (cstring "Float64Array") (i32.const 218)) (i32.const 8))
+  (call $ta_type_setup (call $def_native (local.get $g) (cstring "Float16Array") (i32.const 478)) (i32.const 11))
   (call $ta_type_setup (call $def_native (local.get $g) (cstring "BigInt64Array") (i32.const 394)) (i32.const 9))
   (call $ta_type_setup (call $def_native (local.get $g) (cstring "BigUint64Array") (i32.const 395)) (i32.const 10))
   (let $abf i64 (call $def_native (local.get $g) (cstring "ArrayBuffer") (i32.const 219)))
