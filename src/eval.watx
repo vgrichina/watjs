@@ -974,6 +974,30 @@
   (if i64 (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10)))
     (then (call $mk_bigint (i64.load (i32.add (local.get $buf) (i32.mul (local.get $idx) (i32.const 8))))))
     (else (call $num (call $ta_read (local.get $buf) (local.get $idx) (local.get $elem))))))
+;; TypedArray.prototype.set copy loop. A TypedArray source may share the target's buffer, so
+;; snapshot its element values before writing (an interleaved read/write would corrupt an
+;; overlapping range); an array-like source has observable getters, so copy interleaved.
+(func $ta_set_copy (param $stbuf i32) (param $stoff i32) (param $stelem i32) (param $src i64) (param $srclen i32) (effects)
+  (let $srcta i32 (if i32 (call $is_object (local.get $src)) (then (call $scope_find_local (call $val_payload (local.get $src)) (cstring "@@taelem"))) (else (i32.const 0))))
+  (if (local.get $srcta)
+    (then
+      (let $tmp i32 (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $srclen) (i32.const 0)) (then (local.get $srclen)) (else (i32.const 1))) (i32.const 8))))
+      (let $i i32 (i32.const 0))
+      (block $e (loop $l (br_if $e (i32.ge_s (local.get $i) (local.get $srclen)))
+        (i64.store (i32.add (local.get $tmp) (i32.mul (local.get $i) (i32.const 8))) (call $get_prop (local.get $src) (call $num (f64.convert_i32_s (local.get $i)))))
+        (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+      (set! $i (i32.const 0))
+      (block $e2 (loop $l2 (br_if $e2 (i32.ge_s (local.get $i) (local.get $srclen)))
+        (call $ta_store_val (local.get $stbuf) (i32.add (local.get $stoff) (local.get $i)) (local.get $stelem) (i64.load (i32.add (local.get $tmp) (i32.mul (local.get $i) (i32.const 8)))))
+        (if (call $err) (then (return)))
+        (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l2)))
+      (return)))
+  (let $j i32 (i32.const 0))
+  (block $e3 (loop $l3 (br_if $e3 (i32.ge_s (local.get $j) (local.get $srclen)))
+    (call $ta_store_val (local.get $stbuf) (i32.add (local.get $stoff) (local.get $j)) (local.get $stelem) (call $get_prop (local.get $src) (call $num (f64.convert_i32_s (local.get $j)))))
+    (if (call $err) (then (return)))
+    (set! $j (i32.add (local.get $j) (i32.const 1))) (br $l3))))
+
 ;; ToBigInt(value): BigInt→itself, Boolean→0n/1n, String→StringToBigInt (SyntaxError on a
 ;; non-integer numeric string), Object→ToPrimitive(number) then recurse; Number/Symbol/null/
 ;; undefined→TypeError. Sets $err on failure. (Distinct from BigInt(x), which DOES accept Numbers.)
@@ -1509,17 +1533,13 @@
       (let $stbuf i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@tabuf"))))))
       (let $stoff i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
       (if (i32.lt_s (local.get $stoff) (i32.const 0)) (then (call $throw_type (cstring "RangeError") (cstring "TypedArray.set: offset is negative")) (return (call $v_undef))))
+      ;; ToIntegerOrInfinity(offset) can run user code (valueOf) that detaches the target buffer
+      (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))
       (let $stsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $stsn i32 (call $alike_len (local.get $stsrc)))
       (if (i32.gt_s (i32.add (local.get $stoff) (local.get $stsn)) (local.get $stlen))
         (then (call $throw_type (cstring "RangeError") (cstring "TypedArray.set: source too large")) (return (call $v_undef))))
-      (let $sti i32 (i32.const 0))
-      (block $ste (loop $stl
-        (br_if $ste (i32.ge_s (local.get $sti) (local.get $stsn)))
-        (call $ta_store_val (local.get $stbuf) (i32.add (local.get $stoff) (local.get $sti)) (local.get $stelem)
-          (call $get_prop (local.get $stsrc) (call $num (f64.convert_i32_s (local.get $sti)))))
-        (if (call $err) (then (return (call $v_undef))))
-        (set! $sti (i32.add (local.get $sti) (i32.const 1))) (br $stl)))
+      (call $ta_set_copy (local.get $stbuf) (local.get $stoff) (local.get $stelem) (local.get $stsrc) (local.get $stsn))
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 392))  ;; ArrayBuffer.isView(arg)
     (then
