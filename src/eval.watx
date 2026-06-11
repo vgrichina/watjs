@@ -3372,6 +3372,29 @@
     (br $l)))
   (call $mk_str (local.get $out)))
 
+;; Promise.withResolvers() (this = C). NewPromiseCapability(C): construct C with a
+;; capabilities executor (native 475) that captures resolve/reject, then return
+;; { promise, resolve, reject }.
+(func $promise_with_resolvers (param $thisv i64) (result i64) (effects)
+  (if (i32.eqz (call $is_constructor (local.get $thisv)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Promise.withResolvers called on a non-constructor")) (return (call $v_undef))))
+  (let $capo i32 (call $obj_new (i32.const 6)))
+  (let $capv i64 (call $mk_obj (local.get $capo)))
+  (let $wrex i64 (call $promise_bound_settler (i32.const 475) (local.get $capv)))  ;; capabilities executor bound to capv
+  (let $wrbuf i32 (call $heap_alloc (i32.const 8)))
+  (i64.store (local.get $wrbuf) (local.get $wrex))
+  (let $wrprom i64 (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $wrbuf) (local.get $thisv)))
+  (if (call $err) (then (return (call $v_undef))))
+  (let $wrres i64 (call $get_prop (local.get $capv) (call $mk_str (cstring "@@resolve"))))
+  (let $wrrej i64 (call $get_prop (local.get $capv) (call $mk_str (cstring "@@reject"))))
+  (if (i32.or (i32.eqz (call $is_function (local.get $wrres))) (i32.eqz (call $is_function (local.get $wrrej))))
+    (then (call $throw_type (cstring "TypeError") (cstring "Promise.withResolvers: resolve/reject is not callable")) (return (call $v_undef))))
+  (let $wro i32 (call $obj_new (i32.const 6)))
+  (call $scope_define (local.get $wro) (cstring "promise") (local.get $wrprom))
+  (call $scope_define (local.get $wro) (cstring "resolve") (local.get $wrres))
+  (call $scope_define (local.get $wro) (cstring "reject") (local.get $wrrej))
+  (call $mk_obj (local.get $wro)))
+
 ;; dispatch the Annex B.2.2 HTML methods (ids 460-472) to CreateHTML
 (func $call_html_method (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   (let $hv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -3396,6 +3419,13 @@
     (then (return (call $call_html_method (local.get $id) (local.get $argc) (local.get $argv) (local.get $thisv)))))
   (if (i32.eq (local.get $id) (i32.const 473))  ;; RegExp.escape(S)
     (then (return (call $regexp_escape (local.get $argc) (local.get $argv)))))
+  (if (i32.eq (local.get $id) (i32.const 474))  ;; Promise.withResolvers()
+    (then (return (call $promise_with_resolvers (local.get $thisv)))))
+  (if (i32.eq (local.get $id) (i32.const 475))  ;; capabilities executor (this = cap obj): capture resolve, reject
+    (then
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@resolve")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@reject")) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 1))  ;; print (console.log style)
     (then
       (let $i i32 (i32.const 0))
@@ -9106,6 +9136,7 @@
   (call $set_prop (local.get $promf) (call $mk_str (cstring "race")) (call $mk_native (i32.const 411) (cstring "race")))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "allSettled")) (call $mk_native (i32.const 412) (cstring "allSettled")))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "any")) (call $mk_native (i32.const 413) (cstring "any")))
+  (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "withResolvers") (call $mk_native (i32.const 474) (cstring "withResolvers")) (i32.const 12))  ;; ES2024 {W:true,E:false,C:true}
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "of")) (call $mk_native (i32.const 110) (cstring "of")))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 111) (cstring "from")))
   ;; Math object with methods + constants
