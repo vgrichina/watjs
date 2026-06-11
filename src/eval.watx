@@ -1458,16 +1458,7 @@
       (if (i32.gt_s (local.get $saend) (local.get $salen)) (then (set! $saend (local.get $salen))))
       (let $sanew i32 (i32.sub (local.get $saend) (local.get $sabeg)))
       (if (i32.lt_s (local.get $sanew) (i32.const 0)) (then (set! $sanew (i32.const 0))))
-      (let $sao i32 (call $obj_new (i32.const 8)))
-      (let $saproto i32 (i32.load (i32.add (i32.const 532) (i32.mul (local.get $saelem) (i32.const 4)))))
-      (if (local.get $saproto) (then (i32.store (local.get $sao) (local.get $saproto))))
-      (call $scope_define (local.get $sao) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $saelem))))
-      (call $scope_define (local.get $sao) (cstring "@@tabuf") (call $num (f64.convert_i32_s (i32.add (local.get $sabuf) (i32.mul (local.get $sabeg) (local.get $sabpe))))))
-      (call $scope_define (local.get $sao) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $sanew))))
-      (call $scope_define_attr (local.get $sao) (cstring "length") (call $num (f64.convert_i32_s (local.get $sanew))) (i32.const 12))  ;; DontEnum
-      (call $scope_define_attr (local.get $sao) (cstring "byteLength") (call $num (f64.convert_i32_s (i32.mul (local.get $sanew) (local.get $sabpe)))) (i32.const 12))
-      (call $scope_define_attr (local.get $sao) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $sabpe))) (i32.const 12))
-      (return (call $mk_obj (local.get $sao)))))
+      (return (call $ta_subarray_result (local.get $thisv) (local.get $saelem) (local.get $sabpe) (local.get $sabuf) (local.get $sabeg) (local.get $sanew)))))
   ;; TypedArray.prototype.set(source[, offset]) (396)
   (if (i32.eq (local.get $id) (i32.const 396))
     (then
@@ -1738,6 +1729,35 @@
     (if (call $err) (then (return (call $v_undef))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (local.get $A))
+
+;; subarray result: TypedArraySpeciesCreate(O, « buffer, beginByteOffset, newLen »).
+;; With a constructor[@@species] override, [[Construct]] it over the SAME ArrayBuffer at
+;; the computed byte offset; otherwise build the default same-buffer view inline (kept
+;; byte-for-byte identical to the original handler so the common path is unchanged).
+(func $ta_subarray_result (param $thisv i64) (param $saelem i32) (param $sabpe i32)
+                          (param $sabuf i32) (param $sabeg i32) (param $sanew i32) (result i64) (effects)
+  (let $S i64 (call $species_constructor (local.get $thisv) (call $v_undef)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_undefined (local.get $S)))
+    (then
+      (let $buf i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "buffer"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $boff i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "byteOffset"))))))
+      (let $ab i32 (call $heap_alloc (i32.const 24)))
+      (i64.store (local.get $ab) (local.get $buf))
+      (i64.store (i32.add (local.get $ab) (i32.const 8)) (call $num (f64.convert_i32_s (i32.add (local.get $boff) (i32.mul (local.get $sabeg) (local.get $sabpe))))))
+      (i64.store (i32.add (local.get $ab) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $sanew))))
+      (return (call $vm_construct (local.get $S) (i32.const 3) (local.get $ab) (local.get $S)))))
+  (let $sao i32 (call $obj_new (i32.const 8)))
+  (let $saproto i32 (i32.load (i32.add (i32.const 532) (i32.mul (local.get $saelem) (i32.const 4)))))
+  (if (local.get $saproto) (then (i32.store (local.get $sao) (local.get $saproto))))
+  (call $scope_define (local.get $sao) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $saelem))))
+  (call $scope_define (local.get $sao) (cstring "@@tabuf") (call $num (f64.convert_i32_s (i32.add (local.get $sabuf) (i32.mul (local.get $sabeg) (local.get $sabpe))))))
+  (call $scope_define (local.get $sao) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $sanew))))
+  (call $scope_define_attr (local.get $sao) (cstring "length") (call $num (f64.convert_i32_s (local.get $sanew))) (i32.const 12))
+  (call $scope_define_attr (local.get $sao) (cstring "byteLength") (call $num (f64.convert_i32_s (i32.mul (local.get $sanew) (local.get $sabpe)))) (i32.const 12))
+  (call $scope_define_attr (local.get $sao) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $sabpe))) (i32.const 12))
+  (call $mk_obj (local.get $sao)))
 
 ;; build a symbol value from an internal key string and a description string.
 (func $make_symbol (param $key i32) (param $desc i32) (result i64) (effects)
