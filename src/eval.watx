@@ -3478,6 +3478,57 @@
     (br $l)))
   (call $mk_str (local.get $out)))
 
+;; RegExp.prototype.compile(pattern, flags) (Annex B) — re-initialize this regex in place.
+(func $regexp_compile (param $thisv i64) (param $argc i32) (param $argv i32) (result i64) (effects)
+  (if (i32.eqz (call $is_object (local.get $thisv)))
+    (then (call $throw_type (cstring "TypeError") (cstring "RegExp.prototype.compile called on non-object")) (return (call $v_undef))))
+  (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__re_src__")))
+    (then (call $throw_type (cstring "TypeError") (cstring "RegExp.prototype.compile called on a non-RegExp")) (return (call $v_undef))))
+  (let $pa0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+  (let $pat i32 (cstring ""))
+  (let $flg i32 (cstring ""))
+  (if (call $is_regexp (local.get $pa0))
+    (then
+      (if (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "cannot supply flags when constructing one RegExp from another")) (return (call $v_undef))))
+      (set! $pat (call $re_pat_of (local.get $pa0)))
+      (let $fsl i32 (call $scope_find_local (call $val_payload (local.get $pa0)) (cstring "__re_flags__")))
+      (if (local.get $fsl) (then (let $fsv i64 (i64.load (local.get $fsl))) (if (call $is_string (local.get $fsv)) (then (set! $flg (call $val_payload (local.get $fsv))))))))
+    (else
+      (if (i32.eqz (i32.or (i32.lt_s (local.get $argc) (i32.const 1)) (call $is_undefined (local.get $pa0))))
+        (then (set! $pat (call $to_str (local.get $pa0)))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+        (then (set! $flg (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
+      (if (call $err) (then (return (call $v_undef))))))
+  ;; validate flags: only d/g/i/m/s/u/v/y, no duplicates → SyntaxError
+  (let $fl i32 (call $str_len (local.get $flg)))
+  (let $fi i32 (i32.const 0))
+  (let $fseen i32 (i32.const 0))
+  (block $fve (loop $fvl
+    (br_if $fve (i32.ge_s (local.get $fi) (local.get $fl)))
+    (let $fc i32 (call $str_byte (local.get $flg) (local.get $fi)))
+    (let $fbit i32 (i32.const 0))
+    (if (i32.eq (local.get $fc) (i32.const 103)) (then (set! $fbit (i32.const 1))))
+    (if (i32.eq (local.get $fc) (i32.const 105)) (then (set! $fbit (i32.const 2))))
+    (if (i32.eq (local.get $fc) (i32.const 109)) (then (set! $fbit (i32.const 4))))
+    (if (i32.eq (local.get $fc) (i32.const 115)) (then (set! $fbit (i32.const 8))))
+    (if (i32.eq (local.get $fc) (i32.const 117)) (then (set! $fbit (i32.const 16))))
+    (if (i32.eq (local.get $fc) (i32.const 121)) (then (set! $fbit (i32.const 32))))
+    (if (i32.eq (local.get $fc) (i32.const 100)) (then (set! $fbit (i32.const 64))))
+    (if (i32.eq (local.get $fc) (i32.const 118)) (then (set! $fbit (i32.const 128))))
+    (if (i32.or (i32.eqz (local.get $fbit)) (i32.and (local.get $fseen) (local.get $fbit)))
+      (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression flags")) (return (call $v_undef))))
+    (set! $fseen (i32.or (local.get $fseen) (local.get $fbit)))
+    (set! $fi (i32.add (local.get $fi) (i32.const 1)))
+    (br $fvl)))
+  ;; re-initialize the regex object in place + reset lastIndex
+  (let $rs i32 (call $val_payload (local.get $thisv)))
+  (call $scope_define_attr (local.get $rs) (cstring "__re_src__") (call $mk_str (local.get $pat)) (i32.const 0))
+  (call $scope_define_attr (local.get $rs) (cstring "__re_flags__") (call $mk_str (local.get $flg)) (i32.const 0))
+  (call $scope_define_attr (local.get $rs) (cstring "lastIndex") (call $num (f64.const 0)) (i32.const 8))
+  (local.get $thisv))
+
 ;; Promise.withResolvers() (this = C). NewPromiseCapability(C): construct C with a
 ;; capabilities executor (native 475) that captures resolve/reject, then return
 ;; { promise, resolve, reject }.
@@ -3531,6 +3582,8 @@
     (then (return (call $dv_float16 (local.get $id) (local.get $argc) (local.get $argv) (local.get $thisv)))))
   (if (i32.eq (local.get $id) (i32.const 479))  ;; $262.detachArrayBuffer(buffer)
     (then (return (call $detach_arraybuffer (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 480))  ;; RegExp.prototype.compile(pattern, flags)
+    (then (return (call $regexp_compile (local.get $thisv) (local.get $argc) (local.get $argv)))))
   (if (i32.eq (local.get $id) (i32.const 475))  ;; capabilities executor (this = cap obj): capture resolve, reject
     (then
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@resolve")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -8205,6 +8258,7 @@
   (if (i32.eq (local.get $id) (i32.const 473)) (then (return (i32.const 1))))  ;; RegExp.escape(S)
   (if (i32.eq (local.get $id) (i32.const 476)) (then (return (i32.const 1))))  ;; DataView.getFloat16(byteOffset)
   (if (i32.eq (local.get $id) (i32.const 477)) (then (return (i32.const 2))))  ;; DataView.setFloat16(byteOffset, value)
+  (if (i32.eq (local.get $id) (i32.const 480)) (then (return (i32.const 2))))  ;; RegExp.prototype.compile(pattern, flags)
   (if (i32.or (i32.eq (local.get $id) (i32.const 87)) (i32.or (i32.eq (local.get $id) (i32.const 102)) (i32.or (i32.eq (local.get $id) (i32.const 104)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.eq (local.get $id) (i32.const 173))))))
     (then (return (i32.const 1))))  ;; fromCharCode/fromCodePoint, match, search, localeCompare, matchAll
   ;; String.prototype length-2 methods
@@ -8817,6 +8871,7 @@
   (call $scope_define_accessor_attr (local.get $reproto) (cstring "hasIndices") (call $mk_native (i32.const 298) (cstring "get hasIndices")) (call $v_undef) (i32.const 5))
   (call $scope_define (local.get $reproto) (cstring "test") (call $mk_native (i32.const 101) (cstring "test")))
   (call $scope_define (local.get $reproto) (cstring "exec") (call $mk_native (i32.const 167) (cstring "exec")))
+  (call $scope_define (local.get $reproto) (cstring "compile") (call $mk_native (i32.const 480) (cstring "compile")))  ;; Annex B
   (call $scope_define (local.get $reproto) (cstring "@@matchAll") (call $mk_native (i32.const 426) (cstring "[Symbol.matchAll]")))
   (call $scope_define (local.get $reproto) (cstring "@@search") (call $mk_native (i32.const 427) (cstring "[Symbol.search]")))
   (call $scope_define (local.get $reproto) (cstring "@@match") (call $mk_native (i32.const 428) (cstring "[Symbol.match]")))
