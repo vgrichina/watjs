@@ -566,6 +566,9 @@
             (then (return (call $v_undef))))
           (if (i32.ge_s (local.get $tidx) (i32.const 0))
             (then
+              ;; detached buffer → IntegerIndexedElementGet returns undefined
+              (let $tgbo i32 (call $scope_find_local (local.get $o) (cstring "@@tabufobj")))
+              (if (local.get $tgbo) (then (if (call $is_detached_buf (i64.load (local.get $tgbo))) (then (return (call $v_undef))))))
               (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
               (if (i32.lt_s (local.get $tidx) (local.get $tln))
                 (then (return (call $ta_read_val (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))))))
@@ -1107,6 +1110,9 @@
       (if (i32.and (i32.ne (local.get $tael) (i32.const 0)) (call $is_number (local.get $key)))
         (then
           (let $tidx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
+          ;; detached buffer → IntegerIndexedElementSet is a no-op (write silently dropped)
+          (let $tsbo i32 (call $scope_find_local (local.get $o) (cstring "@@tabufobj")))
+          (if (local.get $tsbo) (then (if (call $is_detached_buf (i64.load (local.get $tsbo))) (then (return)))))
           (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
           (if (i32.and (i32.ge_s (local.get $tidx) (i32.const 0)) (i32.lt_s (local.get $tidx) (local.get $tln)))
             (then (call $ta_store_val (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))) (local.get $val))))
