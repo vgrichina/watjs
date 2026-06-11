@@ -1384,6 +1384,10 @@
       (if (i32.eq (local.get $id) (i32.const 404)) (then (set! $tmaid (i32.const 274))))   ;; toSorted
       (let $tmres i64 (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef))))
+      ;; map/filter/slice (400-402) go through TypedArraySpeciesCreate (constructor[@@species]);
+      ;; toReversed/toSorted/with (403-405) always create the SAME type (no species).
+      (if (i32.and (i32.ge_s (local.get $id) (i32.const 400)) (i32.le_s (local.get $id) (i32.const 402)))
+        (then (return (call $ta_species_result (local.get $thisv) (local.get $tmres) (local.get $tmelem)))))
       (let $tmbuf i32 (call $heap_alloc (i32.const 8)))
       (i64.store (local.get $tmbuf) (local.get $tmres))
       (return (call $ta_make (local.get $tmelem) (i32.const 1) (local.get $tmbuf)))))
@@ -1701,6 +1705,39 @@
   ;; length/byteLength are %TypedArray.prototype% accessors (not own data props) — spec-correct + reflect detach
   (call $scope_define_attr (local.get $to) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $bpe))) (i32.const 12))
   (call $mk_obj (local.get $to)))
+
+;; TypedArraySpeciesCreate for map/filter/slice. $resarr is the plain Array of result
+;; values already computed; $elem is the receiver's default element type. With no
+;; constructor[@@species] override → build the same-type TA (fast default). Otherwise
+;; [[Construct]] the species with the result length, validate it's a long-enough
+;; TypedArray, and copy the values in (set_prop does element conversion + bounds).
+(func $ta_species_result (param $thisv i64) (param $resarr i64) (param $elem i32) (result i64) (effects)
+  (let $len i32 (call $arr_len (call $val_payload (local.get $resarr))))
+  (let $S i64 (call $species_constructor (local.get $thisv) (call $v_undef)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (call $is_undefined (local.get $S))
+    (then
+      (let $db i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $db) (local.get $resarr))
+      (return (call $ta_make (local.get $elem) (i32.const 1) (local.get $db)))))
+  (let $ab i32 (call $heap_alloc (i32.const 8)))
+  (i64.store (local.get $ab) (call $num (f64.convert_i32_s (local.get $len))))
+  (let $A i64 (call $vm_construct (local.get $S) (i32.const 1) (local.get $ab) (local.get $S)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_object (local.get $A)))
+    (then (call $throw_type (cstring "TypeError") (cstring "species did not return an object")) (return (call $v_undef))))
+  (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $A)) (cstring "@@taelem")))
+    (then (call $throw_type (cstring "TypeError") (cstring "species result is not a TypedArray")) (return (call $v_undef))))
+  (let $alen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $A) (call $mk_str (cstring "@@talen"))))))
+  (if (i32.lt_s (local.get $alen) (local.get $len))
+    (then (call $throw_type (cstring "TypeError") (cstring "species result is too short")) (return (call $v_undef))))
+  (let $rp i32 (call $val_payload (local.get $resarr)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l (br_if $e (i32.ge_s (local.get $i) (local.get $len)))
+    (call $set_prop (local.get $A) (call $num (f64.convert_i32_s (local.get $i))) (call $arr_get (local.get $rp) (local.get $i)))
+    (if (call $err) (then (return (call $v_undef))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (local.get $A))
 
 ;; build a symbol value from an internal key string and a description string.
 (func $make_symbol (param $key i32) (param $desc i32) (result i64) (effects)
