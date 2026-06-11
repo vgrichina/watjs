@@ -1666,7 +1666,11 @@
               (let $ablen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "byteLength"))))))
               (set! $len (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe))))))
             (else  ;; array-like / iterable with a length
-              (set! $len (call $to_int_idx (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "length"))))))
+              (let $lenf2 f64 (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "length")))))
+              ;; excessive byte size (>= ~2^31) → RangeError, not an OOB trap (ToLength: <=0/NaN -> 0)
+              (if (f64.ge (f64.mul (if f64 (f64.gt (local.get $lenf2) (f64.const 0)) (then (f64.floor (local.get $lenf2))) (else (f64.const 0))) (f64.convert_i32_s (local.get $bpe))) (f64.const 2147483640.0))
+                (then (call $throw_type (cstring "RangeError") (cstring "Invalid typed array length")) (return (call $v_undef))))
+              (set! $len (call $to_int_idx (local.get $lenf2)))
               (set! $buf (call $heap_alloc (i32.add (i32.mul (local.get $len) (local.get $bpe)) (i32.const 8))))
               (call $ta_zero (local.get $buf) (i32.mul (local.get $len) (local.get $bpe)))
               (let $ti2 i32 (i32.const 0))
