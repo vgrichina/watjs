@@ -1382,12 +1382,14 @@
       (if (i32.eq (local.get $id) (i32.const 402)) (then (set! $tmaid (i32.const 24))))    ;; slice
       (if (i32.eq (local.get $id) (i32.const 403)) (then (set! $tmaid (i32.const 273))))   ;; toReversed
       (if (i32.eq (local.get $id) (i32.const 404)) (then (set! $tmaid (i32.const 274))))   ;; toSorted
+      ;; map/filter/slice (400-402) go through TypedArraySpeciesCreate. Species must be
+      ;; resolved (constructor[@@species] read) BEFORE the callback loop runs, so the helper
+      ;; does resolve → run-array-op → construct. toReversed/toSorted/with (403-405) are
+      ;; same-type (no species), so run the op then wrap directly.
+      (if (i32.and (i32.ge_s (local.get $id) (i32.const 400)) (i32.le_s (local.get $id) (i32.const 402)))
+        (then (return (call $ta_species_result (local.get $thisv) (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $tmelem) (local.get $id)))))
       (let $tmres i64 (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef))))
-      ;; map/filter/slice (400-402) go through TypedArraySpeciesCreate (constructor[@@species]);
-      ;; toReversed/toSorted/with (403-405) always create the SAME type (no species).
-      (if (i32.and (i32.ge_s (local.get $id) (i32.const 400)) (i32.le_s (local.get $id) (i32.const 402)))
-        (then (return (call $ta_species_result (local.get $thisv) (local.get $tmres) (local.get $tmelem)))))
       (let $tmbuf i32 (call $heap_alloc (i32.const 8)))
       (i64.store (local.get $tmbuf) (local.get $tmres))
       (return (call $ta_make (local.get $tmelem) (i32.const 1) (local.get $tmbuf)))))
@@ -1702,10 +1704,24 @@
 ;; constructor[@@species] override → build the same-type TA (fast default). Otherwise
 ;; [[Construct]] the species with the result length, validate it's a long-enough
 ;; TypedArray, and copy the values in (set_prop does element conversion + bounds).
-(func $ta_species_result (param $thisv i64) (param $resarr i64) (param $elem i32) (result i64) (effects)
+(func $ta_species_result (param $thisv i64) (param $tmaid i32) (param $argc i32) (param $argv i32) (param $elem i32) (param $id i32) (result i64) (effects)
+  ;; map (400) resolves the species constructor BEFORE the callback loop (TypedArraySpeciesCreate
+  ;; with len runs first). filter (401) iterates first to learn the kept count, so its callbacks
+  ;; fire BEFORE species; slice (402) has no callback so either order is observably the same.
+  (let $S i64 (call $v_undef))
+  (let $resarr i64 (call $v_undef))
+  (if (i32.eq (local.get $id) (i32.const 400))
+    (then
+      (set! $S (call $species_constructor (local.get $thisv) (call $v_undef)))
+      (if (call $err) (then (return (call $v_undef))))
+      (set! $resarr (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef)))))
+    (else
+      (set! $resarr (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (set! $S (call $species_constructor (local.get $thisv) (call $v_undef)))
+      (if (call $err) (then (return (call $v_undef))))))
   (let $len i32 (call $arr_len (call $val_payload (local.get $resarr))))
-  (let $S i64 (call $species_constructor (local.get $thisv) (call $v_undef)))
-  (if (call $err) (then (return (call $v_undef))))
   (if (call $is_undefined (local.get $S))
     (then
       (let $db i32 (call $heap_alloc (i32.const 8)))
