@@ -4723,14 +4723,14 @@
         (then (if (call $is_object (local.get $thisv))
           (then (set! $itsrc (call $mk_arr (call $alike_arr (local.get $thisv))))))))
       (let $itobj i32 (call $obj_new (i32.const 8)))
-      (if (i32.load (i32.const 488)) (then (i32.store (local.get $itobj) (i32.load (i32.const 488)))))  ;; inherit %Iterator.prototype%
+      (if (i32.load (i32.const 720)) (then (i32.store (local.get $itobj) (i32.load (i32.const 720))))  ;; inherit %ArrayIteratorPrototype% (which inherits %Iterator.prototype%)
+        (else (if (i32.load (i32.const 488)) (then (i32.store (local.get $itobj) (i32.load (i32.const 488)))))))
       (call $scope_define (local.get $itobj) (cstring "@@arr") (local.get $itsrc))
       (call $scope_define (local.get $itobj) (cstring "@@i") (call $num (f64.const 0)))
       (call $scope_define (local.get $itobj) (cstring "@@len") (call $num (f64.convert_i32_s (call $arr_len (call $val_payload (local.get $itsrc))))))  ;; snapshot length
       (call $scope_define (local.get $itobj) (cstring "@@kind")
         (call $num (f64.convert_i32_s (if i32 (i32.eq (local.get $id) (i32.const 95)) (then (i32.const 2))
           (else (if i32 (i32.eq (local.get $id) (i32.const 96)) (then (i32.const 0)) (else (i32.const 1))))))))
-      (call $scope_define_attr (local.get $itobj) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $itobj)))))
   (if (i32.eq (local.get $id) (i32.const 94))  ;; array-iterator .next()
     (then
@@ -9279,6 +9279,14 @@
   (let $iterf i64 (call $def_native (local.get $g) (cstring "Iterator") (i32.const 335)))
   (let $iterproto i32 (call $obj_new (i32.const 12)))
   (i32.store (i32.const 488) (local.get $iterproto))
+  ;; %ArrayIteratorPrototype% (reg 720): parent = %Iterator.prototype%; holds next + @@toStringTag.
+  ;; Array/TypedArray iterators inherit from it, so Object.getPrototypeOf(iter) is the array-iterator
+  ;; proto (with next) and two levels up reaches %Iterator.prototype% (spec chain).
+  (let $arrayiterproto i32 (call $obj_new (i32.const 4)))
+  (i32.store (local.get $arrayiterproto) (local.get $iterproto))
+  (i32.store (i32.const 720) (local.get $arrayiterproto))
+  (call $scope_define_attr (local.get $arrayiterproto) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")) (i32.const 12))
+  (call $scope_define_attr (local.get $arrayiterproto) (cstring "@@toStringTag") (call $mk_str (cstring "Array Iterator")) (i32.const 4))
   (call $scope_define (local.get $iterproto) (cstring "toArray") (call $mk_native (i32.const 336) (cstring "toArray")))
   (call $scope_define (local.get $iterproto) (cstring "forEach") (call $mk_native (i32.const 337) (cstring "forEach")))
   (call $scope_define (local.get $iterproto) (cstring "reduce") (call $mk_native (i32.const 338) (cstring "reduce")))
