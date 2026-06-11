@@ -2435,6 +2435,16 @@
           (let $fpo i32 (i32.load (i32.add (call $val_payload (local.get $ov)) (i32.const 12))))
           (if (local.get $fpo)
             (then (let $pos i32 (call $scope_find_local (local.get $fpo) (cstring "@@protoover"))) (if (local.get $pos) (then (return (i64.load (local.get $pos)))))))))
+      ;; a derived class constructor (VM fn): its [[Prototype]] is the parent constructor (@@super,
+      ;; stored on its .prototype), so static members are inherited — incl. from native parents like
+      ;; class S extends Uint8Array. A base class / ordinary function has no @@super → Function.prototype.
+      (if (i32.ge_s (i32.load (call $val_payload (local.get $ov))) (i32.const 1448232526))
+        (then
+          (let $vmp i64 (i64.load (i32.add (call $val_payload (local.get $ov)) (i32.const 16))))
+          (if (call $is_object (local.get $vmp))
+            (then
+              (let $vss i32 (call $scope_find_local (call $val_payload (local.get $vmp)) (cstring "@@super")))
+              (if (local.get $vss) (then (return (i64.load (local.get $vss)))))))))
       (return (i64.load (i32.const 336)))))
   (if (call $is_object (local.get $ov))
     (then

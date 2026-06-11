@@ -671,6 +671,14 @@
               (if (call $entry_is_accessor (local.get $vinh))  ;; inherited accessor (e.g. defined on Function.prototype) → invoke getter
                 (then (let $vig i64 (i64.load (call $val_payload (i64.load (local.get $vinh))))) (if (call $is_function (local.get $vig)) (then (return (call $call_fn0 (local.get $vig) (local.get $cont))))) (return (call $v_undef))))
               (return (i64.load (local.get $vinh)))))
+          ;; static inheritance: a derived class ctor inherits its parent ctor's static members. The
+          ;; parent (@@super on this fn's .prototype) covers native parents like class S extends Uint8Array
+          ;; whose statics (of/from/…) live on the parent ctor, not reachable via the .prototype scope.
+          (if (call $is_object (local.get $vproto))
+            (then
+              (let $vsup i32 (call $scope_find_local (call $val_payload (local.get $vproto)) (cstring "@@super")))
+              (if (local.get $vsup)
+                (then (if (call $is_function (i64.load (local.get $vsup))) (then (return (call $get_prop (i64.load (local.get $vsup)) (local.get $key)))))))))
           (return (call $v_undef))))
       (if (call $str_eq (local.get $ks) (cstring "prototype"))
         (then
