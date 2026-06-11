@@ -2746,6 +2746,13 @@
 
 ;; Map/Set/ES2024-set-methods/WeakMap/WeakSet (120-136, 310-316, 320-328) — extracted
 ;; from call_native to keep that function under the compiler recursion limit.
+;; create an array iterator (kind=values) over $arrval, then re-parent it to $protoreg's object
+;; (e.g. %MapIteratorPrototype% reg 728 / %SetIteratorPrototype% reg 732) for the spec @@toStringTag.
+(func $coll_iter (param $arrval i64) (param $protoreg i32) (result i64) (effects)
+  (let $it i64 (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $arrval)))
+  (if (i32.load (local.get $protoreg)) (then (i32.store (call $val_payload (local.get $it)) (i32.load (local.get $protoreg)))))
+  (local.get $it))
+
 (func $native_collections (param $id i32) (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
   ;; ── Map (id 120 ctor, 121 set, 122 get, 123 has, 124 delete, 125 forEach, 126 size, 127 clear) ──
   (if (i32.eq (local.get $id) (i32.const 120))  ;; new Map()
@@ -5105,12 +5112,12 @@
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv))
                      (if i32 (i32.eq (local.get $id) (i32.const 175)) (then (cstring "@@sk")) (else (cstring "@@mk")))))
         (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))))
-  (if (i32.eq (local.get $id) (i32.const 175))  ;; Set @@iterator/values (this = set) → array iterator over @@sk
-    (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@sk")))))))
-  (if (i32.eq (local.get $id) (i32.const 176))  ;; Map.keys (this = map) → array iterator over @@mk
-    (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mk")))))))
-  (if (i32.eq (local.get $id) (i32.const 177))  ;; Map.values (this = map) → array iterator over @@mv
-    (then (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mv")))))))
+  (if (i32.eq (local.get $id) (i32.const 175))  ;; Set @@iterator/values (this = set) → Set Iterator over @@sk
+    (then (return (call $coll_iter (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@sk"))) (i32.const 732)))))
+  (if (i32.eq (local.get $id) (i32.const 176))  ;; Map.keys (this = map) → Map Iterator over @@mk
+    (then (return (call $coll_iter (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mk"))) (i32.const 728)))))
+  (if (i32.eq (local.get $id) (i32.const 177))  ;; Map.values (this = map) → Map Iterator over @@mv
+    (then (return (call $coll_iter (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mv"))) (i32.const 728)))))
   (if (i32.eq (local.get $id) (i32.const 178))  ;; Map.entries/@@iterator (this = map) → iterator over [k,v] pairs
     (then
       (let $emk i32 (call $coll_arr (local.get $thisv) (cstring "@@mk")))
@@ -5125,7 +5132,7 @@
         (call $arr_push (local.get $epairs) (call $mk_arr (local.get $epair)))
         (set! $ei (i32.add (local.get $ei) (i32.const 1)))
         (br $epl)))
-      (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $epairs))))))
+      (return (call $coll_iter (call $mk_arr (local.get $epairs)) (i32.const 728)))))
   (if (i32.eq (local.get $id) (i32.const 440))  ;; Set.prototype.entries (this = set) → iterator over [v,v] pairs
     (then
       (if (i32.eqz (call $is_object (local.get $thisv)))
@@ -5143,7 +5150,7 @@
         (call $arr_push (local.get $sepairs) (call $mk_arr (local.get $sepair)))
         (set! $sei (i32.add (local.get $sei) (i32.const 1)))
         (br $sepl)))
-      (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $sepairs))))))
+      (return (call $coll_iter (call $mk_arr (local.get $sepairs)) (i32.const 732)))))
   (if (i32.eq (local.get $id) (i32.const 171))  ;; Number.prototype.toExponential(d)
     (then
       (let $exv f64 (call $num_this (local.get $thisv)))
@@ -9294,6 +9301,18 @@
   (i32.store (i32.const 724) (local.get $restriterproto))
   (call $scope_define_attr (local.get $restriterproto) (cstring "next") (call $mk_native (i32.const 174) (cstring "next")) (i32.const 12))
   (call $scope_define_attr (local.get $restriterproto) (cstring "@@toStringTag") (call $mk_str (cstring "RegExp String Iterator")) (i32.const 4))
+  ;; %MapIteratorPrototype% (728) / %SetIteratorPrototype% (732): array-iterator-shaped (next 94),
+  ;; but distinct prototypes with the spec @@toStringTag. Map/Set iterators are re-parented to these.
+  (let $mapiterproto i32 (call $obj_new (i32.const 4)))
+  (i32.store (local.get $mapiterproto) (local.get $iterproto))
+  (i32.store (i32.const 728) (local.get $mapiterproto))
+  (call $scope_define_attr (local.get $mapiterproto) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")) (i32.const 12))
+  (call $scope_define_attr (local.get $mapiterproto) (cstring "@@toStringTag") (call $mk_str (cstring "Map Iterator")) (i32.const 4))
+  (let $setiterproto i32 (call $obj_new (i32.const 4)))
+  (i32.store (local.get $setiterproto) (local.get $iterproto))
+  (i32.store (i32.const 732) (local.get $setiterproto))
+  (call $scope_define_attr (local.get $setiterproto) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")) (i32.const 12))
+  (call $scope_define_attr (local.get $setiterproto) (cstring "@@toStringTag") (call $mk_str (cstring "Set Iterator")) (i32.const 4))
   (call $scope_define (local.get $iterproto) (cstring "toArray") (call $mk_native (i32.const 336) (cstring "toArray")))
   (call $scope_define (local.get $iterproto) (cstring "forEach") (call $mk_native (i32.const 337) (cstring "forEach")))
   (call $scope_define (local.get $iterproto) (cstring "reduce") (call $mk_native (i32.const 338) (cstring "reduce")))
