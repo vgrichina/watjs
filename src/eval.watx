@@ -4061,6 +4061,59 @@
     (then (call $promise_resolve_with (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 416))  ;; executor reject(r) — `this` is the bound promise
     (then (call $promise_settle (local.get $thisv) (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (return (call $v_undef))))
+  ;; Promise combinator per-element resolve (454) / reject (455). `this` = {@@cs (shared state
+  ;; {@@kind,@@res,@@acc,@@cnt}), @@i (index), @@done}. Used by all(410)/any(413)/allSettled(412).
+  (if (i32.eq (local.get $id) (i32.const 454))
+    (then
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@done")))) (then (return (call $v_undef))))  ;; alreadyCalled
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@done")) (call $v_true))
+      (let $f4cs i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cs"))))
+      (let $f4i i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
+      (let $f4k i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $f4cs) (call $mk_str (cstring "@@kind"))))))
+      (let $f4res i64 (call $get_prop (local.get $f4cs) (call $mk_str (cstring "@@res"))))
+      (let $f4v i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eq (local.get $f4k) (i32.const 413)) (then (call $promise_resolve_with (local.get $f4res) (local.get $f4v)) (return (call $v_undef))))  ;; any → first fulfil wins
+      (let $f4acc i32 (call $val_payload (call $get_prop (local.get $f4cs) (call $mk_str (cstring "@@acc")))))
+      (if (i32.eq (local.get $f4k) (i32.const 410))
+        (then (call $arr_set (local.get $f4acc) (local.get $f4i) (local.get $f4v)))  ;; all → values[i]
+        (else  ;; allSettled → {status:fulfilled,value}
+          (let $f4so i32 (call $obj_new (i32.const 4)))
+          (call $scope_define (local.get $f4so) (cstring "status") (call $mk_str (cstring "fulfilled")))
+          (call $scope_define (local.get $f4so) (cstring "value") (local.get $f4v))
+          (call $arr_set (local.get $f4acc) (local.get $f4i) (call $mk_obj (local.get $f4so)))))
+      (let $f4n i32 (i32.sub (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $f4cs) (call $mk_str (cstring "@@cnt"))))) (i32.const 1)))
+      (call $set_prop (local.get $f4cs) (call $mk_str (cstring "@@cnt")) (call $num (f64.convert_i32_s (local.get $f4n))))
+      (if (i32.eqz (local.get $f4n)) (then (call $promise_resolve_with (local.get $f4res) (call $mk_arr (local.get $f4acc)))))
+      (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 455))
+    (then
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@done")))) (then (return (call $v_undef))))
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@done")) (call $v_true))
+      (let $r5cs i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cs"))))
+      (let $r5i i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
+      (let $r5k i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $r5cs) (call $mk_str (cstring "@@kind"))))))
+      (let $r5res i64 (call $get_prop (local.get $r5cs) (call $mk_str (cstring "@@res"))))
+      (let $r5r i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eq (local.get $r5k) (i32.const 410)) (then (call $promise_settle (local.get $r5res) (i32.const 2) (local.get $r5r)) (return (call $v_undef))))  ;; all → first reject wins
+      (let $r5acc i32 (call $val_payload (call $get_prop (local.get $r5cs) (call $mk_str (cstring "@@acc")))))
+      (if (i32.eq (local.get $r5k) (i32.const 412))  ;; allSettled → {status:rejected,reason}
+        (then
+          (let $r5so i32 (call $obj_new (i32.const 4)))
+          (call $scope_define (local.get $r5so) (cstring "status") (call $mk_str (cstring "rejected")))
+          (call $scope_define (local.get $r5so) (cstring "reason") (local.get $r5r))
+          (call $arr_set (local.get $r5acc) (local.get $r5i) (call $mk_obj (local.get $r5so))))
+        (else (call $arr_set (local.get $r5acc) (local.get $r5i) (local.get $r5r))))  ;; any → errors[i]
+      (let $r5n i32 (i32.sub (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $r5cs) (call $mk_str (cstring "@@cnt"))))) (i32.const 1)))
+      (call $set_prop (local.get $r5cs) (call $mk_str (cstring "@@cnt")) (call $num (f64.convert_i32_s (local.get $r5n))))
+      (if (i32.eqz (local.get $r5n))
+        (then
+          (if (i32.eq (local.get $r5k) (i32.const 413))  ;; any: all rejected → AggregateError(errors)
+            (then
+              (let $r5age i64 (call $make_error (cstring "AggregateError") (cstring "All promises were rejected")))
+              (if (call $is_object (local.get $r5age)) (then (call $scope_define (call $val_payload (local.get $r5age)) (cstring "errors") (call $mk_arr (local.get $r5acc)))))
+              (call $promise_settle (local.get $r5res) (i32.const 2) (local.get $r5age)))
+            (else (call $promise_resolve_with (local.get $r5res) (call $mk_arr (local.get $r5acc)))))))  ;; allSettled → resolve(results)
+      (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 417))  ;; BigInt.prototype.toString([radix])
     (then
       ;; unwrap a BigInt wrapper object (Object(5n)) to its primitive
@@ -4123,9 +4176,19 @@
       (let $pnf i64 (call $get_prop (local.get $pit) (call $mk_str (cstring "next"))))
       (if (i32.or (call $err) (i32.eqz (call $is_function (local.get $pnf))))
         (then (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (call $make_error (cstring "TypeError") (cstring "iterator.next is not a function"))))))
+      ;; Reaction-based: build a PENDING result promise + shared state, register
+      ;; resolveElement/rejectElement on each C.resolve(item).then, and let the microtask
+      ;; reactions resolve the result when the counter hits 0 (correct async timing).
+      (let $pres i64 (call $mk_promise (i32.const 0) (call $v_undef)))
       (let $pacc i32 (call $arr_new (i32.const 8)))  ;; values / settled-objects / reasons
+      (let $cs i32 (call $obj_new (i32.const 6)))
+      (call $scope_define (local.get $cs) (cstring "@@kind") (call $num (f64.convert_i32_s (local.get $id))))
+      (call $scope_define (local.get $cs) (cstring "@@res") (local.get $pres))
+      (call $scope_define (local.get $cs) (cstring "@@acc") (call $mk_arr (local.get $pacc)))
+      (let $csv i64 (call $mk_obj (local.get $cs)))
       (let $pnbuf i32 (call $heap_alloc (i32.const 8)))
-      (let $prbuf i32 (call $heap_alloc (i32.const 8)))  ;; arg buffer for C.resolve(value)
+      (let $prbuf i32 (call $heap_alloc (i32.const 8)))
+      (let $pidx i32 (i32.const 0))
       (block $pae (loop $pal
         (let $pr i64 (call $call_val (local.get $pnf) (i32.const 0) (local.get $pnbuf) (local.get $pit)))  ;; iter.next()
         (br_if $pae (call $err))
@@ -4137,44 +4200,41 @@
         (i64.store (local.get $prbuf) (local.get $prval))
         (let $pe i64 (call $call_val (local.get $pcres) (i32.const 1) (local.get $prbuf) (local.get $pcons)))  ;; C.resolve(value)
         (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))
-        ;; spec invokes pe.then(resolveElement, rejectElement); we collect results synchronously
-        ;; below, but still perform the Get+Invoke of `then` so a throwing then/getter rejects
-        ;; (and closes the iterator) instead of looping forever on an infinite iterator.
         (let $pthen i64 (call $get_prop (local.get $pe) (call $mk_str (cstring "then"))))
         (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))
-        (if (call $is_function (local.get $pthen))
-          (then
-            (drop (call $call_val (local.get $pthen) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $pe)))
-            (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))))
-        (let $pes i32 (call $promise_state (local.get $pe)))
-        (let $pev i64 (call $get_prop (local.get $pe) (call $mk_str (cstring "@@pval"))))
-        (if (i32.eq (local.get $id) (i32.const 411))  ;; race → first settled wins
-          (then (return (local.get $pe))))
-        (if (i32.eq (local.get $id) (i32.const 410))  ;; all → first rejection short-circuits, else collect values
-          (then
-            (if (i32.eq (local.get $pes) (i32.const 2)) (then (return (call $mk_promise (i32.const 2) (local.get $pev)))))
-            (call $arr_push (local.get $pacc) (local.get $pev))))
-        (if (i32.eq (local.get $id) (i32.const 413))  ;; any → first fulfilled wins, else collect reasons
-          (then
-            (if (i32.eq (local.get $pes) (i32.const 1)) (then (return (call $mk_promise (i32.const 1) (local.get $pev)))))
-            (call $arr_push (local.get $pacc) (local.get $pev))))
-        (if (i32.eq (local.get $id) (i32.const 412))  ;; allSettled → {status, value|reason}
-          (then
-            (let $pso i32 (call $obj_new (i32.const 4)))
-            (if (i32.eq (local.get $pes) (i32.const 1))
-              (then (call $scope_define (local.get $pso) (cstring "status") (call $mk_str (cstring "fulfilled"))) (call $scope_define (local.get $pso) (cstring "value") (local.get $pev)))
-              (else (call $scope_define (local.get $pso) (cstring "status") (call $mk_str (cstring "rejected"))) (call $scope_define (local.get $pso) (cstring "reason") (local.get $pev))))
-            (call $arr_push (local.get $pacc) (call $mk_obj (local.get $pso)))))
+        (if (i32.eqz (call $is_function (local.get $pthen)))
+          (then (call $throw_type (cstring "TypeError") (cstring "then is not a function")) (call $iter_close_throw (local.get $pit)) (br $pae)))
+        (call $arr_push (local.get $pacc) (call $v_undef))  ;; reserve slot [idx]
+        (let $onF i64 (call $v_undef)) (let $onR i64 (call $v_undef))
+        (if (i32.eq (local.get $id) (i32.const 411))  ;; race → resolve/reject the result directly (first settle wins)
+          (then (set! $onF (call $promise_bound_settler (i32.const 415) (local.get $pres))) (set! $onR (call $promise_bound_settler (i32.const 416) (local.get $pres))))
+          (else  ;; all/any/allSettled → element resolve/reject carrying index + shared state
+            (let $es i32 (call $obj_new (i32.const 4)))
+            (call $scope_define (local.get $es) (cstring "@@cs") (local.get $csv))
+            (call $scope_define (local.get $es) (cstring "@@i") (call $num (f64.convert_i32_s (local.get $pidx))))
+            (let $esv i64 (call $mk_obj (local.get $es)))
+            (set! $onF (call $promise_bound_settler (i32.const 454) (local.get $esv)))
+            (set! $onR (call $promise_bound_settler (i32.const 455) (local.get $esv)))))
+        (let $tb i32 (call $heap_alloc (i32.const 16)))
+        (i64.store (local.get $tb) (local.get $onF))
+        (i64.store (i32.add (local.get $tb) (i32.const 8)) (local.get $onR))
+        (drop (call $call_val (local.get $pthen) (i32.const 2) (local.get $tb) (local.get $pe)))  ;; pe.then(onF, onR)
+        (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))
+        (set! $pidx (i32.add (local.get $pidx) (i32.const 1)))
         (br $pal)))
-      ;; loop exited via error → reject with the pending error
-      (if (call $err) (then (let $pe2 i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $pe2)))))
-      (if (i32.eq (local.get $id) (i32.const 411)) (then (return (call $mk_promise (i32.const 0) (call $v_undef)))))  ;; race on empty → pending
-      (if (i32.eq (local.get $id) (i32.const 413))  ;; any: all rejected → AggregateError
+      ;; iteration error → reject result
+      (if (call $err) (then (let $pe2 i64 (call $err_val)) (call $set_err (i32.const 0)) (call $promise_settle (local.get $pres) (i32.const 2) (local.get $pe2)) (return (local.get $pres))))
+      ;; done: set remaining counter; an empty iterable settles now (race([]) stays pending)
+      (call $scope_define (local.get $cs) (cstring "@@cnt") (call $num (f64.convert_i32_s (local.get $pidx))))
+      (if (i32.eqz (local.get $pidx))
         (then
-          (let $age i64 (call $make_error (cstring "AggregateError") (cstring "All promises were rejected")))
-          (if (call $is_object (local.get $age)) (then (call $scope_define (call $val_payload (local.get $age)) (cstring "errors") (call $mk_arr (local.get $pacc)))))
-          (return (call $mk_promise (i32.const 2) (local.get $age)))))
-      (return (call $mk_promise (i32.const 1) (call $mk_arr (local.get $pacc))))))  ;; all / allSettled → fulfilled(array)
+          (if (i32.eq (local.get $id) (i32.const 413))  ;; any([]) → AggregateError
+            (then
+              (let $age i64 (call $make_error (cstring "AggregateError") (cstring "All promises were rejected")))
+              (if (call $is_object (local.get $age)) (then (call $scope_define (call $val_payload (local.get $age)) (cstring "errors") (call $mk_arr (local.get $pacc)))))
+              (call $promise_settle (local.get $pres) (i32.const 2) (local.get $age)))
+            (else (if (i32.ne (local.get $id) (i32.const 411)) (then (call $promise_resolve_with (local.get $pres) (call $mk_arr (local.get $pacc)))))))))  ;; all([])/allSettled([]) → resolve([])
+      (return (local.get $pres))))
   (if (i32.eq (local.get $id) (i32.const 93))  ;; obj.hasOwnProperty(key)
     (then
       (let $ks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
