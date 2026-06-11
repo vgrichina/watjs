@@ -4601,6 +4601,7 @@
       (call $scope_define (local.get $cs) (cstring "@@kind") (call $num (f64.convert_i32_s (local.get $id))))
       (call $scope_define (local.get $cs) (cstring "@@res") (local.get $pres))
       (call $scope_define (local.get $cs) (cstring "@@acc") (call $mk_arr (local.get $pacc)))
+      (call $scope_define (local.get $cs) (cstring "@@cnt") (call $num (f64.const 1)))  ;; remainingElementsCount starts at 1 (incremented per element, final decrement after the loop) so a SYNCHRONOUS thenable's resolve-element sees a valid counter mid-loop
       (let $csv i64 (call $mk_obj (local.get $cs)))
       (let $pnbuf i32 (call $heap_alloc (i32.const 8)))
       (let $prbuf i32 (call $heap_alloc (i32.const 8)))
@@ -4634,6 +4635,9 @@
         (let $tb i32 (call $heap_alloc (i32.const 16)))
         (i64.store (local.get $tb) (local.get $onF))
         (i64.store (i32.add (local.get $tb) (i32.const 8)) (local.get $onR))
+        ;; increment the remaining counter BEFORE .then, so a synchronously-resolving thenable's
+        ;; resolve/reject-element (which decrements) never sees an unset @@cnt (NaN → trunc trap)
+        (call $set_prop (local.get $csv) (call $mk_str (cstring "@@cnt")) (call $num (f64.add (call $to_num (call $get_prop (local.get $csv) (call $mk_str (cstring "@@cnt")))) (f64.const 1))))
         (drop (call $call_val (local.get $pthen) (i32.const 2) (local.get $tb) (local.get $pe)))  ;; pe.then(onF, onR)
         (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))
         (set! $pidx (i32.add (local.get $pidx) (i32.const 1)))
@@ -4641,15 +4645,21 @@
       ;; iteration error → reject result
       (if (call $err) (then (let $pe2 i64 (call $err_val)) (call $set_err (i32.const 0)) (call $promise_settle (local.get $pres) (i32.const 2) (local.get $pe2)) (return (local.get $pres))))
       ;; done: set remaining counter; an empty iterable settles now (race([]) stays pending)
-      (call $scope_define (local.get $cs) (cstring "@@cnt") (call $num (f64.convert_i32_s (local.get $pidx))))
-      (if (i32.eqz (local.get $pidx))
+      ;; final decrement of the remaining counter (cancels the +1 initial). If it hits 0 here,
+      ;; every element settled synchronously during the loop (or the iterable was empty) → settle now.
+      ;; race (411) never settles via the counter (first settle wins via bound 415/416).
+      (if (i32.ne (local.get $id) (i32.const 411))
         (then
-          (if (i32.eq (local.get $id) (i32.const 413))  ;; any([]) → AggregateError
+          (let $fcnt i32 (i32.sub (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $csv) (call $mk_str (cstring "@@cnt"))))) (i32.const 1)))
+          (call $set_prop (local.get $csv) (call $mk_str (cstring "@@cnt")) (call $num (f64.convert_i32_s (local.get $fcnt))))
+          (if (i32.eqz (local.get $fcnt))
             (then
-              (let $age i64 (call $make_error (cstring "AggregateError") (cstring "All promises were rejected")))
-              (if (call $is_object (local.get $age)) (then (call $scope_define (call $val_payload (local.get $age)) (cstring "errors") (call $mk_arr (local.get $pacc)))))
-              (call $promise_settle (local.get $pres) (i32.const 2) (local.get $age)))
-            (else (if (i32.ne (local.get $id) (i32.const 411)) (then (call $promise_resolve_with (local.get $pres) (call $mk_arr (local.get $pacc)))))))))  ;; all([])/allSettled([]) → resolve([])
+              (if (i32.eq (local.get $id) (i32.const 413))  ;; any → all rejected → AggregateError
+                (then
+                  (let $age i64 (call $make_error (cstring "AggregateError") (cstring "All promises were rejected")))
+                  (if (call $is_object (local.get $age)) (then (call $scope_define (call $val_payload (local.get $age)) (cstring "errors") (call $mk_arr (local.get $pacc)))))
+                  (call $promise_settle (local.get $pres) (i32.const 2) (local.get $age)))
+                (else (call $promise_resolve_with (local.get $pres) (call $mk_arr (local.get $pacc)))))))))  ;; all/allSettled → resolve(acc)
       (return (local.get $pres))))
   (if (i32.eq (local.get $id) (i32.const 93))  ;; obj.hasOwnProperty(key)
     (then
