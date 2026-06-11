@@ -555,13 +555,15 @@
                                 (then (call $throw_type (cstring "TypeError") (cstring "proxy get: result must be undefined for non-configurable accessor without getter")) (return (call $v_undef))))))))))))
               (return (local.get $gtr))))
           (return (call $get_prop (local.get $ptgt) (local.get $key)))))
-      ;; TypedArray: numeric index (number OR canonical numeric-string) → read from the byte buffer
+      ;; TypedArray: a canonical numeric index (Number or numeric string) → IntegerIndexedElementGet
+      ;; (the element, or undefined for out-of-bounds/invalid/detached — NEVER an OrdinaryGet that
+      ;; would consult the prototype chain).
       (let $tael i32 (call $scope_find_local (local.get $o) (cstring "@@taelem")))
       (if (local.get $tael)
         (then
           (let $tidx i32 (if i32 (call $is_number (local.get $key)) (then (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
             (else (if i32 (call $is_string (local.get $key)) (then (call $str_array_index (call $val_payload (local.get $key)))) (else (i32.const -1))))))
-          ;; only treat genuine integer indices here (a number key that isn't an integer → undefined per spec)
+          ;; a Number key that isn't an integer → undefined (no proto)
           (if (i32.and (call $is_number (local.get $key)) (f64.ne (call $tonum_raw (local.get $key)) (f64.convert_i32_s (local.get $tidx))))
             (then (return (call $v_undef))))
           (if (i32.ge_s (local.get $tidx) (i32.const 0))
@@ -572,7 +574,12 @@
               (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
               (if (i32.lt_s (local.get $tidx) (local.get $tln))
                 (then (return (call $ta_read_val (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))))))
-                (else (return (call $v_undef))))))))
+                (else (return (call $v_undef))))))
+          ;; not a valid in-bounds integer index: a Number key, or a canonical numeric STRING
+          ;; ("1.1", "-0", "NaN", "Infinity", out-of-i32-range) → undefined WITHOUT a proto walk.
+          (if (i32.or (call $is_number (local.get $key))
+                      (i32.and (call $is_string (local.get $key)) (call $ta_is_canon_str (call $val_payload (local.get $key)))))
+            (then (return (call $v_undef))))))
       ;; mapped arguments: a numeric index < @@anp aliases a parameter slot
       (if (call $is_number (local.get $key))
         (then
@@ -1006,6 +1013,11 @@
   (if (i32.eqz (call $entry_writable (local.get $slot))) (then (call $set_fail) (return (i32.const 1))))
   (i64.store (local.get $slot) (local.get $val))
   (i32.const 1))
+;; 1 if string $ks is a CanonicalNumericIndexString: ToString(ToNumber(ks)) === ks, or ks is "-0".
+(func $ta_is_canon_str (param $ks i32) (result i32) (effects)
+  (i32.or (call $str_eq (call $num_to_str (call $to_num (call $mk_str (local.get $ks)))) (local.get $ks))
+          (call $str_eq (local.get $ks) (cstring "-0"))))
+
 ;; IsValidIntegerIndex: $n is a non-negative integer (not -0) below $len.
 (func $ta_valid_idx (param $n f64) (param $len i32) (result i32) (effects)
   (i32.and (f64.eq (local.get $n) (local.get $n))                          ;; not NaN
