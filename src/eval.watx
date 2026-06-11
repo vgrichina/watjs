@@ -1136,6 +1136,14 @@
     (then (call $throw_type (cstring "TypeError") (cstring "TypedArray method called on a non-TypedArray")) (return (i32.const 1))))
   (call $ta_validate (local.get $thisv)))
 
+;; 1 if this TypedArray's backing ArrayBuffer is detached (else 0). Non-throwing.
+(func $ta_is_detached (param $thisv i64) (result i32) (effects)
+  (if (call $is_object (local.get $thisv))
+    (then
+      (let $bo i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@tabufobj")))
+      (if (local.get $bo) (then (return (call $is_detached_buf (i64.load (local.get $bo))))))))
+  (i32.const 0))
+
 ;; $262.detachArrayBuffer(buffer): mark the buffer detached and zero its length. Returns null.
 (func $detach_arraybuffer (param $buf i64) (result i64) (effects)
   (if (call $is_object (local.get $buf))
@@ -1347,8 +1355,9 @@
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "accessor called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
         (then (call $throw_type (cstring "TypeError") (cstring "accessor called on a non-TypedArray")) (return (call $v_undef))))
-      (if (i32.eq (local.get $id) (i32.const 407))  ;; byteOffset
+      (if (i32.eq (local.get $id) (i32.const 407))  ;; byteOffset (→ +0 when the buffer is detached)
         (then
+          (if (call $ta_is_detached (local.get $thisv)) (then (return (call $num (f64.const 0)))))
           (let $tosl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taoffset")))
           (return (if i64 (local.get $tosl) (then (i64.load (local.get $tosl))) (else (call $num (f64.const 0)))))))
       ;; buffer: return @@tabufobj, lazily wrapping the raw byte buffer in an ArrayBuffer
@@ -1644,6 +1653,8 @@
   (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
   (let $len i32 (i32.const 0))
   (let $buf i32 (i32.const 0))
+  (let $vboff i32 (i32.const -1))      ;; >=0 marks a view over an ArrayBuffer (its byteOffset)
+  (let $vbufobj i64 (call $v_undef))   ;; the source ArrayBuffer object (for @@tabufobj / byteOffset)
   (if (call $is_number (local.get $a0))
     (then
       ;; a byte size too large to allocate (i32-backed) → RangeError, not an OOB trap
@@ -1702,7 +1713,9 @@
                   (if (i32.ne (i32.rem_s (local.get $ablen) (local.get $bpe)) (i32.const 0))
                     (then (call $throw_type (cstring "RangeError") (cstring "buffer length minus the offset is not a multiple of the element size")) (return (call $v_undef))))
                   (set! $len (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe)))))
-              (set! $buf (i32.add (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $absl)))) (local.get $boff))))
+              (set! $buf (i32.add (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $absl)))) (local.get $boff)))
+              (set! $vboff (local.get $boff))
+              (set! $vbufobj (local.get $a0)))
             (else  ;; array-like / iterable with a length
               (let $lenf2 f64 (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "length")))))
               ;; excessive byte size (>= ~2^31) → RangeError, not an OOB trap (ToLength: <=0/NaN -> 0)
@@ -1726,6 +1739,13 @@
   (call $scope_define (local.get $to) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $len))))
   ;; length/byteLength are %TypedArray.prototype% accessors (not own data props) — spec-correct + reflect detach
   (call $scope_define_attr (local.get $to) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $bpe))) (i32.const 12))
+  ;; a view over an explicit ArrayBuffer records its byteOffset and the source buffer object,
+  ;; so byteOffset reflects the offset, `buffer` returns the original (identity), and detach
+  ;; checks see the original buffer's @@detached.
+  (if (i32.ge_s (local.get $vboff) (i32.const 0))
+    (then
+      (call $scope_define (local.get $to) (cstring "@@taoffset") (call $num (f64.convert_i32_s (local.get $vboff))))
+      (call $scope_define (local.get $to) (cstring "@@tabufobj") (local.get $vbufobj))))
   (call $mk_obj (local.get $to)))
 
 ;; TypedArraySpeciesCreate for map/filter/slice. $resarr is the plain Array of result
