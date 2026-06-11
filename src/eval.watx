@@ -1679,11 +1679,30 @@
               (return (call $ta_make (local.get $elem) (i32.const 1) (local.get $itbuf)))))
           (let $absl i32 (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@abdata")))
           (if (local.get $absl)
-            (then  ;; view over an ArrayBuffer
-              (let $boff i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
-              (set! $buf (i32.add (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $absl)))) (local.get $boff)))
+            (then  ;; view over an ArrayBuffer (spec 23.2.5.1 InitializeTypedArrayFromArrayBuffer)
+              ;; offset = ToIndex(byteOffset) — RangeError on negative/Infinity — and must be a
+              ;; multiple of the element size.
+              (let $boff i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))) (else (i32.const 0))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.ne (i32.rem_s (local.get $boff) (local.get $bpe)) (i32.const 0))
+                (then (call $throw_type (cstring "RangeError") (cstring "start offset must be a multiple of the element size")) (return (call $v_undef))))
+              ;; length (if given) = ToIndex(length) — RangeError on negative
+              (let $sahaslen i32 (i32.ge_s (local.get $argc) (i32.const 3)))
+              (let $saexlen i32 (if i32 (local.get $sahaslen) (then (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))) (else (i32.const 0))))
+              (if (call $err) (then (return (call $v_undef))))
               (let $ablen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "byteLength"))))))
-              (set! $len (if i32 (i32.ge_s (local.get $argc) (i32.const 3)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe))))))
+              (if (i32.gt_s (local.get $boff) (local.get $ablen))
+                (then (call $throw_type (cstring "RangeError") (cstring "start offset is outside the bounds of the buffer")) (return (call $v_undef))))
+              (if (local.get $sahaslen)
+                (then
+                  (if (i32.gt_s (i32.add (local.get $boff) (i32.mul (local.get $saexlen) (local.get $bpe))) (local.get $ablen))
+                    (then (call $throw_type (cstring "RangeError") (cstring "length is outside the bounds of the buffer")) (return (call $v_undef))))
+                  (set! $len (local.get $saexlen)))
+                (else
+                  (if (i32.ne (i32.rem_s (local.get $ablen) (local.get $bpe)) (i32.const 0))
+                    (then (call $throw_type (cstring "RangeError") (cstring "buffer length minus the offset is not a multiple of the element size")) (return (call $v_undef))))
+                  (set! $len (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe)))))
+              (set! $buf (i32.add (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $absl)))) (local.get $boff))))
             (else  ;; array-like / iterable with a length
               (let $lenf2 f64 (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "length")))))
               ;; excessive byte size (>= ~2^31) → RangeError, not an OOB trap (ToLength: <=0/NaN -> 0)
