@@ -4022,6 +4022,10 @@
       (let $grr i32 (call $obj_new (i32.const 2)))
       (call $scope_define (local.get $grr) (cstring "value") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (call $scope_define (local.get $grr) (cstring "done") (call $v_true))
+      ;; async generator: .return(v) → a resolved Promise of {value:v, done:true}
+      (if (call $is_object (local.get $thisv))
+        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@asyncgen")) (i32.const 0))
+          (then (return (call $mk_promise (i32.const 1) (call $mk_obj (local.get $grr))))))))
       (return (call $mk_obj (local.get $grr)))))
   (if (i32.eq (local.get $id) (i32.const 421))  ;; generator.throw(e) → throw at the suspension point
     (then
@@ -4029,6 +4033,10 @@
       (if (call $err) (then (return (call $v_undef))))
       ;; basic model (no in-body try/catch resumption): close and propagate the error
       (i32.store (i32.add (local.get $gtctx) (i32.const 16)) (i32.const 1))
+      ;; async generator: .throw(e) → a rejected Promise (not a synchronous throw)
+      (if (call $is_object (local.get $thisv))
+        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@asyncgen")) (i32.const 0))
+          (then (return (call $mk_promise (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
       (call $set_err (i32.const 1))
       (call $set_err_val (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (return (call $v_undef))))
