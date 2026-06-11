@@ -1006,6 +1006,51 @@
   (if (i32.eqz (call $entry_writable (local.get $slot))) (then (call $set_fail) (return (i32.const 1))))
   (i64.store (local.get $slot) (local.get $val))
   (i32.const 1))
+;; IsValidIntegerIndex: $n is a non-negative integer (not -0) below $len.
+(func $ta_valid_idx (param $n f64) (param $len i32) (result i32) (effects)
+  (i32.and (f64.eq (local.get $n) (local.get $n))                          ;; not NaN
+    (i32.and (f64.eq (local.get $n) (f64.floor (local.get $n)))           ;; integer
+      (i32.and (f64.ge (local.get $n) (f64.const 0))
+        (i32.and (f64.lt (local.get $n) (f64.convert_i32_s (local.get $len)))
+                 (i32.eqz (i32.and (f64.eq (local.get $n) (f64.const 0))  ;; reject -0
+                                   (f64.lt (f64.copysign (f64.const 1) (local.get $n)) (f64.const 0)))))))))
+
+;; IntegerIndexedExoticObject [[Set]] for a canonical numeric index on a TypedArray (scope $o).
+;; Returns 1 if $key is a CanonicalNumericIndexString (the write was performed, or dropped for an
+;; out-of-bounds / detached / non-integer index — but ToNumber/ToBigInt(value) still ran once),
+;; 0 if $key is an ordinary property key (caller falls back to ordinary [[Set]]).
+(func $ta_set_elem (param $o i32) (param $key i64) (param $val i64) (result i32) (effects)
+  (let $n f64 (f64.const 0))
+  (if (call $is_number (local.get $key))
+    (then (set! $n (call $tonum_raw (local.get $key))))   ;; a Number key is always a numeric index
+    (else
+      (if (i32.eqz (call $is_string (local.get $key))) (then (return (i32.const 0))))
+      ;; canonical iff ToString(ToNumber(key)) === key, or key is the literal "-0"
+      (let $ks i32 (call $val_payload (local.get $key)))
+      (let $cn f64 (call $to_num (local.get $key)))
+      (if (i32.eqz (i32.or (call $str_eq (call $num_to_str (local.get $cn)) (local.get $ks)) (call $str_eq (local.get $ks) (cstring "-0"))))
+        (then (return (i32.const 0))))
+      (set! $n (local.get $cn))))
+  (let $elem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@taelem"))))))
+  (let $bo i32 (call $scope_find_local (local.get $o) (cstring "@@tabufobj")))
+  (let $len i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
+  (let $buf i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))))
+  (if (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10)))
+    (then  ;; BigInt TypedArray: value must already be a BigInt (ToBigInt happens before the index check)
+      (if (i32.eqz (call $is_bigint (local.get $val)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert value to a BigInt")) (return (i32.const 1))))
+      (if (local.get $bo) (then (if (call $is_detached_buf (i64.load (local.get $bo))) (then (return (i32.const 1))))))
+      (if (call $ta_valid_idx (local.get $n) (local.get $len))
+        (then (i64.store (i32.add (local.get $buf) (i32.mul (i32.trunc_f64_s (local.get $n)) (i32.const 8))) (call $bigint_val (local.get $val)))))
+      (return (i32.const 1))))
+  ;; numeric TypedArray: ToNumber(value) runs once, regardless of index validity
+  (let $cval f64 (call $to_num (local.get $val)))
+  (if (call $err) (then (return (i32.const 1))))
+  (if (local.get $bo) (then (if (call $is_detached_buf (i64.load (local.get $bo))) (then (return (i32.const 1))))))
+  (if (call $ta_valid_idx (local.get $n) (local.get $len))
+    (then (call $ta_write (local.get $buf) (i32.trunc_f64_s (local.get $n)) (local.get $elem) (local.get $cval))))
+  (i32.const 1))
+
 (func $set_prop (param $cont i64) (param $key i64) (param $val i64) (effects)
   (if (call $is_array (local.get $cont))
     (then
@@ -1105,18 +1150,10 @@
               (return)))
           (call $set_prop (local.get $ptgt) (local.get $key) (local.get $val))
           (return)))
-      ;; TypedArray: numeric index → write to the byte buffer
-      (let $tael i32 (call $scope_find_local (local.get $o) (cstring "@@taelem")))
-      (if (i32.and (i32.ne (local.get $tael) (i32.const 0)) (call $is_number (local.get $key)))
-        (then
-          (let $tidx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
-          ;; detached buffer → IntegerIndexedElementSet is a no-op (write silently dropped)
-          (let $tsbo i32 (call $scope_find_local (local.get $o) (cstring "@@tabufobj")))
-          (if (local.get $tsbo) (then (if (call $is_detached_buf (i64.load (local.get $tsbo))) (then (return)))))
-          (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
-          (if (i32.and (i32.ge_s (local.get $tidx) (i32.const 0)) (i32.lt_s (local.get $tidx) (local.get $tln)))
-            (then (call $ta_store_val (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))) (local.get $val))))
-          (return)))
+      ;; TypedArray: a canonical numeric index (Number or numeric string) → IntegerIndexedElementSet
+      ;; (write to the byte buffer, or a no-op for out-of-bounds/detached, never a named property).
+      (if (call $scope_find_local (local.get $o) (cstring "@@taelem"))
+        (then (if (call $ta_set_elem (local.get $o) (local.get $key) (local.get $val)) (then (return)))))
       ;; Object.freeze: data writes / new props are refused (strict: throw), but an own
       ;; accessor still fires its setter — fall through to the accessor handling below.
       (if (call $scope_find_local (local.get $o) (cstring "@@frozen"))
