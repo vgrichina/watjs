@@ -974,6 +974,65 @@
   (if i64 (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10)))
     (then (call $mk_bigint (i64.load (i32.add (local.get $buf) (i32.mul (local.get $idx) (i32.const 8))))))
     (else (call $num (call $ta_read (local.get $buf) (local.get $idx) (local.get $elem))))))
+;; %TypedArray%.from(source[, mapfn[, thisArg]]). `this` is a constructor C (not necessarily a
+;; concrete TypedArray ctor): materialize the source (iterable → drain, else array-like), apply the
+;; mapper, then build the result. A concrete TA ctor takes the direct build path; otherwise
+;; TypedArrayCreate(C, «len») constructs via C and Sets each value (so a mapper that detaches the
+;; result drops out-of-bounds writes, per [[Set]]).
+(func $ta_from_impl (param $thisv i64) (param $argc i32) (param $argv i32) (result i64) (effects)
+  (if (i32.eqz (call $is_constructor (local.get $thisv)))
+    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from requires a constructor as this")) (return (call $v_undef))))
+  (let $tfsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+  (if (i32.or (call $is_null (local.get $tfsrc)) (call $is_undefined (local.get $tfsrc)))
+    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from source is null or undefined")) (return (call $v_undef))))
+  (let $tfmap i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+  (if (i32.and (i32.eqz (call $is_undefined (local.get $tfmap))) (i32.eqz (call $is_function (local.get $tfmap))))
+    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from mapfn is not callable")) (return (call $v_undef))))
+  (let $tfa i32 (call $arr_new (i32.const 4)))
+  (if (i32.or (call $is_string (local.get $tfsrc)) (i32.or (call $is_array (local.get $tfsrc))
+              (i32.and (call $is_object (local.get $tfsrc)) (call $is_function (call $get_prop (local.get $tfsrc) (call $mk_str (cstring "@@iterator")))))))
+    (then (call $spread_into (local.get $tfa) (local.get $tfsrc)))
+    (else (set! $tfa (call $alike_arr (local.get $tfsrc)))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (call $is_function (local.get $tfmap))
+    (then
+      (let $tharg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+      (let $tfi i32 (i32.const 0))
+      (let $tfb i32 (call $heap_alloc (i32.const 16)))
+      (block $tfe (loop $tfl
+        (br_if $tfe (i32.ge_s (local.get $tfi) (call $arr_len (local.get $tfa))))
+        (i64.store (local.get $tfb) (call $arr_get (local.get $tfa) (local.get $tfi)))
+        (i64.store (i32.add (local.get $tfb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $tfi))))
+        (call $arr_set (local.get $tfa) (local.get $tfi) (call $call_val (local.get $tfmap) (i32.const 2) (local.get $tfb) (local.get $tharg)))
+        (if (call $err) (then (return (call $v_undef))))
+        (set! $tfi (i32.add (local.get $tfi) (i32.const 1))) (br $tfl)))))
+  (let $tflen i32 (call $arr_len (local.get $tfa)))
+  (let $tfelem i32 (call $ta_ctor_elem (local.get $thisv)))
+  (if (i32.ge_s (local.get $tfelem) (i32.const 0))
+    (then  ;; a concrete TypedArray constructor → build directly
+      (let $tfbuf i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $tfbuf) (call $mk_arr (local.get $tfa)))
+      (return (call $ta_make (local.get $tfelem) (i32.const 1) (local.get $tfbuf)))))
+  ;; TypedArrayCreate(C, «len»): construct via C, validate it's a TypedArray, Set each value
+  (let $ab i32 (call $heap_alloc (i32.const 8)))
+  (i64.store (local.get $ab) (call $num (f64.convert_i32_s (local.get $tflen))))
+  (let $res i64 (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $ab) (local.get $thisv)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_object (local.get $res)))
+    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor did not return an object")) (return (call $v_undef))))
+  (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $res)) (cstring "@@taelem")))
+    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor did not return a TypedArray")) (return (call $v_undef))))
+  ;; TypedArrayCreate(C, «len»): the constructed TypedArray must be at least `len` long
+  (if (i32.lt_s (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (call $val_payload (local.get $res)) (cstring "@@talen"))))) (local.get $tflen))
+    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor returned a too-small TypedArray")) (return (call $v_undef))))
+  (let $si i32 (i32.const 0))
+  (block $sfe (loop $sfl
+    (br_if $sfe (i32.ge_s (local.get $si) (local.get $tflen)))
+    (call $set_prop (local.get $res) (call $num (f64.convert_i32_s (local.get $si))) (call $arr_get (local.get $tfa) (local.get $si)))
+    (if (call $err) (then (return (call $v_undef))))
+    (set! $si (i32.add (local.get $si) (i32.const 1))) (br $sfl)))
+  (local.get $res))
+
 ;; TypedArray.prototype.set copy loop. A TypedArray source may share the target's buffer, so
 ;; snapshot its element values before writing (an interleaved read/write would corrupt an
 ;; overlapping range); an array-like source has observable getters, so copy interleaved.
@@ -1455,37 +1514,7 @@
       (return (call $ta_make (local.get $tmelem) (i32.const 1) (local.get $tmbuf)))))
   ;; %TypedArray%.from(source[, mapfn]) (398) — this = the per-type constructor
   (if (i32.eq (local.get $id) (i32.const 398))
-    (then
-      (let $tfelem i32 (call $ta_ctor_elem (local.get $thisv)))
-      (if (i32.lt_s (local.get $tfelem) (i32.const 0)) (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from called on a non-TypedArray constructor")) (return (call $v_undef))))
-      (let $tfsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.or (call $is_null (local.get $tfsrc)) (call $is_undefined (local.get $tfsrc)))
-        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from source is null or undefined")) (return (call $v_undef))))
-      (let $tfmap i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-      (if (i32.and (i32.eqz (call $is_undefined (local.get $tfmap))) (i32.eqz (call $is_function (local.get $tfmap))))
-        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from mapfn is not callable")) (return (call $v_undef))))
-      ;; materialize source (iterable → spread, else array-like)
-      (let $tfa i32 (call $arr_new (i32.const 4)))
-      (if (i32.or (call $is_string (local.get $tfsrc)) (i32.or (call $is_array (local.get $tfsrc))
-                  (i32.and (call $is_object (local.get $tfsrc)) (call $is_function (call $get_prop (local.get $tfsrc) (call $mk_str (cstring "@@iterator")))))))
-        (then (call $spread_into (local.get $tfa) (local.get $tfsrc)))
-        (else (set! $tfa (call $alike_arr (local.get $tfsrc)))))
-      (if (call $err) (then (return (call $v_undef))))
-      ;; apply mapfn(value, index)
-      (if (call $is_function (local.get $tfmap))
-        (then
-          (let $tfi i32 (i32.const 0))
-          (let $tfb i32 (call $heap_alloc (i32.const 16)))
-          (block $tfe (loop $tfl
-            (br_if $tfe (i32.ge_s (local.get $tfi) (call $arr_len (local.get $tfa))))
-            (i64.store (local.get $tfb) (call $arr_get (local.get $tfa) (local.get $tfi)))
-            (i64.store (i32.add (local.get $tfb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $tfi))))
-            (call $arr_set (local.get $tfa) (local.get $tfi) (call $call_val (local.get $tfmap) (i32.const 2) (local.get $tfb) (call $v_undef)))
-            (if (call $err) (then (return (call $v_undef))))
-            (set! $tfi (i32.add (local.get $tfi) (i32.const 1))) (br $tfl)))))
-      (let $tfbuf i32 (call $heap_alloc (i32.const 8)))
-      (i64.store (local.get $tfbuf) (call $mk_arr (local.get $tfa)))
-      (return (call $ta_make (local.get $tfelem) (i32.const 1) (local.get $tfbuf)))))
+    (then (return (call $ta_from_impl (local.get $thisv) (local.get $argc) (local.get $argv)))))
   ;; %TypedArray%.of(...items) (399)
   (if (i32.eq (local.get $id) (i32.const 399))
     (then
