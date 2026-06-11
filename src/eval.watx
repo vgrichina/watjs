@@ -1027,6 +1027,78 @@
       (i32.load8_u (i32.add (i32.const 520) (local.get $i))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
 
+;; decode an IEEE-754 binary16 (half-float) bit pattern $h (low 16 bits) → f64
+(func $f16_decode (param $h i32) (result f64) (effects)
+  (let $sign i32 (i32.and (i32.shr_u (local.get $h) (i32.const 15)) (i32.const 1)))
+  (let $exp i32 (i32.and (i32.shr_u (local.get $h) (i32.const 10)) (i32.const 31)))
+  (let $mant i32 (i32.and (local.get $h) (i32.const 1023)))
+  (let $v f64 (f64.const 0))
+  (if (i32.eq (local.get $exp) (i32.const 31))
+    (then (set! $v (if f64 (i32.eqz (local.get $mant)) (then (f64.div (f64.const 1) (f64.const 0))) (else (f64.div (f64.const 0) (f64.const 0))))))
+    (else (if (i32.eqz (local.get $exp))
+      (then (set! $v (f64.mul (f64.convert_i32_u (local.get $mant)) (f64.const 5.9604644775390625e-08))))  ;; subnormal: mant * 2^-24
+      (else  ;; normal: (1 + mant/1024) * 2^(exp-15)
+        (let $pw f64 (f64.reinterpret_i64 (i64.shl (i64.extend_i32_s (i32.add (i32.sub (local.get $exp) (i32.const 15)) (i32.const 1023))) (i64.const 52))))
+        (set! $v (f64.mul (f64.add (f64.const 1) (f64.div (f64.convert_i32_u (local.get $mant)) (f64.const 1024))) (local.get $pw)))))))
+  (if f64 (local.get $sign) (then (f64.neg (local.get $v))) (else (local.get $v))))
+
+;; encode f64 $x to an IEEE-754 binary16 bit pattern (round-half-even)
+(func $f16_encode (param $x f64) (result i32) (effects)
+  (if (f64.ne (local.get $x) (local.get $x)) (then (return (i32.const 32256))))  ;; NaN → 0x7E00
+  (let $sign i32 (if i32 (f64.lt (f64.copysign (f64.const 1) (local.get $x)) (f64.const 0)) (then (i32.const 32768)) (else (i32.const 0))))  ;; 0x8000
+  (let $a f64 (f64.abs (local.get $x)))
+  (if (f64.ge (local.get $a) (f64.const 65520)) (then (return (i32.or (local.get $sign) (i32.const 31744)))))  ;; ≥ overflow → Inf 0x7C00
+  (if (f64.eq (local.get $a) (f64.const 0)) (then (return (local.get $sign))))
+  ;; round |x| to binary16 precision: quantum = 2^(E-10) clamped to 2^-24
+  (let $e i32 (i32.sub (i32.wrap_i64 (i64.and (i64.shr_u (i64.reinterpret_f64 (local.get $a)) (i64.const 52)) (i64.const 2047))) (i32.const 1023)))
+  (let $qe i32 (i32.sub (local.get $e) (i32.const 10)))
+  (if (i32.lt_s (local.get $qe) (i32.const -24)) (then (set! $qe (i32.const -24))))
+  (let $q f64 (f64.reinterpret_i64 (i64.shl (i64.extend_i32_s (i32.add (local.get $qe) (i32.const 1023))) (i64.const 52))))
+  (let $r f64 (f64.mul (f64.nearest (f64.div (local.get $a) (local.get $q))) (local.get $q)))  ;; binary16-exact rounded magnitude
+  (if (f64.gt (local.get $r) (f64.const 65504)) (then (return (i32.or (local.get $sign) (i32.const 31744)))))  ;; rounded up past max → Inf
+  (if (f64.lt (local.get $r) (f64.const 6.103515625e-05))  ;; < 2^-14 → subnormal
+    (then (return (i32.or (local.get $sign) (i32.trunc_f64_s (f64.add (f64.mul (local.get $r) (f64.const 16777216)) (f64.const 0.5)))))))  ;; mant = r * 2^24
+  (let $re i32 (i32.sub (i32.wrap_i64 (i64.and (i64.shr_u (i64.reinterpret_f64 (local.get $r)) (i64.const 52)) (i64.const 2047))) (i32.const 1023)))
+  (let $pw f64 (f64.reinterpret_i64 (i64.shl (i64.extend_i32_s (i32.add (local.get $re) (i32.const 1023))) (i64.const 52))))
+  (let $m i32 (i32.trunc_f64_s (f64.add (f64.mul (f64.sub (f64.div (local.get $r) (local.get $pw)) (f64.const 1)) (f64.const 1024)) (f64.const 0.5))))  ;; mantissa
+  (i32.or (local.get $sign) (i32.or (i32.shl (i32.add (local.get $re) (i32.const 15)) (i32.const 10)) (local.get $m))))
+
+;; read/write 2 bytes at a pointer as binary16, honoring endianness
+(func $dv_read_f16 (param $src i32) (param $little i32) (result f64) (effects)
+  (let $lo i32 (i32.load8_u (i32.add (local.get $src) (if i32 (local.get $little) (then (i32.const 0)) (else (i32.const 1))))))
+  (let $hi i32 (i32.load8_u (i32.add (local.get $src) (if i32 (local.get $little) (then (i32.const 1)) (else (i32.const 0))))))
+  (call $f16_decode (i32.or (local.get $lo) (i32.shl (local.get $hi) (i32.const 8)))))
+(func $dv_write_f16 (param $dst i32) (param $little i32) (param $val f64) (effects)
+  (let $h i32 (call $f16_encode (local.get $val)))
+  (i32.store8 (i32.add (local.get $dst) (if i32 (local.get $little) (then (i32.const 0)) (else (i32.const 1)))) (i32.and (local.get $h) (i32.const 255)))
+  (i32.store8 (i32.add (local.get $dst) (if i32 (local.get $little) (then (i32.const 1)) (else (i32.const 0)))) (i32.and (i32.shr_u (local.get $h) (i32.const 8)) (i32.const 255))))
+
+;; DataView getFloat16(476)/setFloat16(477) — separate from the 364-379 elem-typed methods
+(func $dv_float16 (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
+  (if (i32.eqz (call $is_object (local.get $thisv)))
+    (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
+  (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab")))
+    (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
+  (let $boff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+  (if (call $err) (then (return (call $v_undef))))
+  (let $dvab i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
+  (let $vlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
+  (let $voff i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
+  (let $abptr i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $dvab) (call $mk_str (cstring "@@abdata"))))))
+  (if (i32.eq (local.get $id) (i32.const 476))
+    (then  ;; getFloat16(byteOffset, littleEndian)
+      (if (i32.gt_s (i32.add (local.get $boff) (i32.const 2)) (local.get $vlen))
+        (then (call $throw_type (cstring "RangeError") (cstring "DataView get: out of bounds")) (return (call $v_undef))))
+      (return (call $num (call $dv_read_f16 (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+    (else  ;; setFloat16(byteOffset, value, littleEndian)
+      (let $sval f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.gt_s (i32.add (local.get $boff) (i32.const 2)) (local.get $vlen))
+        (then (call $throw_type (cstring "RangeError") (cstring "DataView set: out of bounds")) (return (call $v_undef))))
+      (call $dv_write_f16 (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 2))) (local.get $sval))
+      (return (call $v_undef))))
+  (call $v_undef))
+
 ;; ToIndex(v): ToIntegerOrInfinity; <0 or >2^53-1 → RangeError (sets $err, returns 0)
 (func $to_index (param $v i64) (result i32) (effects)
   (let $d f64 (call $to_num (local.get $v)))
@@ -1055,6 +1127,8 @@
   (call $scope_define (local.get $dvproto) (cstring "getUint32") (call $mk_native (i32.const 369) (cstring "getUint32")))
   (call $scope_define (local.get $dvproto) (cstring "getFloat32") (call $mk_native (i32.const 370) (cstring "getFloat32")))
   (call $scope_define (local.get $dvproto) (cstring "getFloat64") (call $mk_native (i32.const 371) (cstring "getFloat64")))
+  (call $scope_define (local.get $dvproto) (cstring "getFloat16") (call $mk_native (i32.const 476) (cstring "getFloat16")))
+  (call $scope_define (local.get $dvproto) (cstring "setFloat16") (call $mk_native (i32.const 477) (cstring "setFloat16")))
   (call $scope_define (local.get $dvproto) (cstring "setInt8") (call $mk_native (i32.const 372) (cstring "setInt8")))
   (call $scope_define (local.get $dvproto) (cstring "setUint8") (call $mk_native (i32.const 373) (cstring "setUint8")))
   (call $scope_define (local.get $dvproto) (cstring "setInt16") (call $mk_native (i32.const 374) (cstring "setInt16")))
@@ -3421,6 +3495,8 @@
     (then (return (call $regexp_escape (local.get $argc) (local.get $argv)))))
   (if (i32.eq (local.get $id) (i32.const 474))  ;; Promise.withResolvers()
     (then (return (call $promise_with_resolvers (local.get $thisv)))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 476)) (i32.eq (local.get $id) (i32.const 477)))  ;; DataView get/setFloat16
+    (then (return (call $dv_float16 (local.get $id) (local.get $argc) (local.get $argv) (local.get $thisv)))))
   (if (i32.eq (local.get $id) (i32.const 475))  ;; capabilities executor (this = cap obj): capture resolve, reject
     (then
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@resolve")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -8092,6 +8168,8 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 460)) (i32.or (i32.eq (local.get $id) (i32.const 465)) (i32.or (i32.eq (local.get $id) (i32.const 466)) (i32.eq (local.get $id) (i32.const 468)))))
     (then (return (i32.const 1))))  ;; Annex B anchor/fontcolor/fontsize/link (the other HTML methods have length 0)
   (if (i32.eq (local.get $id) (i32.const 473)) (then (return (i32.const 1))))  ;; RegExp.escape(S)
+  (if (i32.eq (local.get $id) (i32.const 476)) (then (return (i32.const 1))))  ;; DataView.getFloat16(byteOffset)
+  (if (i32.eq (local.get $id) (i32.const 477)) (then (return (i32.const 2))))  ;; DataView.setFloat16(byteOffset, value)
   (if (i32.or (i32.eq (local.get $id) (i32.const 87)) (i32.or (i32.eq (local.get $id) (i32.const 102)) (i32.or (i32.eq (local.get $id) (i32.const 104)) (i32.or (i32.eq (local.get $id) (i32.const 172)) (i32.eq (local.get $id) (i32.const 173))))))
     (then (return (i32.const 1))))  ;; fromCharCode/fromCodePoint, match, search, localeCompare, matchAll
   ;; String.prototype length-2 methods
