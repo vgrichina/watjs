@@ -4827,7 +4827,7 @@
         (call $arr_push (local.get $sica) (call $str_char_at (local.get $sisp) (local.get $sii)))
         (set! $sii (i32.add (local.get $sii) (i32.const 1)))
         (br $sil)))
-      (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $sica))))))
+      (return (call $coll_iter (call $mk_arr (local.get $sica)) (i32.const 736)))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 270)) (i32.le_s (local.get $id) (i32.const 272)))  ;; String concat/lastIndexOf/normalize
     (then
       (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
@@ -9313,6 +9313,11 @@
   (i32.store (i32.const 732) (local.get $setiterproto))
   (call $scope_define_attr (local.get $setiterproto) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")) (i32.const 12))
   (call $scope_define_attr (local.get $setiterproto) (cstring "@@toStringTag") (call $mk_str (cstring "Set Iterator")) (i32.const 4))
+  (let $striterproto i32 (call $obj_new (i32.const 4)))
+  (i32.store (local.get $striterproto) (local.get $iterproto))
+  (i32.store (i32.const 736) (local.get $striterproto))
+  (call $scope_define_attr (local.get $striterproto) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")) (i32.const 12))
+  (call $scope_define_attr (local.get $striterproto) (cstring "@@toStringTag") (call $mk_str (cstring "String Iterator")) (i32.const 4))
   (call $scope_define (local.get $iterproto) (cstring "toArray") (call $mk_native (i32.const 336) (cstring "toArray")))
   (call $scope_define (local.get $iterproto) (cstring "forEach") (call $mk_native (i32.const 337) (cstring "forEach")))
   (call $scope_define (local.get $iterproto) (cstring "reduce") (call $mk_native (i32.const 338) (cstring "reduce")))
