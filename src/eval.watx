@@ -4000,17 +4000,20 @@
       (return (call $mk_obj (local.get $feo)))))
   (if (i32.eq (local.get $id) (i32.const 150))  ;; generator .next([v]) — resumes the VM context
     (then
-      (let $gnres i64 (call $vm_gen_result (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
-      ;; async generator: .next() returns a Promise of {value,done} (rejected if the body threw).
-      ;; NOTE: guard is_object with a nested `if` — i32.and is NOT short-circuit, so calling
-      ;; scope_find_local(val_payload(thisv)) on a non-object (e.g. .next.call(3)) would OOB.
+      ;; async generator → drive the body with await-suspension AND yield; .next() returns a
+      ;; Promise of {value,done}. (nested if: i32.and isn't short-circuit, so don't probe a
+      ;; non-object `this` like .next.call(3).)
       (if (call $is_object (local.get $thisv))
         (then
           (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@asyncgen")) (i32.const 0))
             (then
-              (if (call $err) (then (let $gnerr i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $gnerr)))))
-              (return (call $mk_promise (i32.const 1) (local.get $gnres)))))))
-      (return (local.get $gnres))))
+              (let $agctx i32 (call $gen_ctx_or_throw (local.get $thisv)))
+              (if (call $err) (then (let $ge i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $ge)))))
+              (let $agnp i64 (call $mk_promise (i32.const 0) (call $v_undef)))
+              (call $agen_drive (local.get $agctx) (local.get $agnp) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+              (return (local.get $agnp))))))
+      ;; sync generator
+      (return (call $vm_gen_result (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 420))  ;; generator.return(value) → close, { value, done:true }
     (then
       (let $grctx i32 (call $gen_ctx_or_throw (local.get $thisv)))
@@ -4056,6 +4059,18 @@
       (let $arp2 i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@arp"))))
       (call $set_err (i32.const 1)) (call $set_err_val (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (call $async_drive (local.get $acx2) (local.get $arp2) (call $v_undef))
+      (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 458))  ;; async-generator continuation: awaited fulfilled → resume
+    (then
+      (let $gcx i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@actx"))))))
+      (call $agen_drive (local.get $gcx) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@arp"))) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 459))  ;; async-generator continuation: awaited rejected → resume by throwing
+    (then
+      (let $gcx2 i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@actx"))))))
+      (let $gnp2 i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@arp"))))
+      (call $set_err (i32.const 1)) (call $set_err_val (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (call $agen_drive (local.get $gcx2) (local.get $gnp2) (call $v_undef))
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 415))  ;; executor resolve(v) — `this` is the bound promise (adopts a thenable v)
     (then (call $promise_resolve_with (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (return (call $v_undef))))

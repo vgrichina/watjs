@@ -3564,6 +3564,7 @@
         (i32.store (i32.add (local.get $ctx) (i32.const 24)) (local.get $frame))
         (i32.store (i32.add (local.get $ctx) (i32.const 32)) (local.get $handler))
         (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 1))  ;; resume pushes the value (yield expression result)
+        (i32.store (i32.const 708) (i32.const 0))  ;; suspend-kind = yield (for the async-generator driver)
         (return (i64.load (i32.add (local.get $stack) (local.get $sp))))))
     (if (i32.eq (local.get $op) (i32.const 50))  ;; AWAIT — suspend, resume pushes the resolved value
       (then
@@ -3574,6 +3575,7 @@
         (i32.store (i32.add (local.get $ctx) (i32.const 24)) (local.get $frame))
         (i32.store (i32.add (local.get $ctx) (i32.const 32)) (local.get $handler))
         (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 1))  ;; next resume pushes the value
+        (i32.store (i32.const 708) (i32.const 1))  ;; suspend-kind = await (for the async-generator driver)
         (return (i64.load (i32.add (local.get $stack) (local.get $sp))))))
     (if (i32.eq (local.get $op) (i32.const 48))  ;; PUSHHANDLER catchIp, varname
       (then
@@ -5093,6 +5095,38 @@
   (drop (call $promise_then (local.get $aw)
     (call $promise_bound_settler (i32.const 452) (local.get $cov))     ;; onFulfilled → resume with value
     (call $promise_bound_settler (i32.const 453) (local.get $cov)))))  ;; onRejected → resume by throwing
+
+;; ── async generators: drive the body suspending on BOTH await and yield ──
+;; The shared YIELD/AWAIT ops both set the resume flag; reg 708 distinguishes them (AWAIT=1,
+;; YIELD=0). agen_drive steps the gen ctx: on await it suspends np and resumes via a
+;; continuation when the awaited promise settles; on yield it resolves np with {value,done:false};
+;; on completion {value,done:true}. np is the .next()/continuation result promise.
+(func $agen_result (param $value i64) (param $done i32) (result i64) (effects)
+  (let $o i32 (call $obj_new (i32.const 2)))
+  (call $scope_define (local.get $o) (cstring "value") (local.get $value))
+  (call $scope_define (local.get $o) (cstring "done") (call $mk_bool (local.get $done)))
+  (call $mk_obj (local.get $o)))
+(func $agen_drive (param $ctx i32) (param $np i64) (param $resumeval i64) (effects)
+  (if (call $vm_done (local.get $ctx))
+    (then (call $promise_resolve_with (local.get $np) (call $agen_result (call $v_undef) (i32.const 1))) (return)))
+  (let $v i64 (call $vm_step (local.get $ctx) (local.get $resumeval)))
+  (if (call $vm_done (local.get $ctx))
+    (then
+      (if (call $err)
+        (then (let $ae i64 (call $err_val)) (call $set_err (i32.const 0)) (call $promise_settle (local.get $np) (i32.const 2) (local.get $ae)))
+        (else (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 1)))))  ;; gen returned
+      (return)))
+  (if (i32.eq (i32.load (i32.const 708)) (i32.const 1))  ;; await → suspend, resume when the awaited promise settles
+    (then (call $agen_register_cont (call $vm_promise (local.get $v)) (local.get $ctx) (local.get $np)) (return)))
+  (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 0))))  ;; yield → {value, done:false}
+(func $agen_register_cont (param $aw i64) (param $ctx i32) (param $np i64) (effects)
+  (let $co i32 (call $obj_new (i32.const 4)))
+  (call $scope_define (local.get $co) (cstring "@@actx") (call $num (f64.convert_i32_s (local.get $ctx))))
+  (call $scope_define (local.get $co) (cstring "@@arp") (local.get $np))
+  (let $cov i64 (call $mk_obj (local.get $co)))
+  (drop (call $promise_then (local.get $aw)
+    (call $promise_bound_settler (i32.const 458) (local.get $cov))     ;; resume with value
+    (call $promise_bound_settler (i32.const 459) (local.get $cov)))))  ;; resume by throwing
 
 (func $vm_make_async (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (result i64) (effects)
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
