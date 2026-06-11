@@ -1185,6 +1185,14 @@
   ;; Methods returning a collection (map/filter/slice/…) yield a plain Array (no species).
   (let $tap i32 (call $obj_new (i32.const 16)))
   (i32.store (i32.const 528) (local.get $tap))
+  ;; %TypedArray% intrinsic constructor (abstract; native 483) — reg 712 holds its value.
+  ;; Object.getPrototypeOf(Int8Array) === %TypedArray%; %TypedArray%.prototype === tap.
+  (let $taintr i64 (call $mk_native (i32.const 483) (cstring "TypedArray")))
+  (i64.store (i32.const 712) (local.get $taintr))
+  (call $scope_define_attr (call $fn_def_scope (local.get $taintr)) (cstring "prototype") (call $mk_obj (local.get $tap)) (i32.const 0))
+  (call $scope_define_attr (local.get $tap) (cstring "constructor") (local.get $taintr) (i32.const 12))
+  (call $set_prop (local.get $taintr) (call $mk_str (cstring "from")) (call $mk_native (i32.const 398) (cstring "from")))
+  (call $set_prop (local.get $taintr) (call $mk_str (cstring "of")) (call $mk_native (i32.const 399) (cstring "of")))
   (call $scope_define (local.get $tap) (cstring "forEach") (call $mk_native (i32.const 25) (cstring "forEach")))
   (call $scope_define (local.get $tap) (cstring "map") (call $mk_native (i32.const 400) (cstring "map")))
   (call $scope_define (local.get $tap) (cstring "filter") (call $mk_native (i32.const 401) (cstring "filter")))
@@ -1589,7 +1597,10 @@
   (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "prototype") (call $mk_obj (local.get $p)) (i32.const 0))
   (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (call $ta_bpe (local.get $elem)))) (i32.const 0))
   (call $set_prop (local.get $ctor) (call $mk_str (cstring "from")) (call $mk_native (i32.const 398) (cstring "from")))
-  (call $set_prop (local.get $ctor) (call $mk_str (cstring "of")) (call $mk_native (i32.const 399) (cstring "of"))))
+  (call $set_prop (local.get $ctor) (call $mk_str (cstring "of")) (call $mk_native (i32.const 399) (cstring "of")))
+  ;; [[Prototype]] of each per-type ctor = %TypedArray% (reg 712), so Object.getPrototypeOf(Int8Array)===%TypedArray%
+  (if (i64.ne (i64.load (i32.const 712)) (i64.const 0))
+    (then (call $scope_define (call $fn_props (call $val_payload (local.get $ctor))) (cstring "@@protoover") (i64.load (i32.const 712))))))
 
 ;; element code for a TypedArray constructor value (native ids 210-218,394,395); -1 if not one
 (func $ta_ctor_elem (param $ctor i64) (result i32) (effects)
@@ -2156,6 +2167,12 @@
   (if (call $is_function (local.get $ov))
     (then
       (if (call $strict_eq (local.get $ov) (i64.load (i32.const 336))) (then (return (call $mk_obj (i32.load (i32.const 328))))))
+      ;; per-native-fn [[Prototype]] override (@@protoover in its @12 props), e.g. Int8Array.__proto__ = %TypedArray%
+      (if (i32.lt_s (i32.load (call $val_payload (local.get $ov))) (i32.const 1448232526))  ;; native fn → @12 is a props scope
+        (then
+          (let $fpo i32 (i32.load (i32.add (call $val_payload (local.get $ov)) (i32.const 12))))
+          (if (local.get $fpo)
+            (then (let $pos i32 (call $scope_find_local (local.get $fpo) (cstring "@@protoover"))) (if (local.get $pos) (then (return (i64.load (local.get $pos)))))))))
       (return (i64.load (i32.const 336)))))
   (if (call $is_object (local.get $ov))
     (then
@@ -3599,6 +3616,8 @@
     (then (return (call $detach_arraybuffer (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 480))  ;; RegExp.prototype.compile(pattern, flags)
     (then (return (call $regexp_compile (local.get $thisv) (local.get $argc) (local.get $argv)))))
+  (if (i32.eq (local.get $id) (i32.const 483))  ;; %TypedArray% — abstract, not directly callable/constructable
+    (then (call $throw_type (cstring "TypeError") (cstring "Abstract class TypedArray not directly constructable")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 475))  ;; capabilities executor (this = cap obj): capture resolve, reject
     (then
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@resolve")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -8396,6 +8415,7 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395)))
     (then (return (i32.const 1))))  ;; BigInt64Array, BigUint64Array
   (if (i32.eq (local.get $id) (i32.const 478)) (then (return (i32.const 1))))  ;; Float16Array
+  (if (i32.eq (local.get $id) (i32.const 483)) (then (return (i32.const 1))))  ;; %TypedArray% (abstract; [[Construct]] throws)
   (if (i32.or (i32.eq (local.get $id) (i32.const 320)) (i32.eq (local.get $id) (i32.const 325)))
     (then (return (i32.const 1))))  ;; WeakMap, WeakSet
   (if (i32.eq (local.get $id) (i32.const 335)) (then (return (i32.const 1))))  ;; Iterator (abstract, but a constructor)
