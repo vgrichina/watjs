@@ -9,7 +9,13 @@
 ;; zeros trimmed) — not the spec's shortest-round-trip. Integers are exact.
 ;; ═══════════════════════════════════════════════════════════════
 
-(func $scratch (result i32) (effects) (i32.const 256))
+;; Number-formatting scratch. Base moved 256 -> 50000: fmt_sig assembles the result at
+;; scratch[0..~130] and writes a digit temp at scratch+200 and scratch+400..+501. At base 256
+;; that hit fixed registers — the completion reg @288, finally bases @320/@360, newTarget @656,
+;; and the @704..@736 async/%TypedArray%/iterator-proto regs — so formatting a long number
+;; (e.g. toExponential(100), >~58 frac digits) corrupted them, OOB-trapping at eval teardown.
+;; 50000 is well clear of all fixed registers and below the heap base (131072).
+(func $scratch (result i32) (effects) (i32.const 50000))
 
 ;; Format a non-negative i64 into scratch[start..], return new index (end).
 (func $emit_u64 (param $start i32) (param $val i64) (result i32) (effects)
