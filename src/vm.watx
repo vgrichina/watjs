@@ -328,7 +328,10 @@
       (let $aif i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@asyncIterator"))))
       (if (call $err) (then (return (call $v_undef))))
       (if (call $is_function (local.get $aif))
-        (then (return (call $call_val (local.get $aif) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))))
+        (then (return (call $call_val (local.get $aif) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
+      ;; GetMethod: @@asyncIterator present but not callable (and not null/undefined) → TypeError
+      (if (i32.eqz (i32.or (call $is_undefined (local.get $aif)) (call $is_null (local.get $aif))))
+        (then (call $throw_type (cstring "TypeError") (cstring "[Symbol.asyncIterator] is not a function")) (return (call $v_undef))))))
   (call $vm_get_iter (local.get $v)))
 
 ;; template literal `text ${expr} more` → build a string: PUSH "" then for each
