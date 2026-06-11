@@ -1737,6 +1737,24 @@
   (let $buf i32 (i32.const 0))
   (let $vboff i32 (i32.const -1))      ;; >=0 marks a view over an ArrayBuffer (its byteOffset)
   (let $vbufobj i64 (call $v_undef))   ;; the source ArrayBuffer object (for @@tabufobj / byteOffset)
+  ;; a function argument is also an Object: GetMethod(O, @@iterator) — present-but-not-callable
+  ;; throws, a callable iterator is drained (functions take the is_object path's iterable branch,
+  ;; but is_object excludes functions in our type system, so handle them here via get_prop —
+  ;; NOT scope_find_local, which would misread a VM fn's @12 code buffer).
+  (if (call $is_function (local.get $a0))
+    (then
+      (let $fitm i64 (call $get_prop (local.get $a0) (call $mk_str (cstring "@@iterator"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (i32.or (call $is_undefined (local.get $fitm)) (call $is_null (local.get $fitm))))
+        (then
+          (if (i32.eqz (call $is_function (local.get $fitm)))
+            (then (call $throw_type (cstring "TypeError") (cstring "@@iterator is not a function")) (return (call $v_undef))))
+          (let $fitarr i32 (call $arr_new (i32.const 4)))
+          (call $spread_into (local.get $fitarr) (local.get $a0))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $fitbuf i32 (call $heap_alloc (i32.const 8)))
+          (i64.store (local.get $fitbuf) (call $mk_arr (local.get $fitarr)))
+          (return (call $ta_make (local.get $elem) (i32.const 1) (local.get $fitbuf)))))))
   (if (call $is_number (local.get $a0))
     (then
       ;; a byte size too large to allocate (i32-backed) → RangeError, not an OOB trap
