@@ -1092,17 +1092,36 @@
   (let $abptr i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $dvab) (call $mk_str (cstring "@@abdata"))))))
   (if (i32.eq (local.get $id) (i32.const 476))
     (then  ;; getFloat16(byteOffset, littleEndian)
+      (if (call $is_detached_buf (local.get $dvab)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
       (if (i32.gt_s (i32.add (local.get $boff) (i32.const 2)) (local.get $vlen))
         (then (call $throw_type (cstring "RangeError") (cstring "DataView get: out of bounds")) (return (call $v_undef))))
       (return (call $num (call $dv_read_f16 (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
     (else  ;; setFloat16(byteOffset, value, littleEndian)
       (let $sval f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
       (if (call $err) (then (return (call $v_undef))))
+      (if (call $is_detached_buf (local.get $dvab)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
       (if (i32.gt_s (i32.add (local.get $boff) (i32.const 2)) (local.get $vlen))
         (then (call $throw_type (cstring "RangeError") (cstring "DataView set: out of bounds")) (return (call $v_undef))))
       (call $dv_write_f16 (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 2))) (local.get $sval))
       (return (call $v_undef))))
   (call $v_undef))
+
+;; 1 if $buf is a detached ArrayBuffer (carries a truthy @@detached marker)
+(func $is_detached_buf (param $buf i64) (result i32) (effects)
+  (if (i32.eqz (call $is_object (local.get $buf))) (then (return (i32.const 0))))
+  (let $sl i32 (call $scope_find_local (call $val_payload (local.get $buf)) (cstring "@@detached")))
+  (if (local.get $sl) (then (return (call $truthy (i64.load (local.get $sl))))))
+  (i32.const 0))
+
+;; $262.detachArrayBuffer(buffer): mark the buffer detached and zero its length. Returns null.
+(func $detach_arraybuffer (param $buf i64) (result i64) (effects)
+  (if (call $is_object (local.get $buf))
+    (then
+      (if (call $scope_find_local (call $val_payload (local.get $buf)) (cstring "@@abdata"))
+        (then
+          (call $set_prop (local.get $buf) (call $mk_str (cstring "@@detached")) (call $v_true))
+          (call $set_prop (local.get $buf) (call $mk_str (cstring "@@ablen")) (call $num (f64.const 0)))))))
+  (call $v_null))
 
 ;; ToIndex(v): ToIntegerOrInfinity; <0 or >2^53-1 → RangeError (sets $err, returns 0)
 (func $to_index (param $v i64) (result i32) (effects)
@@ -1452,6 +1471,7 @@
       (let $bivlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
       (let $bivoff i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
       (let $biabptr i32 (call $to_int_idx (call $to_num (call $get_prop (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))) (call $mk_str (cstring "@@abdata"))))))
+      (if (call $is_detached_buf (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab")))) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
       (if (i32.gt_s (i32.add (local.get $biboff) (i32.const 8)) (local.get $bivlen))
         (then (call $throw_type (cstring "RangeError") (cstring "DataView BigInt: out of bounds")) (return (call $v_undef))))
       (let $bidst i32 (i32.add (i32.add (local.get $biabptr) (local.get $bivoff)) (local.get $biboff)))
@@ -1493,6 +1513,9 @@
         (then (call $throw_type (cstring "TypeError") (cstring "DataView accessor called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab")))
         (then (call $throw_type (cstring "TypeError") (cstring "DataView accessor called on incompatible receiver")) (return (call $v_undef))))
+      ;; detached buffer → byteLength/byteOffset are 0 (the buffer getter still returns the buffer)
+      (if (call $is_detached_buf (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
+        (then (if (i32.ne (local.get $id) (i32.const 380)) (then (return (call $num (f64.const 0)))))))
       (if (i32.eq (local.get $id) (i32.const 380)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))))
       (if (i32.eq (local.get $id) (i32.const 381)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
       (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
@@ -1514,6 +1537,7 @@
       (let $abptr i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $dvab) (call $mk_str (cstring "@@abdata"))))))
       (if (local.get $isget)
         (then  ;; getX(byteOffset, littleEndian)
+          (if (call $is_detached_buf (local.get $dvab)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
           (if (i32.gt_s (i32.add (local.get $boff) (local.get $bpe)) (local.get $vlen))
             (then (call $throw_type (cstring "RangeError") (cstring "DataView get: out of bounds")) (return (call $v_undef))))
           (return (call $num (call $dv_read (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (local.get $elem)
@@ -1521,6 +1545,7 @@
         (else  ;; setX(byteOffset, value, littleEndian)
           (let $sval f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
           (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_detached_buf (local.get $dvab)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
           (if (i32.gt_s (i32.add (local.get $boff) (local.get $bpe)) (local.get $vlen))
             (then (call $throw_type (cstring "RangeError") (cstring "DataView set: out of bounds")) (return (call $v_undef))))
           (call $dv_write (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (local.get $elem)
@@ -3504,6 +3529,8 @@
     (then (return (call $promise_with_resolvers (local.get $thisv)))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 476)) (i32.eq (local.get $id) (i32.const 477)))  ;; DataView get/setFloat16
     (then (return (call $dv_float16 (local.get $id) (local.get $argc) (local.get $argv) (local.get $thisv)))))
+  (if (i32.eq (local.get $id) (i32.const 479))  ;; $262.detachArrayBuffer(buffer)
+    (then (return (call $detach_arraybuffer (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 475))  ;; capabilities executor (this = cap obj): capture resolve, reject
     (then
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@resolve")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -9365,6 +9392,10 @@
   (call $scope_define_attr (local.get $g) (cstring "NaN") (call $num (f64.div (f64.const 0) (f64.const 0))) (i32.const 0))
   (call $scope_define_attr (local.get $g) (cstring "Infinity") (call $num (f64.div (f64.const 1) (f64.const 0))) (i32.const 0))
   (call $scope_define (local.get $g) (cstring "globalThis") (call $mk_obj (local.get $g)))
+  ;; $262 host hook object (minimal): detachArrayBuffer for the test262 detach tests
+  (let $262o i32 (call $obj_new (i32.const 4)))
+  (call $scope_define (local.get $262o) (cstring "detachArrayBuffer") (call $mk_native (i32.const 479) (cstring "detachArrayBuffer")))
+  (call $scope_define (local.get $g) (cstring "$262") (call $mk_obj (local.get $262o)))
   (call $scope_define_attr (local.get $g) (cstring "undefined") (call $v_undef) (i32.const 0))
   ;; built-ins are non-enumerable (spec: DontEnum) — clear enum on every builtin
   ;; object/prototype and each constructor's static-method scope. Done last so it
