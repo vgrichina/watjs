@@ -4143,6 +4143,15 @@
             (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $dres))
             (set! $sp (i32.add (local.get $sp) (i32.const 8)))
             (br $disp)))
+        ;; TypedArray [[Delete]]: a valid integer index can't be deleted (false → strict op 84
+        ;; throws); a canonical-but-invalid numeric index deletes vacuously (true).
+        (let $tdk i32 (call $ta_delete_kind (local.get $dobj) (local.get $dkey)))
+        (if (local.get $tdk)
+          (then
+            (i64.store (i32.add (local.get $stack) (local.get $sp))
+              (if i64 (i32.eq (local.get $tdk) (i32.const 2)) (then (call $v_false)) (else (call $v_true))))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
         (if (call $is_array (local.get $dobj))
           (then
             (let $dap i32 (call $val_payload (local.get $dobj)))

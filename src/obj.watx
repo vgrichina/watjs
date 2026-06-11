@@ -1035,6 +1035,27 @@
                  (i32.eqz (i32.and (f64.eq (local.get $n) (f64.const 0))  ;; reject -0
                                    (f64.lt (f64.copysign (f64.const 1) (local.get $n)) (f64.const 0)))))))))
 
+;; IntegerIndexedExoticObject [[Delete]] classification for `delete ta[key]`:
+;; 0 = key is not a canonical numeric index on a TypedArray (do the ordinary delete),
+;; 1 = canonical numeric index that is NOT a valid element (delete succeeds, returns true),
+;; 2 = a valid in-bounds integer index (cannot be deleted → false / strict TypeError).
+(func $ta_delete_kind (param $dobj i64) (param $dkey i64) (result i32) (effects)
+  (if (i32.eqz (call $is_object (local.get $dobj))) (then (return (i32.const 0))))
+  (let $o i32 (call $val_payload (local.get $dobj)))
+  (if (i32.eqz (call $scope_find_local (local.get $o) (cstring "@@taelem"))) (then (return (i32.const 0))))
+  (let $n f64 (f64.const 0))
+  (if (call $is_number (local.get $dkey))
+    (then (set! $n (call $tonum_raw (local.get $dkey))))
+    (else
+      (if (i32.eqz (call $is_string (local.get $dkey))) (then (return (i32.const 0))))
+      (if (i32.eqz (call $ta_is_canon_str (call $val_payload (local.get $dkey)))) (then (return (i32.const 0))))
+      (set! $n (call $to_num (local.get $dkey)))))
+  ;; a detached buffer makes every integer index invalid → the delete succeeds (true)
+  (if (call $ta_is_detached (local.get $dobj)) (then (return (i32.const 1))))
+  (let $len i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
+  (if (call $ta_valid_idx (local.get $n) (local.get $len)) (then (return (i32.const 2))))
+  (i32.const 1))
+
 ;; IntegerIndexedExoticObject [[Set]] for a canonical numeric index on a TypedArray (scope $o).
 ;; Returns 1 if $key is a CanonicalNumericIndexString (the write was performed, or dropped for an
 ;; out-of-bounds / detached / non-integer index — but ToNumber/ToBigInt(value) still ran once),
