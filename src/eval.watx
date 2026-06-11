@@ -1126,6 +1126,16 @@
               (then (call $throw_type (cstring "TypeError") (cstring "TypedArray operation called on a detached ArrayBuffer")) (return (i32.const 1))))))))))
   (i32.const 0))
 
+;; full ValidateTypedArray(O) for the "not generic" %TypedArray%.prototype methods:
+;; throw if O is not an Object, not a TypedArray, or backed by a detached buffer.
+;; Returns 1 (and leaves the pending error set) if it threw, else 0.
+(func $ta_validate_brand (param $thisv i64) (result i32) (effects)
+  (if (i32.eqz (call $is_object (local.get $thisv)))
+    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray method called on a non-object")) (return (i32.const 1))))
+  (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
+    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray method called on a non-TypedArray")) (return (i32.const 1))))
+  (call $ta_validate (local.get $thisv)))
+
 ;; $262.detachArrayBuffer(buffer): mark the buffer detached and zero its length. Returns null.
 (func $detach_arraybuffer (param $buf i64) (result i64) (effects)
   (if (call $is_object (local.get $buf))
@@ -1206,36 +1216,36 @@
   (call $scope_define_attr (local.get $tap) (cstring "constructor") (local.get $taintr) (i32.const 12))
   (call $set_prop (local.get $taintr) (call $mk_str (cstring "from")) (call $mk_native (i32.const 398) (cstring "from")))
   (call $set_prop (local.get $taintr) (call $mk_str (cstring "of")) (call $mk_native (i32.const 399) (cstring "of")))
-  (call $scope_define (local.get $tap) (cstring "forEach") (call $mk_native (i32.const 25) (cstring "forEach")))
+  (call $scope_define (local.get $tap) (cstring "forEach") (call $mk_native (i32.const 504) (cstring "forEach")))
   (call $scope_define (local.get $tap) (cstring "map") (call $mk_native (i32.const 400) (cstring "map")))
   (call $scope_define (local.get $tap) (cstring "filter") (call $mk_native (i32.const 401) (cstring "filter")))
-  (call $scope_define (local.get $tap) (cstring "reduce") (call $mk_native (i32.const 73) (cstring "reduce")))
-  (call $scope_define (local.get $tap) (cstring "reduceRight") (call $mk_native (i32.const 137) (cstring "reduceRight")))
-  (call $scope_define (local.get $tap) (cstring "indexOf") (call $mk_native (i32.const 22) (cstring "indexOf")))
-  (call $scope_define (local.get $tap) (cstring "lastIndexOf") (call $mk_native (i32.const 30) (cstring "lastIndexOf")))
-  (call $scope_define (local.get $tap) (cstring "join") (call $mk_native (i32.const 23) (cstring "join")))
-  (call $scope_define (local.get $tap) (cstring "includes") (call $mk_native (i32.const 27) (cstring "includes")))
-  (call $scope_define (local.get $tap) (cstring "find") (call $mk_native (i32.const 74) (cstring "find")))
-  (call $scope_define (local.get $tap) (cstring "findIndex") (call $mk_native (i32.const 75) (cstring "findIndex")))
+  (call $scope_define (local.get $tap) (cstring "reduce") (call $mk_native (i32.const 487) (cstring "reduce")))
+  (call $scope_define (local.get $tap) (cstring "reduceRight") (call $mk_native (i32.const 488) (cstring "reduceRight")))
+  (call $scope_define (local.get $tap) (cstring "indexOf") (call $mk_native (i32.const 490) (cstring "indexOf")))
+  (call $scope_define (local.get $tap) (cstring "lastIndexOf") (call $mk_native (i32.const 489) (cstring "lastIndexOf")))
+  (call $scope_define (local.get $tap) (cstring "join") (call $mk_native (i32.const 486) (cstring "join")))
+  (call $scope_define (local.get $tap) (cstring "includes") (call $mk_native (i32.const 485) (cstring "includes")))
+  (call $scope_define (local.get $tap) (cstring "find") (call $mk_native (i32.const 495) (cstring "find")))
+  (call $scope_define (local.get $tap) (cstring "findIndex") (call $mk_native (i32.const 496) (cstring "findIndex")))
   (call $scope_define (local.get $tap) (cstring "findLast") (call $mk_native (i32.const 33) (cstring "findLast")))
   (call $scope_define (local.get $tap) (cstring "findLastIndex") (call $mk_native (i32.const 34) (cstring "findLastIndex")))
-  (call $scope_define (local.get $tap) (cstring "some") (call $mk_native (i32.const 76) (cstring "some")))
-  (call $scope_define (local.get $tap) (cstring "every") (call $mk_native (i32.const 77) (cstring "every")))
-  (call $scope_define (local.get $tap) (cstring "at") (call $mk_native (i32.const 28) (cstring "at")))
-  (call $scope_define (local.get $tap) (cstring "fill") (call $mk_native (i32.const 29) (cstring "fill")))
-  (call $scope_define (local.get $tap) (cstring "reverse") (call $mk_native (i32.const 71) (cstring "reverse")))
-  (call $scope_define (local.get $tap) (cstring "sort") (call $mk_native (i32.const 78) (cstring "sort")))
+  (call $scope_define (local.get $tap) (cstring "some") (call $mk_native (i32.const 493) (cstring "some")))
+  (call $scope_define (local.get $tap) (cstring "every") (call $mk_native (i32.const 494) (cstring "every")))
+  (call $scope_define (local.get $tap) (cstring "at") (call $mk_native (i32.const 502) (cstring "at")))
+  (call $scope_define (local.get $tap) (cstring "fill") (call $mk_native (i32.const 501) (cstring "fill")))
+  (call $scope_define (local.get $tap) (cstring "reverse") (call $mk_native (i32.const 491) (cstring "reverse")))
+  (call $scope_define (local.get $tap) (cstring "sort") (call $mk_native (i32.const 492) (cstring "sort")))
   (call $scope_define (local.get $tap) (cstring "slice") (call $mk_native (i32.const 402) (cstring "slice")))
   (call $scope_define (local.get $tap) (cstring "toReversed") (call $mk_native (i32.const 403) (cstring "toReversed")))
   (call $scope_define (local.get $tap) (cstring "toSorted") (call $mk_native (i32.const 404) (cstring "toSorted")))
   (call $scope_define (local.get $tap) (cstring "with") (call $mk_native (i32.const 405) (cstring "with")))
-  (call $scope_define (local.get $tap) (cstring "copyWithin") (call $mk_native (i32.const 168) (cstring "copyWithin")))
-  (call $scope_define (local.get $tap) (cstring "toLocaleString") (call $mk_native (i32.const 305) (cstring "toLocaleString")))
+  (call $scope_define (local.get $tap) (cstring "copyWithin") (call $mk_native (i32.const 503) (cstring "copyWithin")))
+  (call $scope_define (local.get $tap) (cstring "toLocaleString") (call $mk_native (i32.const 500) (cstring "toLocaleString")))
   (call $scope_define (local.get $tap) (cstring "toString") (call $mk_native (i32.const 23) (cstring "toString")))
-  (call $scope_define (local.get $tap) (cstring "keys") (call $mk_native (i32.const 96) (cstring "keys")))
-  (call $scope_define (local.get $tap) (cstring "values") (call $mk_native (i32.const 97) (cstring "values")))
-  (call $scope_define (local.get $tap) (cstring "entries") (call $mk_native (i32.const 95) (cstring "entries")))
-  (call $scope_define (local.get $tap) (cstring "@@iterator") (call $mk_native (i32.const 97) (cstring "values")))
+  (call $scope_define (local.get $tap) (cstring "keys") (call $mk_native (i32.const 497) (cstring "keys")))
+  (call $scope_define (local.get $tap) (cstring "values") (call $mk_native (i32.const 498) (cstring "values")))
+  (call $scope_define (local.get $tap) (cstring "entries") (call $mk_native (i32.const 499) (cstring "entries")))
+  (call $scope_define (local.get $tap) (cstring "@@iterator") (call $mk_native (i32.const 498) (cstring "values")))
   (call $scope_define (local.get $tap) (cstring "set") (call $mk_native (i32.const 396) (cstring "set")))
   (call $scope_define (local.get $tap) (cstring "subarray") (call $mk_native (i32.const 397) (cstring "subarray")))
   (call $scope_define_accessor_attr (local.get $tap) (cstring "@@toStringTag") (call $mk_native (i32.const 393) (cstring "get [Symbol.toStringTag]")) (call $v_undef) (i32.const 5))
@@ -3720,6 +3730,32 @@
   (call $v_undef))
 
 (func $call_native (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
+  ;; "not generic" %TypedArray%.prototype methods (485-504): ValidateTypedArray(this) — these
+  ;; share a native id with the generic Array.prototype version, so the TA prototype binds the
+  ;; validating id, which throws on a bad `this` then delegates to the Array native.
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 485)) (i32.le_s (local.get $id) (i32.const 504)))
+    (then
+      (if (call $ta_validate_brand (local.get $thisv)) (then (return (call $v_undef))))
+      (if (i32.eq (local.get $id) (i32.const 485)) (then (return (call $call_native (i32.const 27)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; includes
+      (if (i32.eq (local.get $id) (i32.const 486)) (then (return (call $call_native (i32.const 23)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; join
+      (if (i32.eq (local.get $id) (i32.const 487)) (then (return (call $call_native (i32.const 73)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; reduce
+      (if (i32.eq (local.get $id) (i32.const 488)) (then (return (call $call_native (i32.const 137) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; reduceRight
+      (if (i32.eq (local.get $id) (i32.const 489)) (then (return (call $call_native (i32.const 30)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; lastIndexOf
+      (if (i32.eq (local.get $id) (i32.const 490)) (then (return (call $call_native (i32.const 22)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; indexOf
+      (if (i32.eq (local.get $id) (i32.const 491)) (then (return (call $call_native (i32.const 71)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; reverse
+      (if (i32.eq (local.get $id) (i32.const 492)) (then (return (call $call_native (i32.const 78)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; sort
+      (if (i32.eq (local.get $id) (i32.const 493)) (then (return (call $call_native (i32.const 76)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; some
+      (if (i32.eq (local.get $id) (i32.const 494)) (then (return (call $call_native (i32.const 77)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; every
+      (if (i32.eq (local.get $id) (i32.const 495)) (then (return (call $call_native (i32.const 74)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; find
+      (if (i32.eq (local.get $id) (i32.const 496)) (then (return (call $call_native (i32.const 75)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; findIndex
+      (if (i32.eq (local.get $id) (i32.const 497)) (then (return (call $call_native (i32.const 96)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; keys
+      (if (i32.eq (local.get $id) (i32.const 498)) (then (return (call $call_native (i32.const 97)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; values
+      (if (i32.eq (local.get $id) (i32.const 499)) (then (return (call $call_native (i32.const 95)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; entries
+      (if (i32.eq (local.get $id) (i32.const 500)) (then (return (call $call_native (i32.const 305) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; toLocaleString
+      (if (i32.eq (local.get $id) (i32.const 501)) (then (return (call $call_native (i32.const 29)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; fill
+      (if (i32.eq (local.get $id) (i32.const 502)) (then (return (call $call_native (i32.const 28)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; at
+      (if (i32.eq (local.get $id) (i32.const 503)) (then (return (call $call_native (i32.const 168) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; copyWithin
+      (if (i32.eq (local.get $id) (i32.const 504)) (then (return (call $call_native (i32.const 25)  (local.get $argc) (local.get $argv) (local.get $thisv)))))))  ;; forEach
   ;; Annex B.2.2 String.prototype HTML methods (460-472)
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 460)) (i32.le_s (local.get $id) (i32.const 472)))
     (then (return (call $call_html_method (local.get $id) (local.get $argc) (local.get $argv) (local.get $thisv)))))
@@ -8387,6 +8423,27 @@
 ;; for ids not listed — same as before, so this only ever ADDS correct arities.
 ;; Only high-confidence arities are listed (an exhaustive id→arity table is TODO).
 (func $native_arity (param $id i32) (result i32) (effects)
+  ;; TA validating wrappers (485-504) take their .length from the delegated Array native.
+  (if (i32.eq (local.get $id) (i32.const 485)) (then (return (call $native_arity (i32.const 27)))))
+  (if (i32.eq (local.get $id) (i32.const 486)) (then (return (call $native_arity (i32.const 23)))))
+  (if (i32.eq (local.get $id) (i32.const 487)) (then (return (call $native_arity (i32.const 73)))))
+  (if (i32.eq (local.get $id) (i32.const 488)) (then (return (call $native_arity (i32.const 137)))))
+  (if (i32.eq (local.get $id) (i32.const 489)) (then (return (call $native_arity (i32.const 30)))))
+  (if (i32.eq (local.get $id) (i32.const 490)) (then (return (call $native_arity (i32.const 22)))))
+  (if (i32.eq (local.get $id) (i32.const 491)) (then (return (call $native_arity (i32.const 71)))))
+  (if (i32.eq (local.get $id) (i32.const 492)) (then (return (call $native_arity (i32.const 78)))))
+  (if (i32.eq (local.get $id) (i32.const 493)) (then (return (call $native_arity (i32.const 76)))))
+  (if (i32.eq (local.get $id) (i32.const 494)) (then (return (call $native_arity (i32.const 77)))))
+  (if (i32.eq (local.get $id) (i32.const 495)) (then (return (call $native_arity (i32.const 74)))))
+  (if (i32.eq (local.get $id) (i32.const 496)) (then (return (call $native_arity (i32.const 75)))))
+  (if (i32.eq (local.get $id) (i32.const 497)) (then (return (call $native_arity (i32.const 96)))))
+  (if (i32.eq (local.get $id) (i32.const 498)) (then (return (call $native_arity (i32.const 97)))))
+  (if (i32.eq (local.get $id) (i32.const 499)) (then (return (call $native_arity (i32.const 95)))))
+  (if (i32.eq (local.get $id) (i32.const 500)) (then (return (call $native_arity (i32.const 305)))))
+  (if (i32.eq (local.get $id) (i32.const 501)) (then (return (call $native_arity (i32.const 29)))))
+  (if (i32.eq (local.get $id) (i32.const 502)) (then (return (call $native_arity (i32.const 28)))))
+  (if (i32.eq (local.get $id) (i32.const 503)) (then (return (call $native_arity (i32.const 168)))))
+  (if (i32.eq (local.get $id) (i32.const 504)) (then (return (call $native_arity (i32.const 25)))))
   ;; length 2
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 441)) (i32.le_s (local.get $id) (i32.const 444))) (then (return (i32.const 2))))  ;; Map/WeakMap getOrInsert / getOrInsertComputed
   (if (i32.eq (local.get $id) (i32.const 450)) (then (return (i32.const 2))))  ;; Proxy.revocable
