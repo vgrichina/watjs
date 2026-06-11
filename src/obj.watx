@@ -1048,12 +1048,12 @@
   (let $len i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
   (let $buf i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))))
   (if (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10)))
-    (then  ;; BigInt TypedArray: value must already be a BigInt (ToBigInt happens before the index check)
-      (if (i32.eqz (call $is_bigint (local.get $val)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert value to a BigInt")) (return (i32.const 1))))
+    (then  ;; BigInt TypedArray: ToBigInt(value) happens once, before the index validity check
+      (let $bv i64 (call $to_bigint (local.get $val)))
+      (if (call $err) (then (return (i32.const 1))))
       (if (local.get $bo) (then (if (call $is_detached_buf (i64.load (local.get $bo))) (then (return (i32.const 1))))))
       (if (call $ta_valid_idx (local.get $n) (local.get $len))
-        (then (i64.store (i32.add (local.get $buf) (i32.mul (i32.trunc_f64_s (local.get $n)) (i32.const 8))) (call $bigint_val (local.get $val)))))
+        (then (i64.store (i32.add (local.get $buf) (i32.mul (i32.trunc_f64_s (local.get $n)) (i32.const 8))) (call $bigint_val (local.get $bv)))))
       (return (i32.const 1))))
   ;; numeric TypedArray: ToNumber(value) runs once, regardless of index validity
   (let $cval f64 (call $to_num (local.get $val)))

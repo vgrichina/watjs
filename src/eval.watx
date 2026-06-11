@@ -974,14 +974,31 @@
   (if i64 (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10)))
     (then (call $mk_bigint (i64.load (i32.add (local.get $buf) (i32.mul (local.get $idx) (i32.const 8))))))
     (else (call $num (call $ta_read (local.get $buf) (local.get $idx) (local.get $elem))))))
-;; store a JS value into element idx: BigInt64/BigUint64 require a BigInt (ToBigInt),
-;; else ToNumber. Sets $err on a bad BigInt coercion.
+;; ToBigInt(value): BigInt→itself, Boolean→0n/1n, String→StringToBigInt (SyntaxError on a
+;; non-integer numeric string), Object→ToPrimitive(number) then recurse; Number/Symbol/null/
+;; undefined→TypeError. Sets $err on failure. (Distinct from BigInt(x), which DOES accept Numbers.)
+(func $to_bigint (param $v i64) (result i64) (effects)
+  (let $p i64 (local.get $v))
+  (if (call $is_object (local.get $v))
+    (then (set! $p (call $to_primitive (local.get $v))) (if (call $err) (then (return (call $v_undef))))))
+  (if (call $is_bigint (local.get $p)) (then (return (local.get $p))))
+  (if (call $is_boolean (local.get $p)) (then (return (call $mk_bigint (i64.extend_i32_u (call $val_payload (local.get $p)))))))
+  (if (call $is_string (local.get $p))
+    (then
+      (let $sn f64 (call $str_to_num (call $val_payload (local.get $p))))
+      (if (i32.or (f64.ne (local.get $sn) (local.get $sn)) (f64.ne (local.get $sn) (f64.nearest (local.get $sn))))
+        (then (call $throw_type (cstring "SyntaxError") (cstring "Cannot convert string to a BigInt")) (return (call $v_undef))))
+      (return (call $mk_bigint (call $f64_sat_i64 (local.get $sn))))))
+  (call $throw_type (cstring "TypeError") (cstring "Cannot convert value to a BigInt")) (call $v_undef))
+
+;; store a JS value into element idx: BigInt64/BigUint64 do ToBigInt, else ToNumber.
+;; Sets $err on a bad coercion.
 (func $ta_store_val (param $buf i32) (param $idx i32) (param $elem i32) (param $val i64) (effects)
   (if (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10)))
     (then
-      (if (i32.eqz (call $is_bigint (local.get $val)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert value to a BigInt")) (return)))
-      (i64.store (i32.add (local.get $buf) (i32.mul (local.get $idx) (i32.const 8))) (call $bigint_val (local.get $val)))
+      (let $bv i64 (call $to_bigint (local.get $val)))
+      (if (call $err) (then (return)))
+      (i64.store (i32.add (local.get $buf) (i32.mul (local.get $idx) (i32.const 8))) (call $bigint_val (local.get $bv)))
       (return)))
   (call $ta_write (local.get $buf) (local.get $idx) (local.get $elem) (call $to_num (local.get $val))))
 
