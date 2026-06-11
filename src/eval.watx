@@ -1338,8 +1338,8 @@
   (i64.store (i32.const 712) (local.get $taintr))
   (call $scope_define_attr (call $fn_def_scope (local.get $taintr)) (cstring "prototype") (call $mk_obj (local.get $tap)) (i32.const 0))
   (call $scope_define_attr (local.get $tap) (cstring "constructor") (local.get $taintr) (i32.const 12))
-  (call $set_prop (local.get $taintr) (call $mk_str (cstring "from")) (call $mk_native (i32.const 398) (cstring "from")))
-  (call $set_prop (local.get $taintr) (call $mk_str (cstring "of")) (call $mk_native (i32.const 399) (cstring "of")))
+  (call $scope_define_attr (call $fn_def_scope (local.get $taintr)) (cstring "from") (call $mk_native (i32.const 398) (cstring "from")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $taintr)) (cstring "of") (call $mk_native (i32.const 399) (cstring "of")) (i32.const 12))
   (call $scope_define (local.get $tap) (cstring "forEach") (call $mk_native (i32.const 504) (cstring "forEach")))
   (call $scope_define (local.get $tap) (cstring "map") (call $mk_native (i32.const 400) (cstring "map")))
   (call $scope_define (local.get $tap) (cstring "filter") (call $mk_native (i32.const 401) (cstring "filter")))
@@ -1715,8 +1715,8 @@
   (call $scope_clear_enum (local.get $p))
   (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "prototype") (call $mk_obj (local.get $p)) (i32.const 0))
   (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (call $ta_bpe (local.get $elem)))) (i32.const 0))
-  (call $set_prop (local.get $ctor) (call $mk_str (cstring "from")) (call $mk_native (i32.const 398) (cstring "from")))
-  (call $set_prop (local.get $ctor) (call $mk_str (cstring "of")) (call $mk_native (i32.const 399) (cstring "of")))
+  (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "from") (call $mk_native (i32.const 398) (cstring "from")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "of") (call $mk_native (i32.const 399) (cstring "of")) (i32.const 12))
   ;; [[Prototype]] of each per-type ctor = %TypedArray% (reg 712), so Object.getPrototypeOf(Int8Array)===%TypedArray%
   (if (i64.ne (i64.load (i32.const 712)) (i64.const 0))
     (then (call $scope_define (call $fn_props (call $val_payload (local.get $ctor))) (cstring "@@protoover") (i64.load (i32.const 712))))))
@@ -8703,7 +8703,8 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395))) (then (return (i32.const 3))))  ;; BigInt64Array/BigUint64Array ctor length 3
   (if (i32.eq (local.get $id) (i32.const 478)) (then (return (i32.const 3))))  ;; Float16Array ctor length 3
   (if (i32.or (i32.eq (local.get $id) (i32.const 396)) (i32.eq (local.get $id) (i32.const 397))) (then (return (i32.const 1))))  ;; TA set/subarray length 1
-  (if (i32.or (i32.eq (local.get $id) (i32.const 398)) (i32.eq (local.get $id) (i32.const 399))) (then (return (i32.const 1))))  ;; TA from/of length 1
+  (if (i32.eq (local.get $id) (i32.const 398)) (then (return (i32.const 1))))  ;; TypedArray.from length 1
+  (if (i32.eq (local.get $id) (i32.const 399)) (then (return (i32.const 0))))  ;; TypedArray.of length 0
   ;; typed map/filter/with(400/401/405)=1, slice(402)=2, toReversed(403)=0, toSorted(404)=1
   (if (i32.or (i32.eq (local.get $id) (i32.const 400)) (i32.or (i32.eq (local.get $id) (i32.const 401)) (i32.eq (local.get $id) (i32.const 404)))) (then (return (i32.const 1))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 402)) (i32.eq (local.get $id) (i32.const 405))) (then (return (i32.const 2))))
