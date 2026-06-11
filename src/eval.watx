@@ -1776,18 +1776,23 @@
           (set! $ti (i32.add (local.get $ti) (i32.const 1))) (br $tl))))
       (else (if (call $is_object (local.get $a0))
         (then
-          ;; an iterable object (callable @@iterator) that is not itself a TypedArray →
-          ;; spec InitializeTypedArrayFromList: drain the iterator, then build from the
-          ;; collected values (array-like-by-length only applies to non-iterables).
-          (if (i32.and (i32.eqz (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@taelem")))
-                       (call $is_function (call $get_prop (local.get $a0) (call $mk_str (cstring "@@iterator")))))
+          ;; not itself a TypedArray → GetMethod(O, @@iterator): a present-but-not-callable
+          ;; @@iterator throws; a callable iterator is drained (InitializeTypedArrayFromList);
+          ;; otherwise the array-like-by-length path applies.
+          (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@taelem")))
+            (then
+              (let $itm i64 (call $get_prop (local.get $a0) (call $mk_str (cstring "@@iterator"))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.and (i32.eqz (call $is_undefined (local.get $itm))) (i32.and (i32.eqz (call $is_null (local.get $itm))) (i32.eqz (call $is_function (local.get $itm)))))
+                (then (call $throw_type (cstring "TypeError") (cstring "@@iterator is not a function")) (return (call $v_undef))))
+              (if (call $is_function (local.get $itm))
             (then
               (let $itarr i32 (call $arr_new (i32.const 4)))
               (call $spread_into (local.get $itarr) (local.get $a0))
               (if (call $err) (then (return (call $v_undef))))
               (let $itbuf i32 (call $heap_alloc (i32.const 8)))
               (i64.store (local.get $itbuf) (call $mk_arr (local.get $itarr)))
-              (return (call $ta_make (local.get $elem) (i32.const 1) (local.get $itbuf)))))
+              (return (call $ta_make (local.get $elem) (i32.const 1) (local.get $itbuf)))))))
           (let $absl i32 (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@abdata")))
           (if (local.get $absl)
             (then  ;; view over an ArrayBuffer (spec 23.2.5.1 InitializeTypedArrayFromArrayBuffer)
