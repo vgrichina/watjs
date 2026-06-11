@@ -2024,6 +2024,27 @@
   (let $wantEnum i32 (i32.and (i32.ne (local.get $en) (i32.const 0)) (call $truthy (call $get_prop (local.get $dval) (call $mk_str (cstring "enumerable"))))))
   (let $wantConf i32 (i32.and (i32.ne (local.get $cf) (i32.const 0)) (call $truthy (call $get_prop (local.get $dval) (call $mk_str (cstring "configurable"))))))
   (let $wantWrit i32 (i32.and (i32.ne (local.get $wr) (i32.const 0)) (call $truthy (call $get_prop (local.get $dval) (call $mk_str (cstring "writable"))))))
+  ;; IntegerIndexedExoticObject [[DefineOwnProperty]]: defining a canonical integer index on a
+  ;; TypedArray is exotic. Reject (false / TypeError) an out-of-bounds or detached index, and any
+  ;; accessor / non-writable / non-enumerable / non-configurable descriptor; otherwise write the
+  ;; element through IntegerIndexedElementSet. Non-index keys fall through to ordinary define.
+  (if (call $scope_find_local (local.get $os) (cstring "@@taelem"))
+    (then
+      (let $taidx i32 (call $str_array_index (local.get $ks)))
+      (if (i32.ge_s (local.get $taidx) (i32.const 0))
+        (then
+          (let $tabo i32 (call $scope_find_local (local.get $os) (cstring "@@tabufobj")))
+          (if (i32.and (i32.ne (local.get $tabo) (i32.const 0)) (call $is_detached_buf (i64.load (local.get $tabo))))
+            (then (call $def_reject (cstring "Cannot define an index on a detached TypedArray")) (return)))
+          (if (i32.ge_s (local.get $taidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $os) (cstring "@@talen"))))))
+            (then (call $def_reject (cstring "Cannot define an out-of-bounds index on a TypedArray")) (return)))
+          (if (local.get $isAcc) (then (call $def_reject (cstring "A TypedArray index cannot be an accessor")) (return)))
+          (if (i32.and (local.get $en) (i32.eqz (local.get $wantEnum))) (then (call $def_reject (cstring "A TypedArray index must be enumerable")) (return)))
+          (if (i32.and (local.get $cf) (i32.eqz (local.get $wantConf))) (then (call $def_reject (cstring "A TypedArray index must be configurable")) (return)))
+          (if (i32.and (local.get $wr) (i32.eqz (local.get $wantWrit))) (then (call $def_reject (cstring "A TypedArray index must be writable")) (return)))
+          (if (local.get $vs)
+            (then (call $set_prop (call $mk_obj (local.get $os)) (call $num (f64.convert_i32_s (local.get $taidx))) (local.get $vVal))))
+          (return)))))
   (let $old i32 (call $scope_find_local (local.get $os) (local.get $ks)))
   ;; entry_is_accessor derefs old-4, so compute it ONCE guarded (i32.and is not short-circuit)
   (let $oldAcc i32 (if i32 (i32.ne (local.get $old) (i32.const 0)) (then (call $entry_is_accessor (local.get $old))) (else (i32.const 0))))
