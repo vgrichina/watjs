@@ -1220,6 +1220,8 @@
   (call $scope_define_accessor_attr (local.get $tap) (cstring "@@toStringTag") (call $mk_native (i32.const 393) (cstring "get [Symbol.toStringTag]")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $tap) (cstring "buffer") (call $mk_native (i32.const 406) (cstring "get buffer")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $tap) (cstring "byteOffset") (call $mk_native (i32.const 407) (cstring "get byteOffset")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $tap) (cstring "length") (call $mk_native (i32.const 481) (cstring "get length")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $tap) (cstring "byteLength") (call $mk_native (i32.const 482) (cstring "get byteLength")) (call $v_undef) (i32.const 5))
   (call $scope_clear_enum (local.get $tap))
   )
 
@@ -1324,6 +1326,20 @@
       (let $tbv i64 (call $mk_obj (local.get $tbo)))
       (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@tabufobj") (local.get $tbv))
       (return (local.get $tbv))))
+  ;; %TypedArray%.prototype length(481)/byteLength(482) accessors (0 when detached)
+  (if (i32.or (i32.eq (local.get $id) (i32.const 481)) (i32.eq (local.get $id) (i32.const 482)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "accessor called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
+        (then (call $throw_type (cstring "TypeError") (cstring "accessor called on a non-TypedArray")) (return (call $v_undef))))
+      (let $lbo i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@tabufobj")))
+      (if (local.get $lbo) (then (if (call $is_detached_buf (i64.load (local.get $lbo))) (then (return (call $num (f64.const 0)))))))  ;; detached → 0
+      (let $llen i32 (call $to_int_idx (call $to_num (i64.load (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@talen"))))))
+      (if (i32.eq (local.get $id) (i32.const 482))  ;; byteLength = length * bytes-per-element
+        (then
+          (let $lel i32 (call $to_int_idx (call $to_num (i64.load (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))))))
+          (return (call $num (f64.convert_i32_s (i32.mul (local.get $llen) (call $ta_bpe (local.get $lel))))))))
+      (return (call $num (f64.convert_i32_s (local.get $llen))))))
   ;; typed-result TA methods: map(400)/filter(401)/slice(402)/toReversed(403)/
   ;; toSorted(404)/with(405) — run the Array native on `this`, then re-type the result
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 400)) (i32.le_s (local.get $id) (i32.const 405)))
@@ -1634,8 +1650,7 @@
   (call $scope_define (local.get $to) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $elem))))
   (call $scope_define (local.get $to) (cstring "@@tabuf") (call $num (f64.convert_i32_s (local.get $buf))))
   (call $scope_define (local.get $to) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $len))))
-  (call $scope_define_attr (local.get $to) (cstring "length") (call $num (f64.convert_i32_s (local.get $len))) (i32.const 12))  ;; DontEnum
-  (call $scope_define_attr (local.get $to) (cstring "byteLength") (call $num (f64.convert_i32_s (i32.mul (local.get $len) (local.get $bpe)))) (i32.const 12))
+  ;; length/byteLength are %TypedArray.prototype% accessors (not own data props) — spec-correct + reflect detach
   (call $scope_define_attr (local.get $to) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $bpe))) (i32.const 12))
   (call $mk_obj (local.get $to)))
 
@@ -4188,7 +4203,8 @@
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 358)) (i32.le_s (local.get $id) (i32.const 362)))
     (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 393)))
-              (i32.and (i32.ge_s (local.get $id) (i32.const 396)) (i32.le_s (local.get $id) (i32.const 407))))  ;; DataView/SAB/ArrayBuffer.proto/TA methods
+              (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 396)) (i32.le_s (local.get $id) (i32.const 407)))
+                      (i32.and (i32.ge_s (local.get $id) (i32.const 481)) (i32.le_s (local.get $id) (i32.const 482)))))  ;; DataView/SAB/ArrayBuffer.proto/TA methods + TA length/byteLength getters
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
