@@ -831,6 +831,15 @@
 ;; Used by the generic array-like mutators to detect the 2^53-1 integer limit and
 ;; to address indices beyond the i32 range without overflow/looping.
 (func $alike_len_f64 (param $thisv i64) (result f64) (effects)
+  ;; a TypedArray's length is its internal [[ArrayLength]] (@@talen), not a (spoofable) own/
+  ;; prototype "length" property; 0 when the backing buffer is detached.
+  (if (call $is_object (local.get $thisv))
+    (then
+      (let $taln i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@talen")))
+      (if (local.get $taln)
+        (then
+          (if (call $ta_is_detached (local.get $thisv)) (then (return (f64.const 0))))
+          (return (call $tonum_raw (i64.load (local.get $taln))))))))
   (let $l f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length")))))
   (if (f64.ne (local.get $l) (local.get $l)) (then (return (f64.const 0))))  ;; NaN
   (if (f64.le (local.get $l) (f64.const 0)) (then (return (f64.const 0))))
@@ -855,6 +864,13 @@
 ;; ToLength of an array-like's `length` (0 if absent/negative), clamped to i32.
 (func $alike_len (param $thisv i64) (result i32) (effects)
   (if (call $is_array (local.get $thisv)) (then (return (call $arr_len (call $val_payload (local.get $thisv))))))
+  (if (call $is_object (local.get $thisv))  ;; TypedArray → internal [[ArrayLength]] (0 if detached)
+    (then
+      (let $taln i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@talen")))
+      (if (local.get $taln)
+        (then
+          (if (call $ta_is_detached (local.get $thisv)) (then (return (i32.const 0))))
+          (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $taln)))))))))
   (let $l i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
   (if i32 (i32.lt_s (local.get $l) (i32.const 0)) (then (i32.const 0)) (else (local.get $l))))
 
