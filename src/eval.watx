@@ -695,6 +695,11 @@
   (if (i32.eqz (call $is_array (local.get $o))) (then (return (call $plain_array (local.get $len)))))
   (let $sctor i64 (call $get_prop (local.get $o) (call $mk_str (cstring "constructor"))))
   (if (call $err) (then (return (call $v_undef))))
+  ;; a `constructor` that is neither undefined nor an Object (null/number/string/…) is not a
+  ;; constructor → ArraySpeciesCreate throws a TypeError. (undefined → the default Array path.)
+  (if (i32.and (i32.eqz (call $is_undefined (local.get $sctor)))
+        (i32.eqz (i32.or (call $is_object (local.get $sctor)) (i32.or (call $is_function (local.get $sctor)) (call $is_array (local.get $sctor))))))
+    (then (call $throw_type (cstring "TypeError") (cstring "Array constructor is not a constructor")) (return (call $v_undef))))
   (let $sspec i64 (call $v_undef))
   (if (i32.or (call $is_object (local.get $sctor)) (i32.or (call $is_function (local.get $sctor)) (call $is_array (local.get $sctor))))
     (then (set! $sspec (call $get_prop (local.get $sctor) (call $make_symbol (cstring "@@species") (cstring "Symbol.species"))))
@@ -8311,9 +8316,12 @@
                 (set! $fmi (i32.add (local.get $fmi) (i32.const 1)))
                 (br $fml)))
               (set! $fsrc (local.get $fm))))
-          (let $fdest i32 (call $arr_new (i32.const 4)))
+          ;; A = ArraySpeciesCreate(O, 0) — validates the constructor (throws on a non-constructor)
+          (let $fAv i64 (call $array_species_create (local.get $thisv) (i32.const 0)))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $fdest i32 (if i32 (call $is_array (local.get $fAv)) (then (call $val_payload (local.get $fAv))) (else (call $arr_new (i32.const 4)))))
           (call $arr_flatten (local.get $fsrc) (local.get $fdest) (local.get $fdepth))
-          (return (call $mk_arr (local.get $fdest)))))
+          (return (if i64 (call $is_array (local.get $fAv)) (then (local.get $fAv)) (else (call $mk_arr (local.get $fdest)))))))
       (if (i32.or (i32.eq (local.get $id) (i32.const 33)) (i32.eq (local.get $id) (i32.const 34)))  ;; findLast / findLastIndex
         (then
           (let $fli i32 (i32.sub (local.get $n) (i32.const 1)))
