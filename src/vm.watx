@@ -2743,9 +2743,31 @@
                       (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; simple binding
                       (call $next_token) (call $next_token))))  ;; var ')'
                 (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@catch"))))  ;; catch {} — bind to a throwaway
+              ;; with a finally, wrap the catch body in a handler so a throw in the catch still runs
+              ;; the finally (then re-raises). Without this, an abrupt catch skips the finally entirely.
+              (let $cfhloc i32 (i32.const 0))
+              (let $cfvloc i32 (i32.const 0))
+              (if (local.get $prefin)
+                (then
+                  (call $vm_emit_op (local.get $code) (i32.const 48))  ;; PUSHHANDLER (catch-body finally handler)
+                  (set! $cfhloc (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; finIp
+                  (set! $cfvloc (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))))  ;; varname
               (call $vm_c_stmt (local.get $code))  ;; catch block (return here also runs finally)
-              (if (local.get $prefin) (then (call $vm_finally_pop)))  ;; finally code itself is emitted with the entry popped
-              (set! $jcatch (call $vm_emit_jump (local.get $code) (i32.const 12))))  ;; JMP → Lnormal (run finally)
+              (let $aftercatch i32 (call $cursor_save))  ;; parse cursor at 'finally' (or end), for the normal-path finally
+              (if (local.get $prefin)
+                (then
+                  (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER (catch completed normally)
+                  (call $vm_finally_pop)  ;; finally code is emitted with the entry popped
+                  (set! $jcatch (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → Lnormal
+                  ;; finIp: the catch body threw — bind the exception, run the finally, re-throw
+                  (i32.store (i32.add (local.get $code) (local.get $cfhloc)) (call $vm_emit_cursor))
+                  (i32.store (i32.add (local.get $code) (local.get $cfvloc)) (cstring "@@excf"))
+                  (call $cursor_restore (local.get $prefin))
+                  (call $vm_c_stmt (local.get $code))  ;; finally body (its own abrupt completion overrides the re-throw)
+                  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@excf"))  ;; LOADVAR @@excf
+                  (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW (re-raise)
+                  (call $cursor_restore (local.get $aftercatch))))  ;; back to 'finally' for the normal-path emission
+              (if (i32.eqz (local.get $prefin)) (then (set! $jcatch (call $vm_emit_jump (local.get $code) (i32.const 12))))))  ;; JMP → Lnormal (no finally)
             (else
               ;; try/finally with no catch: bind exc to @@exc, run finally, then re-throw
               (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@exc"))
