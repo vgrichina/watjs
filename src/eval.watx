@@ -3904,6 +3904,9 @@
   (if (i32.eq (local.get $id) (i32.const 470)) (then (return (call $create_html (local.get $thisv) (cstring "strike") (i32.const 0) (i32.const 0) (call $v_undef)))))
   (if (i32.eq (local.get $id) (i32.const 471)) (then (return (call $create_html (local.get $thisv) (cstring "sub") (i32.const 0) (i32.const 0) (call $v_undef)))))
   (if (i32.eq (local.get $id) (i32.const 472)) (then (return (call $create_html (local.get $thisv) (cstring "sup") (i32.const 0) (i32.const 0) (call $v_undef)))))
+  ;; %ThrowTypeError% (510) — the shared get/set of Function.prototype.caller/arguments
+  (if (i32.eq (local.get $id) (i32.const 510))
+    (then (call $throw_type (cstring "TypeError") (cstring "'caller', 'callee', and 'arguments' are restricted")) (return (call $v_undef))))
   (call $v_undef))
 
 (func $call_native (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
@@ -9877,6 +9880,11 @@
   (call $scope_define_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "call") (call $mk_native (i32.const 194) (cstring "call")) (i32.const 12))
   (call $scope_define_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "apply") (call $mk_native (i32.const 195) (cstring "apply")) (i32.const 12))
   (call $scope_define_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "bind") (call $mk_native (i32.const 153) (cstring "bind")) (i32.const 12))
+  ;; Function.prototype.caller / .arguments — own accessors whose get AND set are the SAME shared
+  ;; %ThrowTypeError% function (id 510); {enumerable:false, configurable:true}.
+  (let $tte i64 (call $mk_native (i32.const 510) (cstring "")))
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "caller") (local.get $tte) (local.get $tte) (i32.const 5))
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "arguments") (local.get $tte) (local.get $tte) (i32.const 5))
   ;; Function.prototype[Symbol.hasInstance] — default OrdinaryHasInstance; attrs {W:false,E:false,C:false}
   (call $scope_define_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "@@hasInstance") (call $mk_native (i32.const 451) (cstring "[Symbol.hasInstance]")) (i32.const 0))
   ;; link each constructor's .prototype to the real prototype scope holding its

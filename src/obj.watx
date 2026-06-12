@@ -1241,6 +1241,10 @@
       (return)))
   (if (call $is_function (local.get $cont))
     (then
+      ;; 'caller'/'arguments' are the restricted %ThrowTypeError% accessors inherited from
+      ;; Function.prototype — assigning them invokes the throwing setter (no own override here).
+      (if (i32.or (call $str_eq (call $to_prop_key (local.get $key)) (cstring "caller")) (call $str_eq (call $to_prop_key (local.get $key)) (cstring "arguments")))
+        (then (call $throw_type (cstring "TypeError") (cstring "'caller' and 'arguments' are restricted function properties")) (return)))
       (let $sfn i32 (call $val_payload (local.get $cont)))
       ;; VM function: own/static props go into its @16 prototype scope (allocate one if absent)
       (if (i32.and (i32.ge_s (i32.load (local.get $sfn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $sfn)) (i32.const 1448232528)))
