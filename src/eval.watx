@@ -1603,14 +1603,14 @@
       (let $bisget i32 (i32.lt_s (local.get $id) (i32.const 388)))
       (let $biboff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
-      ;; setBigInt64/setBigUint64: value must be a BigInt (read it BEFORE the bounds check per spec)
+      ;; setBigInt64/setBigUint64: ToBigInt(value) (string/boolean accepted, Number rejected),
+      ;; performed BEFORE the bounds check per SetViewValue
       (let $bival i64 (i64.const 0))
       (if (i32.eqz (local.get $bisget))
         (then
-          (let $biarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-          (if (i32.eqz (call $is_bigint (local.get $biarg)))
-            (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert value to a BigInt")) (return (call $v_undef))))
-          (set! $bival (call $bigint_val (local.get $biarg)))))
+          (let $bibv i64 (call $to_bigint (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (if (call $err) (then (return (call $v_undef))))
+          (set! $bival (call $bigint_val (local.get $bibv)))))
       (let $bivlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
       (let $bivoff i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
       (let $biabptr i32 (call $to_int_idx (call $to_num (call $get_prop (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))) (call $mk_str (cstring "@@abdata"))))))
