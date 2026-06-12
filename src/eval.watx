@@ -1656,9 +1656,11 @@
         (then (call $throw_type (cstring "TypeError") (cstring "DataView accessor called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab")))
         (then (call $throw_type (cstring "TypeError") (cstring "DataView accessor called on incompatible receiver")) (return (call $v_undef))))
-      ;; detached buffer → byteLength/byteOffset are 0 (the buffer getter still returns the buffer)
+      ;; detached buffer → byteLength/byteOffset getters throw TypeError (the buffer getter still
+      ;; returns the detached buffer)
       (if (call $is_detached_buf (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
-        (then (if (i32.ne (local.get $id) (i32.const 380)) (then (return (call $num (f64.const 0)))))))
+        (then (if (i32.ne (local.get $id) (i32.const 380))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))))
       (if (i32.eq (local.get $id) (i32.const 380)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))))
       (if (i32.eq (local.get $id) (i32.const 381)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
       (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
