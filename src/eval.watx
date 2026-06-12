@@ -530,6 +530,10 @@
     (then
       (let $spsc i32 (call $val_payload (local.get $o)))
       (let $spnewp i32 (if i32 (call $is_object (local.get $proto)) (then (call $val_payload (local.get $proto))) (else (i32.const 0))))
+      ;; a non-extensible object's [[Prototype]] can only be set to its CURRENT value (a no-op);
+      ;; changing it to a different prototype fails (Object.setPrototypeOf throws; Reflect → false).
+      (if (call $scope_find_local (local.get $spsc) (cstring "@@noext"))
+        (then (if (i32.ne (local.get $spnewp) (call $scope_parent (local.get $spsc))) (then (return (i32.const 0))))))
       (let $spwc i32 (local.get $spnewp))
       (block $spcyc (loop $spcycl
         (br_if $spcyc (i32.eqz (local.get $spwc)))
