@@ -3155,7 +3155,9 @@
           (call $vm_c_expr (local.get $code))
           (if (call $vm_is_anon_fn_def (local.get $afs))  ;; `x = <anon fn>` → x.name = "x"
             (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $an))))
+          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → leave the assigned value as the statement completion
           (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $an))  ;; plain assign: strict→80 (ReferenceError if undeclared) / sloppy→85 (implicit global)
+          (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (eval/global completion = assigned value)
           (drop (call $eat (i32.const 21)))
           (return)))
       ;; logical assignment a ||= b (59) / a &&= b (60) / a ??= b (61): short-circuit
@@ -3171,11 +3173,12 @@
           (call $vm_c_expr (local.get $code))                  ;; eval RHS → [b]
           (if (call $vm_is_anon_fn_def (local.get $sjafs))  ;; `x ||= <anon fn>` → x.name = "x"
             (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $an))))
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR a (pops)
-          (let $p2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
-          (call $vm_patch (local.get $code) (local.get $p1))   ;; keep-branch: [a]
-          (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP a (statement discards)
+          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → leave the new value as completion
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR a (pops) → [b]
+          (let $p2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end (with [b])
+          (call $vm_patch (local.get $code) (local.get $p1))   ;; keep-branch: [a] (left on stack as completion)
           (call $vm_patch (local.get $code) (local.get $p2))
+          (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (both branches left the value)
           (drop (call $eat (i32.const 21)))
           (return)))
       (if (call $is_compound_assign (call $tok_kind))  ;; += -= *= /= %= **= &= |= ^= <<= >>= >>>=
@@ -3185,7 +3188,9 @@
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; LOADVAR
           (call $vm_c_expr (local.get $code))                                                                       ;; RHS
           (call $vm_emit_op (local.get $code) (local.get $cop))
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR
+          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → leave the new value as the statement completion
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR (pops)
+          (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION
           (drop (call $eat (i32.const 21)))
           (return)))
       (call $look_restore)))
