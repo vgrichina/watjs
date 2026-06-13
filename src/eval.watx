@@ -1281,7 +1281,15 @@
 
 ;; ToIndex(v): ToIntegerOrInfinity; <0 or >2^53-1 → RangeError (sets $err, returns 0)
 (func $to_index (param $v i64) (result i32) (effects)
-  (let $d f64 (call $to_num (local.get $v)))
+  ;; ToIndex → ToIntegerOrInfinity → ToNumber. ToPrimitive(number) first so an object
+  ;; whose valueOf/@@toPrimitive yields a BigInt is rejected (ToNumber(BigInt) → TypeError),
+  ;; not silently coerced. Doing ToPrimitive here means to_num below won't re-invoke valueOf.
+  (let $p i64 (local.get $v))
+  (if (i32.or (call $is_object (local.get $v)) (i32.or (call $is_array (local.get $v)) (call $is_function (local.get $v))))
+    (then (set! $p (call $to_primitive_h (local.get $v) (i32.const 1))) (if (call $err) (then (return (i32.const 0))))))
+  (if (call $is_bigint (local.get $p))
+    (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (return (i32.const 0))))
+  (let $d f64 (call $to_num (local.get $p)))
   (if (call $err) (then (return (i32.const 0))))
   (if (f64.ne (local.get $d) (local.get $d)) (then (return (i32.const 0))))  ;; NaN → 0
   (set! $d (f64.trunc (local.get $d)))
