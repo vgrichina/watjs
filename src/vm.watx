@@ -741,13 +741,12 @@
           (return)))
       (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; postfix i++ / i--
         (then
-          (let $iop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
+          (let $iop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
           (call $next_token)
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; LOADVAR
-          (call $vm_emit_op (local.get $code) (i32.const 63))  ;; TONUM (postfix yields ToNumber(old))
+          (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC (postfix yields ToNumeric(old), BigInt preserved)
           (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP (old numeric value)
-          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 1)))
-          (call $vm_emit_op (local.get $code) (local.get $iop))
+          (call $vm_emit_op (local.get $code) (local.get $iop))  ;; INC/DEC → new value
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR → leaves old
           (return)))
       ;; a bare #privateName (only valid as the LHS of `#x in obj`) → push the key
@@ -975,19 +974,18 @@
             (br $l)))
         (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; obj[key]++ / obj[key]-- (postfix)
           (then
-            (let $xop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
+            (let $xop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
             (call $next_token)
             (let $xk i32 (call $vm_tmpname)) (let $xo i32 (call $vm_tmpname))
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; STOREVAR @@k=key → [obj]
             (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [obj, obj]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; LOADVAR key → [obj, obj, key]
             (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [obj, old]
-            (call $vm_emit_op (local.get $code) (i32.const 63))  ;; TONUM → [obj, oldnum]
+            (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC → [obj, oldnum] (BigInt preserved)
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $xo))  ;; STOREVAR @@old → [obj]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; LOADVAR key → [obj, key]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xo))  ;; LOADVAR oldnum → [obj, key, oldnum]
-            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 1)))
-            (call $vm_emit_op (local.get $code) (local.get $xop))  ;; → [obj, key, new]
+            (call $vm_emit_op (local.get $code) (local.get $xop))  ;; INC/DEC → [obj, key, new]
             (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [new]
             (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP → []
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xo))  ;; LOADVAR oldnum (result)
@@ -1034,15 +1032,15 @@
             (br $e)))
         (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; obj.key++ / obj.key-- (postfix → old value)
           (then
-            (let $mpop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
+            (let $mpop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
             (call $next_token)
             (let $mpt i32 (call $vm_tmpname))
             (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP obj → [obj, obj]
             (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP → [obj, old]
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; STOREVAR @@t=old → [obj]
-            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; LOADVAR old → [obj, old]
-            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 1)))
-            (call $vm_emit_op (local.get $code) (local.get $mpop))  ;; old±1 → [obj, new]
+            (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC → [obj, oldnum] (postfix yields ToNumeric(old))
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; STOREVAR @@t=oldnum → [obj]
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; LOADVAR oldnum → [obj, oldnum]
+            (call $vm_emit_op (local.get $code) (local.get $mpop))  ;; INC/DEC → [obj, new]
             (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP → [new]
             (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP → []
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; LOADVAR old (result)
@@ -1148,12 +1146,12 @@
   (let $k i32 (call $tok_kind))
   (if (i32.or (i32.eq (local.get $k) (i32.const 38)) (i32.eq (local.get $k) (i32.const 39)))  ;; prefix ++x / --x  (result = new value)
     (then
-      (let $pop i32 (if i32 (i32.eq (local.get $k) (i32.const 38)) (then (i32.const 2)) (else (i32.const 3))))  ;; ADD/SUB
+      (let $pop i32 (if i32 (i32.eq (local.get $k) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
       (call $next_token)
       (let $pvn i32 (call $ident_name)) (call $next_token)
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; LOADVAR
-      (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 1)))
-      (call $vm_emit_op (local.get $code) (local.get $pop))
+      (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC (BigInt preserved)
+      (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → new value
       (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → new value is the result
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; STOREVAR
       (return)))
@@ -4064,6 +4062,32 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $num (call $to_num (i64.load (i32.add (local.get $stack) (local.get $t))))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 97))  ;; TONUMERIC (in place) — ToNumeric: BigInt stays BigInt, else ToNumber
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $tv i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
+        (if (i32.or (call $is_object (local.get $tv)) (i32.or (call $is_array (local.get $tv)) (call $is_function (local.get $tv))))
+          (then (set! $tv (call $to_primitive_h (local.get $tv) (i32.const 1))) (if (call $err) (then (br $disp)))))
+        (if (i32.eqz (call $is_bigint (local.get $tv)))
+          (then (set! $tv (call $num (call $to_num (local.get $tv))))))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $tv))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 98))  ;; INC (in place) — TOS (numeric) + 1, BigInt-aware
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $tv i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
+        (if (call $is_bigint (local.get $tv))
+          (then (i64.store (i32.add (local.get $stack) (local.get $t)) (call $mk_bigint (i64.add (call $bigint_val (local.get $tv)) (i64.const 1)))))
+          (else (i64.store (i32.add (local.get $stack) (local.get $t)) (call $num (f64.add (call $tonum_raw (local.get $tv)) (f64.const 1))))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 99))  ;; DEC (in place) — TOS (numeric) - 1, BigInt-aware
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $tv i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
+        (if (call $is_bigint (local.get $tv))
+          (then (i64.store (i32.add (local.get $stack) (local.get $t)) (call $mk_bigint (i64.sub (call $bigint_val (local.get $tv)) (i64.const 1)))))
+          (else (i64.store (i32.add (local.get $stack) (local.get $t)) (call $num (f64.sub (call $tonum_raw (local.get $tv)) (f64.const 1))))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 59))  ;; INSTOF — [x, ctor] → bool
       (then
