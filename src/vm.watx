@@ -497,7 +497,7 @@
     (then
       (call $vm_emit_op (local.get $code) (i32.const 1))      ;; PUSH
       (if (i32.load (i32.const 304))  ;; BigInt literal (123n)
-        (then (call $vm_emit_val (local.get $code) (call $mk_bigint (call $f64_sat_i64 (call $tok_num)))))  ;; saturating: a literal beyond i64 (our BigInt is i64) clamps instead of trapping
+        (then (call $vm_emit_val (local.get $code) (call $mk_bigint (i64.load (i32.const 744)))))  ;; exact i64 from the lexer (mem 744), not via f64 (which loses bits past 2^53)
         (else (call $vm_emit_val (local.get $code) (call $num (call $tok_num)))))
       (call $next_token)
       (return)))

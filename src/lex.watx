@@ -24,17 +24,21 @@
 (func $lex_init (effects) (call $set_pos (i32.const 0)))
 
 ;; --- cursor save/restore (for loops / function re-scan) ---
-;; A cursor buffer is 24 bytes: POS, TOK_KIND, TOK_START, TOK_LEN (i32), TOK_NUM (f64@16).
+;; A cursor buffer is 32 bytes: POS, TOK_KIND, TOK_START, TOK_LEN (i32), TOK_NUM (f64@16),
+;; BIGINT_FLAG (i32@24). The bigint flag (mem 304) is per-token derived state — without
+;; saving it, a lookahead that re-lexes a later `123n` leaves it set, so the first arg of a
+;; call gets emitted as a BigInt (e.g. f(0, 99n) → arg0 mis-typed bigint).
 (func $cursor_store (param $b i32) (effects)
   (i32.store (local.get $b) (call $pos))
   (i32.store (i32.add (local.get $b) (i32.const 4)) (call $tok_kind))
   (i32.store (i32.add (local.get $b) (i32.const 8)) (call $tok_start))
   (i32.store (i32.add (local.get $b) (i32.const 12)) (call $tok_len))
-  (f64.store (i32.add (local.get $b) (i32.const 16)) (call $tok_num)))
+  (f64.store (i32.add (local.get $b) (i32.const 16)) (call $tok_num))
+  (i32.store (i32.add (local.get $b) (i32.const 24)) (i32.load (i32.const 304))))
 
 ;; heap-allocated save (persists across iterations; for loop cursors)
 (func $cursor_save (result i32) (effects)
-  (let $b i32 (call $heap_alloc (i32.const 24)))
+  (let $b i32 (call $heap_alloc (i32.const 32)))
   (call $cursor_store (local.get $b))
   (local.get $b))
 
@@ -47,7 +51,8 @@
   (call $set_tok (i32.load (i32.add (local.get $b) (i32.const 4)))
                  (i32.load (i32.add (local.get $b) (i32.const 8)))
                  (i32.load (i32.add (local.get $b) (i32.const 12))))
-  (f64.store (i32.const 32) (f64.load (i32.add (local.get $b) (i32.const 16)))))
+  (f64.store (i32.const 32) (f64.load (i32.add (local.get $b) (i32.const 16))))
+  (i32.store (i32.const 304) (i32.load (i32.add (local.get $b) (i32.const 24)))))
 
 ;; byte at src+pos+offset, or -1 past end
 (func $ch_at (param $off i32) (result i32) (effects)
@@ -137,6 +142,7 @@
   ;; to 17 significant digits into an i64, tracking a decimal exponent, then
   ;; combine with one exact multiply/divide when in range.
   (let $mant i64 (i64.const 0))
+  (let $ival i64 (i64.const 0))  ;; exact integer accumulation for a BigInt literal (no f64 precision loss)
   (let $nd i32 (i32.const 0))
   (let $exp i32 (i32.const 0))
   (let $dot i32 (i32.const 0))
@@ -149,6 +155,11 @@
     (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator → skip
       (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $il)))
     (br_if $ie (i32.eqz (call $is_digit (local.get $c))))
+    (if (i32.eqz (local.get $dot))  ;; integer digits → exact i64 (BigInt path); saturate at i64-max to match BigInt(str)'s f64_sat
+      (then
+        (if (i64.gt_u (local.get $ival) (i64.div_u (i64.sub (i64.const 9223372036854775807) (i64.extend_i32_s (i32.sub (local.get $c) (i32.const 48)))) (i64.const 10)))
+          (then (set! $ival (i64.const 9223372036854775807)))
+          (else (set! $ival (i64.add (i64.mul (local.get $ival) (i64.const 10)) (i64.extend_i32_s (i32.sub (local.get $c) (i32.const 48)))))))))
     (if (i32.lt_s (local.get $nd) (i32.const 17))
       (then
         (set! $mant (i64.add (i64.mul (local.get $mant) (i64.const 10)) (i64.extend_i32_s (i32.sub (local.get $c) (i32.const 48)))))
@@ -195,6 +206,7 @@
             (set! $ei (i32.add (local.get $ei) (i32.const 1)))
             (br $xl)))))))
   (f64.store (i32.const 32) (local.get $val))
+  (i64.store (i32.const 744) (local.get $ival))  ;; exact integer value for the BigInt-literal path
   ;; trailing 'n' → BigInt literal (flag at mem 304, read by the number-literal compiler)
   (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 110))
     (then (i32.store (i32.const 304) (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))))
@@ -207,6 +219,7 @@
   (let $start i32 (call $pos))
   (call $set_pos (i32.add (call $pos) (i32.const 2)))  ;; skip 0x/0b/0o
   (let $val f64 (f64.const 0))
+  (let $ival i64 (i64.const 0))  ;; exact integer accumulation for a BigInt literal (no f64 precision loss)
   (block $de (loop $dl
     (let $c i32 (call $ch_at (i32.const 0)))
     (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator → skip
@@ -220,9 +233,13 @@
       (then (set! $d (i32.add (i32.sub (local.get $c) (i32.const 65)) (i32.const 10)))))  ;; A-F
     (br_if $de (i32.or (i32.lt_s (local.get $d) (i32.const 0)) (i32.ge_s (local.get $d) (local.get $radix))))
     (set! $val (f64.add (f64.mul (local.get $val) (f64.convert_i32_s (local.get $radix))) (f64.convert_i32_s (local.get $d))))
+    (if (i64.gt_u (local.get $ival) (i64.div_u (i64.sub (i64.const 9223372036854775807) (i64.extend_i32_s (local.get $d))) (i64.extend_i32_s (local.get $radix))))
+      (then (set! $ival (i64.const 9223372036854775807)))
+      (else (set! $ival (i64.add (i64.mul (local.get $ival) (i64.extend_i32_s (local.get $radix))) (i64.extend_i32_s (local.get $d))))))
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $dl)))
   (f64.store (i32.const 32) (local.get $val))
+  (i64.store (i32.const 744) (local.get $ival))  ;; exact integer value for the BigInt-literal path
   (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 110))  ;; 0xFFn etc.
     (then (i32.store (i32.const 304) (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))))
     (else (i32.store (i32.const 304) (i32.const 0))))
