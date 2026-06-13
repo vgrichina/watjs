@@ -3228,6 +3228,8 @@
           (call $vm_c_destructure_param (local.get $code) (local.get $datmp))
           (i32.store (i32.const 676) (local.get $damode))
           (call $cursor_restore (local.get $rs))  ;; skip past the RHS we pre-parsed
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $datmp))  ;; LOADVAR tmp (the RHS)
+          (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION: a destructuring assignment evaluates to its RHS
           (drop (call $eat (i32.const 21)))
           (return)))))
   ;; object destructuring assignment statement:  ({a, b: c} = expr)
@@ -3266,6 +3268,8 @@
               (i32.store (i32.const 676) (local.get $odmode))
               (call $cursor_restore (local.get $rs))  ;; back to ')'
               (call $next_token)  ;; consume ')'
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $odtmp))  ;; LOADVAR tmp (the RHS)
+              (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION: a destructuring assignment evaluates to its RHS
               (drop (call $eat (i32.const 21)))
               (return))))
         (else (call $look_restore)))))
