@@ -6332,6 +6332,9 @@
           (let $padsl i32 (call $str_len (local.get $s)))
           ;; maxLength ≤ length → return S WITHOUT coercing fillString (spec order)
           (if (i32.ge_s (local.get $padsl) (local.get $padt)) (then (return (call $mk_str (local.get $s)))))
+          ;; a result that would exceed the max string length → RangeError (avoids OOB)
+          (if (i32.ge_s (local.get $padt) (i32.const 1073741824))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid string length")) (return (call $v_undef))))
           ;; fillString: absent/undefined → " "; Symbol → TypeError; else ToString
           (let $pads i32 (cstring " "))
           (if (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
