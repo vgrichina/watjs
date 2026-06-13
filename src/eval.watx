@@ -8246,6 +8246,19 @@
           (return (call $arr_get (local.get $arr) (local.get $atx)))))
       (if (i32.eq (local.get $id) (i32.const 29))  ;; fill(v[, start[, end]])
         (then
+          ;; TypedArray fill: coerce the value to Number/BigInt EXACTLY ONCE (spec step 3),
+          ;; before start/end coercion + the loop — else set_prop re-coerces per element
+          ;; (calling the value's valueOf once per index).
+          (if (call $is_object (local.get $thisv))
+            (then
+              (let $fts i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
+              (if (local.get $fts)
+                (then
+                  (let $fte i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $fts)))))
+                  (if (i32.or (i32.eq (local.get $fte) (i32.const 9)) (i32.eq (local.get $fte) (i32.const 10)))
+                    (then (set! $a0 (call $to_bigint (local.get $a0))))
+                    (else (set! $a0 (call $num (call $to_num (local.get $a0))))))
+                  (if (call $err) (then (return (call $v_undef))))))))
           (let $fstart i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (let $fend i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 3)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))  ;; undefined end → length
           (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.add (local.get $n) (local.get $fstart))) (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.const 0))))))
