@@ -4465,6 +4465,9 @@
           ;; resolve an iterator: @@iterator() if present, else the object itself
           (let $frit i64 (local.get $frs))
           (let $frifn i64 (call $get_prop (local.get $frs) (call $mk_str (cstring "@@iterator"))))
+          ;; GetMethod: a present-but-non-callable @@iterator → TypeError (not silently array-like)
+          (if (i32.and (i32.eqz (i32.or (call $is_undefined (local.get $frifn)) (call $is_null (local.get $frifn)))) (i32.eqz (call $is_function (local.get $frifn))))
+            (then (call $throw_type (cstring "TypeError") (cstring "is not a function")) (return (call $v_undef))))
           (if (call $is_function (local.get $frifn)) (then (set! $frit (call $call_fn0 (local.get $frifn) (local.get $frs)))))
           (let $frnx i64 (call $get_prop (local.get $frit) (call $mk_str (cstring "next"))))
           (if (call $is_function (local.get $frnx))
