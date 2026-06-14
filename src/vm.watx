@@ -787,6 +787,7 @@
       (if (i32.ne (call $tok_kind) (i32.const 18))
         (then (block $oe (loop $ol
           (br_if $oe (i32.eq (call $tok_kind) (i32.const 18)))  ;; trailing comma → '}' ends the literal
+          (let $opropstart i32 (call $tok_start))  ;; property start (for a method's source span, incl. get/set/async/*)
           ;; `async` method modifier — only if a method-name start follows (ident/`*`/`[`/string/
           ;; number) with no LineTerminator; otherwise `async` is an ordinary property key.
           (let $oasync i32 (i32.const 0))
@@ -808,7 +809,7 @@
             (then
               (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']' → [obj, key]
               (if (i32.eq (call $tok_kind) (i32.const 15))  ;; computed method
-                (then (i32.store (i32.const 236) (local.get $ogen)) (i32.store (i32.const 232) (local.get $oasync)) (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [obj, key, fn]
+                (then (i32.store (i32.const 236) (local.get $ogen)) (i32.store (i32.const 232) (local.get $oasync)) (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1))) (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [obj, key, fn]
                 (else (call $next_token) (call $vm_c_expr (local.get $code))))  ;; ': value'
               (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
             (else (if (i32.eq (call $tok_kind) (i32.const 2))  ;; "string": value
@@ -828,6 +829,7 @@
                       (else (set! $oaname (if i32 (i32.eq (call $tok_kind) (i32.const 2)) (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))) (else (call $ident_name)))) (call $next_token)
                             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $oaname)))))
                     (i32.store (i32.const 692) (i32.const 1))  ;; accessor → no .prototype
+                    (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1)))
                     (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; pushes the accessor fn
                     (if (local.get $oaname)  ;; accessor .name = "get "/"set " + key
                       (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (call $str_concat (if i32 (local.get $isget) (then (cstring "get ")) (else (cstring "set "))) (local.get $oaname)))))
@@ -838,6 +840,7 @@
                       (i32.store (i32.const 236) (local.get $ogen))  ;; *gen(){} → generator method
                       (i32.store (i32.const 232) (local.get $oasync))  ;; async method / async generator method
                       (i32.store (i32.const 692) (i32.const 1))  ;; method → no .prototype (gated on !generator in fnbody)
+                      (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1)))
                       (call $vm_c_fnbody (local.get $code) (i32.const 0))
                       (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))  ;; method .name = key
                       (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
