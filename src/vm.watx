@@ -2341,6 +2341,7 @@
     (let $isgen i32 (i32.const 0))
     (let $isasync i32 (i32.const 0))
     (let $isstatic i32 (i32.const 0))
+    (let $memberstart i32 (i32.const 0))  ;; source start of the method definition (after `static`, incl. get/set/async/*)
     (if (call $str_eq (call $ident_name) (cstring "static"))  ;; `static` modifier (unless member named "static")
       (then
         (let $stc i32 (call $cursor_save))
@@ -2359,6 +2360,7 @@
         (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk
         (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP array
         (br $cml)))  ;; next class member
+    (set! $memberstart (call $tok_start))  ;; method-def starts here (after `static`, before async/*/get/set/name)
     ;; `async` modifier (unless the member is named "async", e.g. `async(){}` / `async = 1`,
     ;; or a LineTerminator follows — then `async` is the method name per [no LineTerminator here]).
     (if (call $str_eq (call $ident_name) (cstring "async"))
@@ -2376,6 +2378,7 @@
         (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method → non-enumerable {W,C}, name from key
           (then
             (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync))
+            (i32.store (i32.const 700) (i32.add (local.get $memberstart) (i32.const 1)))  ;; class method source span
             (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; → [proto, key, fn]
             (call $vm_emit_op (local.get $code) (i32.const 87)))  ;; DEFMETH_KEY (pops all three)
           (else  ;; computed field [k] = v (stack: [proto, key]) → append [key, thunk] to static/instance array
@@ -2410,6 +2413,7 @@
             (call $next_token)
             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $ganame)))))  ;; literal key
         (i32.store (i32.const 692) (i32.const 1))  ;; class accessor → no .prototype
+        (i32.store (i32.const 700) (i32.add (local.get $memberstart) (i32.const 1)))  ;; class method source span
         (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; accessor fn → [proto, key, fn]
         (if (local.get $ganame)  ;; accessor .name = "get "/"set " + key
           (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (call $str_concat (if i32 (local.get $gsi) (then (cstring "get ")) (else (cstring "set "))) (local.get $ganame)))))
@@ -2443,6 +2447,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
           (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync))
           (i32.store (i32.const 692) (i32.const 1))  ;; class method → no .prototype (gated on !generator in fnbody)
+          (i32.store (i32.const 700) (i32.add (local.get $memberstart) (i32.const 1)))  ;; class method source span
           (call $vm_c_fnbody (local.get $code) (i32.const 0))
           (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; method .name = key
           (call $vm_emit_op (local.get $code) (i32.const 73)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; DEFMETH (non-enumerable)
