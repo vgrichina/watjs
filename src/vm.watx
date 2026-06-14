@@ -522,6 +522,7 @@
   (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ( ... )  — grouping OR arrow params
     (then
       ;; lookahead: scan to the matching ')'; if it is followed by '=>', this is an arrow
+      (let $parenstart i32 (call $tok_start))  ;; '(' offset (for a parenthesized arrow's source span)
       (let $pc i32 (call $cursor_save))
       (call $next_token)  ;; '('
       (let $pd i32 (i32.const 1))
@@ -539,6 +540,7 @@
           (let $apd i32 (call $heap_alloc (i32.const 256)))
           (let $app i32 (call $heap_alloc (i32.const 256)))
           (let $anp i32 (call $vm_c_paramlist (local.get $ap) (local.get $apd) (local.get $app)))  ;; parses ( … ), restidx → reg 260
+          (i32.store (i32.const 700) (i32.add (local.get $parenstart) (i32.const 1)))  ;; arrow source span starts at '('
           (call $vm_c_arrow (local.get $code) (local.get $ap) (local.get $anp) (local.get $apd) (i32.load (i32.const 260)) (local.get $app))
           (return)))
       (call $next_token)  ;; '(' — plain grouping
@@ -561,6 +563,7 @@
               (if (i32.eq (call $tok_kind) (i32.const 52))
                 (then
                   (i32.store (i32.const 232) (i32.const 1))
+                  (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1)))  ;; arrow source span starts at 'async'
                   (let $aap i32 (call $heap_alloc (i32.const 8))) (i32.store (local.get $aap) (local.get $aan))
                   (call $vm_c_arrow (local.get $code) (local.get $aap) (i32.const 1) (i32.const 0) (i32.const -1) (i32.const 0)) (return)))))
           (if (i32.eq (call $tok_kind) (i32.const 15))  ;; async ( params ) =>
@@ -576,6 +579,7 @@
               (if (i32.eq (call $tok_kind) (i32.const 52))  ;; '=>'
                 (then
                   (i32.store (i32.const 232) (i32.const 1))
+                  (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1)))  ;; arrow source span starts at 'async'
                   (call $cursor_restore (local.get $apc))  ;; back to '(' (vm_c_paramlist consumes it)
                   (let $aap2 i32 (call $heap_alloc (i32.const 256)))
                   (let $aapd i32 (call $heap_alloc (i32.const 256)))
@@ -695,9 +699,11 @@
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (call $next_token) (return)))
       (if (call $tok_is_kw (cstring "null"))
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_null)) (call $next_token) (return)))
+      (let $vnstart i32 (call $tok_start))  ;; identifier start (for a single-param arrow's source span)
       (let $vn i32 (call $ident_name)) (call $next_token)
       (if (i32.eq (call $tok_kind) (i32.const 52))  ;; NAME => body  (single-param arrow, no parens)
         (then
+          (i32.store (i32.const 700) (i32.add (local.get $vnstart) (i32.const 1)))
           (let $ap1 i32 (call $heap_alloc (i32.const 8)))
           (i32.store (local.get $ap1) (local.get $vn))
           (call $vm_c_arrow (local.get $code) (local.get $ap1) (i32.const 1) (i32.const 0) (i32.const -1) (i32.const 0))
@@ -2208,6 +2214,8 @@
 ;; default cursors in $pdef [0=none], rest index $restidx [-1=none]). Emits the
 ;; default/rest prologue then the body (block → explicit return, expr → implicit).
 (func $vm_c_arrow (param $code i32) (param $params i32) (param $np i32) (param $pdef i32) (param $restidx i32) (param $ppat i32) (effects)
+  (let $arrsrcstart i32 (i32.load (i32.const 700)))  ;; source start sentinel (set by caller; 0=none)
+  (i32.store (i32.const 700) (i32.const 0))
   (call $next_token)  ;; '=>'
   (let $litstart i32 (call $vm_emit_cursor))  ;; arrow-literal emit span start (IsAnonymousFunctionDefinition)
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
@@ -2293,7 +2301,12 @@
     (set! $eli (i32.add (local.get $eli) (i32.const 1)))
     (br $ell)))
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 36)) (i32.mul (local.get $np) (i32.const 4))) (local.get $explen))
-  (i32.store (i32.add (i32.add (local.get $fn) (i32.const 40)) (i32.mul (local.get $np) (i32.const 4))) (i32.const 0))  ;; arrow: no retained source span yet → native form
+  ;; source span: caller-set start (sentinel) + end = last consumed token (mem 696)
+  (if (local.get $arrsrcstart)
+    (then
+      (i32.store (i32.add (i32.add (local.get $fn) (i32.const 40)) (i32.mul (local.get $np) (i32.const 4))) (i32.add (i32.load (i32.const 4)) (i32.sub (local.get $arrsrcstart) (i32.const 1))))
+      (i32.store (i32.add (i32.add (local.get $fn) (i32.const 44)) (i32.mul (local.get $np) (i32.const 4))) (i32.sub (i32.load (i32.const 696)) (i32.sub (local.get $arrsrcstart) (i32.const 1)))))
+    (else (i32.store (i32.add (i32.add (local.get $fn) (i32.const 40)) (i32.mul (local.get $np) (i32.const 4))) (i32.const 0))))
   (call $vm_emit_op (local.get $code) (i32.const 61)) (call $vm_emit_op (local.get $code) (local.get $fn))  ;; CLOSURE (capture defining scope)
   (i32.store (i32.const 680) (local.get $litstart)) (i32.store (i32.const 684) (call $vm_emit_cursor)))  ;; record arrow-literal span [680,684] for name-inference
 
