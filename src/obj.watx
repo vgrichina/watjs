@@ -721,7 +721,7 @@
       (let $sks i32 (call $to_prop_key (local.get $key)))  ;; symbol keys → "@@name", strings as-is
       (if (call $str_eq (local.get $sks) (cstring "description")) (then (let $sd i32 (call $sym_desc (local.get $cont))) (if (i32.eqz (local.get $sd)) (then (return (call $v_undef)))) (return (call $mk_str (local.get $sd)))))
       (if (call $str_eq (local.get $sks) (cstring "toString")) (then (return (call $mk_native (i32.const 199) (cstring "toString")))))
-      (if (call $str_eq (local.get $sks) (cstring "valueOf")) (then (return (call $mk_native (i32.const 302) (cstring "valueOf")))))  ;; returns thisSymbolValue
+      (if (call $str_eq (local.get $sks) (cstring "valueOf")) (then (return (call $mk_native (i32.const 437) (cstring "valueOf")))))  ;; Symbol.prototype.valueOf (thisSymbolValue), not Object.prototype.valueOf
       (if (call $str_eq (local.get $sks) (cstring "toLocaleString")) (then (return (call $mk_native (i32.const 199) (cstring "toLocaleString")))))
       (if (call $str_eq (local.get $sks) (cstring "@@toPrimitive")) (then (return (call $mk_native (i32.const 438) (cstring "[Symbol.toPrimitive]")))))
       ;; inherit Object.prototype methods (hasOwnProperty, isPrototypeOf, …) for a primitive symbol

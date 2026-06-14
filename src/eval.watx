@@ -7644,11 +7644,11 @@
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (br $al)))
       (return (call $mk_arr (local.get $arx2)))))
-  (if (i32.eq (local.get $id) (i32.const 302))  ;; Object.prototype.valueOf — ToObject(this) = this for objects
+  (if (i32.eq (local.get $id) (i32.const 302))  ;; Object.prototype.valueOf — returns ToObject(this) (boxes a primitive)
     (then
       (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
-      (return (local.get $thisv))))
+      (return (call $to_object (local.get $thisv)))))
   (if (i32.eq (local.get $id) (i32.const 301))  ;; objRest(src, exclArr) — object-rest destructuring helper
     (then
       (let $rsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
