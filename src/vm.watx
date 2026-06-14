@@ -962,7 +962,7 @@
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $cv))  ;; STOREVAR @@v=new → [obj]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; LOADVAR key → [obj, key]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $cv))  ;; LOADVAR new → [obj, key, new]
-            (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [new]
+            (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 83)) (else (i32.const 35))))  ;; SETIDX → [new] (strict→83)
             (br $e)))
         (if (i32.eq (call $tok_kind) (i32.const 15))  ;; obj[key](args) — computed method call (binds this=obj)
           (then
@@ -996,7 +996,7 @@
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; LOADVAR key → [obj, key]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xo))  ;; LOADVAR oldnum → [obj, key, oldnum]
             (call $vm_emit_op (local.get $code) (local.get $xop))  ;; INC/DEC → [obj, key, new]
-            (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [new]
+            (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 83)) (else (i32.const 35))))  ;; SETIDX → [new] (strict→83)
             (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP → []
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xo))  ;; LOADVAR oldnum (result)
             (br $l)))
@@ -1038,7 +1038,7 @@
             (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP (old)
             (call $vm_c_expr (local.get $code))                  ;; RHS
             (call $vm_emit_op (local.get $code) (local.get $mcop))
-            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP
+            (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 82)) (else (i32.const 34)))) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP (strict→82: PutValue throws on non-writable)
             (br $e)))
         (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; obj.key++ / obj.key-- (postfix → old value)
           (then
@@ -1051,7 +1051,7 @@
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; STOREVAR @@t=oldnum → [obj]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; LOADVAR oldnum → [obj, oldnum]
             (call $vm_emit_op (local.get $code) (local.get $mpop))  ;; INC/DEC → [obj, new]
-            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP → [new]
+            (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 82)) (else (i32.const 34)))) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP → [new] (strict→82)
             (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP → []
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $mpt))  ;; LOADVAR old (result)
             (br $e)))
