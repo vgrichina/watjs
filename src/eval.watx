@@ -7611,9 +7611,14 @@
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_function (local.get $gdpt))
             (then
-              (let $gdraw i64 (call $proxy_call2 (local.get $gdpt) (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))) (call $proxy_handler (local.get $ob))))
+              ;; ToPropertyKey(key) as a VALUE: a Symbol key must reach the trap as the Symbol, not its
+              ;; internal "@@sym:" string; strings pass through; numbers/objects ToString via to_prop_key.
+              (let $gdkey i64 (if i64 (i32.or (call $is_symbol (local.get $ky)) (call $is_string (local.get $ky)))
+                                (then (local.get $ky))
+                                (else (call $mk_str (call $to_prop_key (local.get $ky))))))
+              (let $gdraw i64 (call $proxy_call2 (local.get $gdpt) (call $proxy_target (local.get $ob)) (local.get $gdkey) (call $proxy_handler (local.get $ob))))
               (if (call $err) (then (return (call $v_undef))))
-              (return (call $proxy_gopd_check (local.get $gdraw) (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))))))
+              (return (call $proxy_gopd_check (local.get $gdraw) (call $proxy_target (local.get $ob)) (local.get $gdkey))))
             (else
               (let $gdb i32 (call $heap_alloc (i32.const 16)))
               (i64.store (local.get $gdb) (call $proxy_target (local.get $ob)))
