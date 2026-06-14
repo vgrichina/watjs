@@ -8502,8 +8502,14 @@
   (if (f64.gt (local.get $x) (f64.const 709.782712893384)) (then (return (f64.div (f64.const 1) (f64.const 0)))))   ;; +Inf
   (if (f64.lt (local.get $x) (f64.const -745.1332191019412)) (then (return (f64.const 0))))                          ;; +0
   (let $k f64 (f64.nearest (f64.div (local.get $x) (f64.const 0.6931471805599453))))
-  (let $r f64 (f64.sub (local.get $x) (f64.mul (local.get $k) (f64.const 0.6931471805599453))))
-  (let $p f64 (f64.const 2.48015873015873e-05))
+  ;; 2-part ln2 (fdlibm): ln2_hi has zero low bits so k*ln2_hi is exact; ln2_lo carries the rest
+  (let $r f64 (f64.sub (f64.sub (local.get $x) (f64.mul (local.get $k) (f64.const 6.93147180369123816490e-01))) (f64.mul (local.get $k) (f64.const 1.90821492927058770002e-10))))
+  (let $p f64 (f64.const 1.6059043836821613e-10))  ;; 1/13!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 2.08767569878681e-09)))     ;; 1/12!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 2.505210838544172e-08)))    ;; 1/11!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 2.755731922398589e-07)))    ;; 1/10!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 2.7557319223985893e-06)))   ;; 1/9!
+  (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 2.48015873015873e-05)))     ;; 1/8!
   (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 1.984126984126984e-04)))
   (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 1.388888888888889e-03)))
   (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 8.333333333333333e-03)))
