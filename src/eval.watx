@@ -2157,6 +2157,20 @@
                           (else (i32.const 0))))
           (if (i32.and (i32.ge_s (local.get $lim) (i32.const 0)) (i32.gt_s (call $arr_len (local.get $arr)) (local.get $lim))) (then (i32.store (local.get $arr) (local.get $lim)))))))))
 
+;; ToUint32(limit) computed EARLY (spec step 4, before ToString(separator) at step 5). Returns the
+;; uint32 in the low bits of an i32 (NaN/±Inf → 0); $err is set if ToNumber throws. The caller must
+;; gate it with a "limit present" flag (argc>=2 and not undefined) since the i32 can't encode absence.
+(func $split_limit_u32 (param $lv i64) (result i32) (effects)
+  (let $lf f64 (call $to_num (local.get $lv)))
+  (if (call $err) (then (return (i32.const 0))))
+  (if i32 (i32.and (f64.eq (local.get $lf) (local.get $lf)) (f64.ne (call $abs64 (local.get $lf)) (f64.div (f64.const 1) (f64.const 0))))
+    (then (i32.wrap_i64 (call $f64_sat_i64 (f64.trunc (local.get $lf)))))
+    (else (i32.const 0))))
+;; Apply a pre-computed ToUint32 limit ($lim, valid only when $has) by truncating the result array.
+(func $split_truncate (param $arr i32) (param $has i32) (param $lim i32) (effects)
+  (if (local.get $has)
+    (then (if (i32.and (i32.ge_s (local.get $lim) (i32.const 0)) (i32.gt_s (call $arr_len (local.get $arr)) (local.get $lim))) (then (i32.store (local.get $arr) (local.get $lim)))))))
+
 ;; SameValue(a, b): like === except NaN equals NaN and +0 differs from -0.
 (func $same_value (param $a i64) (param $b i64) (result i32) (effects)
   (if (i32.and (call $is_number (local.get $a)) (call $is_number (local.get $b)))
@@ -6321,6 +6335,18 @@
                   (i64.store (local.get $spargs) (call $mk_str (local.get $s)))
                   (i64.store (i32.add (local.get $spargs) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
                   (return (call $call_val (local.get $spm) (i32.const 2) (local.get $spargs) (local.get $a0)))))))
+          ;; ToUint32(limit) NOW (spec step 4) — before ToString(separator) below (step 5), so a
+          ;; throwing limit wins over a throwing separator (limit-touint32-error.js).
+          (let $shas i32 (i32.const 0))
+          (let $slim i32 (i32.const 0))
+          (if (i32.ge_s (local.get $argc) (i32.const 2))
+            (then
+              (let $slv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+              (if (i32.eqz (call $is_undefined (local.get $slv)))
+                (then
+                  (set! $slim (call $split_limit_u32 (local.get $slv)))
+                  (if (call $err) (then (return (call $v_undef))))
+                  (set! $shas (i32.const 1))))))
           (if (if i32 (call $is_object (local.get $a0)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "__re_src__")) (i32.const 0))) (else (i32.const 0)))  ;; regex separator (guard: i32.and would deref val_payload of a non-object)
             (then
               (call $re_apply_flags (local.get $a0))
@@ -6335,7 +6361,7 @@
                     (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.const 1))))
                     (set! $pos (i32.add (local.get $pos) (i32.const 1)))
                     (br $ecl)))
-                  (call $split_apply_limit (local.get $r) (local.get $argv) (local.get $argc))
+                  (call $split_truncate (local.get $r) (local.get $shas) (local.get $slim))
                   (return (call $mk_arr (local.get $r)))))
               (block $se (loop $sl
                 (br_if $se (i32.gt_s (local.get $pos) (local.get $sln)))
@@ -6364,10 +6390,10 @@
                     (set! $pos (local.get $me))))
                 (br $sl)))
               (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.sub (local.get $sln) (local.get $pos)))))
-              (call $split_apply_limit (local.get $r) (local.get $argv) (local.get $argc))
+              (call $split_truncate (local.get $r) (local.get $shas) (local.get $slim))
               (return (call $mk_arr (local.get $r)))))
           (let $sres i32 (call $str_split (local.get $s) (call $to_str (local.get $a0))))
-          (call $split_apply_limit (local.get $sres) (local.get $argv) (local.get $argc))
+          (call $split_truncate (local.get $sres) (local.get $shas) (local.get $slim))
           (return (call $mk_arr (local.get $sres)))))
       (if (i32.eq (local.get $id) (i32.const 141))  ;; replaceAll(search, repl) — DEAD (active id is 109)
         (then
