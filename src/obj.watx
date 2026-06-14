@@ -422,7 +422,10 @@
                       (if (call $entry_is_accessor (local.get $dsl))
                         (then (let $dg i64 (i64.load (call $val_payload (i64.load (local.get $dsl))))) (if (call $is_function (local.get $dg)) (then (return (call $call_fn0 (local.get $dg) (local.get $cont))))) (return (call $v_undef))))
                       (return (i64.load (local.get $dsl)))))))
-              (return (call $arr_get (local.get $a) (local.get $nidx)))))))
+              ;; present element → value; absent (hole / out of range) walks the prototype chain
+              (if (call $arr_has (local.get $a) (local.get $nidx))
+                (then (return (call $arr_get (local.get $a) (local.get $nidx))))
+                (else (return (call $get_prop (call $js_get_prototype (local.get $cont)) (local.get $key)))))))))
             ;; non-index numeric falls through to the lookups below
       (let $akey i32 (call $to_prop_key (local.get $key)))
       (if (call $str_eq (local.get $akey) (cstring "__proto__")) (then (return (call $js_get_prototype (local.get $cont)))))  ;; → Array.prototype
@@ -438,7 +441,11 @@
                   (if (call $entry_is_accessor (local.get $dsl2))
                     (then (let $dg2 i64 (i64.load (call $val_payload (i64.load (local.get $dsl2))))) (if (call $is_function (local.get $dg2)) (then (return (call $call_fn0 (local.get $dg2) (local.get $cont))))) (return (call $v_undef))))
                   (return (i64.load (local.get $dsl2)))))))
-          (return (call $arr_get (local.get $a) (local.get $asidx)))))
+          ;; present own element → its value; an absent index (hole / out of range) walks the
+          ;; prototype chain so it inherits Array.prototype[idx] / Object.prototype[idx] if defined
+          (if (call $arr_has (local.get $a) (local.get $asidx))
+            (then (return (call $arr_get (local.get $a) (local.get $asidx))))
+            (else (return (call $get_prop (call $js_get_prototype (local.get $cont)) (local.get $key)))))))
       ;; named properties (a.foo, a[2**32-1], …) live in the @12 scope
       (let $aprops i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
       (if (local.get $aprops)

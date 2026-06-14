@@ -8101,7 +8101,9 @@
             (br_if $we (i32.ge_s (local.get $wj) (local.get $n)))
             (if (i32.eq (local.get $wj) (local.get $wi))
               (then (call $arr_push (local.get $wr) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-              (else (call $arr_push (local.get $wr) (call $arr_get (local.get $arr) (local.get $wj)))))
+              (else  ;; spec reads via [[Get]] (proto chain) so an absent index inherits Array.prototype[k]
+                (call $arr_push (local.get $wr) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $wj)))))
+                (if (call $err) (then (return (call $v_undef))))))
             (set! $wj (i32.add (local.get $wj) (i32.const 1))) (br $wl)))
           (return (call $mk_arr (local.get $wr)))))
       (if (i32.eq (local.get $id) (i32.const 274))  ;; toSorted([cmp]) → sorted copy
