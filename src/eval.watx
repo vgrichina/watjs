@@ -4086,6 +4086,12 @@
   (if (i32.eq (local.get $id) (i32.const 300))
     (then
       (let $ipv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; spec: if V is not an Object, return false (BEFORE ToObject(this))
+      (if (i32.eqz (i32.or (call $is_object (local.get $ipv)) (i32.or (call $is_array (local.get $ipv)) (call $is_function (local.get $ipv))))) (then (return (call $v_false))))
+      ;; then ToObject(this) — throws on null/undefined
+      (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Object.prototype.isPrototypeOf called on null or undefined")) (return (call $v_undef))))
+      ;; a primitive `this` (boolean/number/string/symbol) wraps to an object never in V's chain → false
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv))))) (then (return (call $v_false))))
       (let $ipthis i32 (call $val_payload (local.get $thisv)))
       ;; v is a function: its chain is Function.prototype → Object.prototype. If `this`
