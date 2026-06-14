@@ -549,10 +549,11 @@
     (then
       (if (call $tok_is_kw (cstring "async"))  ;; async function / async arrow
         (then
+          (let $asyncstart i32 (call $tok_start))  ;; 'async' keyword offset (for `async function`'s source span)
           (let $asc i32 (call $cursor_save))
           (call $next_token)  ;; past 'async'
           (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "function")))
-            (then (i32.store (i32.const 232) (i32.const 1)) (drop (call $vm_c_function (local.get $code))) (return)))
+            (then (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1))) (drop (call $vm_c_function (local.get $code))) (return)))
           ;; async x => …   |   async ( … ) => …
           (if (i32.eq (call $tok_kind) (i32.const 3))  ;; async IDENT =>
             (then
@@ -2143,7 +2144,9 @@
 
 ;; function declaration/expression: cursor at 'function'. Returns name ptr (0 if anonymous).
 (func $vm_c_function (param $code i32) (result i32) (effects)
-  (i32.store (i32.const 700) (i32.add (call $tok_start) (i32.const 1)))  ;; fn source start = offset of 'function' (+1 = 1-based sentinel; 0 means "none")
+  ;; fn source start = offset of 'function' (+1 sentinel) UNLESS a caller already set it (e.g. the
+  ;; 'async' keyword position for `async function`), so the span includes any leading modifier.
+  (if (i32.eqz (i32.load (i32.const 700))) (then (i32.store (i32.const 700) (i32.add (call $tok_start) (i32.const 1)))))
   (call $next_token)  ;; 'function'
   (if (i32.eq (call $tok_kind) (i32.const 12)) (then (i32.store (i32.const 236) (i32.const 1)) (call $next_token)))  ;; function*
   (let $fname i32 (i32.const 0))
