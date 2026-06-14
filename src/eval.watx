@@ -7917,8 +7917,7 @@
       (if (i32.eq (local.get $id) (i32.const 229)) (then (return (call $num (call $m_cos (local.get $mx))))))
       (if (i32.eq (local.get $id) (i32.const 230)) (then (return (call $num (f64.div (call $m_sin (local.get $mx)) (call $m_cos (local.get $mx)))))))  ;; tan
       (if (i32.eq (local.get $id) (i32.const 231))  ;; cbrt
-        (then (if (f64.eq (local.get $mx) (f64.const 0)) (then (return (call $num (local.get $mx)))))
-              (return (call $num (f64.copysign (call $m_exp (f64.div (call $m_log (f64.abs (local.get $mx))) (f64.const 3))) (local.get $mx))))))
+        (then (return (call $num (call $m_cbrt (local.get $mx))))))
       (if (i32.eq (local.get $id) (i32.const 232)) (then (return (call $num (f64.div (call $m_log (local.get $mx)) (f64.const 0.6931471805599453))))))  ;; log2
       (if (i32.eq (local.get $id) (i32.const 233)) (then (return (call $num (f64.div (call $m_log (local.get $mx)) (f64.const 2.302585092994046))))))   ;; log10
       (if (i32.eq (local.get $id) (i32.const 234)) (then (return (call $num (f64.sub (call $m_exp (local.get $mx)) (f64.const 1))))))  ;; expm1
@@ -8514,6 +8513,18 @@
   (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 1)))
   (set! $p (f64.add (f64.mul (local.get $p) (local.get $r)) (f64.const 1)))
   (f64.mul (local.get $p) (call $f64_pow (f64.const 2) (local.get $k))))
+
+;; cube root, correctly rounded for perfect cubes. Seed via exp(log|x|/3), then two
+;; Newton-Raphson iterations y = (2y + a/y²)/3 (converges quadratically → exact f64).
+(func $m_cbrt (param $x f64) (result f64) (effects)
+  (if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x))))  ;; NaN
+  (if (f64.eq (local.get $x) (f64.const 0)) (then (return (local.get $x))))   ;; ±0
+  (let $a f64 (f64.abs (local.get $x)))
+  (if (f64.eq (local.get $a) (f64.div (f64.const 1) (f64.const 0))) (then (return (local.get $x))))  ;; ±Inf
+  (let $y f64 (call $m_exp (f64.div (call $m_log (local.get $a)) (f64.const 3))))
+  (set! $y (f64.div (f64.add (f64.mul (f64.const 2) (local.get $y)) (f64.div (local.get $a) (f64.mul (local.get $y) (local.get $y)))) (f64.const 3)))
+  (set! $y (f64.div (f64.add (f64.mul (f64.const 2) (local.get $y)) (f64.div (local.get $a) (f64.mul (local.get $y) (local.get $y)))) (f64.const 3)))
+  (f64.copysign (local.get $y) (local.get $x)))
 
 ;; ln(x). x = m*2^e with m in [1,2); ln(x) = e*ln2 + ln(m) via atanh series.
 (func $m_log (param $x f64) (result f64) (effects)
