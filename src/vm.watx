@@ -294,12 +294,14 @@
 (func $vm_get_iter (param $v i64) (result i64) (effects)
   (if (call $is_array (local.get $v))
     (then
-      ;; GetIterator: call the array's @@iterator (honors an overridden Array.prototype[Symbol.iterator]);
-      ;; fall back to the built-in array iterator (native 97) only if it is somehow absent.
+      ;; GetIterator: call the array's @@iterator (honors an overridden Array.prototype[Symbol.iterator]).
+      ;; If it has been deleted or replaced with a non-callable, GetIterator throws TypeError — there is
+      ;; NO fall-back to the built-in array iterator (a deleted Array.prototype[Symbol.iterator] is observable).
       (let $aitf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@iterator"))))
+      (if (call $err) (then (return (call $v_undef))))
       (if (call $is_function (local.get $aitf))
         (then (return (call $call_val (local.get $aitf) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
-      (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
+      (call $throw_type (cstring "TypeError") (cstring "is not iterable")) (return (call $v_undef))))
   (if (call $is_string (local.get $v))  ;; string → array of single-char strings, then array iterator
     (then
       (let $sp i32 (call $val_payload (local.get $v)))
