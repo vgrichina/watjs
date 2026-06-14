@@ -775,6 +775,25 @@
     (then (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))
     (else (call $arr_get (local.get $arr) (local.get $i)))))
 
+;; DeletePropertyOrThrow(receiver, idx) for copyWithin's absent-source case. Spec deletes the
+;; target slot (never writes undefined) and throws if [[Delete]] returns false. For a real array,
+;; delete = clear the slot WITHOUT extending length (writing a hole past the end via arr_set would
+;; bump length, e.g. shrink-during-coercion → wrong final length). For an object/proxy receiver,
+;; route through Reflect.deleteProperty (native 203, proxy-trap aware) and throw on a falsy result.
+(func $cw_delete (param $thisv i64) (param $arr i32) (param $i i32) (effects)
+  (if (call $is_array (local.get $thisv))
+    (then
+      (if (i32.lt_s (local.get $i) (call $arr_len (local.get $arr)))
+        (then (i64.store (call $arr_slot (local.get $arr) (local.get $i)) (call $v_hole))))
+      (return)))
+  (let $cwdb i32 (call $heap_alloc (i32.const 16)))
+  (i64.store (local.get $cwdb) (local.get $thisv))
+  (i64.store (i32.add (local.get $cwdb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
+  (let $cwok i64 (call $call_native (i32.const 203) (i32.const 2) (local.get $cwdb) (call $v_undef)))
+  (if (call $err) (then (return)))
+  (if (i32.eqz (call $truthy (local.get $cwok)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Cannot delete property")))))
+
 ;; Append one concat item to result `A` starting at index `n`; returns the next
 ;; index. Spreads the item if IsConcatSpreadable (an array, or an object whose
 ;; @@isConcatSpreadable is truthy) defining present indices via CreateDataProperty
@@ -8373,16 +8392,24 @@
               (let $ci i32 (i32.const 0))
               (block $cre (loop $crl
                 (br_if $cre (i32.ge_s (local.get $ci) (local.get $ccnt)))
-                ;; a missing source slot (array hole) → carry a hole so the target slot is deleted, not set to undefined
+                ;; a missing source slot (HasProperty false, for arrays AND array-likes) → carry a
+                ;; hole so the target is DELETED (DeletePropertyOrThrow), not set to undefined
                 (i64.store (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8)))
-                  (if i64 (i32.and (call $is_array (local.get $thisv)) (i32.eqz (call $arr_has (local.get $arr) (i32.add (local.get $cs) (local.get $ci)))))
+                  (if i64 (if i32 (call $is_array (local.get $thisv))
+                              (then (i32.eqz (call $arr_has (local.get $arr) (i32.add (local.get $cs) (local.get $ci)))))
+                              (else (i32.eqz (call $truthy (call $js_in (call $num (f64.convert_i32_s (i32.add (local.get $cs) (local.get $ci)))) (local.get $thisv))))))
                     (then (call $v_hole))
                     (else (call $amut_get (local.get $thisv) (local.get $arr) (i32.add (local.get $cs) (local.get $ci))))))
+                (if (call $err) (then (return (call $v_undef))))
                 (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $crl)))
               (set! $ci (i32.const 0))
               (block $cwe (loop $cwl
                 (br_if $cwe (i32.ge_s (local.get $ci) (local.get $ccnt)))
-                (call $amut_set (local.get $thisv) (local.get $arr) (i32.add (local.get $ct) (local.get $ci)) (i64.load (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8)))))
+                (let $cwv i64 (i64.load (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8)))))
+                (if (call $is_hole (local.get $cwv))
+                  (then (call $cw_delete (local.get $thisv) (local.get $arr) (i32.add (local.get $ct) (local.get $ci))))
+                  (else (call $amut_set (local.get $thisv) (local.get $arr) (i32.add (local.get $ct) (local.get $ci)) (local.get $cwv))))
+                (if (call $err) (then (return (call $v_undef))))
                 (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $cwl)))))
           (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 30))  ;; lastIndexOf(x[, fromIndex])
