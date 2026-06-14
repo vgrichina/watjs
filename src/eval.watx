@@ -8717,6 +8717,7 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 167)) (i32.eq (local.get $id) (i32.const 101))) (then (return (i32.const 1))))  ;; RegExp.prototype exec/test
   (if (i32.eq (local.get $id) (i32.const 35)) (then (return (i32.const 2))))  ;; Array splice
   (if (i32.eq (local.get $id) (i32.const 277)) (then (return (i32.const 2))))  ;; Object.hasOwn
+  (if (i32.or (i32.eq (local.get $id) (i32.const 93)) (i32.or (i32.eq (local.get $id) (i32.const 159)) (i32.eq (local.get $id) (i32.const 300)))) (then (return (i32.const 1))))  ;; Object.prototype hasOwnProperty / propertyIsEnumerable / isPrototypeOf
   (if (i32.eq (local.get $id) (i32.const 242)) (then (return (i32.const 2))))  ;; Math.atan2
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 226)) (i32.le_s (local.get $id) (i32.const 241))) (then (return (i32.const 1))))  ;; transcendental Math (1-arg)
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 244)) (i32.le_s (local.get $id) (i32.const 246))) (then (return (i32.const 1))))  ;; asinh/acosh/atanh
