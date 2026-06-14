@@ -7850,7 +7850,12 @@
   (if (i32.eq (local.get $id) (i32.const 83))  ;; Array.isArray(x) — sees through Proxies to the target
     (then
       (let $iax i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (block $iae (loop $ial (br_if $iae (i32.eqz (call $is_proxy (local.get $iax)))) (set! $iax (call $proxy_target (local.get $iax))) (br $ial)))
+      (block $iae (loop $ial
+        (br_if $iae (i32.eqz (call $is_proxy (local.get $iax))))
+        (set! $iax (call $proxy_target (local.get $iax)))
+        (if (call $is_null (local.get $iax))  ;; revoked proxy → [[IsArray]] throws
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform 'IsArray' on a proxy that has been revoked")) (return (call $v_undef))))
+        (br $ial)))
       (return (call $mk_bool (call $is_array (local.get $iax))))))
   (if (i32.eq (local.get $id) (i32.const 84))  ;; Number.isNaN(x) — no coercion
     (then
