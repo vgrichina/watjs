@@ -8086,7 +8086,9 @@
           (let $tri i32 (i32.const 0))
           (block $tre (loop $trl
             (br_if $tre (i32.ge_s (local.get $tri) (local.get $n)))
-            (call $arr_push (local.get $tr) (call $arr_get (local.get $arr) (i32.sub (i32.sub (local.get $n) (i32.const 1)) (local.get $tri))))
+            ;; spec reads each element via [[Get]] (proto chain), so a hole inherits Array.prototype[k]
+            (call $arr_push (local.get $tr) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (i32.sub (i32.sub (local.get $n) (i32.const 1)) (local.get $tri))))))
+            (if (call $err) (then (return (call $v_undef))))
             (set! $tri (i32.add (local.get $tri) (i32.const 1))) (br $trl)))
           (return (call $mk_arr (local.get $tr)))))
       (if (i32.eq (local.get $id) (i32.const 275))  ;; with(index, value) → copy with one element replaced
