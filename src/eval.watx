@@ -4214,6 +4214,12 @@
       (if (call $is_string (local.get $a))
         (then (return (call $vm_eval_str (call $val_payload (local.get $a))))))
       (return (local.get $a))))
+  (if (i32.eq (local.get $id) (i32.const 511))  ;; $262.evalScript(src) — evaluate src as global Script code
+    (then
+      (let $esa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_string (local.get $esa))
+        (then (return (call $vm_eval_str (call $val_payload (local.get $esa))))))
+      (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 4))  ;; Number(x)
     (then
       (if (i32.eqz (local.get $argc)) (then (return (call $num (f64.const 0)))))
@@ -9940,6 +9946,8 @@
   ;; $262 host hook object (minimal): detachArrayBuffer for the test262 detach tests
   (let $262o i32 (call $obj_new (i32.const 4)))
   (call $scope_define (local.get $262o) (cstring "detachArrayBuffer") (call $mk_native (i32.const 479) (cstring "detachArrayBuffer")))
+  (call $scope_define (local.get $262o) (cstring "evalScript") (call $mk_native (i32.const 511) (cstring "evalScript")))
+  (call $scope_define (local.get $262o) (cstring "global") (call $mk_obj (local.get $g)))
   (call $scope_define (local.get $g) (cstring "$262") (call $mk_obj (local.get $262o)))
   (call $scope_define_attr (local.get $g) (cstring "undefined") (call $v_undef) (i32.const 0))
   ;; built-ins are non-enumerable (spec: DontEnum) — clear enum on every builtin
