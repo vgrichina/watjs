@@ -8427,6 +8427,7 @@
           (return (call $mk_str (local.get $out)))))
       (if (i32.eq (local.get $id) (i32.const 27))  ;; includes(x[, fromIndex]) — SameValueZero (matches NaN)
         (then
+          (if (i32.eqz (local.get $n)) (then (return (call $v_false))))  ;; len 0 → false BEFORE coercing fromIndex (spec)
           (let $i i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (if (i32.lt_s (local.get $i) (i32.const 0)) (then (set! $i (i32.add (local.get $n) (local.get $i))) (if (i32.lt_s (local.get $i) (i32.const 0)) (then (set! $i (i32.const 0))))))
           (let $a0nan i32 (i32.and (call $is_number (local.get $a0)) (f64.ne (call $tonum_raw (local.get $a0)) (call $tonum_raw (local.get $a0)))))
