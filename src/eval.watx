@@ -2094,7 +2094,12 @@
       (let $lv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (i32.eqz (call $is_undefined (local.get $lv)))
         (then
-          (let $lim i32 (call $to_int_idx (call $to_num (local.get $lv))))
+          ;; ToUint32(limit): ToNumber, then low 32 bits (so 2^32 → 0, -1 → 2^32-1). NaN/±Inf → 0.
+          (let $lf f64 (call $to_num (local.get $lv)))
+          (if (call $err) (then (return)))
+          (let $lim i32 (if i32 (i32.and (f64.eq (local.get $lf) (local.get $lf)) (f64.ne (call $abs64 (local.get $lf)) (f64.div (f64.const 1) (f64.const 0))))
+                          (then (i32.wrap_i64 (call $f64_sat_i64 (f64.trunc (local.get $lf)))))
+                          (else (i32.const 0))))
           (if (i32.and (i32.ge_s (local.get $lim) (i32.const 0)) (i32.gt_s (call $arr_len (local.get $arr)) (local.get $lim))) (then (i32.store (local.get $arr) (local.get $lim)))))))))
 
 ;; SameValue(a, b): like === except NaN equals NaN and +0 differs from -0.
