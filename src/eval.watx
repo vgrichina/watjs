@@ -7786,6 +7786,32 @@
       (block $ae (loop $al
         (br_if $ae (i32.ge_s (local.get $k) (local.get $argc)))
         (let $sv i64 (call $argn (local.get $argv) (local.get $argc) (local.get $k)))
+        ;; Proxy source: spec CopyDataProperties — [[OwnPropertyKeys]] (ownKeys trap), then per key
+        ;; [[GetOwnProperty]] (gopd trap); copy only present + enumerable, via [[Get]]/[[Set]]. A proxy
+        ;; is also is_object (it carries @@phandler), so it must be handled HERE, before the ordinary
+        ;; scope-reading branches below would mis-read its internal slots.
+        (if (call $is_proxy (local.get $sv))
+          (then
+            (let $pkeys i32 (call $own_enum_keys (local.get $sv) (i32.const 1)))  ;; ownKeys trap (validated)
+            (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))
+            (let $pi i32 (i32.const 0))
+            (block $a80pe (loop $a80pl
+              (br_if $a80pe (i32.ge_s (local.get $pi) (call $arr_len (local.get $pkeys))))
+              (let $pkey i64 (call $arr_get (local.get $pkeys) (local.get $pi)))
+              (let $pdb i32 (call $heap_alloc (i32.const 16)))
+              (i64.store (local.get $pdb) (local.get $sv))
+              (i64.store (i32.add (local.get $pdb) (i32.const 8)) (local.get $pkey))
+              (let $pdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $pdb) (call $v_undef)))  ;; GetOwnProperty (gopd trap)
+              (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))
+              (if (i32.eqz (call $is_undefined (local.get $pdesc)))
+                (then (if (call $truthy (call $get_prop (local.get $pdesc) (call $mk_str (cstring "enumerable"))))
+                  (then
+                    (let $pval i64 (call $get_prop (local.get $sv) (local.get $pkey)))
+                    (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))
+                    (call $set_prop (local.get $t) (local.get $pkey) (local.get $pval))
+                    (if (call $err) (then (i32.store (i32.const 392) (local.get $a80save)) (return (call $v_undef))))))))
+              (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $a80pl))))
+          (else
         ;; string source: copy own enumerable index chars (ToObject(string))
         (if (call $is_string (local.get $sv))
           (then
@@ -7838,7 +7864,7 @@
                 (set! $i (i32.add (local.get $i) (i32.const 1)))
                 (br $cl)))
               (set! $a80pass (i32.add (local.get $a80pass) (i32.const 1)))
-              (br $apl)))))
+              (br $apl)))))))
         (set! $k (i32.add (local.get $k) (i32.const 1)))
         (br $al)))
       (i32.store (i32.const 392) (local.get $a80save))
