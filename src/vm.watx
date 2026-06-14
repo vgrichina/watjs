@@ -943,7 +943,7 @@
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $iio))  ;; LOADVAR obj
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $iik))  ;; LOADVAR key
             (call $vm_c_expr (local.get $code))  ;; RHS → [obj, key, rhs]
-            (call $vm_emit_op (local.get $code) (i32.const 35))  ;; SETIDX → [rhs]
+            (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 83)) (else (i32.const 35))))  ;; SETIDX → [rhs] (strict→83)
             (let $ip2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
             (call $vm_patch (local.get $code) (local.get $ip1))  ;; keep-branch: [old]
             (call $vm_patch (local.get $code) (local.get $ip2))
@@ -1025,7 +1025,7 @@
             (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP old
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $motmp))  ;; LOADVAR obj
             (call $vm_c_expr (local.get $code))  ;; RHS → [obj, rhs]
-            (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP → [rhs]
+            (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 82)) (else (i32.const 34)))) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP → [rhs] (strict→82)
             (let $mp2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
             (call $vm_patch (local.get $code) (local.get $mp1))  ;; keep-branch: [old]
             (call $vm_patch (local.get $code) (local.get $mp2))
