@@ -3398,6 +3398,7 @@
   ;; incl. hoisted ones) is strict. Detect BEFORE vm_hoist so hoisted fns inherit it.
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
+  (call $set_pos (call $hashbang_len))  ;; skip a leading #! hashbang line
   (call $next_token)
   (if (i32.eq (call $tok_kind) (i32.const 2))
     (then (if (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict"))
@@ -3405,6 +3406,7 @@
   ;; hoist the user program's var declarations (define as undefined up front)
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
+  (call $set_pos (call $hashbang_len))  ;; skip a leading #! hashbang line
   (call $vm_hoist (local.get $code))
   ;; reset the completion register at runtime AFTER the prelude (whose trailing
   ;; expression statements leave a value in mem 288) and BEFORE user code, so a
@@ -3414,6 +3416,7 @@
   ;; now compile the user program
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
+  (call $set_pos (call $hashbang_len))  ;; skip a leading #! hashbang line
   (call $next_token)
   (block $e (loop $l
     (br_if $e (i32.eq (call $tok_kind) (i32.const 0)))

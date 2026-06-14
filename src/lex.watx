@@ -23,6 +23,23 @@
 
 (func $lex_init (effects) (call $set_pos (i32.const 0)))
 
+;; HashbangComment: a `#!` at byte 0 of the source (Script grammar only) is a single-line comment.
+;; Returns the byte offset just past the `#!…` line (the line terminator is left for the lexer's
+;; whitespace skip), or 0 when the source does not begin with the LITERAL bytes `#!` — so a preceding
+;; space/comment or an escaped `#`/`!` is NOT a hashbang and stays a SyntaxError.
+(func $hashbang_len (result i32) (effects)
+  (let $s i32 (i32.load (i32.const 4)))  ;; SRC base
+  (let $n i32 (i32.load (i32.const 8)))  ;; SRC length
+  (if (i32.lt_s (local.get $n) (i32.const 2)) (then (return (i32.const 0))))
+  (if (i32.eqz (i32.and (i32.eq (i32.load8_u (local.get $s)) (i32.const 35)) (i32.eq (i32.load8_u (i32.add (local.get $s) (i32.const 1))) (i32.const 33)))) (then (return (i32.const 0))))
+  (let $i i32 (i32.const 2))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (i32.load8_u (i32.add (local.get $s) (local.get $i))))
+    (br_if $e (i32.or (i32.eq (local.get $c) (i32.const 10)) (i32.eq (local.get $c) (i32.const 13))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (local.get $i))
+
 ;; --- cursor save/restore (for loops / function re-scan) ---
 ;; A cursor buffer is 32 bytes: POS, TOK_KIND, TOK_START, TOK_LEN (i32), TOK_NUM (f64@16),
 ;; BIGINT_FLAG (i32@24). The bigint flag (mem 304) is per-token derived state — without
