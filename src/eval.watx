@@ -788,7 +788,8 @@
       (return)))
   (let $cwdb i32 (call $heap_alloc (i32.const 16)))
   (i64.store (local.get $cwdb) (local.get $thisv))
-  (i64.store (i32.add (local.get $cwdb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
+  ;; the deleteProperty trap receives the property KEY as a string ("42"), not the number 42
+  (i64.store (i32.add (local.get $cwdb) (i32.const 8)) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $i)))))
   (let $cwok i64 (call $call_native (i32.const 203) (i32.const 2) (local.get $cwdb) (call $v_undef)))
   (if (call $err) (then (return)))
   (if (i32.eqz (call $truthy (local.get $cwok)))
