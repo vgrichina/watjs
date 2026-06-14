@@ -763,6 +763,18 @@
   ;; proxy / other → best-effort [[Set]]
   (call $set_prop (local.get $target) (call $num (f64.convert_i32_s (local.get $idx))) (local.get $val)))
 
+;; Read element $i of the receiver for a copying method (toReversed/with/toSorted/toSpliced).
+;; Spec reads each source element via [[Get]] exactly ONCE. For a REAL array, `$arr` (the
+;; alike_arr result) is the array payload itself, unread — so we must [[Get]] $thisv directly
+;; (this inherits Array.prototype[i] for holes / OOB-after-length-shrink). For an array-LIKE
+;; object, alike_arr ALREADY materialized every index via [[Get]] (firing getters in order),
+;; so re-reading $thisv would DOUBLE-fire the getters and corrupt the observable read order —
+;; instead read the already-materialized value from $arr. Sets $err if a real-array getter throws.
+(func $copy_read (param $thisv i64) (param $arr i32) (param $i i32) (result i64)
+  (if i64 (call $is_array (local.get $thisv))
+    (then (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))
+    (else (call $arr_get (local.get $arr) (local.get $i)))))
+
 ;; Append one concat item to result `A` starting at index `n`; returns the next
 ;; index. Spreads the item if IsConcatSpreadable (an array, or an object whose
 ;; @@isConcatSpreadable is truthy) defining present indices via CreateDataProperty
@@ -8086,8 +8098,8 @@
           (let $tri i32 (i32.const 0))
           (block $tre (loop $trl
             (br_if $tre (i32.ge_s (local.get $tri) (local.get $n)))
-            ;; spec reads each element via [[Get]] (proto chain), so a hole inherits Array.prototype[k]
-            (call $arr_push (local.get $tr) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (i32.sub (i32.sub (local.get $n) (i32.const 1)) (local.get $tri))))))
+            ;; spec reads each element via [[Get]] ONCE (proto chain), so a hole inherits Array.prototype[k]
+            (call $arr_push (local.get $tr) (call $copy_read (local.get $thisv) (local.get $arr) (i32.sub (i32.sub (local.get $n) (i32.const 1)) (local.get $tri))))
             (if (call $err) (then (return (call $v_undef))))
             (set! $tri (i32.add (local.get $tri) (i32.const 1))) (br $trl)))
           (return (call $mk_arr (local.get $tr)))))
@@ -8103,8 +8115,8 @@
             (br_if $we (i32.ge_s (local.get $wj) (local.get $n)))
             (if (i32.eq (local.get $wj) (local.get $wi))
               (then (call $arr_push (local.get $wr) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-              (else  ;; spec reads via [[Get]] (proto chain) so an absent index inherits Array.prototype[k]
-                (call $arr_push (local.get $wr) (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $wj)))))
+              (else  ;; spec reads via [[Get]] ONCE so an absent index inherits Array.prototype[k]
+                (call $arr_push (local.get $wr) (call $copy_read (local.get $thisv) (local.get $arr) (local.get $wj)))
                 (if (call $err) (then (return (call $v_undef))))))
             (set! $wj (i32.add (local.get $wj) (i32.const 1))) (br $wl)))
           (return (call $mk_arr (local.get $wr)))))
@@ -8114,7 +8126,9 @@
           (let $tsi i32 (i32.const 0))
           (block $tse (loop $tsl
             (br_if $tse (i32.ge_s (local.get $tsi) (local.get $n)))
-            (call $arr_push (local.get $tsr) (call $arr_get (local.get $arr) (local.get $tsi)))
+            ;; spec reads each element via [[Get]] ONCE (proto chain) before any comparator runs
+            (call $arr_push (local.get $tsr) (call $copy_read (local.get $thisv) (local.get $arr) (local.get $tsi)))
+            (if (call $err) (then (return (call $v_undef))))
             (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $tsl)))
           ;; stable O(n log n) merge sort the copy (was O(n^2) insertion → crashed on large n)
           (call $merge_sort (local.get $tsr) (local.get $n) (local.get $a0) (i32.const 0))
@@ -8135,7 +8149,8 @@
           (let $tsout i32 (call $arr_new (i32.const 8)))
           (let $tsi i32 (i32.const 0))
           (block $ts0 (loop $ts0l (br_if $ts0 (i32.ge_s (local.get $tsi) (local.get $tss)))
-            (call $arr_push (local.get $tsout) (call $arr_get (local.get $arr) (local.get $tsi)))
+            (call $arr_push (local.get $tsout) (call $copy_read (local.get $thisv) (local.get $arr) (local.get $tsi)))
+            (if (call $err) (then (return (call $v_undef))))
             (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $ts0l)))
           (set! $tsi (i32.const 2))
           (block $tsie (loop $tsil (br_if $tsie (i32.ge_s (local.get $tsi) (local.get $argc)))
@@ -8143,7 +8158,8 @@
             (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $tsil)))
           (set! $tsi (i32.add (local.get $tss) (local.get $tsdc)))
           (block $ts2 (loop $ts2l (br_if $ts2 (i32.ge_s (local.get $tsi) (local.get $n)))
-            (call $arr_push (local.get $tsout) (call $arr_get (local.get $arr) (local.get $tsi)))
+            (call $arr_push (local.get $tsout) (call $copy_read (local.get $thisv) (local.get $arr) (local.get $tsi)))
+            (if (call $err) (then (return (call $v_undef))))
             (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $ts2l)))
           (return (call $mk_arr (local.get $tsout)))))
       (if (i32.eq (local.get $id) (i32.const 35))  ;; splice(start, deleteCount, ...items)
