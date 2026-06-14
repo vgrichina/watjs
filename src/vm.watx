@@ -2546,10 +2546,11 @@
       ;; async function … (mark the next function declaration async)
       (if (call $tok_is_kw (cstring "async"))
         (then
+          (let $sasyncstart i32 (call $tok_start))  ;; 'async' offset for the source span
           (call $look_save)
           (call $next_token)
           (if (call $tok_is_kw (cstring "function"))
-            (then (i32.store (i32.const 232) (i32.const 1)))  ;; fall through to the function-decl branch
+            (then (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $sasyncstart) (i32.const 1))))  ;; fall through to the function-decl branch
             (else (call $look_restore)))))
       ;; function NAME ( params ) { body }   (declaration)
       (if (call $tok_is_kw (cstring "function"))
