@@ -817,7 +817,7 @@
               (if (i32.eq (call $tok_kind) (i32.const 15))  ;; computed method
                 (then (i32.store (i32.const 236) (local.get $ogen)) (i32.store (i32.const 232) (local.get $oasync)) (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1))) (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [obj, key, fn]
                 (else (call $next_token) (call $vm_c_expr (local.get $code))))  ;; ': value'
-              (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
+              (call $vm_emit_op (local.get $code) (i32.const 101)))  ;; DEFDATA_OWN — computed key never triggers the __proto__ proto-setter
             (else (if (i32.eq (call $tok_kind) (i32.const 2))  ;; "string": value
               (then
                 (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
@@ -849,16 +849,19 @@
                       (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1)))
                       (call $vm_c_fnbody (local.get $code) (i32.const 0))
                       (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))  ;; method .name = key
-                      (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
+                      (call $vm_emit_op (local.get $code) (i32.const 101)))  ;; DEFDATA_OWN — a method is always an own prop (a `__proto__(){}` method does NOT set the prototype)
                     (else
                       (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $oki)))
                       (let $afs i32 (call $vm_emit_cursor))
+                      (let $oshort i32 (i32.const 0))
                       (if (i32.eq (call $tok_kind) (i32.const 37))  ;; key: value
                         (then (call $next_token) (call $vm_c_expr (local.get $code)))
-                        (else (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $oki))))  ;; shorthand → LOADVAR
+                        (else (set! $oshort (i32.const 1)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $oki))))  ;; shorthand → LOADVAR
                       (if (call $vm_is_anon_fn_def (local.get $afs))  ;; `key: <anon fn>` → .name = key
                         (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))))
-                      (call $vm_emit_op (local.get $code) (i32.const 65))))))))))))  ;; DEFDATA (+ spread else)
+                      ;; literal `key: value` uses DEFDATA (the `__proto__: v` form sets [[Prototype]]); a
+                      ;; shorthand `{__proto__}` is an ordinary own property → DEFDATA_OWN
+                      (call $vm_emit_op (local.get $code) (if i32 (local.get $oshort) (then (i32.const 101)) (else (i32.const 65))))))))))))))  ;; DEFDATA/_OWN (+ spread else)
           (br_if $oe (i32.eqz (call $eat (i32.const 22))))
           (br $ol)))))
       (call $next_token)  ;; '}'
@@ -4673,6 +4676,16 @@
         (if (i32.eq (local.get $op) (i32.const 65))
           (then (call $set_prop (local.get $dobj) (local.get $dk) (local.get $dv)))                                  ;; DEFDATA
           (else (call $scope_set_accessor (call $val_payload (local.get $dobj)) (call $to_prop_key (local.get $dk)) (i32.eq (local.get $op) (i32.const 66)) (local.get $dv))))  ;; DEFGET(66)/DEFSET(67) — to_prop_key so a SYMBOL key → "@@sym:…" matches get/set_prop
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 101))  ;; DEFDATA_OWN — [obj,key,val] → CreateDataProperty (own enumerable {W,E,C}).
+      (then                                        ;; Used for COMPUTED object-literal keys: a computed `['__proto__']` makes an own
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))  ;; data property, it does NOT invoke the inherited __proto__ setter (only the literal `__proto__:` form does).
+        (let $dv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $dk i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $dobj i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left in place
+        (call $vm_infer_name (local.get $dv) (local.get $dk) (i32.const 0))
+        (call $scope_define_attr (call $val_payload (local.get $dobj)) (call $to_prop_key (local.get $dk)) (local.get $dv) (i32.const 14))  ;; {W,E,C}
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 36))  ;; NEWOBJ n (operand) — n (key,val) pairs on top
       (then
