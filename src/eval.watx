@@ -6593,7 +6593,18 @@
     (then
       (if (i32.eqz (i32.or (call $is_function (local.get $thisv)) (call $is_proxy (local.get $thisv))))
         (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.toString called on non-callable")) (return (call $v_undef))))
-      ;; source text isn't retained, so emit the native-code form: "function NAME() { [native code] }"
+      ;; VM function (magic 1448232526..528) with a retained source span → return the exact source text
+      (if (call $is_function (local.get $thisv))
+        (then
+          (let $ftfn i32 (call $val_payload (local.get $thisv)))
+          (let $ftmagic i32 (i32.load (local.get $ftfn)))
+          (if (i32.or (i32.eq (local.get $ftmagic) (i32.const 1448232526)) (i32.or (i32.eq (local.get $ftmagic) (i32.const 1448232527)) (i32.eq (local.get $ftmagic) (i32.const 1448232528))))
+            (then
+              (let $ftnp i32 (i32.load (i32.add (local.get $ftfn) (i32.const 8))))
+              (let $ftsp i32 (i32.load (i32.add (i32.add (local.get $ftfn) (i32.const 40)) (i32.mul (local.get $ftnp) (i32.const 4)))))
+              (if (local.get $ftsp)
+                (then (return (call $mk_str (call $str_from_src (local.get $ftsp) (i32.load (i32.add (i32.add (local.get $ftfn) (i32.const 44)) (i32.mul (local.get $ftnp) (i32.const 4)))))))))))))
+      ;; else (native / bound / no span): emit the native-code form: "function NAME() { [native code] }"
       (let $ftnm i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "name"))))
       (if (call $err) (then (return (call $v_undef))))
       (let $ftnms i32 (if i32 (call $is_string (local.get $ftnm)) (then (call $val_payload (local.get $ftnm))) (else (cstring ""))))

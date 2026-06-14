@@ -534,6 +534,7 @@
   (let $prevk i32 (call $tok_kind))
   (let $prevs i32 (call $tok_start))
   (let $prevl i32 (call $tok_len))
+  (i32.store (i32.const 696) (i32.add (local.get $prevs) (local.get $prevl)))  ;; end offset of the token we're leaving (for fn source spans)
   (let $nlpb i32 (call $pos))
   (call $skip_trivia)
   (i32.store (i32.const 688) (call $range_has_nl (local.get $nlpb) (call $pos)))  ;; record LineTerminator-before-token
