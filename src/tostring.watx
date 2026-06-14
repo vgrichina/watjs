@@ -395,8 +395,15 @@
   (if i32 (local.get $d) (then (local.get $d)) (else (cstring ""))))
 
 ;; property-key coercion: a symbol → its internal key string; else ToString.
+;; ToPropertyKey: ToPrimitive(string) then — if the result is a Symbol, use its key (NOT ToString,
+;; which would throw); else ToString. Handles an object whose toString/@@toPrimitive returns a Symbol.
 (func $to_prop_key (param $v i64) (result i32) (effects)
-  (if i32 (call $is_symbol (local.get $v)) (then (call $sym_key (local.get $v))) (else (call $to_str (local.get $v)))))
+  (if (call $is_symbol (local.get $v)) (then (return (call $sym_key (local.get $v)))))
+  (let $p i64 (local.get $v))
+  (if (i32.or (call $is_object (local.get $v)) (i32.or (call $is_array (local.get $v)) (call $is_function (local.get $v))))
+    (then (set! $p (call $to_primitive_h (local.get $v) (i32.const 2))) (if (call $err) (then (return (i32.const 0))))))  ;; string hint
+  (if (call $is_symbol (local.get $p)) (then (return (call $sym_key (local.get $p)))))
+  (call $to_str (local.get $p)))
 
 ;; ToString of any JSValue → heap Str pointer. (Symbols → "Symbol(desc)" — lenient;
 ;; spec ToString(symbol) throws, but that breaks many internal call sites.)
