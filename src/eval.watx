@@ -740,6 +740,29 @@
     (then (call $arr_set (call $val_payload (local.get $target)) (local.get $idx) (local.get $val)))
     (else (call $set_prop (local.get $target) (call $num (f64.convert_i32_s (local.get $idx))) (local.get $val)))))
 
+;; CreateDataPropertyOrThrow(target, idx, val): define an OWN {W,E,C} data property via
+;; [[DefineOwnProperty]] (bypasses inherited setters; throws on non-extensible / non-configurable).
+;; For Array.of/Array.from with a custom constructor result. Sets $err on failure.
+(func $cdp_throw (param $target i64) (param $idx i32) (param $val i64) (effects)
+  (if (call $is_array (local.get $target))
+    (then (call $arr_set (call $val_payload (local.get $target)) (local.get $idx) (local.get $val)) (return)))
+  (if (i32.or (call $is_object (local.get $target)) (call $is_function (local.get $target)))
+    (then
+      (let $cdsc i32 (call $val_payload (local.get $target)))
+      (let $cdks i32 (call $num_to_str (f64.convert_i32_s (local.get $idx))))
+      (let $cdslot i32 (call $scope_find_local (local.get $cdsc) (local.get $cdks)))
+      (if (local.get $cdslot)
+        (then  ;; existing own property — CreateDataProperty fails if it isn't configurable
+          (if (i32.eqz (call $entry_configurable (local.get $cdslot)))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable property")) (return))))
+        (else  ;; fresh property — fails if the object is non-extensible
+          (if (call $scope_find_local (local.get $cdsc) (cstring "@@noext"))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot add property to a non-extensible object")) (return)))))
+      (call $scope_define_attr (local.get $cdsc) (local.get $cdks) (local.get $val) (i32.const 14))  ;; {W,E,C}
+      (return)))
+  ;; proxy / other → best-effort [[Set]]
+  (call $set_prop (local.get $target) (call $num (f64.convert_i32_s (local.get $idx))) (local.get $val)))
+
 ;; Append one concat item to result `A` starting at index `n`; returns the next
 ;; index. Spreads the item if IsConcatSpreadable (an array, or an object whose
 ;; @@isConcatSpreadable is truthy) defining present indices via CreateDataProperty
@@ -4447,7 +4470,7 @@
       (let $ofk i32 (i32.const 0))
       (block $ofce (loop $ofcl
         (br_if $ofce (i32.ge_s (local.get $ofk) (local.get $oflen)))
-        (call $set_prop (local.get $ofA) (call $num (f64.convert_i32_s (local.get $ofk))) (call $argn (local.get $argv) (local.get $argc) (local.get $ofk)))
+        (call $cdp_throw (local.get $ofA) (local.get $ofk) (call $argn (local.get $argv) (local.get $argc) (local.get $ofk)))
         (if (call $err) (then (return (call $v_undef))))
         (set! $ofk (i32.add (local.get $ofk) (i32.const 1)))
         (br $ofcl)))
@@ -4552,7 +4575,7 @@
       (let $frk i32 (i32.const 0))
       (block $frce (loop $frcl
         (br_if $frce (i32.ge_s (local.get $frk) (local.get $frlen2)))
-        (call $set_prop (local.get $frA) (call $num (f64.convert_i32_s (local.get $frk))) (call $arr_get (local.get $fra) (local.get $frk)))
+        (call $cdp_throw (local.get $frA) (local.get $frk) (call $arr_get (local.get $fra) (local.get $frk)))
         (if (call $err) (then (return (call $v_undef))))
         (set! $frk (i32.add (local.get $frk) (i32.const 1)))
         (br $frcl)))
