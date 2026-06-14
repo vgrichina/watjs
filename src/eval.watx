@@ -775,6 +775,42 @@
     (then (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))
     (else (call $arr_get (local.get $arr) (local.get $i)))))
 
+;; CopyDataProperties from a PROXY source (object spread `{...proxy}` / rest, Object.assign): spec
+;; [[OwnPropertyKeys]] (ownKeys trap, in trap order incl. symbols), then per key [[GetOwnProperty]]
+;; (gopd trap) and copy ONLY present + enumerable (and not in the exclusion list) via [[Get]]→[[Set]].
+;; $excl = an exclusion-keys array payload for object-rest (0 = none). Propagates abrupt throws.
+(func $copy_props_from_proxy (param $target i64) (param $src i64) (param $excl i32) (effects)
+  (let $pkeys i32 (call $own_enum_keys (local.get $src) (i32.const 1)))  ;; ownKeys trap (validated)
+  (if (call $err) (then (return)))
+  (let $pi i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $pi) (call $arr_len (local.get $pkeys))))
+    (let $pkey i64 (call $arr_get (local.get $pkeys) (local.get $pi)))
+    ;; skip an excluded key (object-rest: the already-destructured property names)
+    (if (local.get $excl)
+      (then
+        (let $exj i32 (i32.const 0))
+        (let $exhit i32 (i32.const 0))
+        (block $exe (loop $exl2
+          (br_if $exe (i32.ge_s (local.get $exj) (call $arr_len (local.get $excl))))
+          (if (call $str_eq (call $to_prop_key (local.get $pkey)) (call $to_prop_key (call $arr_get (local.get $excl) (local.get $exj)))) (then (set! $exhit (i32.const 1)) (br $exe)))
+          (set! $exj (i32.add (local.get $exj) (i32.const 1))) (br $exl2)))
+        (if (local.get $exhit) (then (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $l)))))
+    (let $pdb i32 (call $heap_alloc (i32.const 16)))
+    (i64.store (local.get $pdb) (local.get $src))
+    (i64.store (i32.add (local.get $pdb) (i32.const 8)) (local.get $pkey))
+    (let $pdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $pdb) (call $v_undef)))  ;; GetOwnProperty (gopd trap)
+    (if (call $err) (then (return)))
+    (if (i32.eqz (call $is_undefined (local.get $pdesc)))
+      (then (if (call $truthy (call $get_prop (local.get $pdesc) (call $mk_str (cstring "enumerable"))))
+        (then
+          (let $pval i64 (call $get_prop (local.get $src) (local.get $pkey)))
+          (if (call $err) (then (return)))
+          (call $set_prop (local.get $target) (local.get $pkey) (local.get $pval))
+          (if (call $err) (then (return)))))))
+    (set! $pi (i32.add (local.get $pi) (i32.const 1)))
+    (br $l))))
+
 ;; DeletePropertyOrThrow(receiver, idx) for copyWithin's absent-source case. Spec deletes the
 ;; target slot (never writes undefined) and throws if [[Delete]] returns false. For a real array,
 ;; delete = clear the slot WITHOUT extending length (writing a hole past the end via arr_set would
@@ -7758,6 +7794,10 @@
       (let $rsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $rexcl i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (let $robj i32 (call $obj_new (i32.const 8)))
+      (if (call $is_proxy (local.get $rsrc))  ;; Proxy source → CopyDataProperties via ownKeys + per-key gopd, honoring exclusions
+        (then
+          (call $copy_props_from_proxy (call $mk_obj (local.get $robj)) (local.get $rsrc) (call $val_payload (local.get $rexcl)))
+          (return (call $mk_obj (local.get $robj)))))
       (if (i32.or (call $is_object (local.get $rsrc)) (call $is_array (local.get $rsrc)))
         (then
           (let $rkeys i32 (call $own_enum_keys (local.get $rsrc) (i32.const 0)))
