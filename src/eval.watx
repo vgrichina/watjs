@@ -8335,6 +8335,7 @@
           (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 30))  ;; lastIndexOf(x[, fromIndex])
         (then
+          (if (i32.eqz (local.get $n)) (then (return (call $num (f64.const -1)))))  ;; len 0 → -1 before coercing fromIndex (spec)
           (let $li i32 (i32.sub (local.get $n) (i32.const 1)))
           (if (i32.ge_s (local.get $argc) (i32.const 2))
             (then
@@ -8398,6 +8399,7 @@
           (return (if i64 (i32.eq (local.get $id) (i32.const 33)) (then (call $v_undef)) (else (call $num (f64.const -1)))))))
       (if (i32.eq (local.get $id) (i32.const 22))  ;; indexOf(x[, fromIndex])
         (then
+          (if (i32.eqz (local.get $n)) (then (return (call $num (f64.const -1)))))  ;; len 0 → -1 before coercing fromIndex (spec)
           (let $i i32 (i32.const 0))
           (if (i32.ge_s (local.get $argc) (i32.const 2))
             (then
