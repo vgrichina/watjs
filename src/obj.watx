@@ -531,9 +531,11 @@
           (let $ptgt i64 (call $proxy_target (local.get $cont)))
           (if (call $is_function (local.get $gtrap))
             (then
+              (let $gkv i64 (call $to_prop_key_val (local.get $key)))  ;; Symbol key stays a Symbol for the trap
+              (if (call $err) (then (return (call $v_undef))))
               (let $gbuf i32 (call $heap_alloc (i32.const 24)))
               (i64.store (local.get $gbuf) (local.get $ptgt))
-              (i64.store (i32.add (local.get $gbuf) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
+              (i64.store (i32.add (local.get $gbuf) (i32.const 8)) (local.get $gkv))
               (i64.store (i32.add (local.get $gbuf) (i32.const 16)) (local.get $cont))
               (let $gtr i64 (call $call_val (local.get $gtrap) (i32.const 3) (local.get $gbuf) (call $proxy_handler (local.get $cont))))
               (if (call $err) (then (return (call $v_undef))))
@@ -542,7 +544,7 @@
               ;; property, or undefined for an accessor whose [[Get]] is undefined
               (let $gdb i32 (call $heap_alloc (i32.const 16)))
               (i64.store (local.get $gdb) (local.get $ptgt))
-              (i64.store (i32.add (local.get $gdb) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
+              (i64.store (i32.add (local.get $gdb) (i32.const 8)) (local.get $gkv))
               (let $gdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $gdb) (call $v_undef)))
               (if (call $err) (then (return (call $v_undef))))
               (if (i32.eqz (call $is_undefined (local.get $gdesc)))
@@ -961,7 +963,9 @@
       (if (call $err) (then (return (call $v_false))))
       (if (call $is_function (local.get $pt))
         (then
-          (let $htr i32 (call $truthy (call $proxy_call2 (local.get $pt) (call $proxy_target (local.get $obj)) (call $mk_str (call $to_prop_key (local.get $key))) (call $proxy_handler (local.get $obj)))))
+          (let $hkv i64 (call $to_prop_key_val (local.get $key)))  ;; Symbol key stays a Symbol for the trap
+          (if (call $err) (then (return (call $v_false))))
+          (let $htr i32 (call $truthy (call $proxy_call2 (local.get $pt) (call $proxy_target (local.get $obj)) (local.get $hkv) (call $proxy_handler (local.get $obj)))))
           (if (call $err) (then (return (call $v_false))))
           (if (local.get $htr) (then (return (call $v_true))))
           ;; trap returned false → invariant: P must not exist as a non-configurable
@@ -969,7 +973,7 @@
           (let $htgt i64 (call $proxy_target (local.get $obj)))
           (let $hdb i32 (call $heap_alloc (i32.const 16)))
           (i64.store (local.get $hdb) (local.get $htgt))
-          (i64.store (i32.add (local.get $hdb) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
+          (i64.store (i32.add (local.get $hdb) (i32.const 8)) (local.get $hkv))
           (let $hdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $hdb) (call $v_undef)))
           (if (call $err) (then (return (call $v_false))))
           (if (i32.eqz (call $is_undefined (local.get $hdesc)))
@@ -1173,9 +1177,11 @@
           (let $ptgt i64 (call $proxy_target (local.get $cont)))
           (if (call $is_function (local.get $strap))
             (then
+              (let $skv i64 (call $to_prop_key_val (local.get $key)))  ;; Symbol key stays a Symbol for the trap
+              (if (call $err) (then (return)))
               (let $sbuf i32 (call $heap_alloc (i32.const 32)))
               (i64.store (local.get $sbuf) (local.get $ptgt))
-              (i64.store (i32.add (local.get $sbuf) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
+              (i64.store (i32.add (local.get $sbuf) (i32.const 8)) (local.get $skv))
               (i64.store (i32.add (local.get $sbuf) (i32.const 16)) (local.get $val))
               (i64.store (i32.add (local.get $sbuf) (i32.const 24)) (local.get $cont))
               (let $sres i32 (call $truthy (call $call_val (local.get $strap) (i32.const 4) (local.get $sbuf) (call $proxy_handler (local.get $cont)))))
@@ -1187,7 +1193,7 @@
               ;; SameValue V, and a setterless accessor cannot be written
               (let $sdb i32 (call $heap_alloc (i32.const 16)))
               (i64.store (local.get $sdb) (local.get $ptgt))
-              (i64.store (i32.add (local.get $sdb) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $key))))
+              (i64.store (i32.add (local.get $sdb) (i32.const 8)) (local.get $skv))
               (let $sdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $sdb) (call $v_undef)))
               (if (call $err) (then (return)))
               (if (i32.eqz (call $is_undefined (local.get $sdesc)))

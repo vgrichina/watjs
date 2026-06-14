@@ -405,6 +405,18 @@
   (if (call $is_symbol (local.get $p)) (then (return (call $sym_key (local.get $p)))))
   (call $to_str (local.get $p)))
 
+;; ToPropertyKey returning a VALUE (i64): a Symbol key stays the Symbol — so proxy traps (and any
+;; caller that forwards the key to user code) receive the real Symbol, not its internal "@@sym:"
+;; storage string; everything else is coerced to a String value. Mirrors $to_prop_key's coercion.
+(func $to_prop_key_val (param $v i64) (result i64) (effects)
+  (if (call $is_symbol (local.get $v)) (then (return (local.get $v))))
+  (let $p i64 (local.get $v))
+  (if (i32.or (call $is_object (local.get $v)) (i32.or (call $is_array (local.get $v)) (call $is_function (local.get $v))))
+    (then (set! $p (call $to_primitive_h (local.get $v) (i32.const 2))) (if (call $err) (then (return (call $v_undef))))))
+  (if (call $is_symbol (local.get $p)) (then (return (local.get $p))))
+  (if (call $is_string (local.get $p)) (then (return (local.get $p))))
+  (call $mk_str (call $to_str (local.get $p))))
+
 ;; ToString of any JSValue → heap Str pointer. (Symbols → "Symbol(desc)" — lenient;
 ;; spec ToString(symbol) throws, but that breaks many internal call sites.)
 ;; signed 64-bit integer → decimal string (for BigInt ToString)

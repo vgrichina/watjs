@@ -4207,7 +4207,9 @@
             (if (call $err) (then (br $disp)))
             (if (call $is_function (local.get $dpt))
               (then
-                (if (call $truthy (call $proxy_call2 (local.get $dpt) (call $proxy_target (local.get $dobj)) (call $mk_str (call $to_prop_key (local.get $dkey))) (call $proxy_handler (local.get $dobj))))
+                (let $dkv i64 (call $to_prop_key_val (local.get $dkey)))  ;; Symbol key stays a Symbol for the trap
+                (if (call $err) (then (br $disp)))
+                (if (call $truthy (call $proxy_call2 (local.get $dpt) (call $proxy_target (local.get $dobj)) (local.get $dkv) (call $proxy_handler (local.get $dobj))))
                   (then
                     (if (call $err) (then (br $disp)))
                     ;; trap returned true → invariant: P must not be a non-configurable
@@ -4215,7 +4217,7 @@
                     (let $dvtg i64 (call $proxy_target (local.get $dobj)))
                     (let $dvdb i32 (call $heap_alloc (i32.const 16)))
                     (i64.store (local.get $dvdb) (local.get $dvtg))
-                    (i64.store (i32.add (local.get $dvdb) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $dkey))))
+                    (i64.store (i32.add (local.get $dvdb) (i32.const 8)) (local.get $dkv))
                     (let $dvdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $dvdb) (call $v_undef)))
                     (if (call $err) (then (br $disp)))
                     (if (i32.eqz (call $is_undefined (local.get $dvdesc)))

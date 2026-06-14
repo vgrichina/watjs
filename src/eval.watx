@@ -7419,15 +7419,17 @@
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_function (local.get $dppt))
             (then
+              (let $dpkv i64 (call $to_prop_key_val (local.get $ky)))  ;; Symbol key stays a Symbol for the trap
+              (if (call $err) (then (return (call $v_undef))))
               (let $dpb i32 (call $heap_alloc (i32.const 24)))
               (i64.store (local.get $dpb) (call $proxy_target (local.get $ob)))
-              (i64.store (i32.add (local.get $dpb) (i32.const 8)) (call $mk_str (call $to_prop_key (local.get $ky))))
+              (i64.store (i32.add (local.get $dpb) (i32.const 8)) (local.get $dpkv))
               (i64.store (i32.add (local.get $dpb) (i32.const 16)) (local.get $de))
               (let $dpres i32 (call $truthy (call $call_val (local.get $dppt) (i32.const 3) (local.get $dpb) (call $proxy_handler (local.get $ob)))))
               (if (call $err) (then (return (call $v_undef))))
               (if (i32.eqz (local.get $dpres))
                 (then (call $throw_type (cstring "TypeError") (cstring "proxy defineProperty: trap returned falsish")) (return (call $v_undef))))
-              (call $proxy_dp_check (call $proxy_target (local.get $ob)) (call $mk_str (call $to_prop_key (local.get $ky))) (local.get $de))
+              (call $proxy_dp_check (call $proxy_target (local.get $ob)) (local.get $dpkv) (local.get $de))
               (if (call $err) (then (return (call $v_undef)))))
             (else
               (let $dpb2 i32 (call $heap_alloc (i32.const 24)))
