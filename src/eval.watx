@@ -8348,7 +8348,11 @@
               (let $ci i32 (i32.const 0))
               (block $cre (loop $crl
                 (br_if $cre (i32.ge_s (local.get $ci) (local.get $ccnt)))
-                (i64.store (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8))) (call $amut_get (local.get $thisv) (local.get $arr) (i32.add (local.get $cs) (local.get $ci))))
+                ;; a missing source slot (array hole) → carry a hole so the target slot is deleted, not set to undefined
+                (i64.store (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8)))
+                  (if i64 (i32.and (call $is_array (local.get $thisv)) (i32.eqz (call $arr_has (local.get $arr) (i32.add (local.get $cs) (local.get $ci)))))
+                    (then (call $v_hole))
+                    (else (call $amut_get (local.get $thisv) (local.get $arr) (i32.add (local.get $cs) (local.get $ci))))))
                 (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $crl)))
               (set! $ci (i32.const 0))
               (block $cwe (loop $cwl
