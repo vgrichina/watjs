@@ -814,6 +814,7 @@
           (else (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed]: value  |  [computed](){} method
             (then
               (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']' → [obj, key]
+              (call $vm_emit_op (local.get $code) (i32.const 102))  ;; ToPropertyKey(key) NOW — before the value expr (spec order)
               (if (i32.eq (call $tok_kind) (i32.const 15))  ;; computed method
                 (then (i32.store (i32.const 236) (local.get $ogen)) (i32.store (i32.const 232) (local.get $oasync)) (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1))) (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [obj, key, fn]
                 (else (call $next_token) (call $vm_c_expr (local.get $code))))  ;; ': value'
@@ -4686,6 +4687,12 @@
         (let $dobj i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left in place
         (call $vm_infer_name (local.get $dv) (local.get $dk) (i32.const 0))
         (call $scope_define_attr (call $val_payload (local.get $dobj)) (call $to_prop_key (local.get $dk)) (local.get $dv) (i32.const 14))  ;; {W,E,C}
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 102))  ;; TOPROPKEY — [key] → [ToPropertyKey(key)]; forces the key's
+      (then                                        ;; toString/valueOf side-effect NOW (a computed property name is ToPropertyKey'd BEFORE the value expr)
+        (let $tk i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        (let $tkv i64 (if i64 (call $is_symbol (local.get $tk)) (then (local.get $tk)) (else (call $mk_str (call $to_prop_key (local.get $tk))))))
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (local.get $tkv))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 36))  ;; NEWOBJ n (operand) — n (key,val) pairs on top
       (then
