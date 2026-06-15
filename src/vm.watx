@@ -617,6 +617,7 @@
                   (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
                   (if (i32.ne (call $tok_kind) (i32.const 16))
                     (then (block $sse2 (loop $ssl2
+                      (br_if $sse2 (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')' ends the args
                       (if (i32.eq (call $tok_kind) (i32.const 54))
                         (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
                         (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
@@ -699,6 +700,7 @@
                   (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
                   (if (i32.ne (call $tok_kind) (i32.const 16))
                     (then (block $nse2 (loop $nsl2
+                      (br_if $nse2 (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')' ends the args
                       (if (i32.eq (call $tok_kind) (i32.const 54))
                         (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
                         (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
@@ -926,6 +928,7 @@
             (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
             (if (i32.ne (call $tok_kind) (i32.const 16))
               (then (block $se2 (loop $sl2
+                (br_if $se2 (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')' ends the args
                 (if (i32.eq (call $tok_kind) (i32.const 54))
                   (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
                   (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
