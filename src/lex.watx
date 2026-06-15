@@ -566,6 +566,18 @@
     (then (call $lex_ident) (return)))  ;; \u… → identifier starting with a unicode escape
   (if (call $is_alpha (local.get $c)) (then (call $lex_ident) (return)))
   (if (i32.and (i32.eq (local.get $c) (i32.const 35)) (call $is_alpha (local.get $c1))) (then (call $lex_ident) (return)))  ;; #privateName → a single NAME token "#x"
+  ;; `#` must begin a PrivateIdentifier; an ASCII non-identifier follower (not `\` escape, not a >127
+  ;; unicode letter) is ALWAYS a SyntaxError (e.g. a non-byte-0 `#!`). Consume the `#` and emit EOF so a
+  ;; re-entrant next_token can't spin, then surface the early error (reg 400 → thrown SyntaxError).
+  (if (i32.and (i32.eq (local.get $c) (i32.const 35))
+        (i32.and (i32.lt_s (local.get $c1) (i32.const 128))
+                 (i32.and (i32.eqz (call $is_alpha (local.get $c1))) (i32.ne (local.get $c1) (i32.const 92)))))
+    (then
+      (call $set_pos (i32.add (call $pos) (i32.const 1)))
+      (call $set_tok (i32.const 0) (call $pos) (i32.const 0))
+      (i32.store (i32.const 400) (i32.const 1))
+      (call $throw_type (cstring "SyntaxError") (cstring "Unexpected '#'"))
+      (return)))
   (if (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const 39)))
     (then (call $lex_string (local.get $c)) (return)))  ;; " or '
   (if (i32.eq (local.get $c) (i32.const 96)) (then (call $lex_template) (return)))  ;; `template`
