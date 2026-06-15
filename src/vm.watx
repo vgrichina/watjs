@@ -602,6 +602,29 @@
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@homeproto"))  ;; this ctor's home prototype (lexical level)
               (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@super"))  ;; parent ctor (home.@@super, not this.@@super)
               (call $next_token)
+              ;; lookahead: any ...spread in the super() arg list?
+              (let $sspc i32 (call $cursor_save))
+              (let $ssphas i32 (i32.const 0)) (let $sspd i32 (i32.const 0))
+              (block $sspe (loop $sspl
+                (br_if $sspe (i32.eq (call $tok_kind) (i32.const 0)))
+                (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $sspd (i32.add (local.get $sspd) (i32.const 1)))))
+                (if (i32.eq (call $tok_kind) (i32.const 16)) (then (br_if $sspe (i32.eqz (local.get $sspd))) (set! $sspd (i32.sub (local.get $sspd) (i32.const 1)))))
+                (if (i32.and (i32.eq (call $tok_kind) (i32.const 54)) (i32.eqz (local.get $sspd))) (then (set! $ssphas (i32.const 1))))
+                (call $next_token) (br $sspl)))
+              (call $cursor_restore (local.get $sspc))
+              (if (local.get $ssphas)
+                (then  ;; super(...spread) → build an args array, then SUPERCALLSPREAD
+                  (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+                  (if (i32.ne (call $tok_kind) (i32.const 16))
+                    (then (block $sse2 (loop $ssl2
+                      (if (i32.eq (call $tok_kind) (i32.const 54))
+                        (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
+                        (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
+                      (br_if $sse2 (i32.eqz (call $eat (i32.const 22))))
+                      (br $ssl2)))))
+                  (call $next_token)  ;; ')'
+                  (call $vm_emit_op (local.get $code) (i32.const 103))  ;; SUPERCALLSPREAD
+                  (return)))
               (let $sargc i32 (i32.const 0))
               (if (i32.ne (call $tok_kind) (i32.const 16))
                 (then (block $se (loop $sl (call $vm_c_expr (local.get $code)) (set! $sargc (i32.add (local.get $sargc) (i32.const 1))) (br_if $se (i32.eqz (call $eat (i32.const 22)))) (br $sl)))))
@@ -4522,6 +4545,26 @@
         (let $sarr i32 (call $val_payload (local.get $argsv)))
         (let $sres i64 (call $call_val (local.get $calleev) (call $arr_len (local.get $sarr)) (call $arr_data (local.get $sarr)) (local.get $sthis)))
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $sres))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 103))  ;; SUPERCALLSPREAD — [this, parentCtor, argsArray] → super(...args)
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $scsArgs i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $scsCallee i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $scsThis i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        ;; park the derived class's new.target so the parent CLASS ctor isn't rejected by the
+        ;; "cannot be invoked without 'new'" check in vm_call_fn, and new.target propagates to it
+        (let $scsNtSlot i32 (call $scope_find (local.get $scope) (cstring "@@newtarget")))
+        (i64.store (i32.const 656) (if i64 (local.get $scsNtSlot) (then (i64.load (local.get $scsNtSlot))) (else (call $v_undef))))
+        (call $set_cur_scope (local.get $scope))
+        (let $scsArr i32 (call $val_payload (local.get $scsArgs)))
+        (let $scsRes i64 (call $call_val (local.get $scsCallee) (call $arr_len (local.get $scsArr)) (call $arr_data (local.get $scsArr)) (local.get $scsThis)))
+        (i64.store (i32.const 656) (i64.const 0))  ;; clear the parked newTarget (vm_call_fn also clears, but a thrown call may not reach it)
+        (if (call $err) (then (br $disp)))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $scsRes))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 52))  ;; APPEND — [arr, v] → arr.push(v), leaves [arr]
