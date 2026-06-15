@@ -617,6 +617,17 @@
       (let $fsc i32 (if i32 (i32.and (i32.ge_s (i32.load (local.get $fp)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fp)) (i32.const 1448232528)))
         (then (let $pv i64 (i64.load (i32.add (local.get $fp) (i32.const 16)))) (if i32 (call $is_object (local.get $pv)) (then (call $val_payload (local.get $pv))) (else (i32.const 0))))
         (else (i32.load (i32.add (local.get $fp) (i32.const 12))))))
+      ;; getOwnPropertyNames includes the non-enumerable synthetic own keys length, name, prototype
+      ;; (spec order: length, name, then own props, with prototype after name). Only in allNames mode,
+      ;; and only when not already present as a defineProperty'd entry in the scope (avoid duplicates).
+      (if (local.get $allNames)
+        (then
+          (if (i32.and (call $fn_own (local.get $fp) (cstring "length")) (i32.eqz (if i32 (local.get $fsc) (then (call $scope_find_local (local.get $fsc) (cstring "length"))) (else (i32.const 0)))))
+            (then (call $arr_push (local.get $out) (call $mk_str (cstring "length")))))
+          (if (i32.and (call $fn_own (local.get $fp) (cstring "name")) (i32.eqz (if i32 (local.get $fsc) (then (call $scope_find_local (local.get $fsc) (cstring "name"))) (else (i32.const 0)))))
+            (then (call $arr_push (local.get $out) (call $mk_str (cstring "name")))))
+          (if (i32.and (call $fn_own (local.get $fp) (cstring "prototype")) (i32.eqz (if i32 (local.get $fsc) (then (call $scope_find_local (local.get $fsc) (cstring "prototype"))) (else (i32.const 0)))))
+            (then (call $arr_push (local.get $out) (call $mk_str (cstring "prototype")))))))
       (if (local.get $fsc) (then (call $push_scope_keys (local.get $out) (local.get $fsc) (local.get $allNames))))))
   (local.get $out))
 
