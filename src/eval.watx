@@ -1224,23 +1224,24 @@
 ;; read an `elem`-typed value at byte pointer `src`, honoring little/big endian.
 ;; wasm is little-endian; for big-endian, reverse the bytes through scratch @520.
 (func $dv_read (param $src i32) (param $elem i32) (param $little i32) (result f64) (effects)
+  ;; NOTE: DataView endian scratch buffer moved 520→780 (8 bytes): @520-527 overlapped ArrayBuffer.prototype @524, so an 8-byte DataView write corrupted it (→ crash on next ArrayBuffer use).
   (let $bpe i32 (call $ta_bpe (local.get $elem)))
   (let $i i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $bpe)))
-    (i32.store8 (i32.add (i32.const 520) (local.get $i))
+    (i32.store8 (i32.add (i32.const 780) (local.get $i))
       (i32.load8_u (i32.add (local.get $src) (if i32 (local.get $little) (then (local.get $i)) (else (i32.sub (i32.sub (local.get $bpe) (i32.const 1)) (local.get $i)))))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
-  (call $ta_read (i32.const 520) (i32.const 0) (local.get $elem)))
+  (call $ta_read (i32.const 780) (i32.const 0) (local.get $elem)))
 ;; write an `elem`-typed value to byte pointer `dst`, honoring endianness.
 (func $dv_write (param $dst i32) (param $elem i32) (param $little i32) (param $val f64) (effects)
   (let $bpe i32 (call $ta_bpe (local.get $elem)))
-  (call $ta_write (i32.const 520) (i32.const 0) (local.get $elem) (local.get $val))
+  (call $ta_write (i32.const 780) (i32.const 0) (local.get $elem) (local.get $val))
   (let $i i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $bpe)))
     (i32.store8 (i32.add (local.get $dst) (if i32 (local.get $little) (then (local.get $i)) (else (i32.sub (i32.sub (local.get $bpe) (i32.const 1)) (local.get $i)))))
-      (i32.load8_u (i32.add (i32.const 520) (local.get $i))))
+      (i32.load8_u (i32.add (i32.const 780) (local.get $i))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
 
 ;; read 8 bytes at `src` as i64, honoring endianness (via scratch @520)
@@ -1248,18 +1249,18 @@
   (let $i i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (i32.const 8)))
-    (i32.store8 (i32.add (i32.const 520) (local.get $i))
+    (i32.store8 (i32.add (i32.const 780) (local.get $i))
       (i32.load8_u (i32.add (local.get $src) (if i32 (local.get $little) (then (local.get $i)) (else (i32.sub (i32.const 7) (local.get $i)))))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
-  (i64.load (i32.const 520)))
+  (i64.load (i32.const 780)))
 ;; write i64 `val` to 8 bytes at `dst`, honoring endianness
 (func $dv_write_i64 (param $dst i32) (param $little i32) (param $val i64) (effects)
-  (i64.store (i32.const 520) (local.get $val))
+  (i64.store (i32.const 780) (local.get $val))
   (let $i i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (i32.const 8)))
     (i32.store8 (i32.add (local.get $dst) (if i32 (local.get $little) (then (local.get $i)) (else (i32.sub (i32.const 7) (local.get $i)))))
-      (i32.load8_u (i32.add (i32.const 520) (local.get $i))))
+      (i32.load8_u (i32.add (i32.const 780) (local.get $i))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
 
 ;; decode an IEEE-754 binary16 (half-float) bit pattern $h (low 16 bits) → f64
@@ -5732,8 +5733,8 @@
     (then
       (let $shasd i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
       (let $sdesc i32 (if i32 (local.get $shasd) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))) (else (cstring ""))))
-      (let $scnt i32 (i32.load (i32.const 292)))
-      (i32.store (i32.const 292) (i32.add (local.get $scnt) (i32.const 1)))
+      (let $scnt i32 (i32.load (i32.const 776)))
+      (i32.store (i32.const 776) (i32.add (local.get $scnt) (i32.const 1)))
       (let $symbkey i32 (call $str_concat (call $str_concat (call $str_concat (cstring "@@sym:") (call $num_to_str (f64.convert_i32_s (local.get $scnt)))) (cstring ":")) (local.get $sdesc)))
       ;; desc field 0 (null) marks an absent description (Symbol() vs Symbol("")) → .description undefined
       (return (call $make_symbol (local.get $symbkey) (if i32 (local.get $shasd) (then (local.get $sdesc)) (else (i32.const 0)))))))
@@ -9775,7 +9776,7 @@
   ;; Symbol: real symbol primitives (tag 3). Well-known symbols use sentinel
   ;; internal keys ("@@iterator" etc.) so they double as the property names the
   ;; iteration machinery already looks up.
-  (i32.store (i32.const 292) (i32.const 0))                       ;; user-symbol counter
+  (i32.store (i32.const 776) (i32.const 0))                       ;; user-symbol counter (moved 292→776: 292 was the high half of the i64 completion register @288, so symbol creation corrupted completion values)
   (i32.store (i32.const 296) (call $scope_new (i32.const 0) (i32.const 8)))  ;; Symbol.for registry
   (i32.store (i32.const 752) (call $scope_new (i32.const 0) (i32.const 64)))  ;; symbol identity table: internal key → the symbol value last used as a key (so reflection recovers the original symbol, not a fresh one)
   (let $symf i64 (call $def_native (local.get $g) (cstring "Symbol") (i32.const 196)))

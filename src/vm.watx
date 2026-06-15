@@ -1433,7 +1433,7 @@
           (call $next_token)
           (call $vm_c_expr (local.get $code))
           ;; async generator: delegate over the ASYNC iterator (GETAITER) and await each next() result
-          (let $eyaw i32 (i32.load (i32.const 716)))
+          (let $eyaw i32 (i32.load (i32.const 788)))
           (call $vm_emit_op (local.get $code) (if i32 (local.get $eyaw) (then (i32.const 96)) (else (i32.const 45))))  ;; GETAITER / GETITER → [it]
           (let $eyit i32 (call $vm_tmpname))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $eyit))
@@ -1630,10 +1630,10 @@
   ;; across this (possibly nested) function body.
   (let $savegen i32 (i32.load (i32.const 672)))
   (i32.store (i32.const 672) (local.get $genf))
-  (let $saveagen i32 (i32.load (i32.const 716)))  ;; reg 716 = compiling an ASYNC generator body (for yield* async-iter)
-  (i32.store (i32.const 716) (i32.and (local.get $genf) (local.get $asyncf)))
+  (let $saveagen i32 (i32.load (i32.const 788)))  ;; reg 788 (was 716, which overlapped the i64 %TypedArray% intrinsic @712-719) = compiling an ASYNC generator body
+  (i32.store (i32.const 788) (i32.and (local.get $genf) (local.get $asyncf)))
   (call $vm_c_stmt (local.get $code))  ;; body block
-  (i32.store (i32.const 716) (local.get $saveagen))  ;; restore enclosing async-generator-context
+  (i32.store (i32.const 788) (local.get $saveagen))  ;; restore enclosing async-generator-context
   (i32.store (i32.const 672) (local.get $savegen))  ;; restore enclosing generator-context
   (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
   (i32.store (i32.const 372) (local.get $savehc)) (i32.store (i32.const 376) (local.get $savehb))  ;; restore enclosing hoist list
@@ -2723,7 +2723,7 @@
             (then
               (call $next_token)  ;; consume '*'
               (call $vm_c_expr (local.get $code))  ;; [iterable]
-              (let $yaw i32 (i32.load (i32.const 716)))  ;; in async generator → async-iter + await
+              (let $yaw i32 (i32.load (i32.const 788)))  ;; in async generator → async-iter + await
               (call $vm_emit_op (local.get $code) (if i32 (local.get $yaw) (then (i32.const 96)) (else (i32.const 45))))  ;; GETAITER / GETITER → [it]
               (let $yit i32 (call $vm_tmpname))
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $yit))  ;; STOREVAR it
