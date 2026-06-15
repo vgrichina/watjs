@@ -5214,6 +5214,12 @@
   (call $scope_define (local.get $ao) (cstring "@@anp") (call $num (f64.convert_i32_s (local.get $anp))))
   (call $scope_define_attr (local.get $ao) (cstring "@@iterator") (i64.load (i32.const 756)) (i32.const 12))  ;; arguments[@@iterator] === %Array.prototype.values% (same object as [][Symbol.iterator]); {W,C} non-enumerable
   (call $scope_define_attr (local.get $ao) (cstring "slice") (call $mk_native (i32.const 142) (cstring "slice")) (i32.const 12))  ;; non-standard helper → at least keep it non-enumerable
+  ;; arguments.callee — strict (unmapped): a %ThrowTypeError% accessor {E:f,C:f}; sloppy (mapped):
+  ;; the function itself {W:t,E:f,C:t}. (fn flags live at @(32+np*4); bit2 = strict.)
+  (if (i32.and (i32.load (i32.add (local.get $cfn) (i32.add (i32.const 32) (i32.mul (local.get $np) (i32.const 4))))) (i32.const 4))
+    (then (let $clte i64 (i64.load (i32.const 764)))  ;; the shared %ThrowTypeError% intrinsic (NOT a fresh one — must === fn.caller's getter)
+          (call $scope_define_accessor_attr (local.get $ao) (cstring "callee") (local.get $clte) (local.get $clte) (i32.const 0)))
+    (else (call $scope_define_attr (local.get $ao) (cstring "callee") (call $mk_fn (local.get $cfn)) (i32.const 12))))
   (let $i i32 (local.get $anp))  ;; extra (unmapped) args → data props
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
@@ -5235,6 +5241,12 @@
   (call $scope_define (local.get $ao) (cstring "@@anp") (call $num (f64.convert_i32_s (local.get $anp))))
   (call $scope_define_attr (local.get $ao) (cstring "@@iterator") (i64.load (i32.const 756)) (i32.const 12))  ;; arguments[@@iterator] === %Array.prototype.values% (same object as [][Symbol.iterator]); {W,C} non-enumerable
   (call $scope_define_attr (local.get $ao) (cstring "slice") (call $mk_native (i32.const 142) (cstring "slice")) (i32.const 12))  ;; non-standard helper → at least keep it non-enumerable
+  ;; arguments.callee — strict (unmapped): a %ThrowTypeError% accessor {E:f,C:f}; sloppy (mapped):
+  ;; the function itself {W:t,E:f,C:t}. (fn flags live at @(32+np*4); bit2 = strict.)
+  (if (i32.and (i32.load (i32.add (local.get $cfn) (i32.add (i32.const 32) (i32.mul (local.get $np) (i32.const 4))))) (i32.const 4))
+    (then (let $clte i64 (i64.load (i32.const 764)))  ;; the shared %ThrowTypeError% intrinsic (NOT a fresh one — must === fn.caller's getter)
+          (call $scope_define_accessor_attr (local.get $ao) (cstring "callee") (local.get $clte) (local.get $clte) (i32.const 0)))
+    (else (call $scope_define_attr (local.get $ao) (cstring "callee") (call $mk_fn (local.get $cfn)) (i32.const 12))))
   (let $i i32 (local.get $anp))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
