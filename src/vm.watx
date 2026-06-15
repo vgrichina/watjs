@@ -3750,6 +3750,10 @@
         ;; function Proxy callee → dispatch through call_val (handles the apply trap)
         (if (call $is_proxy (i64.load (i32.add (local.get $stack) (local.get $cbase))))
           (then
+            ;; a Proxy is callable only if its target is callable (@@pcallable, as typeof uses) — else TypeError
+            (let $pxcs i32 (call $scope_find_local (call $val_payload (i64.load (i32.add (local.get $stack) (local.get $cbase)))) (cstring "@@pcallable")))
+            (if (i32.eqz (if i32 (local.get $pxcs) (then (call $truthy (i64.load (local.get $pxcs)))) (else (i32.const 0))))
+              (then (call $throw_type (cstring "TypeError") (cstring "called value is not a function")) (set! $sp (local.get $rbase)) (br $disp)))
             (call $set_cur_scope (local.get $scope))
             (let $pxres i64 (call $call_val (i64.load (i32.add (local.get $stack) (local.get $cbase))) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8)))
               (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (i32.sub (local.get $cbase) (i32.const 8))))) (else (call $v_undef)))))
