@@ -5208,12 +5208,12 @@
   (let $ao i32 (call $obj_new (i32.const 8)))
   (let $np i32 (i32.load (i32.add (local.get $cfn) (i32.const 8))))
   (let $anp i32 (if i32 (i32.lt_s (local.get $argc) (local.get $np)) (then (local.get $argc)) (else (local.get $np))))
-  (call $scope_define (local.get $ao) (cstring "length") (call $num (f64.convert_i32_s (local.get $argc))))
+  (call $scope_define_attr (local.get $ao) (cstring "length") (call $num (f64.convert_i32_s (local.get $argc))) (i32.const 12))  ;; arguments.length is {W,C} non-enumerable (DontEnum)
   (call $scope_define (local.get $ao) (cstring "@@as") (call $num (f64.convert_i32_s (local.get $cns))))
   (call $scope_define (local.get $ao) (cstring "@@af") (call $num (f64.convert_i32_s (local.get $cfn))))
   (call $scope_define (local.get $ao) (cstring "@@anp") (call $num (f64.convert_i32_s (local.get $anp))))
   (call $scope_define (local.get $ao) (cstring "@@iterator") (call $mk_native (i32.const 143) (cstring "values")))
-  (call $scope_define (local.get $ao) (cstring "slice") (call $mk_native (i32.const 142) (cstring "slice")))
+  (call $scope_define_attr (local.get $ao) (cstring "slice") (call $mk_native (i32.const 142) (cstring "slice")) (i32.const 12))  ;; non-standard helper → at least keep it non-enumerable
   (let $i i32 (local.get $anp))  ;; extra (unmapped) args → data props
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
@@ -5229,12 +5229,12 @@
   (let $ao i32 (call $obj_new (i32.const 8)))
   (let $np i32 (i32.load (i32.add (local.get $cfn) (i32.const 8))))
   (let $anp i32 (if i32 (i32.lt_s (local.get $argc) (local.get $np)) (then (local.get $argc)) (else (local.get $np))))
-  (call $scope_define (local.get $ao) (cstring "length") (call $num (f64.convert_i32_s (local.get $argc))))
+  (call $scope_define_attr (local.get $ao) (cstring "length") (call $num (f64.convert_i32_s (local.get $argc))) (i32.const 12))  ;; arguments.length is {W,C} non-enumerable (DontEnum)
   (call $scope_define (local.get $ao) (cstring "@@as") (call $num (f64.convert_i32_s (local.get $cns))))
   (call $scope_define (local.get $ao) (cstring "@@af") (call $num (f64.convert_i32_s (local.get $cfn))))
   (call $scope_define (local.get $ao) (cstring "@@anp") (call $num (f64.convert_i32_s (local.get $anp))))
   (call $scope_define (local.get $ao) (cstring "@@iterator") (call $mk_native (i32.const 143) (cstring "values")))
-  (call $scope_define (local.get $ao) (cstring "slice") (call $mk_native (i32.const 142) (cstring "slice")))
+  (call $scope_define_attr (local.get $ao) (cstring "slice") (call $mk_native (i32.const 142) (cstring "slice")) (i32.const 12))  ;; non-standard helper → at least keep it non-enumerable
   (let $i i32 (local.get $anp))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
