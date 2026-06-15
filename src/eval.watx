@@ -9615,6 +9615,7 @@
   ;; RegExp.prototype with accessor getters (source/flags/global/…) — reg 324 holds
   ;; its scope so the constructor & literals can link instances as the parent.
   (let $reproto i32 (call $obj_new (i32.const 16)))
+  (call $scope_define_attr (local.get $reproto) (cstring "constructor") (local.get $ref) (i32.const 12))  ;; RegExp.prototype.constructor === RegExp {W,C}
   (call $scope_define_accessor_attr (local.get $reproto) (cstring "source") (call $mk_native (i32.const 290) (cstring "get source")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $reproto) (cstring "flags") (call $mk_native (i32.const 291) (cstring "get flags")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $reproto) (cstring "global") (call $mk_native (i32.const 292) (cstring "get global")) (call $v_undef) (i32.const 5))
