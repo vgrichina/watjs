@@ -1491,9 +1491,10 @@
   (call $scope_define (local.get $tap) (cstring "toLocaleString") (call $mk_native (i32.const 500) (cstring "toLocaleString")))
   (call $scope_define (local.get $tap) (cstring "toString") (call $mk_native (i32.const 23) (cstring "toString")))
   (call $scope_define (local.get $tap) (cstring "keys") (call $mk_native (i32.const 497) (cstring "keys")))
-  (call $scope_define (local.get $tap) (cstring "values") (call $mk_native (i32.const 498) (cstring "values")))
+  (let $tapvalues i64 (call $mk_native (i32.const 498) (cstring "values")))  ;; %TypedArray%.prototype.values === [Symbol.iterator]
+  (call $scope_define (local.get $tap) (cstring "values") (local.get $tapvalues))
   (call $scope_define (local.get $tap) (cstring "entries") (call $mk_native (i32.const 499) (cstring "entries")))
-  (call $scope_define (local.get $tap) (cstring "@@iterator") (call $mk_native (i32.const 498) (cstring "values")))
+  (call $scope_define (local.get $tap) (cstring "@@iterator") (local.get $tapvalues))
   (call $scope_define (local.get $tap) (cstring "set") (call $mk_native (i32.const 396) (cstring "set")))
   (call $scope_define (local.get $tap) (cstring "subarray") (call $mk_native (i32.const 397) (cstring "subarray")))
   (call $scope_define_accessor_attr (local.get $tap) (cstring "@@toStringTag") (call $mk_native (i32.const 393) (cstring "get [Symbol.toStringTag]")) (call $v_undef) (i32.const 5))
@@ -9765,8 +9766,9 @@
   (call $scope_define (local.get $ap) (cstring "sort") (call $mk_native (i32.const 78) (cstring "sort")))
   (call $scope_define (local.get $ap) (cstring "entries") (call $mk_native (i32.const 95) (cstring "entries")))
   (call $scope_define (local.get $ap) (cstring "keys") (call $mk_native (i32.const 96) (cstring "keys")))
-  (call $scope_define (local.get $ap) (cstring "values") (call $mk_native (i32.const 97) (cstring "values")))
-  (call $scope_define (local.get $ap) (cstring "@@iterator") (call $mk_native (i32.const 97) (cstring "values")))
+  (let $apvalues i64 (call $mk_native (i32.const 97) (cstring "values")))  ;; Array.prototype.values === Array.prototype[Symbol.iterator] (same object)
+  (call $scope_define (local.get $ap) (cstring "values") (local.get $apvalues))
+  (call $scope_define (local.get $ap) (cstring "@@iterator") (local.get $apvalues))
   ;; Symbol: real symbol primitives (tag 3). Well-known symbols use sentinel
   ;; internal keys ("@@iterator" etc.) so they double as the property names the
   ;; iteration machinery already looks up.
@@ -9886,8 +9888,9 @@
   (call $scope_define_accessor (local.get $mapproto) (cstring "size") (call $mk_native (i32.const 126) (cstring "size")) (call $v_undef))
   (call $scope_define (local.get $mapproto) (cstring "keys") (call $mk_native (i32.const 176) (cstring "keys")))
   (call $scope_define (local.get $mapproto) (cstring "values") (call $mk_native (i32.const 177) (cstring "values")))
-  (call $scope_define (local.get $mapproto) (cstring "entries") (call $mk_native (i32.const 178) (cstring "entries")))
-  (call $scope_define (local.get $mapproto) (cstring "@@iterator") (call $mk_native (i32.const 178) (cstring "entries")))
+  (let $mapentries i64 (call $mk_native (i32.const 178) (cstring "entries")))  ;; Map.prototype.entries === Map.prototype[Symbol.iterator]
+  (call $scope_define (local.get $mapproto) (cstring "entries") (local.get $mapentries))
+  (call $scope_define (local.get $mapproto) (cstring "@@iterator") (local.get $mapentries))
   (call $scope_define_attr (local.get $mapproto) (cstring "@@toStringTag") (call $mk_str (cstring "Map")) (i32.const 4))  ;; {W:false,E:false,C:true}
   (call $scope_define (local.get $mapproto) (cstring "constructor") (local.get $mapf))
   (call $scope_clear_enum (local.get $mapproto))
@@ -9901,9 +9904,10 @@
   (call $scope_define (local.get $setproto) (cstring "forEach") (call $mk_native (i32.const 134) (cstring "forEach")))
   (call $scope_define (local.get $setproto) (cstring "clear") (call $mk_native (i32.const 136) (cstring "clear")))
   (call $scope_define_accessor (local.get $setproto) (cstring "size") (call $mk_native (i32.const 135) (cstring "size")) (call $v_undef))
-  (call $scope_define (local.get $setproto) (cstring "values") (call $mk_native (i32.const 175) (cstring "values")))
-  (call $scope_define (local.get $setproto) (cstring "keys") (call $mk_native (i32.const 175) (cstring "keys")))
-  (call $scope_define (local.get $setproto) (cstring "@@iterator") (call $mk_native (i32.const 175) (cstring "values")))
+  (let $setvalues i64 (call $mk_native (i32.const 175) (cstring "values")))  ;; Set.prototype.values === .keys === [Symbol.iterator] (same object, name "values")
+  (call $scope_define (local.get $setproto) (cstring "values") (local.get $setvalues))
+  (call $scope_define (local.get $setproto) (cstring "keys") (local.get $setvalues))
+  (call $scope_define (local.get $setproto) (cstring "@@iterator") (local.get $setvalues))
   (call $scope_define (local.get $setproto) (cstring "entries") (call $mk_native (i32.const 440) (cstring "entries")))
   (call $scope_define (local.get $setproto) (cstring "union") (call $mk_native (i32.const 310) (cstring "union")))
   (call $scope_define (local.get $setproto) (cstring "intersection") (call $mk_native (i32.const 311) (cstring "intersection")))
