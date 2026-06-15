@@ -2394,7 +2394,7 @@
       (then
         (let $stc i32 (call $cursor_save))
         (call $next_token)
-        (if (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.eq (call $tok_kind) (i32.const 18))))
+        (if (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 21)))))  ;; `(` `=` `}` `;` after `static` → it's a member NAMED "static", not the modifier
           (then (call $cursor_restore (local.get $stc)))
           (else (set! $isstatic (i32.const 1))))))  ;; confirmed `static` modifier
     ;; static initialization block: `static { ... }` → append [@@staticblock, blockThunk] to staticT
