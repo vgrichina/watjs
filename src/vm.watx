@@ -3117,7 +3117,9 @@
                   (call $vm_c_destructure_param (local.get $code) (cstring "@@ofdt"))
                   (i32.store (i32.const 676) (local.get $ofsm))
                   (call $cursor_restore (local.get $ofbody)))
-                (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))  ;; STOREVAR x
+                (else (if (local.get $ofdecl)
+                        (then (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; DEFINIT: a `var/let/const` head binds in the CURRENT scope (else STOREVAR walks up and clobbers an outer/global of the same name)
+                        (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))))  ;; STOREVAR x: assignment-target head (`for (x of E)`)
               (call $vm_c_stmt (local.get $code))  ;; body
               ;; normal + continue converge here: POPHANDLER then loop
               (call $vm_patch_conts (local.get $code) (call $vm_emit_cursor))  ;; continue → POPHANDLER point
@@ -3170,7 +3172,7 @@
                     (else
                       (let $fin i32 (call $ident_name)) (call $next_token) (call $next_token)  ;; NAME =
                       (call $vm_c_expr (local.get $code))
-                      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fin)))))
+                      (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $fin)))))  ;; DEFINIT: a `var/let/const` init binds in the CURRENT scope (STOREVAR would walk up and clobber an outer/global)
                 (else
                   (call $look_save)
                   (let $fin2 i32 (call $ident_name)) (call $next_token)
