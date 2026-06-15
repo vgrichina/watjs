@@ -5408,6 +5408,13 @@
         (then
           (let $pp11 i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "__prim__")))
           (if (local.get $pp11) (then (set! $self11 (i64.load (local.get $pp11)))))))
+      ;; toString/valueOf (18) use thisStringValue: throw for a non-String `this` BEFORE coercing.
+      ;; Otherwise to_str(self11) on a plain object whose .toString IS this native recurses forever
+      ;; (e.g. ''.concat({toString: String.prototype.toString})).
+      (if (i32.eq (local.get $id) (i32.const 18))
+        (then (if (i32.eqz (i32.or (call $is_string (local.get $thisv))
+                            (i32.and (call $is_object (local.get $thisv)) (call $is_string (local.get $self11)))))
+          (then (call $throw_type (cstring "TypeError") (cstring "String.prototype.toString requires that 'this' be a String")) (return (call $v_undef))))))
       (let $s i32 (call $to_str (local.get $self11)))
       (let $slen i32 (call $str_len (local.get $s)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
