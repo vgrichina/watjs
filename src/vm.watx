@@ -3548,8 +3548,10 @@
   (let $fp i32 (call $val_payload (local.get $f)))
   (if (i32.ne (i32.load (local.get $fp)) (i32.const 1448232526))
     (then (return (call $js_instanceof (local.get $x) (local.get $f)))))  ;; native ctor
-  (let $proto i64 (i64.load (i32.add (local.get $fp) (i32.const 16))))
-  (if (i32.eqz (call $is_object (local.get $proto))) (then (return (call $v_false))))
+  (let $proto i64 (call $get_prop (local.get $f) (call $mk_str (cstring "prototype"))))  ;; via [[Get]] (materializes a lazily-created @16, e.g. for Function()-created fns)
+  ;; OrdinaryHasInstance: a non-object .prototype is a TypeError (not a false result)
+  (if (i32.eqz (i32.or (call $is_object (local.get $proto)) (i32.or (call $is_array (local.get $proto)) (call $is_function (local.get $proto)))))
+    (then (call $throw_type (cstring "TypeError") (cstring "Function has non-object prototype in instanceof check")) (return (call $v_false))))
   (let $protoScope i32 (call $val_payload (local.get $proto)))
   (let $p i32 (call $scope_parent (call $val_payload (local.get $x))))
   (block $brk (loop $cont
