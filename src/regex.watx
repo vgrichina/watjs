@@ -310,7 +310,7 @@
 (func $re_atom_match (param $p i32) (param $astart i32) (param $aend i32) (param $ch i32) (result i32) (effects)
   (if (i32.lt_s (local.get $ch) (i32.const 0)) (then (return (i32.const 0))))
   (let $c i32 (i32.load8_u (i32.add (local.get $p) (local.get $astart))))
-  (if (i32.eq (local.get $c) (i32.const 46)) (then (return (if i32 (i32.load (i32.const 660)) (then (i32.const 1)) (else (i32.ne (local.get $ch) (i32.const 10)))))))  ;; . (dotAll 's' → matches \n too)
+  (if (i32.eq (local.get $c) (i32.const 46)) (then (return (if i32 (i32.load (i32.const 660)) (then (i32.const 1)) (else (i32.and (i32.ne (local.get $ch) (i32.const 10)) (i32.ne (local.get $ch) (i32.const 13))))))))  ;; . — any char except line terminators \n \r (dotAll 's' → matches them too)
   (if (i32.eq (local.get $c) (i32.const 92)) (then (return (call $re_esc_match (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $astart) (i32.const 1)))) (local.get $ch)))))  ;; \X
   (if (i32.eq (local.get $c) (i32.const 91)) (then (return (call $re_class_match (local.get $p) (i32.add (local.get $astart) (i32.const 1)) (i32.sub (local.get $aend) (i32.const 1)) (local.get $ch)))))  ;; [..]
   (call $re_eqc (local.get $ch) (local.get $c)))
