@@ -10238,6 +10238,19 @@
   (if (i32.load (i32.const 184)) (then (i32.store (i32.load (i32.const 184)) (local.get $objproto))))  ;; Boolean.prototype
   (if (i32.load (i32.const 308)) (then (i32.store (i32.load (i32.const 308)) (local.get $objproto))))  ;; Date.prototype
   (if (i32.load (i32.const 324)) (then (i32.store (i32.load (i32.const 324)) (local.get $objproto))))  ;; RegExp.prototype
+  ;; the remaining base prototypes also have [[Prototype]] === Object.prototype (they were built with a
+  ;; null parent); without this Object.getPrototypeOf(Map.prototype) etc. was null instead of Object.prototype.
+  (if (i32.load (i32.const 344)) (then (i32.store (i32.load (i32.const 344)) (local.get $objproto))))  ;; Map.prototype
+  (if (i32.load (i32.const 348)) (then (i32.store (i32.load (i32.const 348)) (local.get $objproto))))  ;; Set.prototype
+  (if (i32.load (i32.const 480)) (then (i32.store (i32.load (i32.const 480)) (local.get $objproto))))  ;; WeakMap.prototype
+  (if (i32.load (i32.const 484)) (then (i32.store (i32.load (i32.const 484)) (local.get $objproto))))  ;; WeakSet.prototype
+  (if (i32.load (i32.const 488)) (then (i32.store (i32.load (i32.const 488)) (local.get $objproto))))  ;; Iterator.prototype
+  (if (i32.load (i32.const 508)) (then (i32.store (i32.load (i32.const 508)) (local.get $objproto))))  ;; DataView.prototype
+  (if (i32.load (i32.const 524)) (then (i32.store (i32.load (i32.const 524)) (local.get $objproto))))  ;; ArrayBuffer.prototype
+  (if (i32.load (i32.const 528)) (then (i32.store (i32.load (i32.const 528)) (local.get $objproto))))  ;; %TypedArray%.prototype
+  (if (i32.load (i32.const 608)) (then (i32.store (i32.load (i32.const 608)) (local.get $objproto))))  ;; Promise.prototype
+  (if (i32.load (i32.const 624)) (then (i32.store (i32.load (i32.const 624)) (local.get $objproto))))  ;; BigInt.prototype
+  (if (i32.load (i32.const 636)) (then (i32.store (i32.load (i32.const 636)) (local.get $objproto))))  ;; Symbol.prototype
   (i32.store (local.get $mo) (local.get $objproto))  ;; Math object: [[Prototype]] === Object.prototype (it's built before objproto exists)
   (i32.store (local.get $refo) (local.get $objproto))  ;; Reflect: same — built before objproto
   (i32.store (local.get $jo) (local.get $objproto))  ;; JSON: same
