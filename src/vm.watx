@@ -3812,9 +3812,14 @@
             (then (call $throw_type (cstring "TypeError") (cstring "Class constructor cannot be invoked without 'new'")) (set! $sp (local.get $rbase)) (br $disp)))))
         (if (i32.and (i32.eqz (local.get $reuse)) (i32.eqz (i32.and (local.get $cflags) (i32.const 1))))
           (then (call $scope_define (local.get $cns) (cstring "arguments") (call $vm_make_arguments (local.get $cns) (local.get $cfn) (local.get $stack) (local.get $cbase) (local.get $argc)))))
-        ;; non-arrow plain call → new.target is undefined (arrows inherit lexically)
+        ;; non-arrow plain call → new.target is undefined; super() (op 86) propagates the derived
+        ;; class's new.target to the parent constructor (arrows inherit lexically, so skip them).
+        (let $suntgt i64 (call $v_undef))
+        (if (i32.eq (local.get $op) (i32.const 86))
+          (then (let $suntsl i32 (call $scope_find (local.get $scope) (cstring "@@newtarget")))
+            (if (local.get $suntsl) (then (set! $suntgt (i64.load (local.get $suntsl)))))))
         (if (i32.eqz (i32.and (local.get $cflags) (i32.const 2)))
-          (then (call $scope_define (local.get $cns) (cstring "@@newtarget") (call $v_undef))))
+          (then (call $scope_define (local.get $cns) (cstring "@@newtarget") (local.get $suntgt))))
         (if (i32.eqz (i32.and (local.get $cflags) (i32.const 2)))  ;; non-arrow → bind own `this` (OrdinaryCallBindThis: sloppy coerces)
           (then (call $scope_define (local.get $cns) (cstring "this")
             (call $coerce_this
