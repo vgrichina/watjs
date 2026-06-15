@@ -10226,6 +10226,9 @@
   (call $scope_define_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "call") (call $mk_native (i32.const 194) (cstring "call")) (i32.const 12))
   (call $scope_define_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "apply") (call $mk_native (i32.const 195) (cstring "apply")) (i32.const 12))
   (call $scope_define_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "bind") (call $mk_native (i32.const 153) (cstring "bind")) (i32.const 12))
+  ;; Function.prototype.constructor === Function {W:t,E:f,C:t} — else every fn.constructor falls through
+  ;; to Object.prototype.constructor (=== Object), breaking `fn.constructor === Function`.
+  (call $scope_define_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "constructor") (local.get $funcf) (i32.const 12))
   ;; Function.prototype.caller / .arguments — own accessors whose get AND set are the SAME shared
   ;; %ThrowTypeError% function (id 510); {enumerable:false, configurable:true}.
   (let $tte i64 (call $mk_native (i32.const 510) (cstring "")))
