@@ -324,6 +324,16 @@
   (if (i32.eq (local.get $c) (i32.const 92))  ;; '\'
     (then
       (let $bnc i32 (call $re_pb (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 1))))
+      ;; \b / \B word-boundary — zero-width assertion (NOT a char match). A boundary exists where the
+      ;; word-ness of the char before spos differs from the char at spos (out-of-range counts as non-word).
+      (if (i32.or (i32.eq (local.get $bnc) (i32.const 98)) (i32.eq (local.get $bnc) (i32.const 66)))  ;; 'b' / 'B'
+        (then
+          (let $wbb i32 (if i32 (i32.gt_s (local.get $spos) (i32.const 0)) (then (call $re_is_word (i32.load8_u (i32.add (local.get $s) (i32.sub (local.get $spos) (i32.const 1)))))) (else (i32.const 0))))
+          (let $wba i32 (if i32 (i32.lt_s (local.get $spos) (local.get $slen)) (then (call $re_is_word (i32.load8_u (i32.add (local.get $s) (local.get $spos))))) (else (i32.const 0))))
+          (let $atb i32 (i32.ne (local.get $wbb) (local.get $wba)))  ;; is a boundary here?
+          (if (i32.eq (local.get $atb) (i32.eq (local.get $bnc) (i32.const 98)))  ;; \b wants boundary, \B wants non-boundary
+            (then (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2)) (local.get $s) (local.get $slen) (local.get $spos))))
+            (else (return (i32.const -1))))))
       (if (i32.and (i32.ge_s (local.get $bnc) (i32.const 49)) (i32.le_s (local.get $bnc) (i32.const 57)))  ;; '1'..'9'
         (then
           (let $br i32 (call $re_match_backref (i32.sub (local.get $bnc) (i32.const 48)) (local.get $s) (local.get $slen) (local.get $spos)))
