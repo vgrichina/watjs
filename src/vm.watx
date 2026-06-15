@@ -3394,7 +3394,7 @@
     (call $next_token)
     (br $scan))))
 
-(func $vm_compile_prog (param $ptr i32) (param $len i32) (result i32) (effects)
+(func $vm_compile_prog (param $ptr i32) (param $len i32) (param $prelude i32) (result i32) (effects)
   (i32.store (i32.const 208) (i32.const 0)) (i32.store (i32.const 216) (i32.const 0))  ;; no enclosing loop
   (i32.store (i32.const 224) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; temp counter, async flag
   (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
@@ -3412,16 +3412,22 @@
   (let $code i32 (call $heap_alloc (i32.add (i32.mul (local.get $len) (i32.const 16)) (i32.const 131072))))
   (call $vm_set_emit_cursor (i32.const 0))
   ;; the Error-hierarchy prelude is compiled into the same buffer first, so its
-  ;; constructors exist (as VM functions) before user code runs (new ReferenceError, etc.)
-  (let $pre i32 (call $prelude_src))
-  (call $set_src (i32.add (local.get $pre) (i32.const 4)) (call $str_len (local.get $pre)))
-  (call $lex_init)
-  (call $next_token)
-  (block $pe (loop $pl
-    (br_if $pe (i32.eq (call $tok_kind) (i32.const 0)))
-    (br_if $pe (call $err))
-    (call $vm_c_stmt (local.get $code))
-    (br $pl)))
+  ;; constructors exist (as VM functions) before user code runs (new ReferenceError, etc.).
+  ;; ONLY for a fresh top-level program ($prelude=1). A nested eval / Function-ctor ($prelude=0)
+  ;; runs in the caller's scope, which already chains to the global prelude bindings — re-running
+  ;; it there REDEFINED Error/TypeError/… (breaking `TypeError===TypeError` across an eval) and
+  ;; recompiled ~100 lines per call. Skip it for nested eval.
+  (if (local.get $prelude)
+    (then
+      (let $pre i32 (call $prelude_src))
+      (call $set_src (i32.add (local.get $pre) (i32.const 4)) (call $str_len (local.get $pre)))
+      (call $lex_init)
+      (call $next_token)
+      (block $pe (loop $pl
+        (br_if $pe (i32.eq (call $tok_kind) (i32.const 0)))
+        (br_if $pe (call $err))
+        (call $vm_c_stmt (local.get $code))
+        (br $pl)))))
   ;; program-level "use strict" directive → the whole program (and its functions,
   ;; incl. hoisted ones) is strict. Detect BEFORE vm_hoist so hoisted fns inherit it.
   (call $set_src (local.get $ptr) (local.get $len))
@@ -5387,7 +5393,7 @@
   (call $set_err (i32.const 0))
   (i32.store (i32.const 400) (i32.const 0))  ;; "surfaceable syntax error" flag (set only by intentional early-error detections)
   (i32.store (i32.const 704) (i32.const 0))  ;; fresh microtask queue (heap_reset freed any prior array)
-  (let $ctx i32 (call $vm_new (call $vm_compile_prog (local.get $ptr) (local.get $len))))
+  (let $ctx i32 (call $vm_new (call $vm_compile_prog (local.get $ptr) (local.get $len) (i32.const 1))))  ;; top-level: build the Error prelude
   (if (call $err)
     (then
       ;; Surface ONLY an intentional SyntaxError (reg 400). An incidental compile
@@ -5420,7 +5426,7 @@
 (func $vm_eval_str (param $s i32) (result i64) (effects)
   (let $scope i32 (call $cur_scope))
   (i64.store (i32.const 288) (call $v_undef))  ;; reset completion register
-  (let $code i32 (call $vm_compile_prog (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s))))
+  (let $code i32 (call $vm_compile_prog (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)) (i32.const 0)))  ;; nested eval: reuse the caller's existing prelude bindings
   (if (call $err) (then (return (call $v_undef))))  ;; SyntaxError → propagates
   (let $ctx i32 (call $heap_alloc (i32.const 40)))
   (i32.store (local.get $ctx) (local.get $code))
