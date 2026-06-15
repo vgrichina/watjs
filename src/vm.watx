@@ -1999,7 +1999,7 @@
 (func $vm_emit_dstr_store (param $code i32) (param $name i32) (effects)
   (if (i32.load (i32.const 676))
     (then (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $name)))
-    (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $name)))))
+    (else (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $name)))))  ;; declarator mode: DEFINIT binds in the CURRENT scope (STOREVAR would walk up and clobber an outer/global)
 
 (func $vm_c_destructure_param (param $code i32) (param $srcTmp i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [ array pattern ] — via iterator protocol
