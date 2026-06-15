@@ -1458,10 +1458,12 @@
           (call $vm_patch (local.get $code) (local.get $eyend))
           (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; result
           (return)))
-      ;; yield [expr] — newline after `yield` (restricted production) or a token that can't start an expr → yield undefined
+      ;; yield [expr] — newline after `yield` (restricted production) or a token that can't start an expr → yield undefined.
+      ;; `:` (37) is included: a bare `yield` as a ternary branch (`c ? yield : yield`) must NOT swallow the
+      ;; `:` and else-branch as its operand.
       (if (i32.or (call $nl_before) (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 16))
             (i32.or (i32.eq (call $tok_kind) (i32.const 20)) (i32.or (i32.eq (call $tok_kind) (i32.const 18))
-            (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eq (call $tok_kind) (i32.const 0))))))))
+            (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.or (i32.eq (call $tok_kind) (i32.const 37)) (i32.eq (call $tok_kind) (i32.const 0)))))))))
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)))  ;; yield undefined
         (else (call $vm_c_expr (local.get $code))))
       (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD → resume value = expression result
