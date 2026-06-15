@@ -397,12 +397,33 @@
 ;; property-key coercion: a symbol → its internal key string; else ToString.
 ;; ToPropertyKey: ToPrimitive(string) then — if the result is a Symbol, use its key (NOT ToString,
 ;; which would throw); else ToString. Handles an object whose toString/@@toPrimitive returns a Symbol.
+;; Record the identity of a symbol the first time it is used as a property key: internal key → the
+;; symbol value. getOwnPropertySymbols / Reflect.ownKeys then return THIS object rather than a freshly
+;; minted one, so SameValue holds (and the original description survives). First write wins — a user
+;; symbol's key is unique, and a well-known symbol's canonical value is the one registered earliest.
+(func $sym_register (param $v i64) (effects)
+  (let $sreg i32 (i32.load (i32.const 752)))
+  (if (i32.eqz (local.get $sreg)) (then (return)))
+  (let $sk i32 (call $sym_key (local.get $v)))
+  (if (call $scope_find_local (local.get $sreg) (local.get $sk)) (then (return)))
+  (call $scope_define (local.get $sreg) (local.get $sk) (local.get $v)))
+
+;; Recover the symbol value previously registered for an internal "@@sym:"/"@@symfor:" key. Falls back
+;; to a fresh symbol (legacy behaviour) for any key never seen as a live key.
+(func $sym_from_key (param $key i32) (result i64) (effects)
+  (let $sreg i32 (i32.load (i32.const 752)))
+  (if (local.get $sreg)
+    (then
+      (let $sslot i32 (call $scope_find_local (local.get $sreg) (local.get $key)))
+      (if (local.get $sslot) (then (return (i64.load (local.get $sslot)))))))
+  (call $make_symbol (local.get $key) (local.get $key)))
+
 (func $to_prop_key (param $v i64) (result i32) (effects)
-  (if (call $is_symbol (local.get $v)) (then (return (call $sym_key (local.get $v)))))
+  (if (call $is_symbol (local.get $v)) (then (call $sym_register (local.get $v)) (return (call $sym_key (local.get $v)))))
   (let $p i64 (local.get $v))
   (if (i32.or (call $is_object (local.get $v)) (i32.or (call $is_array (local.get $v)) (call $is_function (local.get $v))))
     (then (set! $p (call $to_primitive_h (local.get $v) (i32.const 2))) (if (call $err) (then (return (i32.const 0))))))  ;; string hint
-  (if (call $is_symbol (local.get $p)) (then (return (call $sym_key (local.get $p)))))
+  (if (call $is_symbol (local.get $p)) (then (call $sym_register (local.get $p)) (return (call $sym_key (local.get $p)))))
   (call $to_str (local.get $p)))
 
 ;; ToPropertyKey returning a VALUE (i64): a Symbol key stays the Symbol — so proxy traps (and any
