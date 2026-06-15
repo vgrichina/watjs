@@ -4182,11 +4182,7 @@
         (set! $bi (i32.add (local.get $bi) (i32.const 1))) (br $bbl)))
       (let $bf i32 (call $heap_alloc (i32.const 40)))
       (i32.store (local.get $bf) (i32.const 1448232540))           ;; bound magic
-      ;; bound .length = max(0, target.length − boundArgsCount)
-      (let $btlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
-      (let $bnp i32 (i32.sub (local.get $btlen) (local.get $bargc)))
-      (if (i32.lt_s (local.get $bnp) (i32.const 0)) (then (set! $bnp (i32.const 0))))
-      (i32.store (i32.add (local.get $bf) (i32.const 8)) (local.get $bnp))   ;; .length (NOT used by call_bound)
+      (i32.store (i32.add (local.get $bf) (i32.const 8)) (i32.const 0))   ;; .length field unused — see the f64 length prop below
       (i32.store (i32.add (local.get $bf) (i32.const 12)) (i32.const 0))  ;; props
       (i64.store (i32.add (local.get $bf) (i32.const 16)) (local.get $bthis))
       (i64.store (i32.add (local.get $bf) (i32.const 24)) (local.get $thisv))
@@ -4198,6 +4194,14 @@
       (let $bnamestr i32 (if i32 (call $is_string (local.get $bnameval)) (then (call $val_payload (local.get $bnameval))) (else (cstring ""))))
       (call $scope_define_attr (call $fn_props (local.get $bf)) (cstring "name")
         (call $mk_str (call $str_concat (cstring "bound ") (local.get $bnamestr))) (i32.const 4))
+      ;; bound .length = max(0, ToIntegerOrInfinity(target.length) − boundArgsCount), as f64 so it can be
+      ;; Infinity or exceed i32 range. Stored as a {C} own "length" prop (read by get_prop before @8).
+      (let $btlenf f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length")))))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $btint f64 (if f64 (f64.ne (local.get $btlenf) (local.get $btlenf)) (then (f64.const 0)) (else (f64.trunc (local.get $btlenf)))))  ;; ToIntegerOrInfinity (NaN→0; ±Inf preserved by trunc)
+      (let $bnpf f64 (f64.sub (local.get $btint) (f64.convert_i32_s (local.get $bargc))))
+      (if (f64.le (local.get $bnpf) (f64.const 0)) (then (set! $bnpf (f64.const 0))))  ;; max(_, +0): also normalizes -0 → +0
+      (call $scope_define_attr (call $fn_props (local.get $bf)) (cstring "length") (call $num (local.get $bnpf)) (i32.const 4))
       (return (call $mk_fn (local.get $bf)))))
   ;; Object.prototype.propertyIsEnumerable(key) — this = the object
   (if (i32.eq (local.get $id) (i32.const 159))
