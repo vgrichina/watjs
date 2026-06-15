@@ -1107,6 +1107,7 @@
                 (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
                 (if (i32.ne (call $tok_kind) (i32.const 16))
                   (then (block $ms2 (loop $ml2
+                    (br_if $ms2 (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')' ends the args (don't parse a phantom extra arg)
                     (if (i32.eq (call $tok_kind) (i32.const 54))
                       (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))
                       (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))
