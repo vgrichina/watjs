@@ -9770,6 +9770,7 @@
   (let $apvalues i64 (call $mk_native (i32.const 97) (cstring "values")))  ;; Array.prototype.values === Array.prototype[Symbol.iterator] (same object)
   (call $scope_define (local.get $ap) (cstring "values") (local.get $apvalues))
   (call $scope_define (local.get $ap) (cstring "@@iterator") (local.get $apvalues))
+  (i64.store (i32.const 756) (local.get $apvalues))  ;; shared array iterator — reused as arguments[@@iterator] so it === [][Symbol.iterator]
   ;; Symbol: real symbol primitives (tag 3). Well-known symbols use sentinel
   ;; internal keys ("@@iterator" etc.) so they double as the property names the
   ;; iteration machinery already looks up.

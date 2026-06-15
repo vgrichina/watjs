@@ -5212,7 +5212,7 @@
   (call $scope_define (local.get $ao) (cstring "@@as") (call $num (f64.convert_i32_s (local.get $cns))))
   (call $scope_define (local.get $ao) (cstring "@@af") (call $num (f64.convert_i32_s (local.get $cfn))))
   (call $scope_define (local.get $ao) (cstring "@@anp") (call $num (f64.convert_i32_s (local.get $anp))))
-  (call $scope_define (local.get $ao) (cstring "@@iterator") (call $mk_native (i32.const 143) (cstring "values")))
+  (call $scope_define_attr (local.get $ao) (cstring "@@iterator") (i64.load (i32.const 756)) (i32.const 12))  ;; arguments[@@iterator] === %Array.prototype.values% (same object as [][Symbol.iterator]); {W,C} non-enumerable
   (call $scope_define_attr (local.get $ao) (cstring "slice") (call $mk_native (i32.const 142) (cstring "slice")) (i32.const 12))  ;; non-standard helper → at least keep it non-enumerable
   (let $i i32 (local.get $anp))  ;; extra (unmapped) args → data props
   (block $e (loop $l
@@ -5233,7 +5233,7 @@
   (call $scope_define (local.get $ao) (cstring "@@as") (call $num (f64.convert_i32_s (local.get $cns))))
   (call $scope_define (local.get $ao) (cstring "@@af") (call $num (f64.convert_i32_s (local.get $cfn))))
   (call $scope_define (local.get $ao) (cstring "@@anp") (call $num (f64.convert_i32_s (local.get $anp))))
-  (call $scope_define (local.get $ao) (cstring "@@iterator") (call $mk_native (i32.const 143) (cstring "values")))
+  (call $scope_define_attr (local.get $ao) (cstring "@@iterator") (i64.load (i32.const 756)) (i32.const 12))  ;; arguments[@@iterator] === %Array.prototype.values% (same object as [][Symbol.iterator]); {W,C} non-enumerable
   (call $scope_define_attr (local.get $ao) (cstring "slice") (call $mk_native (i32.const 142) (cstring "slice")) (i32.const 12))  ;; non-standard helper → at least keep it non-enumerable
   (let $i i32 (local.get $anp))
   (block $e (loop $l
