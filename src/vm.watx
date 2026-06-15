@@ -2713,7 +2713,13 @@
       (if (i32.and (i32.load (i32.const 672)) (call $tok_is_kw (cstring "yield")))  ;; yield-statement only inside a generator; else `yield` is an identifier (expression statement)
         (then
           (call $next_token)
-          (if (call $nl_before)  ;; `yield` [no LineTerminator here] — newline → yield undefined (operand on next line is a separate statement)
+          ;; no operand: a LineTerminator after `yield` (restricted production) OR a token that can't
+          ;; start an expression (`;` `)` `]` `}` `,` EOF) → `yield` with no argument. (Mirrors the
+          ;; yield-EXPRESSION check; without the token cases, `function*(){ yield }` fell through to
+          ;; vm_c_expr on `}` and over-consumed the body's close brace, swallowing later declarations.)
+          (if (i32.or (call $nl_before) (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 16))
+                (i32.or (i32.eq (call $tok_kind) (i32.const 20)) (i32.or (i32.eq (call $tok_kind) (i32.const 18))
+                (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eq (call $tok_kind) (i32.const 0))))))))
             (then
               (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
               (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD undefined
