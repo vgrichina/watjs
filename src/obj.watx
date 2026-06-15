@@ -608,10 +608,16 @@
       (let $fn i32 (call $val_payload (local.get $cont)))
       (let $ks i32 (call $to_prop_key (local.get $key)))
       (if (call $str_eq (local.get $ks) (cstring "__proto__")) (then (return (call $js_get_prototype (local.get $cont)))))  ;; → Function.prototype
-      ;; Function.prototype methods (shared by both engine fn reprs)
-      (if (call $str_eq (local.get $ks) (cstring "call")) (then (return (call $mk_native (i32.const 194) (cstring "call")))))
-      (if (call $str_eq (local.get $ks) (cstring "apply")) (then (return (call $mk_native (i32.const 195) (cstring "apply")))))
-      (if (call $str_eq (local.get $ks) (cstring "bind")) (then (return (call $mk_native (i32.const 153) (cstring "bind")))))
+      ;; Function.prototype methods (shared by both engine fn reprs). Return the STORED
+      ;; Function.prototype prop (mem 336), not a fresh mk_native, so the identity matches
+      ;; Object.getOwnPropertyDescriptor(Function.prototype, "apply").value etc.
+      (if (i32.or (call $str_eq (local.get $ks) (cstring "call")) (i32.or (call $str_eq (local.get $ks) (cstring "apply")) (call $str_eq (local.get $ks) (cstring "bind"))))
+        (then
+          (let $fpm i32 (call $scope_find_local (call $fn_props (call $val_payload (i64.load (i32.const 336)))) (local.get $ks)))
+          (if (local.get $fpm) (then (return (i64.load (local.get $fpm)))))
+          (if (call $str_eq (local.get $ks) (cstring "call")) (then (return (call $mk_native (i32.const 194) (cstring "call")))))
+          (if (call $str_eq (local.get $ks) (cstring "apply")) (then (return (call $mk_native (i32.const 195) (cstring "apply")))))
+          (return (call $mk_native (i32.const 153) (cstring "bind")))))
       ;; Function.prototype 'caller'/'arguments' are %ThrowTypeError% accessors — reading
       ;; them on any function throws (own override is rare and not exercised here).
       (if (i32.or (call $str_eq (local.get $ks) (cstring "caller")) (call $str_eq (local.get $ks) (cstring "arguments")))
