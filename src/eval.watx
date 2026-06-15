@@ -5417,7 +5417,13 @@
       (if (i32.eq (local.get $id) (i32.const 17))  ;; toLowerCase
         (then (return (call $mk_str (call $str_case (local.get $s) (i32.const 0))))))
       (if (i32.eq (local.get $id) (i32.const 18))  ;; toString / valueOf
-        (then (return (call $mk_str (local.get $s)))))
+        (then
+          ;; thisStringValue: `this` must be a String primitive or a String wrapper object (whose
+          ;; unwrapped __prim__ is a string) — anything else throws TypeError (not a coercion).
+          (if (i32.eqz (i32.or (call $is_string (local.get $thisv))
+                        (i32.and (call $is_object (local.get $thisv)) (call $is_string (local.get $self11)))))
+            (then (call $throw_type (cstring "TypeError") (cstring "String.prototype.toString requires that 'this' be a String")) (return (call $v_undef))))
+          (return (call $mk_str (local.get $s)))))
       ;; slice(14) / substring(15)
       (if (i32.or (i32.eq (local.get $id) (i32.const 14)) (i32.eq (local.get $id) (i32.const 15)))
         (then
