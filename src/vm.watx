@@ -109,13 +109,13 @@
 ;; emitted as LOADVAR + CLOSEITER so `return` through a for-of closes its iterator.
 (func $vm_finally_push (param $cur i32) (effects)
   (let $n i32 (i32.load (i32.const 320)))
-  (let $e i32 (i32.add (i32.load (i32.const 340)) (i32.mul (local.get $n) (i32.const 8))))
+  (let $e i32 (i32.add (i32.load (i32.const 772)) (i32.mul (local.get $n) (i32.const 8))))
   (i32.store (local.get $e) (i32.const 0))
   (i32.store (i32.add (local.get $e) (i32.const 4)) (local.get $cur))
   (i32.store (i32.const 320) (i32.add (local.get $n) (i32.const 1))))
 (func $vm_finally_push_iter (param $itname i32) (effects)
   (let $n i32 (i32.load (i32.const 320)))
-  (let $e i32 (i32.add (i32.load (i32.const 340)) (i32.mul (local.get $n) (i32.const 8))))
+  (let $e i32 (i32.add (i32.load (i32.const 772)) (i32.mul (local.get $n) (i32.const 8))))
   (i32.store (local.get $e) (i32.const 1))
   (i32.store (i32.add (local.get $e) (i32.const 4)) (local.get $itname))
   (i32.store (i32.const 320) (i32.add (local.get $n) (i32.const 1))))
@@ -133,7 +133,7 @@
     (set! $i (i32.sub (local.get $i) (i32.const 1)))
     (br_if $e (i32.lt_s (local.get $i) (local.get $base)))
     (i32.store (i32.const 320) (local.get $i))
-    (let $ent i32 (i32.add (i32.load (i32.const 340)) (i32.mul (local.get $i) (i32.const 8))))
+    (let $ent i32 (i32.add (i32.load (i32.const 772)) (i32.mul (local.get $i) (i32.const 8))))
     (if (i32.eq (i32.load (local.get $ent)) (i32.const 1))
       (then  ;; iterator close: LOADVAR itname; CLOSEITER (it.return()) — stack-neutral
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $ent) (i32.const 4))))
@@ -3400,7 +3400,7 @@
   (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
   (i32.store (i32.const 252) (call $heap_alloc (i32.const 2048)))  ;; label-entry stack
-  (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 340) (call $heap_alloc (i32.const 512)))  ;; finally stack (8-byte entries: kind+data)
+  (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 772) (call $heap_alloc (i32.const 512)))  ;; finally stack base (moved 340→772: 340 overlapped the i64 Function.prototype @336-343, so nested eval/Function-ctor corrupted Function.prototype)
   (i32.store (i32.const 360) (i32.const 0))  ;; innermost loop's finally-base
   (i32.store (i32.const 372) (i32.const 0)) (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))  ;; fn-hoist position list
   (i32.store (i32.const 388) (i32.const 0))  ;; compile-time strict-mode flag (lexically inherited)
