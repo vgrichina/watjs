@@ -4301,7 +4301,14 @@
       (if (i32.gt_s (local.get $argc) (i32.const 0))
         (then (set! $fsrc (call $str_concat (local.get $fsrc) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.sub (local.get $argc) (i32.const 1))))))))
       (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "\n})")))
-      (return (call $vm_eval_str (local.get $fsrc)))))
+      ;; a Function-constructor function is created in the GLOBAL scope (its [[Environment]] is the
+      ;; global env), NOT the caller's — so it can't close over the caller's locals, and `this` (sloppy,
+      ;; undefined thisArg) coerces to the global object. Run the eval with cur_scope = global.
+      (let $fnctorsc i32 (call $cur_scope))
+      (call $set_cur_scope (i32.load (i32.const 152)))
+      (let $fnctorres i64 (call $vm_eval_str (local.get $fsrc)))
+      (call $set_cur_scope (local.get $fnctorsc))
+      (return (local.get $fnctorres))))
   (if (i32.eq (local.get $id) (i32.const 158))  ;; Function.prototype empty fn: no-op
     (then (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 451))  ;; Function.prototype[Symbol.hasInstance](V) — OrdinaryHasInstance(this, V)
