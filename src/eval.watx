@@ -5503,6 +5503,16 @@
       (if (call $is_array (local.get $fo))  ;; freeze an array: mark its @12 scope (set_prop enforces)
         (then
           (let $fas i32 (call $arr_props (call $val_payload (local.get $fo))))
+          ;; clear C+W on the array's NAMED own props too (indices are frozen via @@frozen);
+          ;; without this a.foo stayed writable/configurable after freeze.
+          (let $facnt i32 (call $scope_count (local.get $fas)))
+          (let $fai i32 (i32.const 0))
+          (block $faze (loop $fazl
+            (br_if $faze (i32.ge_s (local.get $fai) (local.get $facnt)))
+            (let $fae i32 (i32.add (call $scope_entry (local.get $fas) (local.get $fai)) (i32.const 4)))
+            (i32.store (local.get $fae) (i32.and (i32.load (local.get $fae)) (i32.const -13)))  ;; clear C(4)+W(8)
+            (set! $fai (i32.add (local.get $fai) (i32.const 1)))
+            (br $fazl)))
           (call $scope_define_attr (local.get $fas) (cstring "@@frozen") (call $v_true) (i32.const 0))
           (call $scope_define_attr (local.get $fas) (cstring "@@noext") (call $v_true) (i32.const 0))))
       (if (call $is_function (local.get $fo))  ;; freeze a function: mark its own-prop scope
@@ -5540,7 +5550,17 @@
       (if (call $is_array (local.get $xo))  ;; seal/preventExtensions an array
         (then
           (let $xas i32 (call $arr_props (call $val_payload (local.get $xo))))
-          (if (i32.eq (local.get $id) (i32.const 164)) (then (call $scope_define_attr (local.get $xas) (cstring "@@sealed") (call $v_true) (i32.const 0))))
+          (if (i32.eq (local.get $id) (i32.const 164))  ;; seal → clear C on the array's NAMED own props (indices via @@sealed)
+            (then
+              (let $xacnt i32 (call $scope_count (local.get $xas)))
+              (let $xai i32 (i32.const 0))
+              (block $saze (loop $sazl
+                (br_if $saze (i32.ge_s (local.get $xai) (local.get $xacnt)))
+                (let $xae i32 (i32.add (call $scope_entry (local.get $xas) (local.get $xai)) (i32.const 4)))
+                (i32.store (local.get $xae) (i32.and (i32.load (local.get $xae)) (i32.const -5)))  ;; clear C(4)
+                (set! $xai (i32.add (local.get $xai) (i32.const 1)))
+                (br $sazl)))
+              (call $scope_define_attr (local.get $xas) (cstring "@@sealed") (call $v_true) (i32.const 0))))
           (call $scope_define_attr (local.get $xas) (cstring "@@noext") (call $v_true) (i32.const 0))))
       (if (call $is_function (local.get $xo))  ;; seal/preventExtensions a function
         (then
