@@ -9765,6 +9765,8 @@
   (drop (call $def_native (local.get $g) (cstring "decodeURI") (i32.const 309)))
   (drop (call $def_native (local.get $g) (cstring "parseFloat") (i32.const 51)))
   (let $ref i64 (call $def_native (local.get $g) (cstring "RegExp") (i32.const 100)))
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $ref))) (cstring "@@species")  ;; RegExp[Symbol.species] === RegExp
+    (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
   ;; RegExp.prototype with accessor getters (source/flags/global/…) — reg 324 holds
   ;; its scope so the constructor & literals can link instances as the parent.
   (let $reproto i32 (call $obj_new (i32.const 16)))
@@ -10000,6 +10002,8 @@
   (call $ta_type_setup (call $def_native (local.get $g) (cstring "BigUint64Array") (i32.const 395)) (i32.const 10))
   (let $abf i64 (call $def_native (local.get $g) (cstring "ArrayBuffer") (i32.const 219)))
   (call $set_prop (local.get $abf) (call $mk_str (cstring "isView")) (call $mk_native (i32.const 392) (cstring "isView")))
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $abf))) (cstring "@@species")  ;; ArrayBuffer[Symbol.species] === ArrayBuffer
+    (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
   (let $abproto i32 (call $obj_new (i32.const 8)))
   (i32.store (i32.const 524) (local.get $abproto))
   (call $scope_define_accessor_attr (local.get $abproto) (cstring "byteLength") (call $mk_native (i32.const 390) (cstring "get byteLength")) (call $v_undef) (i32.const 5))
@@ -10248,6 +10252,8 @@
   (call $scope_define_attr (local.get $promproto) (cstring "@@toStringTag") (call $mk_str (cstring "Promise")) (i32.const 4))
   (call $scope_define_attr (local.get $promproto) (cstring "constructor") (local.get $promf) (i32.const 12))
   (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "prototype") (call $mk_obj (local.get $promproto)) (i32.const 0))
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $promf))) (cstring "@@species")  ;; Promise[Symbol.species] === Promise
+    (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "resolve")) (call $mk_native (i32.const 151) (cstring "resolve")))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "reject")) (call $mk_native (i32.const 414) (cstring "reject")))
   (call $set_prop (local.get $promf) (call $mk_str (cstring "all")) (call $mk_native (i32.const 410) (cstring "all")))
