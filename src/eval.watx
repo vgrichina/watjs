@@ -4273,20 +4273,16 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Object.prototype.isPrototypeOf called on null or undefined")) (return (call $v_undef))))
       ;; a primitive `this` (boolean/number/string/symbol) wraps to an object never in V's chain → false
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv))))) (then (return (call $v_false))))
-      (let $ipthis i32 (call $val_payload (local.get $thisv)))
-      ;; v is a function: its chain is Function.prototype → Object.prototype. If `this`
-      ;; IS Function.prototype, it's in the chain; else continue from Object.prototype.
-      (if (call $is_function (local.get $ipv))
-        (then
-          (if (call $strict_eq (local.get $thisv) (i64.load (i32.const 336))) (then (return (call $v_true))))))
-      (let $ipp i32 (i32.const 0))
-      (if (call $is_array (local.get $ipv)) (then (set! $ipp (i32.load (i32.const 160))))
-        (else (if (call $is_object (local.get $ipv)) (then (set! $ipp (call $scope_parent (call $val_payload (local.get $ipv)))))
-          (else (if (call $is_function (local.get $ipv)) (then (set! $ipp (i32.load (i32.const 328)))))))))  ;; fn → continue from Object.prototype
+      ;; walk V's prototype chain via [[GetPrototypeOf]] (the getPrototypeOf trap for a Proxy),
+      ;; comparing each with `this` by SameValue — repeat { P = V.[[GetPrototypeOf]](); if P is
+      ;; null return false; if SameValue(P, this) return true; V = P }.
+      (let $ipcur i64 (local.get $ipv))
       (block $ipe (loop $ipl
-        (br_if $ipe (i32.eqz (local.get $ipp)))
-        (if (i32.eq (local.get $ipp) (local.get $ipthis)) (then (return (call $v_true))))
-        (set! $ipp (call $scope_parent (local.get $ipp)))
+        (let $ipproto i64 (call $js_get_prototype (local.get $ipcur)))
+        (if (call $err) (then (return (call $v_undef))))
+        (if (i32.or (call $is_null (local.get $ipproto)) (call $is_undefined (local.get $ipproto))) (then (return (call $v_false))))
+        (if (call $strict_eq (local.get $ipproto) (local.get $thisv)) (then (return (call $v_true))))
+        (set! $ipcur (local.get $ipproto))
         (br $ipl)))
       (return (call $v_false))))
   ;; Object/Number/Array.prototype.toLocaleString (305) — default locale: delegate to this.toString()
@@ -10010,7 +10006,7 @@
   (call $scope_define (local.get $mapproto) (cstring "delete") (call $mk_native (i32.const 124) (cstring "delete")))
   (call $scope_define (local.get $mapproto) (cstring "forEach") (call $mk_native (i32.const 125) (cstring "forEach")))
   (call $scope_define (local.get $mapproto) (cstring "clear") (call $mk_native (i32.const 127) (cstring "clear")))
-  (call $scope_define_accessor (local.get $mapproto) (cstring "size") (call $mk_native (i32.const 126) (cstring "size")) (call $v_undef))
+  (call $scope_define_accessor (local.get $mapproto) (cstring "size") (call $mk_native (i32.const 126) (cstring "get size")) (call $v_undef))
   (call $scope_define (local.get $mapproto) (cstring "keys") (call $mk_native (i32.const 176) (cstring "keys")))
   (call $scope_define (local.get $mapproto) (cstring "values") (call $mk_native (i32.const 177) (cstring "values")))
   (let $mapentries i64 (call $mk_native (i32.const 178) (cstring "entries")))  ;; Map.prototype.entries === Map.prototype[Symbol.iterator]
@@ -10028,7 +10024,7 @@
   (call $scope_define (local.get $setproto) (cstring "delete") (call $mk_native (i32.const 133) (cstring "delete")))
   (call $scope_define (local.get $setproto) (cstring "forEach") (call $mk_native (i32.const 134) (cstring "forEach")))
   (call $scope_define (local.get $setproto) (cstring "clear") (call $mk_native (i32.const 136) (cstring "clear")))
-  (call $scope_define_accessor (local.get $setproto) (cstring "size") (call $mk_native (i32.const 135) (cstring "size")) (call $v_undef))
+  (call $scope_define_accessor (local.get $setproto) (cstring "size") (call $mk_native (i32.const 135) (cstring "get size")) (call $v_undef))
   (let $setvalues i64 (call $mk_native (i32.const 175) (cstring "values")))  ;; Set.prototype.values === .keys === [Symbol.iterator] (same object, name "values")
   (call $scope_define (local.get $setproto) (cstring "values") (local.get $setvalues))
   (call $scope_define (local.get $setproto) (cstring "keys") (local.get $setvalues))
