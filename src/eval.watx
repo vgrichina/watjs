@@ -5359,7 +5359,18 @@
       (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "String.prototype method called on null or undefined")) (return (call $v_undef))))
       (let $scs i32 (call $to_str (local.get $thisv)))
-      (if (i32.eq (local.get $id) (i32.const 272)) (then (return (call $mk_str (local.get $scs)))))  ;; normalize → unchanged (byte-string)
+      (if (i32.eq (local.get $id) (i32.const 272))  ;; normalize → unchanged (byte-string), but validate the form arg
+        (then
+          (let $nf i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (if (i32.eqz (call $is_undefined (local.get $nf)))
+            (then
+              (if (call $is_symbol (local.get $nf))
+                (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
+              (let $nfs i32 (call $to_str (local.get $nf)))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.eqz (i32.or (call $str_eq (local.get $nfs) (cstring "NFC")) (i32.or (call $str_eq (local.get $nfs) (cstring "NFD")) (i32.or (call $str_eq (local.get $nfs) (cstring "NFKC")) (call $str_eq (local.get $nfs) (cstring "NFKD"))))))
+                (then (call $throw_type (cstring "RangeError") (cstring "The normalization form should be one of NFC, NFD, NFKC, NFKD.")) (return (call $v_undef))))))
+          (return (call $mk_str (local.get $scs)))))  ;; (no real normalization; ASCII/UTF-8 already canonical here)
       (if (i32.eq (local.get $id) (i32.const 270))  ;; concat(...args)
         (then
           (let $cck i32 (i32.const 0))
