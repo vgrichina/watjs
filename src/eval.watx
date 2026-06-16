@@ -1453,6 +1453,8 @@
   (call $scope_define_attr (call $fn_def_scope (local.get $dvf)) (cstring "prototype") (call $mk_obj (local.get $dvproto)) (i32.const 0))
   ;; SharedArrayBuffer (reg 516) — structurally like ArrayBuffer
   (let $sabf i64 (call $def_native (local.get $g) (cstring "SharedArrayBuffer") (i32.const 383)))
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $sabf))) (cstring "@@species")  ;; SharedArrayBuffer[Symbol.species] === SharedArrayBuffer
+    (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
   (let $sabproto i32 (call $obj_new (i32.const 8)))
   (i32.store (i32.const 516) (local.get $sabproto))
   (call $scope_define_accessor_attr (local.get $sabproto) (cstring "byteLength") (call $mk_native (i32.const 384) (cstring "get byteLength")) (call $v_undef) (i32.const 5))
@@ -1468,6 +1470,8 @@
   ;; Object.getPrototypeOf(Int8Array) === %TypedArray%; %TypedArray%.prototype === tap.
   (let $taintr i64 (call $mk_native (i32.const 483) (cstring "TypedArray")))
   (i64.store (i32.const 712) (local.get $taintr))
+  (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $taintr))) (cstring "@@species")  ;; %TypedArray%[Symbol.species] (inherited by Int8Array etc.)
+    (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
   (call $scope_define_attr (call $fn_def_scope (local.get $taintr)) (cstring "prototype") (call $mk_obj (local.get $tap)) (i32.const 0))
   (call $scope_define_attr (local.get $tap) (cstring "constructor") (local.get $taintr) (i32.const 12))
   (call $scope_define_attr (call $fn_def_scope (local.get $taintr)) (cstring "from") (call $mk_native (i32.const 398) (cstring "from")) (i32.const 12))
