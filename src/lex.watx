@@ -386,8 +386,9 @@
             (then
               (let $h1 i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1))))))
               (let $h2 i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 2))))))
-              (call $str_set_byte (local.get $p) (local.get $o) (i32.add (i32.mul (local.get $h1) (i32.const 16)) (local.get $h2)))
-              (set! $o (i32.add (local.get $o) (i32.const 1)))
+              ;; \xHH is the code point U+00HH — emit as UTF-8 (C2 A0 for \xA0, not a lone 0xA0)
+              ;; so chars >= 0x80 are valid UTF-8 (trim/charCodeAt/compare see them correctly), matching \u.
+              (set! $o (call $utf8_emit (local.get $p) (local.get $o) (i32.add (i32.mul (local.get $h1) (i32.const 16)) (local.get $h2))))
               (set! $i (i32.add (local.get $i) (i32.const 2))))
             (else
               (call $str_set_byte (local.get $p) (local.get $o) (call $esc_byte (local.get $n)))
