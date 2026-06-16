@@ -317,7 +317,14 @@
           (let $jk i32 (call $val_payload (call $arr_get (local.get $jkeys) (local.get $ji2))))
           (let $je2 i64 (call $json_revive (local.get $val) (local.get $jk) (local.get $reviver)))
           (if (call $is_undefined (local.get $je2))
-            (then (drop (call $scope_delete (call $val_payload (local.get $val)) (local.get $jk))))
+            ;; reviver returned undefined → [[Delete]], which respects configurability
+            ;; (a non-configurable property is left in place, keeping its value).
+            (then
+              (let $jdsc i32 (call $val_payload (local.get $val)))
+              (let $jdsl i32 (call $scope_find_local (local.get $jdsc) (local.get $jk)))
+              (if (local.get $jdsl)
+                (then (if (call $entry_configurable (local.get $jdsl))
+                  (then (drop (call $scope_delete (local.get $jdsc) (local.get $jk))))))))
             (else (call $set_prop (local.get $val) (call $mk_str (local.get $jk)) (local.get $je2))))
           (set! $ji2 (i32.add (local.get $ji2) (i32.const 1))) (br $jol)))))))
   (let $jav i32 (call $heap_alloc (i32.const 16)))
