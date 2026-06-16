@@ -3440,9 +3440,10 @@
           (then
             (call $next_token)
             (if (i32.eq (call $tok_kind) (i32.const 3))
-              (then
-                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
-                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (call $ident_name))))))))
+              ;; CreateGlobalVarBinding semantics: define undefined ONLY if absent (DEFVAR),
+              ;; so a `var X` hoist never clobbers an already-hoisted `function X` (or an
+              ;; earlier var). STOREVAR (unconditional) overwrote the function with undefined.
+              (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))))))))
     (set! $prevk (local.get $k))
     (call $next_token)
     (br $scan))))
