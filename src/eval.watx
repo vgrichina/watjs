@@ -2707,13 +2707,15 @@
       (return (call $v_undef))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 336)) (i32.le_s (local.get $id) (i32.const 341)))
     (then
-      (let $itnf i64 (call $iter_direct_next (local.get $thisv)))
-      (if (call $err) (then (return (call $v_undef))))
-      ;; methods 337-341 take a callable fn/predicate/reducer as arg0
+      ;; methods 337-341 take a callable fn/predicate/reducer as arg0 — validated
+      ;; (and the source iterator closed via its return()) BEFORE GetIteratorDirect,
+      ;; so an invalid callback never reads `next` and still closes the iterator.
       (let $itfn0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.and (i32.ge_s (local.get $id) (i32.const 337)) (i32.le_s (local.get $id) (i32.const 341)))
         (then (if (i32.eqz (call $is_function (local.get $itfn0)))
-          (then (call $throw_type (cstring "TypeError") (cstring "Iterator helper callback is not a function")) (return (call $v_undef))))))
+          (then (call $throw_type (cstring "TypeError") (cstring "Iterator helper callback is not a function")) (call $iter_close_throw (local.get $thisv)) (return (call $v_undef))))))
+      (let $itnf i64 (call $iter_direct_next (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
       (let $itnb i32 (call $heap_alloc (i32.const 8)))     ;; next() arg buffer (empty)
       (let $itcb i32 (call $heap_alloc (i32.const 24)))    ;; callback arg buffer [a,b,c]
       (let $itcnt i32 (i32.const 0))
@@ -2777,7 +2779,7 @@
       ;; map/filter/flatMap need a callable fn
       (if (i32.or (i32.eq (local.get $id) (i32.const 343)) (i32.or (i32.eq (local.get $id) (i32.const 344)) (i32.eq (local.get $id) (i32.const 347))))
         (then (if (i32.eqz (call $is_function (local.get $iha0)))
-          (then (call $throw_type (cstring "TypeError") (cstring "Iterator helper callback is not a function")) (return (call $v_undef))))))
+          (then (call $throw_type (cstring "TypeError") (cstring "Iterator helper callback is not a function")) (call $iter_close_throw (local.get $thisv)) (return (call $v_undef))))))
       ;; take/drop need a non-negative integer count (NaN/neg → RangeError) — validated BEFORE GetIteratorDirect
       (if (i32.or (i32.eq (local.get $id) (i32.const 345)) (i32.eq (local.get $id) (i32.const 346)))
         (then
