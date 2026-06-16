@@ -183,10 +183,12 @@
 (func $iter_direct_next (param $o i64) (result i64) (effects)
   (if (i32.eqz (call $is_object (local.get $o)))
     (then (call $throw_type (cstring "TypeError") (cstring "Iterator method called on a non-object")) (return (call $v_undef))))
+  ;; GetIteratorDirect: read `next` WITHOUT validating it is callable — a non-callable
+  ;; next is only an error when the iterator is actually stepped (caller calls it,
+  ;; which throws TypeError then). This lets `helper = iter.map(fn)` succeed for a
+  ;; source whose next is non-callable, deferring the TypeError to helper.next().
   (let $nf i64 (call $get_prop (local.get $o) (call $mk_str (cstring "next"))))
   (if (call $err) (then (return (call $v_undef))))
-  (if (i32.eqz (call $is_function (local.get $nf)))
-    (then (call $throw_type (cstring "TypeError") (cstring "iterator.next is not a function")) (return (call $v_undef))))
   (local.get $nf))
 
 ;; IteratorClose(O): if O has a callable `return`, call it (errors from it surface)
