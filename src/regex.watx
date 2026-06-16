@@ -207,7 +207,7 @@
 ;; set reg 272 (ignorecase 'i'), 276 (global 'g'), 644 (sticky 'y'), 652 (multiline 'm'), 660 (dotAll 's')
 (func $re_apply_flags (param $v i64) (effects)
   (i32.store (i32.const 272) (i32.const 0)) (i32.store (i32.const 276) (i32.const 0)) (i32.store (i32.const 644) (i32.const 0))
-  (i32.store (i32.const 652) (i32.const 0)) (i32.store (i32.const 660) (i32.const 0))
+  (i32.store (i32.const 652) (i32.const 0)) (i32.store (i32.const 660) (i32.const 0)) (i32.store (i32.const 668) (i32.const 0))
   (if (call $is_object (local.get $v))
     (then
       (let $sl i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__re_flags__")))
@@ -220,7 +220,8 @@
               (i32.store (i32.const 276) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 103)))
               (i32.store (i32.const 644) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 121)))  ;; 'y' sticky → reg 644
               (i32.store (i32.const 652) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 109)))  ;; 'm' multiline → reg 652
-              (i32.store (i32.const 660) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 115))))))))))  ;; 's' dotAll → reg 660
+              (i32.store (i32.const 660) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 115)))  ;; 's' dotAll → reg 660
+              (i32.store (i32.const 668) (call $str_has_char (call $val_payload (local.get $fv)) (i32.const 100))))))))))  ;; 'd' hasIndices → reg 668
 
 ;; does escape letter `e` match char `ch`?  (ch = -1 means past end)
 (func $re_esc_match (param $e i32) (param $ch i32) (result i32) (effects)
@@ -643,6 +644,28 @@
   (call $mk_obj (local.get $go)))
 (func $re_set_groups (param $sub i32) (param $off i32) (param $rprops i32) (effects)
   (call $scope_define (local.get $rprops) (cstring "groups") (call $re_groups_obj (local.get $sub) (local.get $off))))
+
+;; for the 'd' (hasIndices) flag: the named-group [[start,end]] object (undefined if no named groups)
+(func $re_groups_indices_obj (result i64) (effects)
+  (if (i32.eqz (i32.load (i32.const 604))) (then (return (call $v_undef))))
+  (let $go i32 (call $scope_new (i32.const 0) (i32.const 8)))  ;; null prototype (spec)
+  (let $g i32 (i32.const 1))
+  (block $ge (loop $gl
+    (br_if $ge (i32.gt_s (local.get $g) (i32.load (i32.const 284))))
+    (let $nm i32 (i32.load (i32.add (i32.load (i32.const 600)) (i32.mul (local.get $g) (i32.const 4)))))
+    (if (local.get $nm)
+      (then
+        (let $cb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $g) (i32.const 1)) (i32.const 8))))
+        (let $cs i32 (i32.load (local.get $cb)))
+        (if (i32.lt_s (local.get $cs) (i32.const 0))
+          (then (call $scope_define (local.get $go) (local.get $nm) (call $v_undef)))
+          (else
+            (let $pr i32 (call $arr_new (i32.const 2)))
+            (call $arr_push (local.get $pr) (call $num (f64.convert_i32_s (local.get $cs))))
+            (call $arr_push (local.get $pr) (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $cb) (i32.const 4))))))
+            (call $scope_define (local.get $go) (local.get $nm) (call $mk_arr (local.get $pr)))))))
+    (set! $g (i32.add (local.get $g) (i32.const 1))) (br $gl)))
+  (call $mk_obj (local.get $go)))
 
 ;; match a quantified group: body [gstart,gend), then rest from qend. Count-based
 ;; variable-length repetition (greedy, backtracking on the rep count).

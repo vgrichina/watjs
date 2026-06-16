@@ -7055,6 +7055,31 @@
       (call $scope_define (call $arr_props (local.get $r)) (cstring "index") (call $num (f64.convert_i32_s (local.get $start))))
       (call $scope_define (call $arr_props (local.get $r)) (cstring "input") (call $mk_str (local.get $sub)))
       (call $re_set_groups (local.get $sub) (i32.const 0) (call $arr_props (local.get $r)))
+      ;; 'd' hasIndices flag (reg 668): an .indices array of [start,end] pairs (undefined per unmatched
+      ;; group), with .indices.groups carrying the named-group pairs.
+      (if (i32.load (i32.const 668))
+        (then
+          (let $idxa i32 (call $arr_new (i32.const 2)))
+          (let $im i32 (call $arr_new (i32.const 2)))
+          (call $arr_push (local.get $im) (call $num (f64.convert_i32_s (local.get $start))))
+          (call $arr_push (local.get $im) (call $num (f64.convert_i32_s (local.get $end))))
+          (call $arr_push (local.get $idxa) (call $mk_arr (local.get $im)))
+          (let $ig i32 (i32.const 1))
+          (block $ie (loop $il
+            (br_if $ie (i32.gt_s (local.get $ig) (i32.load (i32.const 284))))
+            (let $icb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $ig) (i32.const 1)) (i32.const 8))))
+            (let $ics i32 (i32.load (local.get $icb)))
+            (if (i32.lt_s (local.get $ics) (i32.const 0))
+              (then (call $arr_push (local.get $idxa) (call $v_undef)))
+              (else
+                (let $ipair i32 (call $arr_new (i32.const 2)))
+                (call $arr_push (local.get $ipair) (call $num (f64.convert_i32_s (local.get $ics))))
+                (call $arr_push (local.get $ipair) (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $icb) (i32.const 4))))))
+                (call $arr_push (local.get $idxa) (call $mk_arr (local.get $ipair)))))
+            (set! $ig (i32.add (local.get $ig) (i32.const 1)))
+            (br $il)))
+          (call $scope_define (call $arr_props (local.get $idxa)) (cstring "groups") (call $re_groups_indices_obj))
+          (call $scope_define (call $arr_props (local.get $r)) (cstring "indices") (call $mk_arr (local.get $idxa)))))
       (return (call $mk_arr (local.get $r)))))
   (if (i32.eq (local.get $id) (i32.const 173))  ;; str.matchAll(regexp) — @@matchAll protocol dispatch
     (then
