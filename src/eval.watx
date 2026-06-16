@@ -3560,13 +3560,20 @@
       (if (i32.eq (local.get $id) (i32.const 315))
         (then
           (if (i32.lt_s (local.get $thisSize) (local.get $otherSize)) (then (return (call $v_false))))
-          (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+          ;; iterate other.keys() LAZILY: at the first element not in `this`, IteratorClose
+          ;; the set-like iterator and return false (don't pre-collect the whole iterator).
+          (let $supit i64 (call $call_val (local.get $keysf) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $other)))
           (if (call $err) (then (return (call $v_undef))))
+          (let $supnf i64 (call $get_prop (local.get $supit) (call $mk_str (cstring "next"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $supnb i32 (call $heap_alloc (i32.const 8)))
           (block $supe (loop $supl
-            (br_if $supe (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
-            (if (i32.lt_s (call $map_find (local.get $osk) (call $arr_get (local.get $ka) (local.get $i))) (i32.const 0))
-              (then (return (call $v_false))))
-            (set! $i (i32.add (local.get $i) (i32.const 1))) (br $supl)))
+            (let $supr i64 (call $call_val (local.get $supnf) (i32.const 0) (local.get $supnb) (local.get $supit)))
+            (if (call $err) (then (return (call $v_undef))))
+            (br_if $supe (call $truthy (call $get_prop (local.get $supr) (call $mk_str (cstring "done")))))
+            (if (i32.lt_s (call $map_find (local.get $osk) (call $norm_zero (call $get_prop (local.get $supr) (call $mk_str (cstring "value"))))) (i32.const 0))
+              (then (call $iter_close (local.get $supit)) (if (call $err) (then (return (call $v_undef)))) (return (call $v_false))))
+            (br $supl)))
           (return (call $v_true))))
       ;; ----- isDisjointFrom (316) -----
       (if (i32.eq (local.get $id) (i32.const 316))
@@ -3580,13 +3587,20 @@
                 (if (call $truthy (local.get $shv)) (then (return (call $v_false))))
                 (set! $i (i32.add (local.get $i) (i32.const 1))) (br $djl1))))
             (else
-              (let $ka i32 (call $iter_collect (local.get $keysf) (local.get $other)))
+              ;; iterate other.keys() LAZILY; at the first element also in `this`,
+              ;; IteratorClose and return false (don't pre-collect the whole iterator).
+              (let $djit i64 (call $call_val (local.get $keysf) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $other)))
               (if (call $err) (then (return (call $v_undef))))
+              (let $djnf i64 (call $get_prop (local.get $djit) (call $mk_str (cstring "next"))))
+              (if (call $err) (then (return (call $v_undef))))
+              (let $djnb i32 (call $heap_alloc (i32.const 8)))
               (block $dje2 (loop $djl2
-                (br_if $dje2 (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
-                (if (i32.ge_s (call $map_find (local.get $osk) (call $arr_get (local.get $ka) (local.get $i))) (i32.const 0))
-                  (then (return (call $v_false))))
-                (set! $i (i32.add (local.get $i) (i32.const 1))) (br $djl2)))))
+                (let $djr i64 (call $call_val (local.get $djnf) (i32.const 0) (local.get $djnb) (local.get $djit)))
+                (if (call $err) (then (return (call $v_undef))))
+                (br_if $dje2 (call $truthy (call $get_prop (local.get $djr) (call $mk_str (cstring "done")))))
+                (if (i32.ge_s (call $map_find (local.get $osk) (call $norm_zero (call $get_prop (local.get $djr) (call $mk_str (cstring "value"))))) (i32.const 0))
+                  (then (call $iter_close (local.get $djit)) (if (call $err) (then (return (call $v_undef)))) (return (call $v_false))))
+                (br $djl2)))))
           (return (call $v_true))))
       (return (call $v_undef))))
   ;; ── WeakMap (ctor 320, set 321, get 322, has 323, delete 324) ──
