@@ -4294,6 +4294,30 @@
     (then
       (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      ;; Array.prototype.toLocaleString: invoke each element's own toLocaleString()
+      ;; (null/undefined/holes → empty), joined with ",".
+      (if (call $is_array (local.get $thisv))
+        (then
+          (let $altp i32 (call $val_payload (local.get $thisv)))
+          (let $alr i32 (cstring ""))
+          (let $aln i32 (call $arr_len (local.get $altp)))
+          (let $ali i32 (i32.const 0))
+          (block $ale (loop $all
+            (br_if $ale (i32.ge_s (local.get $ali) (local.get $aln)))
+            (if (i32.gt_s (local.get $ali) (i32.const 0)) (then (set! $alr (call $str_concat (local.get $alr) (cstring ",")))))
+            (let $ael i64 (call $arr_get (local.get $altp) (local.get $ali)))
+            (if (i32.eqz (i32.or (call $is_null (local.get $ael)) (call $is_undefined (local.get $ael))))
+              (then
+                (let $aem i64 (call $get_prop (local.get $ael) (call $mk_str (cstring "toLocaleString"))))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (i32.eqz (call $is_function (local.get $aem)))
+                  (then (call $throw_type (cstring "TypeError") (cstring "element toLocaleString is not a function")) (return (call $v_undef))))
+                (let $aev i64 (call $call_fn0 (local.get $aem) (local.get $ael)))
+                (if (call $err) (then (return (call $v_undef))))
+                (set! $alr (call $str_concat (local.get $alr) (call $to_str (local.get $aev))))))
+            (set! $ali (i32.add (local.get $ali) (i32.const 1)))
+            (br $all)))
+          (return (call $mk_str (local.get $alr)))))
       (let $tls i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "toString"))))
       (if (call $is_function (local.get $tls)) (then (return (call $call_fn0 (local.get $tls) (local.get $thisv)))))
       (return (call $mk_str (call $to_str (local.get $thisv))))))
@@ -5082,10 +5106,12 @@
       (return (call $mk_str (local.get $bgs)))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 418)) (i32.eq (local.get $id) (i32.const 419)))  ;; BigInt.asIntN(bits,v) / asUintN(bits,v)
     (then
+      ;; ToIndex(bits) first, then ToBigInt(value) — the latter ToPrimitives an object arg.
       (let $anbits i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
-      (let $anv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-      (if (i32.eqz (call $is_bigint (local.get $anv))) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert to a BigInt")) (return (call $v_undef))))
+      (if (call $err) (then (return (call $v_undef))))
       (if (i32.lt_s (local.get $anbits) (i32.const 0)) (then (call $throw_type (cstring "RangeError") (cstring "Invalid bits")) (return (call $v_undef))))
+      (let $anv i64 (call $to_bigint (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $aniv i64 (call $bigint_val (local.get $anv)))
       (if (i32.eqz (local.get $anbits)) (then (return (call $mk_bigint (i64.const 0)))))
       (if (i32.ge_s (local.get $anbits) (i32.const 64)) (then (return (call $mk_bigint (local.get $aniv)))))  ;; 64-bit storage cap
