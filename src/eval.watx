@@ -4999,8 +4999,18 @@
       (return (call $vm_promise (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 152))  ;; promise.then(onFulfilled, onRejected)
     (then (return (call $promise_then (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
-  (if (i32.eq (local.get $id) (i32.const 408))  ;; promise.catch(onRejected) = then(undefined, onRejected)
-    (then (return (call $promise_then (local.get $thisv) (call $v_undef) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+  (if (i32.eq (local.get $id) (i32.const 408))  ;; promise.catch(onRejected) = Invoke(this, "then", [undefined, onRejected])
+    (then
+      ;; spec: ? Invoke(O, "then", …) — call the receiver's OWN `then` (a custom thenable's,
+      ;; not the internal promise_then), so catch works on any object with a then method.
+      (let $pcthen i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "then"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $is_function (local.get $pcthen)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Promise.prototype.catch: then is not a function")) (return (call $v_undef))))
+      (let $pcb i32 (call $heap_alloc (i32.const 16)))
+      (i64.store (local.get $pcb) (call $v_undef))
+      (i64.store (i32.add (local.get $pcb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (return (call $call_val (local.get $pcthen) (i32.const 2) (local.get $pcb) (local.get $thisv)))))
   (if (i32.eq (local.get $id) (i32.const 409))  ;; promise.finally(onFinally)
     (then
       (let $pfin i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
