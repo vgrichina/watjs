@@ -9524,7 +9524,12 @@
 
 (func $fmod (param $x f64) (param $y f64) (result f64) (effects)
   ;; x - trunc(x/y)*y
-  (f64.sub (local.get $x) (f64.mul (f64.trunc (f64.div (local.get $x) (local.get $y))) (local.get $y))))
+  (let $r f64 (f64.sub (local.get $x) (f64.mul (f64.trunc (f64.div (local.get $x) (local.get $y))) (local.get $y))))
+  ;; Spec: when the result is zero its sign is the sign of the dividend
+  ;; (IEEE subtraction yields +0 for v-v, losing the sign for e.g. -1 % 1).
+  (if f64 (f64.eq (local.get $r) (f64.const 0))
+    (then (f64.copysign (f64.const 0) (local.get $x)))
+    (else (local.get $r))))
 
 ;; ── additive: + - ──
 
