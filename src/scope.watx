@@ -32,6 +32,17 @@
   (i64.store (i32.add (local.get $s) (i32.const 16)) (local.get $obj)))
 (func $scope_withobj (param $s i32) (result i64) (effects) (i64.load (i32.add (local.get $s) (i32.const 16))))
 
+;; the nearest var/function scope at or above `s`: skip `with`-scopes (withobj != 0). A `var`
+;; declaration must bind here, NOT in an enclosing `with`-scope (where the binding would be a
+;; shadow lost when the with exits — e.g. `with(o){ var x = 1 }` left x undefined afterward).
+(func $scope_var_target (param $s i32) (result i32) (effects)
+  (block $brk (loop $cont
+    (br_if $brk (i32.eqz (local.get $s)))
+    (br_if $brk (i64.eq (call $scope_withobj (local.get $s)) (i64.const 0)))  ;; not a with-scope → stop
+    (set! $s (call $scope_parent (local.get $s)))
+    (br $cont)))
+  (local.get $s))
+
 (func $scope_parent (param $s i32) (result i32) (effects) (i32.load (local.get $s)))
 (func $scope_count (param $s i32) (result i32) (effects) (i32.load (i32.add (local.get $s) (i32.const 4))))
 (func $scope_entry (param $s i32) (param $i i32) (result i32) (effects)

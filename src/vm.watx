@@ -4533,7 +4533,13 @@
         (let $dinm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))  ;; outer/global of the same name, instead of assigning up the chain)
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
-        (call $scope_define_attr (local.get $scope) (local.get $dinm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 10))  ;; E|W; non-configurable (var/let binding not deletable)
+        ;; if the name resolves on a `with` object, a `var x = e` initializer assigns THERE (PutValue
+        ;; through the object, invoking any setter); otherwise bind in the nearest non-with (var) scope.
+        (drop (call $scope_find (local.get $scope) (local.get $dinm)))
+        (let $dwo i64 (i64.load (i32.const 492)))
+        (if (i64.ne (local.get $dwo) (i64.const 0))
+          (then (call $set_prop (local.get $dwo) (call $mk_str (local.get $dinm)) (i64.load (i32.add (local.get $stack) (local.get $sp)))) (br $disp)))
+        (call $scope_define_attr (call $scope_var_target (local.get $scope)) (local.get $dinm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 10))  ;; E|W; non-configurable. var binds in the nearest non-with scope
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 80))  ;; STOREVAR_STRICT — strict assignment: ReferenceError if the binding is undeclared
       (then
