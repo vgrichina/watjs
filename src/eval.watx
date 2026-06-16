@@ -867,11 +867,11 @@
       (let $cj i32 (i32.const 0))
       (block $cce (loop $ccl (br_if $cce (i32.ge_s (local.get $cj) (local.get $clen)))
         (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $cj))) (local.get $item)))
-          (then (call $cdp (local.get $A) (local.get $n) (call $get_prop (local.get $item) (call $num (f64.convert_i32_s (local.get $cj)))))))
+          (then (call $cdp_throw (local.get $A) (local.get $n) (call $get_prop (local.get $item) (call $num (f64.convert_i32_s (local.get $cj)))))))
         (br_if $cce (call $err))
         (set! $n (i32.add (local.get $n) (i32.const 1)))
         (set! $cj (i32.add (local.get $cj) (i32.const 1))) (br $ccl))))
-    (else (call $cdp (local.get $A) (local.get $n) (local.get $item)) (set! $n (i32.add (local.get $n) (i32.const 1)))))
+    (else (call $cdp_throw (local.get $A) (local.get $n) (local.get $item)) (set! $n (i32.add (local.get $n) (i32.const 1)))))
   (local.get $n))
 
 ;; element get/set for the in-place array methods (fill/copyWithin/reverse): a real
@@ -6781,7 +6781,7 @@
                 (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
                 (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
                 (if (call $truthy (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))  ;; thisArg = 2nd arg
-                  (then (call $cdp (local.get $rA) (local.get $to) (local.get $el)) (set! $to (i32.add (local.get $to) (i32.const 1)))))))
+                  (then (call $cdp_throw (local.get $rA) (local.get $to) (local.get $el)) (set! $to (i32.add (local.get $to) (i32.const 1)))))))
             (br_if $fe (call $err))
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $fl)))
           (return (local.get $rA))))
@@ -8463,8 +8463,9 @@
           (let $si i32 (i32.const 0))
           (block $sre (loop $srl
             (br_if $sre (i32.ge_s (local.get $si) (local.get $sdc)))
-            (if (call $arr_has (local.get $arr) (i32.add (local.get $ss) (local.get $si)))  ;; HasProperty → CreateDataProperty (holes stay absent)
-              (then (call $cdp (local.get $sremA) (local.get $si) (call $arr_get (local.get $arr) (i32.add (local.get $ss) (local.get $si))))))
+            (if (call $arr_has (local.get $arr) (i32.add (local.get $ss) (local.get $si)))  ;; HasProperty → CreateDataPropertyOrThrow (holes stay absent)
+              (then (call $cdp_throw (local.get $sremA) (local.get $si) (call $arr_get (local.get $arr) (i32.add (local.get $ss) (local.get $si))))
+                    (if (call $err) (then (return (call $v_undef))))))
             (set! $si (i32.add (local.get $si) (i32.const 1))) (br $srl)))
           (let $stmp i32 (call $arr_new (i32.const 8)))
           (set! $si (i32.const 0))
@@ -8816,8 +8817,9 @@
           (let $i i32 (local.get $start))
           (block $ce (loop $cl
             (br_if $ce (i32.ge_s (local.get $i) (local.get $end)))
-            (if (call $arr_has (local.get $arr) (local.get $i))  ;; HasProperty → CreateDataProperty; holes stay absent
-              (then (call $cdp (local.get $rA) (local.get $sn) (call $arr_get (local.get $arr) (local.get $i)))))
+            (if (call $arr_has (local.get $arr) (local.get $i))  ;; HasProperty → CreateDataPropertyOrThrow; holes stay absent
+              (then (call $cdp_throw (local.get $rA) (local.get $sn) (call $arr_get (local.get $arr) (local.get $i)))
+                    (if (call $err) (then (return (call $v_undef))))))
             (set! $sn (i32.add (local.get $sn) (i32.const 1)))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $cl)))
@@ -8843,7 +8845,7 @@
                 (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
                 (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
                 (let $res i64 (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))  ;; thisArg = 2nd arg
-                (if (i32.eq (local.get $id) (i32.const 26)) (then (call $cdp (local.get $rA) (local.get $i) (local.get $res))))))  ;; map: define at index (holes stay absent)
+                (if (i32.eq (local.get $id) (i32.const 26)) (then (if (i32.eqz (call $err)) (then (call $cdp_throw (local.get $rA) (local.get $i) (local.get $res))))))))  ;; map: CreateDataPropertyOrThrow at index (holes stay absent)
             (br_if $fe (call $err))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $fl)))
