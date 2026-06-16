@@ -2909,8 +2909,13 @@
             (let $hmapped i64 (call $call_val (local.get $hfn) (i32.const 2) (local.get $hcbuf) (call $v_undef)))
             (if (call $err) (then (call $iter_close_throw (local.get $hsrc)) (return (call $v_undef))))
             (call $scope_define (local.get $hself) (cstring "@@ictr") (call $num (f64.add (local.get $hctr) (f64.const 1))))
+            ;; GetIteratorFlattenable(mapped, reject-primitives): a primitive (incl. a
+            ;; primitive string) is a TypeError — objects/arrays/functions (e.g. new String(...))
+            ;; flatten; primitive strings/numbers/etc. do not.
+            (if (i32.or (call $is_number (local.get $hmapped)) (i32.or (call $is_string (local.get $hmapped)) (i32.or (call $is_boolean (local.get $hmapped)) (i32.or (call $is_null (local.get $hmapped)) (i32.or (call $is_undefined (local.get $hmapped)) (i32.or (call $is_symbol (local.get $hmapped)) (call $is_bigint (local.get $hmapped))))))))
+              (then (call $throw_type (cstring "TypeError") (cstring "Iterator.prototype.flatMap mapper returned a non-object")) (call $iter_close_throw (local.get $hsrc)) (return (call $v_undef))))
             (call $scope_define (local.get $hself) (cstring "@@iinner") (call $vm_get_iter (local.get $hmapped)))
-            (if (call $err) (then (return (call $v_undef))))
+            (if (call $err) (then (call $iter_close_throw (local.get $hsrc)) (return (call $v_undef))))
             (br $hpl)))
         (br $hpl)))
       (return (call $v_undef))))
