@@ -1876,6 +1876,12 @@
   (if (i32.eq (call $tok_kind) (i32.const 15))  ;; '(' — maybe ({pat} = RHS)
     (then
       (let $ps i32 (call $cursor_save))
+      ;; arrow guard: ( ... ) => is an arrow param list, NOT a parenthesized
+      ;; destructuring assignment — bail so the arrow path handles it.
+      (call $vm_skip_balanced)  ;; past matching ')' (cursor is at '(')
+      (let $isarr i32 (i32.eq (call $tok_kind) (i32.const 52)))  ;; '=>' follows?
+      (call $cursor_restore (local.get $ps))
+      (if (local.get $isarr) (then (return (i32.const 0))))
       (call $next_token)  ;; '('
       (if (i32.ne (call $tok_kind) (i32.const 17))  ;; inner must be '{'
         (then (call $cursor_restore (local.get $ps)) (return (i32.const 0))))
