@@ -4441,6 +4441,18 @@
         (let $dvr i64 (call $v_true))  ;; unresolvable reference → true
         (block $dve (loop $dvl
           (br_if $dve (i32.eqz (local.get $dvcur)))
+          ;; `with` scope: a name resolving to the with-object's OWN property is deleted THERE
+          ;; (else `with(o){ delete x }` would skip o.x and delete an outer/global x instead).
+          (let $dvwo i64 (call $scope_withobj (local.get $dvcur)))
+          (if (i32.and (i64.ne (local.get $dvwo) (i64.const 0)) (call $is_object (local.get $dvwo)))
+            (then
+              (let $dvws i32 (call $scope_find_local (call $val_payload (local.get $dvwo)) (local.get $dvn)))
+              (if (local.get $dvws)
+                (then
+                  (if (call $entry_configurable (local.get $dvws))
+                    (then (drop (call $scope_delete (call $val_payload (local.get $dvwo)) (local.get $dvn))) (set! $dvr (call $v_true)))
+                    (else (set! $dvr (call $v_false))))
+                  (br $dve)))))
           (let $dvslot i32 (call $scope_find_local (local.get $dvcur) (local.get $dvn)))
           (if (local.get $dvslot)
             (then
