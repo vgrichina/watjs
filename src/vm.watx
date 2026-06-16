@@ -336,6 +336,36 @@
         (then (call $throw_type (cstring "TypeError") (cstring "[Symbol.asyncIterator] is not a function")) (return (call $v_undef))))))
   (call $vm_get_iter (local.get $v)))
 
+;; Template raw-value line-terminator normalization (TRV): <CR> and <CRLF> both
+;; become a single <LF>. Returns a fresh Str of the normalized bytes.
+(func $tmpl_norm (param $src i32) (param $len i32) (result i32) (effects)
+  (let $p i32 (call $str_alloc (local.get $len)))
+  (let $i i32 (i32.const 0))
+  (let $o i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $len)))
+    (let $c i32 (i32.load8_u (i32.add (local.get $src) (local.get $i))))
+    (if (i32.eq (local.get $c) (i32.const 13))  ;; CR (and CRLF) → LF
+      (then
+        (call $str_set_byte (local.get $p) (local.get $o) (i32.const 10))
+        (set! $o (i32.add (local.get $o) (i32.const 1)))
+        (if (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $len))
+                     (i32.eq (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1)))) (i32.const 10)))
+          (then (set! $i (i32.add (local.get $i) (i32.const 1)))))  ;; eat LF of CRLF
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (br $l)))
+    (call $str_set_byte (local.get $p) (local.get $o) (local.get $c))
+    (set! $o (i32.add (local.get $o) (i32.const 1)))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l)))
+  (i32.store (local.get $p) (local.get $o))
+  (local.get $p))
+
+;; Template cooked value: line-normalize the raw segment, then decode escapes.
+(func $tmpl_cook (param $src i32) (param $len i32) (result i32) (effects)
+  (let $n i32 (call $tmpl_norm (local.get $src) (local.get $len)))
+  (call $decode_str (i32.add (local.get $n) (i32.const 4)) (call $str_len (local.get $n))))
+
 ;; template literal `text ${expr} more` → build a string: PUSH "" then for each
 ;; literal chunk / ${expr} part, concatenate (ADD = js_add does ToString).
 (func $vm_c_template (param $code i32) (effects)
@@ -344,15 +374,19 @@
   (call $next_token)  ;; consume the template token
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (cstring "")))  ;; PUSH ""
   (let $ti i32 (i32.const 0))
-  (let $tlit i32 (cstring ""))
+  (let $tseg i32 (i32.const 0))  ;; raw start of the current literal segment
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $ti) (local.get $tlen)))
     (let $tc i32 (i32.load8_u (i32.add (local.get $tbase) (local.get $ti))))
+    ;; `\X` escapes the next byte — skip both so an escaped `\${` / `` \` `` is not a boundary
+    ;; (the actual escape decoding is done segment-wise by $decode_str below).
+    (if (i32.eq (local.get $tc) (i32.const 92))
+      (then (set! $ti (i32.add (local.get $ti) (i32.const 2))) (br $l)))
     (if (i32.and (i32.eq (local.get $tc) (i32.const 36)) (i32.eq (i32.load8_u (i32.add (local.get $tbase) (i32.add (local.get $ti) (i32.const 1)))) (i32.const 123)))
       (then  ;; ${ expr }
-        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $tlit)))  ;; PUSH chunk
+        ;; decode + push the cooked literal segment [tseg, ti)
+        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $tmpl_cook (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $ti) (local.get $tseg)))))
         (call $vm_emit_op (local.get $code) (i32.const 2))  ;; ADD
-        (set! $tlit (cstring ""))
         (set! $ti (i32.add (local.get $ti) (i32.const 2)))
         (let $tes i32 (local.get $ti))
         (let $tdepth i32 (i32.const 1))
@@ -371,17 +405,12 @@
         (call $vm_c_expr (local.get $code))
         (call $set_src (local.get $tssrc) (local.get $tslen)) (call $cursor_restore (local.get $tscur))
         (call $vm_emit_op (local.get $code) (i32.const 2))  ;; ADD (concat with ToString)
-        (set! $ti (i32.add (local.get $ti) (i32.const 1))))  ;; past }
+        (set! $ti (i32.add (local.get $ti) (i32.const 1)))  ;; past }
+        (set! $tseg (local.get $ti)))  ;; next segment starts after }
       (else
-        (let $tch i32 (local.get $tc))
-        (if (i32.eq (local.get $tc) (i32.const 92))  ;; escape
-          (then (set! $ti (i32.add (local.get $ti) (i32.const 1))) (set! $tch (call $esc_byte (i32.load8_u (i32.add (local.get $tbase) (local.get $ti)))))))
-        (let $cs i32 (call $str_alloc (i32.const 1)))
-        (call $str_set_byte (local.get $cs) (i32.const 0) (local.get $tch))
-        (set! $tlit (call $str_concat (local.get $tlit) (local.get $cs)))
         (set! $ti (i32.add (local.get $ti) (i32.const 1)))))
     (br $l)))
-  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $tlit)))  ;; trailing chunk
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $tmpl_cook (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $tlen) (local.get $tseg)))))  ;; trailing chunk
   (call $vm_emit_op (local.get $code) (i32.const 2)))  ;; ADD
 
 ;; tagged template `tag`a${x}b`` — the tag fn is already on the stack. Builds the
@@ -396,16 +425,18 @@
   (let $subs i32 (call $heap_alloc (i32.const 256)))  ;; substitution-expr substrings
   (let $nsub i32 (i32.const 0))
   (let $ti i32 (i32.const 0))
-  (let $lit i32 (cstring ""))
-  (let $rawlit i32 (cstring ""))
+  (let $tseg i32 (i32.const 0))  ;; raw start of the current literal segment
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $ti) (local.get $tlen)))
     (let $tc i32 (i32.load8_u (i32.add (local.get $tbase) (local.get $ti))))
+    ;; `\X` escapes the next byte — skip both so an escaped `\${` is not a boundary
+    ;; (cooked decoding is done segment-wise by $decode_str; raw keeps bytes verbatim).
+    (if (i32.eq (local.get $tc) (i32.const 92))
+      (then (set! $ti (i32.add (local.get $ti) (i32.const 2))) (br $l)))
     (if (i32.and (i32.eq (local.get $tc) (i32.const 36)) (i32.eq (i32.load8_u (i32.add (local.get $tbase) (i32.add (local.get $ti) (i32.const 1)))) (i32.const 123)))
       (then  ;; ${ expr } — close the current part, capture the expr
-        (call $arr_push (local.get $cooked) (call $mk_str (local.get $lit)))
-        (call $arr_push (local.get $raw) (call $mk_str (local.get $rawlit)))
-        (set! $lit (cstring "")) (set! $rawlit (cstring ""))
+        (call $arr_push (local.get $cooked) (call $mk_str (call $tmpl_cook (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $ti) (local.get $tseg)))))
+        (call $arr_push (local.get $raw) (call $mk_str (call $tmpl_norm (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $ti) (local.get $tseg)))))
         (set! $ti (i32.add (local.get $ti) (i32.const 2)))
         (let $tes i32 (local.get $ti))
         (let $tdepth i32 (i32.const 1))
@@ -418,24 +449,13 @@
           (br $el)))
         (i32.store (i32.add (local.get $subs) (i32.mul (local.get $nsub) (i32.const 4))) (call $str_from_src (i32.add (local.get $tbase) (local.get $tes)) (i32.sub (local.get $ti) (local.get $tes))))
         (set! $nsub (i32.add (local.get $nsub) (i32.const 1)))
-        (set! $ti (i32.add (local.get $ti) (i32.const 1))))  ;; past }
+        (set! $ti (i32.add (local.get $ti) (i32.const 1)))  ;; past }
+        (set! $tseg (local.get $ti)))  ;; next segment starts after }
       (else
-        (if (i32.eq (local.get $tc) (i32.const 92))
-          (then  ;; escape: cooked gets esc_byte(next); raw keeps '\' + next verbatim
-            (set! $ti (i32.add (local.get $ti) (i32.const 1)))
-            (let $nx i32 (i32.load8_u (i32.add (local.get $tbase) (local.get $ti))))
-            (let $cs i32 (call $str_alloc (i32.const 1))) (call $str_set_byte (local.get $cs) (i32.const 0) (call $esc_byte (local.get $nx)))
-            (set! $lit (call $str_concat (local.get $lit) (local.get $cs)))
-            (let $rs i32 (call $str_alloc (i32.const 2))) (call $str_set_byte (local.get $rs) (i32.const 0) (i32.const 92)) (call $str_set_byte (local.get $rs) (i32.const 1) (local.get $nx))
-            (set! $rawlit (call $str_concat (local.get $rawlit) (local.get $rs))))
-          (else
-            (let $cs i32 (call $str_alloc (i32.const 1))) (call $str_set_byte (local.get $cs) (i32.const 0) (local.get $tc))
-            (set! $lit (call $str_concat (local.get $lit) (local.get $cs)))
-            (set! $rawlit (call $str_concat (local.get $rawlit) (local.get $cs)))))
         (set! $ti (i32.add (local.get $ti) (i32.const 1)))))
     (br $l)))
-  (call $arr_push (local.get $cooked) (call $mk_str (local.get $lit)))  ;; trailing part
-  (call $arr_push (local.get $raw) (call $mk_str (local.get $rawlit)))
+  (call $arr_push (local.get $cooked) (call $mk_str (call $tmpl_cook (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $tlen) (local.get $tseg)))))  ;; trailing part
+  (call $arr_push (local.get $raw) (call $mk_str (call $tmpl_norm (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $tlen) (local.get $tseg)))))
   (call $scope_define (call $arr_props (local.get $cooked)) (cstring "raw") (call $mk_arr (local.get $raw)))
   ;; tag fn is on the stack; push the strings array (arg0) then each substitution
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_arr (local.get $cooked)))
