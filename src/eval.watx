@@ -5510,6 +5510,15 @@
   (if (i32.eq (local.get $id) (i32.const 139))  ;; Object.freeze(o) → mark @@frozen, return o
     (then
       (let $fo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; a Proxy freezes via its traps: SetIntegrityLevel calls [[PreventExtensions]]
+      ;; (the preventExtensions trap), which may throw or return false.
+      (if (call $is_proxy (local.get $fo))
+        (then
+          (let $fpk i32 (call $prevext_proxy (local.get $fo)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.eqz (local.get $fpk))
+            (then (call $throw_type (cstring "TypeError") (cstring "Object.freeze: [[PreventExtensions]] returned false")) (return (call $v_undef))))
+          (return (local.get $fo))))
       (if (call $is_object (local.get $fo))
         (then
           (let $fsc i32 (call $val_payload (local.get $fo)))
@@ -5549,12 +5558,14 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 162)) (i32.eq (local.get $id) (i32.const 164)))
     (then
       (let $xo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.and (i32.eq (local.get $id) (i32.const 162)) (call $is_proxy (local.get $xo)))
+      ;; preventExtensions(162) and seal(164) both route a Proxy through its
+      ;; [[PreventExtensions]] trap (which may throw or return false).
+      (if (call $is_proxy (local.get $xo))
         (then
           (let $xok i32 (call $prevext_proxy (local.get $xo)))
           (if (call $err) (then (return (call $v_undef))))
           (if (i32.eqz (local.get $xok))
-            (then (call $throw_type (cstring "TypeError") (cstring "Object.preventExtensions: [[PreventExtensions]] returned false")) (return (call $v_undef))))
+            (then (call $throw_type (cstring "TypeError") (cstring "[[PreventExtensions]] returned false")) (return (call $v_undef))))
           (return (local.get $xo))))
       (if (call $is_object (local.get $xo))
         (then
