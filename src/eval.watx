@@ -264,10 +264,15 @@
           (let $frut i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
           (if (i32.eqz (call $weakly_holdable (local.get $frut)))
             (then (call $throw_type (cstring "TypeError") (cstring "FinalizationRegistry.unregister: token cannot be held weakly")) (return (call $v_undef))))
-          (let $fridx i32 (call $map_find (local.get $frtok) (local.get $frut)))
-          (if (i32.lt_s (local.get $fridx) (i32.const 0)) (then (return (call $v_false))))
-          (call $arr_remove (local.get $frtok) (local.get $fridx))
-          (return (call $v_true))))))
+          ;; remove EVERY cell whose unregisterToken SameValue-matches; true iff ≥1 removed
+          (let $frrem i32 (i32.const 0))
+          (block $frue (loop $frul
+            (let $fridx i32 (call $map_find (local.get $frtok) (local.get $frut)))
+            (br_if $frue (i32.lt_s (local.get $fridx) (i32.const 0)))
+            (call $arr_remove (local.get $frtok) (local.get $fridx))
+            (set! $frrem (i32.const 1))
+            (br $frul)))
+          (return (if i64 (local.get $frrem) (then (call $v_true)) (else (call $v_false))))))))
   (call $v_undef))
 
 (func $iter_helper_new (param $src i64) (param $srcnext i64) (param $kind i32) (param $fn i64) (param $n f64) (result i64) (effects)
