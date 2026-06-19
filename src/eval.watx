@@ -9062,25 +9062,38 @@
   ;; NaN exponent → NaN; NaN base with non-zero exponent → NaN
   (if (f64.ne (local.get $y) (local.get $y)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
   (if (f64.ne (local.get $x) (local.get $x)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
-  ;; non-integer or out-of-range exponent: no transcendentals here — handle a few
-  ;; limits, else NaN. Critically, never i32.trunc an Inf/huge value (it traps).
+  ;; ±Infinity exponent → limit behavior: |x|>1 → (y>0?Inf:0); |x|<1 → (y>0?0:Inf);
+  ;; |x|==1 → NaN (1^±Inf and (-1)^±Inf are NaN).
+  (if (f64.eq (f64.abs (local.get $y)) (f64.div (f64.const 1) (f64.const 0)))
+    (then
+      (let $ax0 f64 (f64.abs (local.get $x)))
+      (return (if f64 (f64.gt (local.get $ax0) (f64.const 1))
+        (then (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.div (f64.const 1) (f64.const 0))) (else (f64.const 0))))
+        (else (if f64 (f64.lt (local.get $ax0) (f64.const 1))
+          (then (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.const 0)) (else (f64.div (f64.const 1) (f64.const 0)))))
+          (else (f64.div (f64.const 0) (f64.const 0)))))))))
+  ;; -Infinity base with a FINITE exponent: magnitude is +Inf (y>0) / +0 (y<0),
+  ;; and the sign is negative iff y is an odd integer. (+Infinity base falls through
+  ;; to exp/log or the multiply loop, both of which give the right answer.)
+  (if (f64.eq (local.get $x) (f64.neg (f64.div (f64.const 1) (f64.const 0))))
+    (then
+      (let $imag f64 (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.div (f64.const 1) (f64.const 0))) (else (f64.const 0))))
+      (let $iodd i32 (i32.and (f64.eq (local.get $y) (f64.trunc (local.get $y))) (f64.ne (f64.sub (f64.abs (local.get $y)) (f64.mul (f64.const 2) (f64.trunc (f64.div (f64.abs (local.get $y)) (f64.const 2))))) (f64.const 0))))
+      (return (if f64 (local.get $iodd) (then (f64.neg (local.get $imag))) (else (local.get $imag))))))
+  ;; finite NON-integer exponent (or an integer too large for the multiply loop):
+  ;; |x|^y = exp(y·log|x|). A negative base needs an integer exponent (else NaN).
+  ;; Critically, never i32.trunc an Inf/huge value (it traps).
   (if (i32.or (f64.ne (local.get $y) (f64.trunc (local.get $y))) (f64.ge (f64.abs (local.get $y)) (f64.const 1073741824)))
     (then
-      (let $ax f64 (f64.abs (local.get $x)))
-      (return (if f64 (f64.gt (local.get $ax) (f64.const 1))
-        (then (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.div (f64.const 1) (f64.const 0))) (else (f64.const 0))))  ;; |x|>1
-      (else (if f64 (f64.lt (local.get $ax) (f64.const 1))
-        (then (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.const 0)) (else (f64.div (f64.const 1) (f64.const 0)))))  ;; |x|<1
-        ;; |x|==1: NaN only for ±Infinity exponent (spec). For finite y: 1^y==1;
-        ;; (-1)^y == 1 (even) / -1 (odd) for integer y, NaN for non-integer y.
-        (else (if f64 (f64.eq (f64.abs (local.get $y)) (f64.div (f64.const 1) (f64.const 0)))
-          (then (f64.div (f64.const 0) (f64.const 0)))  ;; ±Inf exponent → NaN
-          (else (if f64 (f64.gt (local.get $x) (f64.const 0))
-            (then (f64.const 1))  ;; x==1 → 1
-            (else (if f64 (f64.ne (local.get $y) (f64.trunc (local.get $y)))
-              (then (f64.div (f64.const 0) (f64.const 0)))  ;; (-1)^non-integer → NaN
-              (else (if f64 (f64.eq (f64.sub (f64.abs (local.get $y)) (f64.mul (f64.const 2) (f64.trunc (f64.div (f64.abs (local.get $y)) (f64.const 2))))) (f64.const 0))
-                (then (f64.const 1)) (else (f64.const -1))))))))))))))))  ;; (-1)^even=1, odd=-1
+      (if (f64.eq (local.get $x) (f64.const 0))  ;; ±0 base: y>0 → +0, y<0 → +Inf
+        (then (return (if f64 (f64.gt (local.get $y) (f64.const 0)) (then (f64.const 0)) (else (f64.div (f64.const 1) (f64.const 0)))))))
+      (if (f64.gt (local.get $x) (f64.const 0))
+        (then (return (call $m_exp (f64.mul (local.get $y) (call $m_log (local.get $x)))))))
+      (if (f64.ne (local.get $y) (f64.trunc (local.get $y)))
+        (then (return (f64.div (f64.const 0) (f64.const 0)))))  ;; negative base, non-integer exponent → NaN
+      (let $pmag f64 (call $m_exp (f64.mul (local.get $y) (call $m_log (f64.neg (local.get $x))))))  ;; |x|^y
+      (return (if f64 (f64.eq (f64.sub (f64.abs (local.get $y)) (f64.mul (f64.const 2) (f64.trunc (f64.div (f64.abs (local.get $y)) (f64.const 2))))) (f64.const 0))
+        (then (local.get $pmag)) (else (f64.neg (local.get $pmag)))))))  ;; sign by parity of the integer exponent
   (let $n i32 (i32.trunc_f64_s (f64.abs (local.get $y))))
   (let $r f64 (f64.const 1))
   (let $i i32 (i32.const 0))
