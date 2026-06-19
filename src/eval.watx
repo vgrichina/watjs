@@ -7744,9 +7744,13 @@
       (let $de i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (i32.eqz (i32.or (call $is_object (local.get $ob)) (i32.or (call $is_array (local.get $ob)) (call $is_function (local.get $ob)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object.defineProperties called on non-object")) (return (call $v_undef))))
-      ;; ToObject(Properties): null/undefined → TypeError
+      ;; ToObject(Properties): null/undefined → TypeError; a primitive → its wrapper
+      ;; (e.g. a string's char indices become enumerable keys whose values are NOT
+      ;; descriptor objects, so ToPropertyDescriptor throws).
       (if (i32.or (call $is_null (local.get $de)) (call $is_undefined (local.get $de)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
+        (then (set! $de (call $to_object (local.get $de)))))
       (if (i32.and (call $is_object (local.get $ob)) (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
         (then
           (let $os i32 (call $val_payload (local.get $ob)))
@@ -8148,6 +8152,11 @@
       (let $crd i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (i32.and (i32.gt_s (local.get $argc) (i32.const 1)) (call $is_null (local.get $crd)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert null to object")) (return (call $v_undef))))
+      ;; a non-undefined primitive Properties → its wrapper (e.g. a string's char indices)
+      (if (i32.and (i32.gt_s (local.get $argc) (i32.const 1))
+            (i32.and (i32.eqz (call $is_undefined (local.get $crd)))
+                     (i32.eqz (i32.or (call $is_object (local.get $crd)) (i32.or (call $is_function (local.get $crd)) (call $is_array (local.get $crd)))))))
+        (then (set! $crd (call $to_object (local.get $crd)))))
       (if (i32.or (call $is_object (local.get $crd)) (i32.or (call $is_function (local.get $crd)) (call $is_array (local.get $crd))))
         (then
           ;; Properties own-prop scope by type (object payload / array @12 / fn def-scope)
