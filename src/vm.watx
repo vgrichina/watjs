@@ -1603,9 +1603,23 @@
   (let $savestrict i32 (i32.load (i32.const 388)))
   (let $thisstrict i32 (local.get $savestrict))
   (call $next_token)  ;; consume '{'
-  (if (i32.eq (call $tok_kind) (i32.const 2))  ;; first statement a string literal?
-    (then (if (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict"))
-      (then (set! $thisstrict (i32.const 1))))))
+  ;; scan the WHOLE Directive Prologue (consecutive string-literal statements) for "use
+  ;; strict" — it may follow other directives, not just be the first statement.
+  (block $pe (loop $pl
+    (br_if $pe (i32.ne (call $tok_kind) (i32.const 2)))  ;; not a string literal → prologue ended
+    (let $isus i32 (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict")))
+    (call $next_token)  ;; token after the string literal
+    ;; the string is a directive iff a statement boundary follows: ';' / '}' / EOF /
+    ;; another string / a newline (ASI). An operator on the same line → it's a larger
+    ;; expression, prologue ends.
+    (br_if $pe (i32.eqz (i32.or (call $nl_before)
+      (i32.or (i32.eq (call $tok_kind) (i32.const 21))
+      (i32.or (i32.eq (call $tok_kind) (i32.const 18))
+      (i32.or (i32.eq (call $tok_kind) (i32.const 0))
+              (i32.eq (call $tok_kind) (i32.const 2))))))))
+    (if (local.get $isus) (then (set! $thisstrict (i32.const 1))))
+    (if (i32.eq (call $tok_kind) (i32.const 21)) (then (call $next_token)))  ;; consume ';' if present
+    (br $pl)))
   (call $cursor_restore (local.get $bodycur))  ;; rewind to '{'
   (i32.store (i32.const 388) (local.get $thisstrict))  ;; nested fns inherit this strictness
   ;; strict: a parameter named `eval`/`arguments` is an early SyntaxError
@@ -3496,9 +3510,19 @@
   (call $lex_init)
   (call $set_pos (call $hashbang_len))  ;; skip a leading #! hashbang line
   (call $next_token)
-  (if (i32.eq (call $tok_kind) (i32.const 2))
-    (then (if (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict"))
-      (then (i32.store (i32.const 388) (i32.const 1))))))
+  ;; scan the whole Directive Prologue (not just the first statement) for "use strict".
+  (block $ppe (loop $ppl
+    (br_if $ppe (i32.ne (call $tok_kind) (i32.const 2)))  ;; not a string literal → prologue ended
+    (let $pisus i32 (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict")))
+    (call $next_token)
+    (br_if $ppe (i32.eqz (i32.or (call $nl_before)
+      (i32.or (i32.eq (call $tok_kind) (i32.const 21))
+      (i32.or (i32.eq (call $tok_kind) (i32.const 18))
+      (i32.or (i32.eq (call $tok_kind) (i32.const 0))
+              (i32.eq (call $tok_kind) (i32.const 2))))))))
+    (if (local.get $pisus) (then (i32.store (i32.const 388) (i32.const 1))))
+    (if (i32.eq (call $tok_kind) (i32.const 21)) (then (call $next_token)))
+    (br $ppl)))
   ;; hoist the user program's var declarations (define as undefined up front)
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
