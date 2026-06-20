@@ -861,7 +861,7 @@
 ;; (holes stay absent), else defines it as one element.
 (func $concat_append (param $A i64) (param $n i32) (param $item i64) (result i32) (effects)
   (let $spread i32 (i32.const 0))
-  (if (i32.or (call $is_object (local.get $item)) (call $is_array (local.get $item)))
+  (if (i32.or (call $is_object (local.get $item)) (i32.or (call $is_array (local.get $item)) (call $is_function (local.get $item))))
     (then
       (let $s i64 (call $get_prop (local.get $item) (call $make_symbol (cstring "@@isConcatSpreadable") (cstring "Symbol.isConcatSpreadable"))))
       (if (call $is_undefined (local.get $s))
@@ -6343,7 +6343,7 @@
     (then
       (let $srt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $srraw i64 (call $get_prop (local.get $srt) (call $mk_str (cstring "raw"))))
-      (if (i32.eqz (i32.or (call $is_object (local.get $srraw)) (call $is_array (local.get $srraw))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $srraw)) (i32.or (call $is_array (local.get $srraw)) (call $is_function (local.get $srraw)))))
         (then (call $throw_type (cstring "TypeError") (cstring "String.raw: raw is not object-coercible")) (return (call $v_undef))))
       (let $srn i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $srraw) (call $mk_str (cstring "length"))))))
       (if (i32.lt_s (local.get $srn) (i32.const 0)) (then (set! $srn (i32.const 0))))
