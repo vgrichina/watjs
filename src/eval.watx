@@ -8032,7 +8032,7 @@
         (then
           (call $copy_props_from_proxy (call $mk_obj (local.get $robj)) (local.get $rsrc) (call $val_payload (local.get $rexcl)))
           (return (call $mk_obj (local.get $robj)))))
-      (if (i32.or (call $is_object (local.get $rsrc)) (call $is_array (local.get $rsrc)))
+      (if (i32.or (call $is_object (local.get $rsrc)) (i32.or (call $is_array (local.get $rsrc)) (call $is_function (local.get $rsrc))))
         (then
           (let $rkeys i32 (call $own_enum_keys (local.get $rsrc) (i32.const 0)))
           (let $rn i32 (call $arr_len (local.get $rkeys)))

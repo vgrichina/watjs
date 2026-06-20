@@ -4280,8 +4280,8 @@
         (let $oobj i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left on stack
         (if (call $is_proxy (local.get $osrc))  ;; Proxy source → CopyDataProperties via ownKeys + per-key gopd (enumerable filter)
           (then (call $copy_props_from_proxy (local.get $oobj) (local.get $osrc) (i32.const 0)) (br $disp)))
-        (if (i32.or (call $is_object (local.get $osrc)) (call $is_array (local.get $osrc)))
-          (then  ;; copy own ENUMERABLE keys (own_enum_keys handles arrays + filters non-enum/internal)
+        (if (i32.or (call $is_object (local.get $osrc)) (i32.or (call $is_array (local.get $osrc)) (call $is_function (local.get $osrc))))
+          (then  ;; copy own ENUMERABLE keys (own_enum_keys handles arrays/functions + filters non-enum/internal)
             (let $okeys i32 (call $own_enum_keys (local.get $osrc) (i32.const 0)))
             (let $on i32 (call $arr_len (local.get $okeys)))
             (let $oi i32 (i32.const 0))
