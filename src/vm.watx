@@ -1417,7 +1417,7 @@
     (i32.store (i32.add (local.get $patches) (i32.mul (local.get $np) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 27)))  ;; JMPF_PEEK
     (set! $np (i32.add (local.get $np) (i32.const 1)))
     (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP (discard truthy left)
-    (call $vm_c_cmp (local.get $code))
+    (call $vm_c_bitor (local.get $code))  ;; && RHS is a BitwiseORExpression (| ^ & below it), NOT just a comparison
     (br $l)))
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
