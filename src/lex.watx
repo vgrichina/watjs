@@ -41,21 +41,23 @@
   (local.get $i))
 
 ;; --- cursor save/restore (for loops / function re-scan) ---
-;; A cursor buffer is 32 bytes: POS, TOK_KIND, TOK_START, TOK_LEN (i32), TOK_NUM (f64@16),
-;; BIGINT_FLAG (i32@24). The bigint flag (mem 304) is per-token derived state — without
-;; saving it, a lookahead that re-lexes a later `123n` leaves it set, so the first arg of a
-;; call gets emitted as a BigInt (e.g. f(0, 99n) → arg0 mis-typed bigint).
+;; A cursor buffer is 40 bytes: POS, TOK_KIND, TOK_START, TOK_LEN (i32), TOK_NUM (f64@16),
+;; BIGINT_FLAG (i32@24), BIGINT_VAL (i64@32). The bigint flag (mem 304) AND its exact value
+;; (mem 744) are per-token derived state read at EMIT time — without saving BOTH, a lookahead
+;; that re-lexes a later `123n` leaves them set, so e.g. f(0, 99n) mis-types arg0 as a BigInt,
+;; and `f(1n < 2n)` emits both operands as the last-lexed value (→ 2n<2n=false).
 (func $cursor_store (param $b i32) (effects)
   (i32.store (local.get $b) (call $pos))
   (i32.store (i32.add (local.get $b) (i32.const 4)) (call $tok_kind))
   (i32.store (i32.add (local.get $b) (i32.const 8)) (call $tok_start))
   (i32.store (i32.add (local.get $b) (i32.const 12)) (call $tok_len))
   (f64.store (i32.add (local.get $b) (i32.const 16)) (call $tok_num))
-  (i32.store (i32.add (local.get $b) (i32.const 24)) (i32.load (i32.const 304))))
+  (i32.store (i32.add (local.get $b) (i32.const 24)) (i32.load (i32.const 304)))
+  (i64.store (i32.add (local.get $b) (i32.const 32)) (i64.load (i32.const 744))))
 
 ;; heap-allocated save (persists across iterations; for loop cursors)
 (func $cursor_save (result i32) (effects)
-  (let $b i32 (call $heap_alloc (i32.const 32)))
+  (let $b i32 (call $heap_alloc (i32.const 40)))
   (call $cursor_store (local.get $b))
   (local.get $b))
 
@@ -69,7 +71,8 @@
                  (i32.load (i32.add (local.get $b) (i32.const 8)))
                  (i32.load (i32.add (local.get $b) (i32.const 12))))
   (f64.store (i32.const 32) (f64.load (i32.add (local.get $b) (i32.const 16))))
-  (i32.store (i32.const 304) (i32.load (i32.add (local.get $b) (i32.const 24)))))
+  (i32.store (i32.const 304) (i32.load (i32.add (local.get $b) (i32.const 24))))
+  (i64.store (i32.const 744) (i64.load (i32.add (local.get $b) (i32.const 32)))))
 
 ;; byte at src+pos+offset, or -1 past end
 (func $ch_at (param $off i32) (result i32) (effects)
