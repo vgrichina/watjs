@@ -4951,6 +4951,18 @@
         (let $wb i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $wa i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
         (let $wr i64 (call $v_undef))
+        ;; Full ToNumeric(lhs) THEN ToNumeric(rhs), left-first and ATOMIC per operand
+        ;; (ToPrimitive then keep-BigInt-else-ToNumber): a BigInt WRAPPER (Object(2n)) is
+        ;; seen as BigInt by the mix-check; and a lhs whose ToNumber throws (Symbol) does so
+        ;; BEFORE rhs is coerced (preserves observable evaluation order).
+        (if (i32.or (call $is_object (local.get $wa)) (i32.or (call $is_array (local.get $wa)) (call $is_function (local.get $wa))))
+          (then (set! $wa (call $to_primitive_h (local.get $wa) (i32.const 1))) (if (call $err) (then (br $disp)))))
+        (if (i32.eqz (call $is_bigint (local.get $wa)))
+          (then (set! $wa (call $num (call $to_num (local.get $wa)))) (if (call $err) (then (br $disp)))))
+        (if (i32.or (call $is_object (local.get $wb)) (i32.or (call $is_array (local.get $wb)) (call $is_function (local.get $wb))))
+          (then (set! $wb (call $to_primitive_h (local.get $wb) (i32.const 1))) (if (call $err) (then (br $disp)))))
+        (if (i32.eqz (call $is_bigint (local.get $wb)))
+          (then (set! $wb (call $num (call $to_num (local.get $wb)))) (if (call $err) (then (br $disp)))))
         ;; BigInt bitwise/shift/** (both operands must be BigInt; >>> is not allowed)
         (if (i32.or (call $is_bigint (local.get $wa)) (call $is_bigint (local.get $wb)))
           (then
@@ -4987,6 +4999,18 @@
     (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
     (let $bav i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
     (let $bbv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+    ;; Full ToNumeric(lhs) THEN ToNumeric(rhs), left-first and ATOMIC per operand
+    ;; (ToPrimitive then keep-BigInt-else-ToNumber): a BigInt WRAPPER (Object(1n)) is seen
+    ;; as BigInt by the mix-check; and a lhs whose ToNumber throws (Symbol) does so BEFORE
+    ;; rhs is coerced (preserves observable evaluation order).
+    (if (i32.or (call $is_object (local.get $bav)) (i32.or (call $is_array (local.get $bav)) (call $is_function (local.get $bav))))
+      (then (set! $bav (call $to_primitive_h (local.get $bav) (i32.const 1))) (if (call $err) (then (br $disp)))))
+    (if (i32.eqz (call $is_bigint (local.get $bav)))
+      (then (set! $bav (call $num (call $to_num (local.get $bav)))) (if (call $err) (then (br $disp)))))
+    (if (i32.or (call $is_object (local.get $bbv)) (i32.or (call $is_array (local.get $bbv)) (call $is_function (local.get $bbv))))
+      (then (set! $bbv (call $to_primitive_h (local.get $bbv) (i32.const 1))) (if (call $err) (then (br $disp)))))
+    (if (i32.eqz (call $is_bigint (local.get $bbv)))
+      (then (set! $bbv (call $num (call $to_num (local.get $bbv)))) (if (call $err) (then (br $disp)))))
     ;; BigInt arithmetic (both operands must be BigInt)
     (if (i32.or (call $is_bigint (local.get $bav)) (call $is_bigint (local.get $bbv)))
       (then
