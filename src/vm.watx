@@ -3668,8 +3668,15 @@
     (br $fl)))
   )
 ;; per-instance fields: read the prototype's @@fieldinits and apply to the instance.
+;; Walk the prototype chain BASE-FIRST so a subclass instance also gets its
+;; superclasses' field initializers (a super() call invokes the parent constructor
+;; body but not its field inits), and a subclass field overriding an inherited one
+;; runs last and wins.
 (func $vm_run_field_inits (param $thisobj i64) (param $protoval i64) (effects)
   (if (i32.eqz (call $is_object (local.get $protoval))) (then (return)))
+  (let $parentproto i64 (call $js_get_prototype (local.get $protoval)))
+  (if (call $is_object (local.get $parentproto))
+    (then (call $vm_run_field_inits (local.get $thisobj) (local.get $parentproto))))
   (let $fislot i32 (call $scope_find_local (call $val_payload (local.get $protoval)) (cstring "@@fieldinits")))
   (if (local.get $fislot) (then (call $vm_apply_fields (local.get $thisobj) (i64.load (local.get $fislot))))))
 
