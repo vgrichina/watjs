@@ -9268,6 +9268,7 @@
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 9)) (i32.or (i32.eq (local.get $id) (i32.const 88)) (i32.or (i32.eq (local.get $id) (i32.const 157)) (i32.eq (local.get $id) (i32.const 192))))) (then (return (i32.const 1))))
+  (if (i32.eq (local.get $id) (i32.const 247)) (then (return (i32.const 1))))  ;; BigInt(value) length 1
   ;; Object static methods — length 3: defineProperty(90)
   (if (i32.eq (local.get $id) (i32.const 90)) (then (return (i32.const 3))))
   ;; length 2: assign(80) create(81) defineProperties(160) is(169) setPrototypeOf(243)
@@ -10292,12 +10293,13 @@
   (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "prototype") (call $mk_obj (local.get $promproto)) (i32.const 0))
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $promf))) (cstring "@@species")  ;; Promise[Symbol.species] === Promise
     (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
-  (call $set_prop (local.get $promf) (call $mk_str (cstring "resolve")) (call $mk_native (i32.const 151) (cstring "resolve")))
-  (call $set_prop (local.get $promf) (call $mk_str (cstring "reject")) (call $mk_native (i32.const 414) (cstring "reject")))
-  (call $set_prop (local.get $promf) (call $mk_str (cstring "all")) (call $mk_native (i32.const 410) (cstring "all")))
-  (call $set_prop (local.get $promf) (call $mk_str (cstring "race")) (call $mk_native (i32.const 411) (cstring "race")))
-  (call $set_prop (local.get $promf) (call $mk_str (cstring "allSettled")) (call $mk_native (i32.const 412) (cstring "allSettled")))
-  (call $set_prop (local.get $promf) (call $mk_str (cstring "any")) (call $mk_native (i32.const 413) (cstring "any")))
+  ;; static methods are {W:true,E:false,C:true} — use scope_define_attr (12), NOT set_prop (enumerable default)
+  (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "resolve") (call $mk_native (i32.const 151) (cstring "resolve")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "reject") (call $mk_native (i32.const 414) (cstring "reject")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "all") (call $mk_native (i32.const 410) (cstring "all")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "race") (call $mk_native (i32.const 411) (cstring "race")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "allSettled") (call $mk_native (i32.const 412) (cstring "allSettled")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "any") (call $mk_native (i32.const 413) (cstring "any")) (i32.const 12))
   (call $scope_define_attr (call $fn_def_scope (local.get $promf)) (cstring "withResolvers") (call $mk_native (i32.const 474) (cstring "withResolvers")) (i32.const 12))  ;; ES2024 {W:true,E:false,C:true}
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "of")) (call $mk_native (i32.const 110) (cstring "of")))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 111) (cstring "from")))
