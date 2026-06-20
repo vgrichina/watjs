@@ -1759,7 +1759,12 @@
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))   ;; receiver
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@homeproto"))  ;; this ctor's home prototype (lexical level)
   (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@super"))  ;; parent ctor (home.@@super, not this.@@super)
-  (call $vm_emit_op (local.get $code) (i32.const 86)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; SUPERCALL, 0 args
+  ;; a default derived constructor is `constructor(...args){ super(...args) }` — forward
+  ;; the received arguments to the parent rather than calling super() with none.
+  (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "arguments"))  ;; LOADVAR arguments
+  (call $vm_emit_op (local.get $code) (i32.const 53))  ;; SPREAD arguments into the args array
+  (call $vm_emit_op (local.get $code) (i32.const 103))  ;; SUPERCALLSPREAD
   (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP super result
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET undefined
