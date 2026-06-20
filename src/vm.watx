@@ -1267,9 +1267,12 @@
 ;; compile a `delete` operand: evaluate the base, and turn the FINAL member
 ;; access into a DELETE (op 70). Non-final accesses compile as normal GETs.
 (func $vm_c_delete_operand (param $code i32) (effects)
-  ;; delete of a non-reference unary expression (void/typeof/!/~/+/-/delete) → evaluate, discard, true
+  ;; delete of a non-reference unary expression (void/typeof/delete/!/~/+/-/++/--) →
+  ;; evaluate, discard the value, and return true (it is not a Reference).
   (if (i32.or (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.or (call $tok_is_kw (cstring "void")) (i32.or (call $tok_is_kw (cstring "typeof")) (call $tok_is_kw (cstring "delete")))))
-        (i32.or (i32.eq (call $tok_kind) (i32.const 33)) (i32.eq (call $tok_kind) (i32.const 47))))  ;; ! ~
+        (i32.or (i32.eq (call $tok_kind) (i32.const 33)) (i32.or (i32.eq (call $tok_kind) (i32.const 47))   ;; ! ~
+          (i32.or (i32.eq (call $tok_kind) (i32.const 10)) (i32.or (i32.eq (call $tok_kind) (i32.const 11))  ;; + -
+            (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))))))  ;; ++ --
     (then
       (call $vm_c_unary (local.get $code))
       (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP value
