@@ -5950,6 +5950,8 @@
       (i64.store (i32.add (local.get $rvbf) (i32.const 24)) (call $mk_native (i32.const 449) (cstring "")))  ;; target = revoke native (anonymous)
       (i32.store (i32.add (local.get $rvbf) (i32.const 32)) (i32.const 1))  ;; boundArgc
       (i32.store (i32.add (local.get $rvbf) (i32.const 36)) (local.get $rvbuf))  ;; boundArgs = [proxy]
+      ;; spec: revocation function has own name "" {W:false,E:false,C:true} (attr 4 = C only)
+      (call $scope_define_attr (call $fn_props (local.get $rvbf)) (cstring "name") (call $mk_str (cstring "")) (i32.const 4))
       (let $rvres i32 (call $obj_new (i32.const 2)))
       (call $scope_define (local.get $rvres) (cstring "proxy") (local.get $rvp))
       (call $scope_define (local.get $rvres) (cstring "revoke") (call $mk_fn (local.get $rvbf)))
