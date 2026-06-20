@@ -7737,9 +7737,19 @@
       (if (i32.or (call $is_null (local.get $gsv)) (call $is_undefined (local.get $gsv)))  ;; ToObject → TypeError
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
       (let $gsarr i32 (call $arr_new (i32.const 4)))
-      (if (call $is_object (local.get $gsv))
+      ;; pick the symbol-bearing own-property scope by type: object payload / array @12 /
+      ;; function (VM @16 prototype scope, native @12) — mirrors own_enum_keys.
+      (let $gss i32 (i32.const 0))
+      (if (call $is_object (local.get $gsv)) (then (set! $gss (call $val_payload (local.get $gsv)))))
+      (if (call $is_array (local.get $gsv)) (then (set! $gss (call $arr_props (call $val_payload (local.get $gsv))))))
+      (if (call $is_function (local.get $gsv))
         (then
-          (let $gss i32 (call $val_payload (local.get $gsv)))
+          (let $gsfp i32 (call $val_payload (local.get $gsv)))
+          (set! $gss (if i32 (i32.and (i32.ge_s (i32.load (local.get $gsfp)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $gsfp)) (i32.const 1448232528)))
+            (then (let $gspv i64 (i64.load (i32.add (local.get $gsfp) (i32.const 16)))) (if i32 (call $is_object (local.get $gspv)) (then (call $val_payload (local.get $gspv))) (else (i32.const 0))))
+            (else (i32.load (i32.add (local.get $gsfp) (i32.const 12))))))))
+      (if (local.get $gss)
+        (then
           (let $gsc i32 (call $scope_count (local.get $gss)))
           (let $gsi i32 (i32.const 0))
           (block $gse (loop $gsl
