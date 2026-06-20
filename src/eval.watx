@@ -659,7 +659,8 @@
   (block $done (loop $up
     (br_if $done (i32.eqz (i32.or (call $is_object (local.get $cur))
       (i32.or (call $is_array (local.get $cur))
-        (i32.or (call $is_string (local.get $cur)) (call $is_proxy (local.get $cur)))))))
+        (i32.or (call $is_function (local.get $cur))
+          (i32.or (call $is_string (local.get $cur)) (call $is_proxy (local.get $cur))))))))
     ;; yield this level's enumerable own keys that weren't shadowed lower down
     (let $ek i32 (call $own_enum_keys (local.get $cur) (i32.const 0)))
     (let $en i32 (call $arr_len (local.get $ek)))
@@ -4281,6 +4282,17 @@
         (then
           (let $sidx i32 (call $str_array_index (local.get $pk)))
           (return (call $mk_bool (i32.and (i32.ge_s (local.get $sidx) (i32.const 0)) (i32.lt_s (local.get $sidx) (call $str_len (call $val_payload (local.get $thisv)))))))))
+      ;; functions store props in two flavors (native @12 scope / VM @16 proto scope);
+      ;; delegate to [[GetOwnProperty]] (native 156, already correct) and read enumerable.
+      (if (call $is_function (local.get $thisv))
+        (then
+          (let $peb i32 (call $heap_alloc (i32.const 16)))
+          (i64.store (local.get $peb) (local.get $thisv))
+          (i64.store (i32.add (local.get $peb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (let $ped i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $peb) (call $v_undef)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_undefined (local.get $ped)) (then (return (call $v_false))))
+          (return (call $get_prop (local.get $ped) (call $mk_str (cstring "enumerable"))))))
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
       (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (local.get $pk)))
       (if (i32.eqz (local.get $pslot)) (then (return (call $v_false))))
