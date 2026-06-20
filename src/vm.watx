@@ -4185,10 +4185,13 @@
           (set! $bi (i32.add (local.get $bi) (i32.const 4)))
           (br $cnl)))
         ;; intermediate scope { name: fn } closed over by the function, so the
-        ;; name resolves to itself inside the body but does not leak outside
+        ;; name resolves to itself inside the body but does not leak outside.
+        ;; The name is an IMMUTABLE binding (non-writable, but NOT the const-bit), so
+        ;; assigning to it inside the body is a TypeError in strict mode and a silent
+        ;; no-op in sloppy mode — the spec's "assign to an immutable binding" rule.
         (let $nsc i32 (call $scope_new (local.get $scope) (i32.const 4)))
         (let $fnv i64 (call $mk_fn (local.get $nf)))
-        (call $scope_define (local.get $nsc) (local.get $cnm) (local.get $fnv))
+        (call $scope_define_attr (local.get $nsc) (local.get $cnm) (local.get $fnv) (i32.const 6))  ;; E|C, non-writable
         (i32.store (i32.add (local.get $nf) (i32.const 24)) (local.get $nsc))  ;; closureScope = intermediate
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $fnv))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
