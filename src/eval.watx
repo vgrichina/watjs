@@ -388,9 +388,12 @@
                 ;; number/string/bool primitives → compare as numbers
                 (let $ap i32 (i32.or (call $is_bigint (local.get $a)) (i32.or (call $is_number (local.get $a)) (i32.or (call $is_string (local.get $a)) (call $is_boolean (local.get $a))))))
                 (let $bp i32 (i32.or (call $is_bigint (local.get $b)) (i32.or (call $is_number (local.get $b)) (i32.or (call $is_string (local.get $b)) (call $is_boolean (local.get $b))))))
-                (if i32 (i32.and (local.get $ap) (local.get $bp))
-                  (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
-                  (else (i32.const 0))))))))))))))
+                (if i32 (i32.and (call $is_bigint (local.get $a)) (call $is_bigint (local.get $b)))
+                  ;; BigInt == BigInt: compare i64 values exactly (f64 loses precision past 2^53)
+                  (then (i64.eq (call $bigint_val (local.get $a)) (call $bigint_val (local.get $b))))
+                  (else (if i32 (i32.and (local.get $ap) (local.get $bp))
+                    (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
+                    (else (i32.const 0))))))))))))))))
 
 ;; relational compare: kind 29 < , 30 > , 31 <= , 32 >=
 
