@@ -5020,7 +5020,7 @@
     (then
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv))))
         (then (call $throw_type (cstring "TypeError") (cstring "Promise.resolve called on a non-object")) (return (call $v_undef))))
-      (return (call $vm_promise (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+      (return (call $vm_promise_resolve (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 152))  ;; promise.then(onFulfilled, onRejected)
     (then (return (call $promise_then (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
   (if (i32.eq (local.get $id) (i32.const 408))  ;; promise.catch(onRejected) = Invoke(this, "then", [undefined, onRejected])

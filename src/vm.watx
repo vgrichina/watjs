@@ -5346,6 +5346,15 @@
 (func $vm_promise (param $v i64) (result i64) (effects)
   (if (call $vm_is_promise (local.get $v)) (then (return (local.get $v))))
   (call $mk_promise (i32.const 1) (local.get $v)))
+;; PromiseResolve(v) — spec-faithful: a native promise as-is; otherwise a fresh promise
+;; resolved with v, which ADOPTS a thenable (calls v.then). Used by `await`/for-await so
+;; `await thenable` yields its resolved value and `await Promise.reject` rejects. (vm_promise
+;; above is the eager fulfill used where assimilation must not happen, e.g. reaction adoption.)
+(func $vm_promise_resolve (param $v i64) (result i64) (effects)
+  (if (call $vm_is_promise (local.get $v)) (then (return (local.get $v))))
+  (let $p i64 (call $mk_promise (i32.const 0) (call $v_undef)))
+  (call $promise_resolve_with (local.get $p) (local.get $v))
+  (local.get $p))
 ;; await: a fulfilled promise → its value; a rejected promise → re-throw the reason
 (func $vm_await_unwrap (param $v i64) (result i64) (effects)
   (if (call $vm_is_promise (local.get $v))
@@ -5561,7 +5570,7 @@
         (then (let $ae i64 (call $err_val)) (call $set_err (i32.const 0)) (call $promise_settle (local.get $rp) (i32.const 2) (local.get $ae)))
         (else (call $promise_resolve_with (local.get $rp) (local.get $v))))
       (return)))
-  (call $async_register_cont (call $vm_promise (local.get $v)) (local.get $ctx) (local.get $rp)))
+  (call $async_register_cont (call $vm_promise_resolve (local.get $v)) (local.get $ctx) (local.get $rp)))
 (func $async_register_cont (param $aw i64) (param $ctx i32) (param $rp i64) (effects)
   (let $co i32 (call $obj_new (i32.const 4)))
   (call $scope_define (local.get $co) (cstring "@@actx") (call $num (f64.convert_i32_s (local.get $ctx))))
@@ -5592,7 +5601,7 @@
         (else (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 1)))))  ;; gen returned
       (return)))
   (if (i32.eq (i32.load (i32.const 708)) (i32.const 1))  ;; await → suspend, resume when the awaited promise settles
-    (then (call $agen_register_cont (call $vm_promise (local.get $v)) (local.get $ctx) (local.get $np)) (return)))
+    (then (call $agen_register_cont (call $vm_promise_resolve (local.get $v)) (local.get $ctx) (local.get $np)) (return)))
   (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 0))))  ;; yield → {value, done:false}
 (func $agen_register_cont (param $aw i64) (param $ctx i32) (param $np i64) (effects)
   (let $co i32 (call $obj_new (i32.const 4)))
