@@ -9229,6 +9229,7 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 513)) (i32.eq (local.get $id) (i32.const 514))) (then (return (i32.const 1))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 150)) (i32.or (i32.eq (local.get $id) (i32.const 420)) (i32.eq (local.get $id) (i32.const 421)))) (then (return (i32.const 1))))  ;; Generator/AsyncGenerator .next/.return/.throw — length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 516)) (i32.or (i32.eq (local.get $id) (i32.const 517)) (i32.eq (local.get $id) (i32.const 518)))) (then (return (i32.const 1))))  ;; AsyncGeneratorPrototype next/return/throw — length 1
+  (if (i32.or (i32.eq (local.get $id) (i32.const 355)) (i32.eq (local.get $id) (i32.const 357))) (then (return (i32.const 1))))  ;; Iterator.zip / Iterator.zipKeyed — length 1
   ;; TA validating wrappers (485-504) take their .length from the delegated Array native.
   (if (i32.eq (local.get $id) (i32.const 485)) (then (return (call $native_arity (i32.const 27)))))
   (if (i32.eq (local.get $id) (i32.const 486)) (then (return (call $native_arity (i32.const 23)))))
