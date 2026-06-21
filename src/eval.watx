@@ -4786,8 +4786,12 @@
       (let $frlen2 i32 (call $arr_len (local.get $fra)))
       (let $frcb i32 (call $heap_alloc (i32.const 8)))
       (i64.store (local.get $frcb) (call $num (f64.convert_i32_s (local.get $frlen2))))
-      ;; iterator source → Construct(C) (no args); array-like → Construct(C, [len])
-      (let $frA i64 (call $vm_construct (local.get $thisv) (if i32 (local.get $frmapped) (then (i32.const 0)) (else (i32.const 1))) (local.get $frcb) (local.get $thisv)))
+      ;; ITERABLE source (iterator protocol, array, or string) → Construct(C) with NO args;
+      ;; only a non-iterable array-like → Construct(C, [len]). (Arrays/strings are iterable, so
+      ;; e.g. Array.from.call(Object, []) must be Construct(Object) = {}, not Object(0) = Number.)
+      (let $frA i64 (call $vm_construct (local.get $thisv)
+        (if i32 (i32.or (local.get $frmapped) (i32.or (call $is_array (local.get $frs)) (call $is_string (local.get $frs)))) (then (i32.const 0)) (else (i32.const 1)))
+        (local.get $frcb) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef))))
       (let $frk i32 (i32.const 0))
       (block $frce (loop $frcl
