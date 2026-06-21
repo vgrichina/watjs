@@ -82,6 +82,11 @@
     (i32.and (i32.eq (call $str_byte (local.get $ptr) (i32.const 0)) (i32.const 64))
              (i32.eq (call $str_byte (local.get $ptr) (i32.const 1)) (i32.const 64)))))
 
+;; a private name key starts with "#" — never reachable via string reflection
+;; (hasOwnProperty/getOwnPropertyDescriptor/propertyIsEnumerable with a string arg).
+(func $is_private_key (param $ptr i32) (result i32) (effects)
+  (i32.and (i32.ge_s (call $str_len (local.get $ptr)) (i32.const 1)) (i32.eq (call $str_byte (local.get $ptr) (i32.const 0)) (i32.const 35))))
+
 (func $str_set_byte (param $ptr i32) (param $i i32) (param $b i32) (effects)
   (i32.store8 (i32.add (i32.add (local.get $ptr) (i32.const 4)) (local.get $i)) (local.get $b)))
 
