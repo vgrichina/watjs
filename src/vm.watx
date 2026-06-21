@@ -4403,6 +4403,8 @@
             (let $didx i32 (call $str_array_index (local.get $dks2)))
             (let $dap12 i32 (i32.load (i32.add (local.get $dap) (i32.const 12))))
             (let $ddh i32 (i32.const 0))  ;; handled by the @12 scope?
+            ;; array `length` is a non-configurable own property → delete refused (false / strict throw)
+            (if (call $str_eq (local.get $dks2) (cstring "length")) (then (set! $dres (call $v_false)) (set! $ddh (i32.const 1))))
             ;; a deopted index OR a named array property lives in @12: honor configurability
             (if (local.get $dap12)
               (then (let $ddsl i32 (call $scope_find_local (local.get $dap12) (local.get $dks2)))
