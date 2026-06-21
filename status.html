@@ -126,18 +126,18 @@
   <div class="meta">
     <span class="chip">status as of <b>2026-06-20</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>442f50d</b></span>
-    <span class="chip"><b>995</b> commits</span>
+    <span class="chip">@ <b>957b753</b></span>
+    <span class="chip"><b>1006</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">21.1k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">237 KB</div><div class="l">watjs.wasm artifact</div></div>
-  <div class="card"><div class="n">442</div><div class="l">self-check JS tests</div></div>
+  <div class="card"><div class="n">21.2k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">238 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">443</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">~13k</div><div class="l">test262 files swept</div></div>
-  <div class="card"><div class="n">44.1M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">45.1M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -186,7 +186,7 @@
 <h2>Test suites <span class="em">live run · 2026-06-20</span></h2>
 <table>
   <tr><th>suite</th><th>files</th><th>pass rate</th></tr>
-  <tr><td>self-check <code>test/</code></td><td class="mono">442 / 442</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
+  <tr><td>self-check <code>test/</code></td><td class="mono">443 / 443</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/batch</code></td><td class="mono">39 / 39</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/broad</code></td><td class="mono">35 / 36</td><td><span class="prate"><span style="width:97%"></span></span><span class="rate good">97%</span></td></tr>
   <tr><td><code>test262/broad2</code></td><td class="mono">30 / 30</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
@@ -216,12 +216,12 @@
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
-  <tr><td class="mono">442f50d</td><td>BigInt <code>&lt;</code> and <code>==</code> compare i64 values exactly, not via f64</td></tr>
-  <tr><td class="mono">397c97b</td><td><code>"use strict"</code> detected anywhere in the Directive Prologue, not just first</td></tr>
-  <tr><td class="mono">fb9ed24</td><td>binary arithmetic/bitwise ops apply <code>ToNumeric</code> to operands (BigInt wrappers)</td></tr>
-  <tr><td class="mono">0c3c3ed</td><td>Proxy revocation function has own <code>name</code> <code>""</code> property</td></tr>
-  <tr><td class="mono">03fcfd4</td><td><code>getOwnPropertySymbols</code> reports array and function symbol keys</td></tr>
-  <tr><td class="mono">12f1a7a</td><td><code>concat</code> IsConcatSpreadable and <code>String.raw</code> accept callable sources</td></tr>
+  <tr><td class="mono">957b753</td><td>separate function own-props from <code>.prototype</code> scope (de-conflate statics)</td></tr>
+  <tr><td class="mono">fabc181</td><td><code>delete fn.prototype</code> is refused (a function's prototype is non-configurable)</td></tr>
+  <tr><td class="mono">39b92d8</td><td><code>Object.defineProperty</code>: ToPropertyKey before the descriptor-object check</td></tr>
+  <tr><td class="mono">5e73966</td><td><code>Reflect.get</code> honors the <code>receiver</code> argument for accessor getters</td></tr>
+  <tr><td class="mono">340db12</td><td><code>Array.from</code>: iterable source uses <code>Construct(C)</code>, not <code>Construct(C,[len])</code></td></tr>
+  <tr><td class="mono">0aa4254</td><td>fix <code>&amp;&amp;</code> right-operand precedence: parse BitwiseOR, not just comparison</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -291,7 +291,7 @@ const DAILY = [
   ["Jun 9", 39, 2.7], ["Jun 10", 41, 1.8], ["Jun 11", 28, 3.7],
   ["Jun 12", 3, 0.7], ["Jun 13", 12, 0.6], ["Jun 14", 45, 2.2], ["Jun 15", 54, 2.65],
   ["Jun 16", 0, 1.55], ["Jun 17", 0, 0], ["Jun 18", 0, 0], ["Jun 19", 5, 0.23],
-  ["Jun 20", 11, 0.99],
+  ["Jun 20", 22, 1.15],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -303,7 +303,7 @@ const GROWTH = [
   ["Jun 9", 18665, 197], ["Jun 10", 19517, 215], ["Jun 11", 19938, 225],
   ["Jun 12", 19987, 226], ["Jun 13", 20095, 227], ["Jun 14", 20541, 231], ["Jun 15", 20976, 236],
   ["Jun 16", 20976, 236], ["Jun 17", 20976, 236], ["Jun 18", 20976, 236], ["Jun 19", 20976, 236],
-  ["Jun 20", 21086, 237],
+  ["Jun 20", 21240, 238],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
