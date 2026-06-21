@@ -663,10 +663,11 @@
                   (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vproto))
                   (call $scope_define_attr (call $val_payload (local.get $vproto)) (cstring "constructor") (local.get $cont) (i32.const 12))))  ;; F.prototype.constructor === F {W:true,E:false,C:true}
               (return (local.get $vproto))))
-          (if (call $str_eq (local.get $ks) (cstring "length"))  ;; an own length (defineProperty, @16) overrides the param-count field
+          (if (call $str_eq (local.get $ks) (cstring "length"))  ;; an own length (defineProperty) overrides the param-count field
             (then
-              (if (call $is_object (local.get $vproto))
-                (then (let $vlsl i32 (call $scope_find_local (call $val_payload (local.get $vproto)) (cstring "length")))
+              (let $vlsc i32 (call $fn_ownsc_peek (local.get $fn)))
+              (if (local.get $vlsc)
+                (then (let $vlsl i32 (call $scope_find_local (local.get $vlsc) (cstring "length")))
                   (if (local.get $vlsl)
                     (then
                       (if (call $entry_is_accessor (local.get $vlsl))  ;; own length defined as an accessor → invoke getter
@@ -676,8 +677,9 @@
                 (then (return (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $fn) (i32.add (i32.const 36) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))))))))))  ;; @(36+np*4) = ExpectedArgumentCount
           (if (call $str_eq (local.get $ks) (cstring "name"))  ;; an own name (defineProperty) overrides @(28+np*4)
             (then
-              (if (call $is_object (local.get $vproto))
-                (then (let $vnsl i32 (call $scope_find_local (call $val_payload (local.get $vproto)) (cstring "name")))
+              (let $vnsc i32 (call $fn_ownsc_peek (local.get $fn)))
+              (if (local.get $vnsc)
+                (then (let $vnsl i32 (call $scope_find_local (local.get $vnsc) (cstring "name")))
                   (if (local.get $vnsl)
                     (then
                       (if (call $entry_is_accessor (local.get $vnsl))  ;; own name defined as an accessor → invoke getter
@@ -687,9 +689,10 @@
                 (then
                   (let $nmp i32 (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))))
                   (return (if i64 (local.get $nmp) (then (call $mk_str (local.get $nmp))) (else (call $mk_str (cstring "")))))))))
-          (if (call $is_object (local.get $vproto))
+          (let $vosc i32 (call $fn_ownsc_peek (local.get $fn)))
+          (if (local.get $vosc)
             (then
-              (let $vslot i32 (call $scope_find (call $val_payload (local.get $vproto)) (local.get $ks)))
+              (let $vslot i32 (call $scope_find (local.get $vosc) (local.get $ks)))
               (if (local.get $vslot)
                 (then
                   (if (call $entry_is_accessor (local.get $vslot))  ;; a named accessor on a user function → invoke getter (this=fn)
@@ -789,6 +792,24 @@
       (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $np))
       (local.get $np))))
 
+;; A VM function's OWN-property (static) scope lives at @(48+np*4) — past srcLen
+;; @(44+np*4). It is DISTINCT from the @16 .prototype object's scope, so F's own
+;; props (statics) and F.prototype's props (instance members) no longer collide.
+;; (@12 is the code buffer for VM fns, so it cannot be reused as a prop store.)
+(func $fn_ownsc_off (param $fn i32) (result i32)
+  (i32.add (i32.const 48) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))
+;; peek the own-prop scope (0 if not yet allocated) — for reads, no allocation
+(func $fn_ownsc_peek (param $fn i32) (result i32)
+  (i32.load (i32.add (local.get $fn) (call $fn_ownsc_off (local.get $fn)))))
+;; get-or-create the own-prop scope — for defines/sets
+(func $fn_ownsc (param $fn i32) (result i32) (effects)
+  (let $o i32 (call $fn_ownsc_peek (local.get $fn)))
+  (if i32 (local.get $o) (then (local.get $o))
+    (else
+      (let $ns i32 (call $scope_new (i32.const 0) (i32.const 8)))
+      (i32.store (i32.add (local.get $fn) (call $fn_ownsc_off (local.get $fn))) (local.get $ns))
+      (local.get $ns))))
+
 ;; Build a primitive wrapper object (new Number/String/Boolean or Object(prim)):
 ;; a fresh scope whose prototype chain is $proto (which carries .constructor and
 ;; valueOf/toString), holding the boxed value in __prim__.
@@ -835,9 +856,9 @@
       ;; .prototype is an own property of every constructor VM fn (not arrow bit1, not method/accessor bit6)
       (if (call $str_eq (local.get $ks) (cstring "prototype"))
         (then (return (i32.eqz (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 66))))))
-      (let $vp i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
-      (if (call $is_object (local.get $vp))
-        (then (if (call $scope_find_local (call $val_payload (local.get $vp)) (local.get $ks)) (then (return (i32.const 1))))))
+      (let $osc i32 (call $fn_ownsc_peek (local.get $fn)))
+      (if (local.get $osc)
+        (then (if (call $scope_find_local (local.get $osc) (local.get $ks)) (then (return (i32.const 1))))))
       (return (i32.const 0))))
   (let $p i32 (i32.load (i32.add (local.get $fn) (i32.const 12))))
   (if (local.get $p)
@@ -845,19 +866,12 @@
   (i32.const 0))
 
 ;; scope that holds a function's own (static) properties, for defineProperty.
-;; VM fns: the @16 prototype scope (statics not yet isolated from .prototype —
-;; the documented quirk); native fns: the @12 props scope.
+;; VM fns: the @(48+np*4) own-prop scope — isolated from the @16 .prototype
+;; object; native fns: the @12 props scope.
 (func $fn_def_scope (param $fnval i64) (result i32) (effects)
   (let $fn i32 (call $val_payload (local.get $fnval)))
   (if i32 (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
-    (then
-      (let $vp i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
-      (if (i32.eqz (call $is_object (local.get $vp)))
-        (then
-          (set! $vp (call $mk_obj (call $obj_new (i32.const 8))))
-          (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vp))
-          (call $scope_define_attr (call $val_payload (local.get $vp)) (cstring "constructor") (local.get $fnval) (i32.const 12))))
-      (call $val_payload (local.get $vp)))
+    (then (call $fn_ownsc (local.get $fn)))
     (else (call $fn_props (local.get $fn)))))
 
 ;; get-or-create a function's .prototype object value
@@ -1301,14 +1315,12 @@
           ;; instances inherit from it — not a nested prototype.prototype property
           (if (call $str_eq (call $to_prop_key (local.get $key)) (cstring "prototype"))
             (then (i64.store (i32.add (local.get $sfn) (i32.const 16)) (local.get $val)) (return)))
-          (let $sproto i64 (i64.load (i32.add (local.get $sfn) (i32.const 16))))
-          (if (i32.eqz (call $is_object (local.get $sproto)))
-            (then (set! $sproto (call $mk_obj (call $obj_new (i32.const 8)))) (i64.store (i32.add (local.get $sfn) (i32.const 16)) (local.get $sproto))))
+          (let $sosc i32 (call $fn_ownsc (local.get $sfn)))  ;; own (static) prop scope @(48+np*4)
           (let $svk i32 (call $to_prop_key (local.get $key)))
-          (let $svs i32 (call $scope_find_local (call $val_payload (local.get $sproto)) (local.get $svk)))
+          (let $svs i32 (call $scope_find_local (local.get $sosc) (local.get $svk)))
           ;; `name`/`length` are non-writable own props by default (set at creation in the
           ;; fn struct, reported {W:false} by getOwnPropertyDescriptor) — a plain assignment
-          ;; is refused unless they have been redefined as a writable @16 entry.
+          ;; is refused unless they have been redefined as a writable own-prop entry.
           (if (i32.and (i32.eqz (local.get $svs)) (i32.or (call $str_eq (local.get $svk) (cstring "name")) (call $str_eq (local.get $svk) (cstring "length"))))
             (then (call $set_fail) (return)))
           (if (local.get $svs)
@@ -1320,7 +1332,7 @@
                     (then (let $sav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $sav) (local.get $val)) (drop (call $call_val (local.get $sset) (i32.const 1) (local.get $sav) (local.get $cont)))))
                   (return)))
               (if (i32.eqz (call $entry_writable (local.get $svs))) (then (return)))))  ;; non-writable own → ignore
-          (call $scope_define (call $val_payload (local.get $sproto)) (local.get $svk) (local.get $val))
+          (call $scope_define (local.get $sosc) (local.get $svk) (local.get $val))
           (return)))
       (let $sfk i32 (call $to_prop_key (local.get $key)))
       ;; name/length (and any other non-writable own data prop) refuse the assignment;

@@ -3,7 +3,7 @@ function G(){ this.nt = new.target; }
 p("ctor", (new G()).nt === G);          // true
 function H(){ return new.target; }
 p("plain", H());                         // undefined
-p("ctor-direct", (new H()).constructor === H ? "ok" : "x"); // ok (new.target=H, returns it? no—returns H which is fn→used as obj)
+p("ctor-direct", (new H()).constructor === H ? "ok" : "x"); // x: new H() returns H (a fn); H.constructor is Function (inherited), not H
 function J(){ var a = ()=>new.target; this.r = (a() === J); }
 p("arrow-inherit", (new J()).r);         // true
 function K(){ var a = ()=>new.target; return a(); }

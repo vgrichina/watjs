@@ -1,6 +1,6 @@
 ctor=true
 plain=undefined
-ctor-direct=ok
+ctor-direct=x
 arrow-inherit=true
 arrow-plain=undefined
 toplevel=undefined

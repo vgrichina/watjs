@@ -625,12 +625,12 @@
   (if (call $is_object (local.get $a))
     (then (call $push_scope_keys (local.get $out) (call $val_payload (local.get $a)) (local.get $allNames))))
   ;; functions can carry own enumerable props (fn.a=1, defineProperty): VM functions
-  ;; keep them in the @16 .prototype scope, natives in @12 fn_props.
+  ;; keep them in the @(48+np*4) own-prop scope, natives in @12 fn_props.
   (if (call $is_function (local.get $a))
     (then
       (let $fp i32 (call $val_payload (local.get $a)))
       (let $fsc i32 (if i32 (i32.and (i32.ge_s (i32.load (local.get $fp)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fp)) (i32.const 1448232528)))
-        (then (let $pv i64 (i64.load (i32.add (local.get $fp) (i32.const 16)))) (if i32 (call $is_object (local.get $pv)) (then (call $val_payload (local.get $pv))) (else (i32.const 0))))
+        (then (call $fn_ownsc_peek (local.get $fp)))
         (else (i32.load (i32.add (local.get $fp) (i32.const 12))))))
       ;; getOwnPropertyNames includes the non-enumerable synthetic own keys length, name, prototype
       ;; (spec order: length, name, then own props, with prototype after name). Only in allNames mode,
@@ -8015,13 +8015,13 @@
                   (return (call $mk_obj (local.get $pdr)))))))
           ;; other own props (static methods, F.prototype, frozen constants) → read
           ;; the stored attributes from the function's prop scope. NATIVE fns keep it
-          ;; at @12; VM fns keep code at @12 and their statics in the @16 scope.
+          ;; at @12; VM fns keep code at @12 and their statics in the @(48+np*4) scope.
           (if (i32.and (i32.ge_s (i32.load (local.get $ffn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $ffn)) (i32.const 1448232528)))
             (then
-              (let $vps i64 (i64.load (i32.add (local.get $ffn) (i32.const 16))))
-              (if (call $is_object (local.get $vps))
+              (let $vps i32 (call $fn_ownsc_peek (local.get $ffn)))
+              (if (local.get $vps)
                 (then
-                  (let $vslot i32 (call $scope_find_local (call $val_payload (local.get $vps)) (local.get $fks)))
+                  (let $vslot i32 (call $scope_find_local (local.get $vps) (local.get $fks)))
                   (if (local.get $vslot) (then (return (call $make_descriptor (local.get $vslot))))))))
             (else
               (let $fps i32 (i32.load (i32.add (local.get $ffn) (i32.const 12))))
