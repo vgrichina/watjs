@@ -5628,9 +5628,17 @@
             (br $fazl)))
           (call $scope_define_attr (local.get $fas) (cstring "@@frozen") (call $v_true) (i32.const 0))
           (call $scope_define_attr (local.get $fas) (cstring "@@noext") (call $v_true) (i32.const 0))))
-      (if (call $is_function (local.get $fo))  ;; freeze a function: mark its own-prop scope
+      (if (call $is_function (local.get $fo))  ;; freeze a function: clear C+W on its static own props, mark its own-prop scope
         (then
           (let $ffs i32 (call $fn_def_scope (local.get $fo)))
+          (let $ffcnt i32 (call $scope_count (local.get $ffs)))
+          (let $ffi i32 (i32.const 0))
+          (block $ffze (loop $ffzl
+            (br_if $ffze (i32.ge_s (local.get $ffi) (local.get $ffcnt)))
+            (let $ffe i32 (i32.add (call $scope_entry (local.get $ffs) (local.get $ffi)) (i32.const 4)))
+            (i32.store (local.get $ffe) (i32.and (i32.load (local.get $ffe)) (i32.const -13)))  ;; clear C(4)+W(8)
+            (set! $ffi (i32.add (local.get $ffi) (i32.const 1)))
+            (br $ffzl)))
           (call $scope_define_attr (local.get $ffs) (cstring "@@frozen") (call $v_true) (i32.const 0))
           (call $scope_define_attr (local.get $ffs) (cstring "@@noext") (call $v_true) (i32.const 0))))
       (return (local.get $fo))))
@@ -5680,7 +5688,17 @@
       (if (call $is_function (local.get $xo))  ;; seal/preventExtensions a function
         (then
           (let $xfs2 i32 (call $fn_def_scope (local.get $xo)))
-          (if (i32.eq (local.get $id) (i32.const 164)) (then (call $scope_define_attr (local.get $xfs2) (cstring "@@sealed") (call $v_true) (i32.const 0))))
+          (if (i32.eq (local.get $id) (i32.const 164))  ;; seal → clear C on every static own prop (so delete is refused)
+            (then
+              (let $xfcnt i32 (call $scope_count (local.get $xfs2)))
+              (let $xfi i32 (i32.const 0))
+              (block $xfse (loop $xfsl
+                (br_if $xfse (i32.ge_s (local.get $xfi) (local.get $xfcnt)))
+                (let $xfe i32 (i32.add (call $scope_entry (local.get $xfs2) (local.get $xfi)) (i32.const 4)))
+                (i32.store (local.get $xfe) (i32.and (i32.load (local.get $xfe)) (i32.const -5)))  ;; clear C(4)
+                (set! $xfi (i32.add (local.get $xfi) (i32.const 1)))
+                (br $xfsl)))
+              (call $scope_define_attr (local.get $xfs2) (cstring "@@sealed") (call $v_true) (i32.const 0))))
           (call $scope_define_attr (local.get $xfs2) (cstring "@@noext") (call $v_true) (i32.const 0))))
       (return (local.get $xo))))
   ;; Object.isExtensible(o) (163)

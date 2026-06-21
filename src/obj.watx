@@ -1323,6 +1323,9 @@
           ;; is refused unless they have been redefined as a writable own-prop entry.
           (if (i32.and (i32.eqz (local.get $svs)) (i32.or (call $str_eq (local.get $svk) (cstring "name")) (call $str_eq (local.get $svk) (cstring "length"))))
             (then (call $set_fail) (return)))
+          ;; adding a NEW own prop to a non-extensible (preventExtensions/seal/freeze) function is refused
+          (if (i32.and (i32.eqz (local.get $svs)) (i32.ne (call $scope_find_local (local.get $sosc) (cstring "@@noext")) (i32.const 0)))
+            (then (call $set_fail) (return)))
           (if (local.get $svs)
             (then
               (if (call $entry_is_accessor (local.get $svs))  ;; named accessor on a user function → fire setter
