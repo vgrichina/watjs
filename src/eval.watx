@@ -4998,17 +4998,8 @@
       (if (call $is_object (local.get $thisv))
         (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@asyncgen")) (i32.const 0))
           (then (return (call $agen_enqueue (local.get $thisv) (i32.const 1) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
-      (let $grctx i32 (call $gen_ctx_or_throw (local.get $thisv)))
-      (if (call $err) (then (return (call $v_undef))))
-      (i32.store (i32.add (local.get $grctx) (i32.const 16)) (i32.const 1))  ;; mark done (finally blocks not run — limitation)
-      (let $grr i32 (call $obj_new (i32.const 2)))
-      (call $scope_define (local.get $grr) (cstring "value") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (call $scope_define (local.get $grr) (cstring "done") (call $v_true))
-      ;; async generator: .return(v) → a resolved Promise of {value:v, done:true}
-      (if (call $is_object (local.get $thisv))
-        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@asyncgen")) (i32.const 0))
-          (then (return (call $mk_promise (i32.const 1) (call $mk_obj (local.get $grr))))))))
-      (return (call $mk_obj (local.get $grr)))))
+      ;; sync generator: runs a try/finally's finally before completing { value, done:true }
+      (return (call $vm_gen_return (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 421))  ;; generator.throw(e) → throw at the suspension point
     (then
       ;; async generator: enqueue a throw request (queued behind any in-flight await)
@@ -9857,6 +9848,9 @@
 
 
 (func $setup_gen_protos (effects)
+  ;; return-completion sentinel (reg832): a unique object thrown by gen.return() to unwind
+  ;; through try/finally handlers (run their finally) without being catchable. See vm_gen_return.
+  (i64.store (i32.const 832) (call $mk_obj (call $obj_new (i32.const 1))))
   (let $ip i32 (i32.load (i32.const 488)))                  ;; %Iterator.prototype%
   (let $op i32 (i32.load (i32.const 328)))                  ;; Object.prototype (a plain scope; Function.prototype is a
                                                             ;; native fn whose struct can't be walked as a scope → OOB)
