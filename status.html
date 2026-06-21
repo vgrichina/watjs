@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>watjs — project status</title>
+<style>
+  :root {
+    --bg: #0a0c10; --bg2: #0e1117; --panel: #14181f; --panel2: #181d26;
+    --border: #232a35; --border2: #2c3543;
+    --fg: #e9eef5; --muted: #8a94a6; --faint: #5b6577;
+    --accent: #6ea8fe; --accent2: #a78bfa; --cyan: #5fd3c4;
+    --good: #4ade80; --warn: #fbbf24; --bad: #fb7185;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--fg); font: 15px/1.6 var(--sans);
+    background:
+      radial-gradient(1100px 520px at 78% -8%, rgba(110,168,254,.10), transparent 60%),
+      radial-gradient(900px 480px at 8% 4%, rgba(167,139,250,.10), transparent 55%),
+      var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 40px 24px 96px; }
+
+  /* ---- header ---- */
+  header { position: relative; padding: 28px 30px; margin-bottom: 30px;
+    border: 1px solid var(--border); border-radius: 18px;
+    background: linear-gradient(160deg, rgba(110,168,254,.08), rgba(167,139,250,.05) 55%, transparent),
+                var(--panel);
+    box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 18px 50px -28px rgba(0,0,0,.8);
+    overflow: hidden;
+  }
+  header::after { content:""; position:absolute; inset:0; pointer-events:none;
+    background: linear-gradient(90deg, var(--accent), var(--accent2), var(--cyan));
+    height: 3px; top: 0; bottom: auto; opacity:.9; }
+  h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -.6px; font-weight: 700; }
+  h1 .v { background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-size: 17px; font-weight: 500; }
+  .tag { color: var(--muted); font-size: 14.5px; max-width: 72ch; }
+  .meta { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font-family: var(--mono); font-size: 12px; color: var(--muted);
+    background: var(--panel2); border: 1px solid var(--border);
+    padding: 4px 11px; border-radius: 999px; }
+  .chip b { color: var(--fg); font-weight: 600; }
+  .chip .dot { color: var(--good); }
+
+  /* ---- stat cards ---- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 14px; margin: 22px 0; }
+  .card { position: relative; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px 18px; transition: border-color .2s, transform .2s; overflow: hidden; }
+  .card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+    background: linear-gradient(var(--accent), var(--accent2)); opacity:.7; }
+  .card:hover { border-color: var(--border2); transform: translateY(-2px); }
+  .card .n { font-size: 28px; font-weight: 700; font-family: var(--mono); letter-spacing: -.5px; }
+  .card .l { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+
+  /* ---- sections ---- */
+  h2 { font-size: 18px; margin: 40px 0 16px; padding-bottom: 10px; font-weight: 650;
+    border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 10px; }
+  h2::before { content:""; width: 9px; height: 9px; border-radius: 3px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 0 12px rgba(110,168,254,.5); }
+  h2 .em { margin-left: auto; font-size: 12.5px; color: var(--faint); font-weight: 400; }
+
+  /* ---- chart ---- */
+  .chart { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px 12px; }
+  .chart h3 { margin: 0 0 2px; font-size: 13.5px; font-weight: 600; }
+  .chart .sub { color: var(--faint); font-size: 12px; margin-bottom: 8px; }
+  .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .axis { fill: var(--faint); font: 10px var(--mono); }
+  .gridline { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 4; }
+  .dot { fill: var(--bg); stroke-width: 2; }
+  .pin { cursor: pointer; }
+  .pin:hover { filter: brightness(1.25); }
+  #viz-tip { position: fixed; z-index: 50; max-width: 320px; pointer-events: none;
+    background: #11151d; border: 1px solid #2a3340; border-left: 3px solid #f5b65b;
+    border-radius: 9px; padding: 9px 11px; font-size: 12px; line-height: 1.5;
+    color: #d7dde6; box-shadow: 0 8px 28px rgba(0,0,0,.55); opacity: 0;
+    transition: opacity .1s; transform: translate(-50%, calc(-100% - 12px)); }
+  #viz-tip.on { opacity: 1; }
+  #viz-tip .vt-h { color: #f5b65b; font-weight: 650; margin-bottom: 4px; font-size: 11.5px;
+    letter-spacing: .02em; }
+  #viz-tip ul { margin: 0; padding-left: 15px; }
+  #viz-tip li { margin: 2px 0; }
+
+  /* ---- tables ---- */
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr { transition: background .15s; }
+  tr:hover { background: rgba(255,255,255,.018); }
+  th { color: var(--faint); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; }
+  td.mono, .mono { font-family: var(--mono); font-size: 12.5px; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .done { background: rgba(74,222,128,.14); color: var(--good); }
+  .wip  { background: rgba(251,191,36,.14); color: var(--warn); }
+  .todo { background: rgba(138,148,166,.14); color: var(--muted); }
+  .prate { display:inline-block; width:130px; height:7px; background:var(--border); border-radius:5px; overflow:hidden; vertical-align:middle; }
+  .prate > span { display:block; height:100%; background:linear-gradient(90deg, var(--good), var(--cyan)); }
+  .prate.warn > span { background:linear-gradient(90deg, var(--warn), #f0b35a); }
+  .rate { font-family:var(--mono); font-size:12px; color:var(--muted); margin-left:9px; }
+  .rate.good { color:var(--good); } .rate.warn { color:var(--warn); }
+  tr.tot td { border-top:1px solid var(--border2); font-weight:600; }
+  ul { margin: 12px 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  .bad { color: var(--bad); } .good { color: var(--good); } .warn { color: var(--warn); }
+  code { font-family: var(--mono); background: rgba(110,168,254,.10); color: #cdd9ee;
+    padding: 1.5px 6px; border-radius: 5px; font-size: 12px; }
+  .note { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); border-radius: 10px; padding: 14px 18px; margin: 16px 0; font-size: 13.5px; }
+  .note.danger { border-left-color: var(--bad); background: linear-gradient(180deg, rgba(251,113,133,.06), var(--panel)); }
+  .note.ok { border-left-color: var(--good); }
+  footer { margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--faint); font-size: 12px; }
+  a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
+  <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
+  <div class="meta">
+    <span class="chip">status as of <b>2026-06-20</b></span>
+    <span class="chip">branch <b>main</b></span>
+    <span class="chip">@ <b>442f50d</b></span>
+    <span class="chip"><b>995</b> commits</span>
+    <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
+  </div>
+</header>
+
+<div class="grid">
+  <div class="card"><div class="n">21.1k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">237 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">442</div><div class="l">self-check JS tests</div></div>
+  <div class="card"><div class="n">~13k</div><div class="l">test262 files swept</div></div>
+  <div class="card"><div class="n">44.1M</div><div class="l">output tokens spent building</div></div>
+</div>
+
+<h2>Daily activity <span class="em">per day · not cumulative</span></h2>
+<div class="chart">
+  <h3>Commits &amp; tokens per day</h3>
+  <div class="sub">
+    <span style="color:var(--accent)">▮&nbsp;commits / day</span> &nbsp;
+    <span style="color:var(--accent2)">●&nbsp;output tokens / day (M)</span> &nbsp;
+    <span style="color:#f5b65b">◆&nbsp;human intervention</span> &nbsp;
+    <span style="color:#f5b65b">12&nbsp;= nudges that day</span>
+    <br>amber diamonds mark days a human steered the <b>engine</b> work (hover for the prompts); the number is repeated "keep going"-style nudges. Status-dashboard prompts are excluded.
+  </div>
+  <svg id="chart-daily" viewBox="0 0 920 240" role="img" aria-label="commits and output tokens per day"></svg>
+</div>
+
+<h2>Codebase growth <span class="em">cumulative · end-of-day</span></h2>
+<div class="chart">
+  <h3>Source size &amp; wasm size over time</h3>
+  <div class="sub">
+    <span style="color:var(--cyan)">●&nbsp;lines of WATX (k)</span> &nbsp;
+    <span style="color:var(--accent2)">●&nbsp;watjs.wasm (KB)</span>
+    &nbsp;·&nbsp; rebuilt at each day's last commit
+  </div>
+  <svg id="chart-growth" viewBox="0 0 920 240" role="img" aria-label="source and wasm size over time"></svg>
+</div>
+
+<h2>Architecture <span class="em">see DESIGN.md / CLAUDE.md</span></h2>
+<ul>
+  <li><b>No runtime WASM emission.</b> "Compiled" code = data interpreted by pre-compiled WAT handlers. JIT-to-wasm is out of scope.</li>
+  <li><b>Execution:</b> Phase&nbsp;1 tree-walk of the AST + Phase&nbsp;2 bytecode VM (<code>vm.watx</code>) — same parser front-end feeds both.</li>
+  <li><b>Values:</b> NaN-boxing in i64 (quiet-NaN prefix + 3-bit tag + 48-bit payload), confined to <code>value.watx</code>.</li>
+  <li><b>Memory:</b> bump allocator (<code>with-region</code>/<code>region.alloc</code>); <code>heap_reset()</code> isolates tests. Mark-sweep GC deferred until test262 demands it.</li>
+  <li><b>Build:</b> vendored WATX compiler (parser → include → macro-expand → typecheck → lower → emit), zero implicit coercion.</li>
+</ul>
+
+<h2>Phase progress</h2>
+<table>
+  <tr><th>phase</th><th>scope</th><th>state</th></tr>
+  <tr><td>0</td><td>lex + parse + arithmetic</td><td><span class="pill done">done</span></td></tr>
+  <tr><td>1</td><td>functions / closures / control-flow</td><td><span class="pill done">done</span></td></tr>
+  <tr><td>2</td><td>objects / arrays / prototypes / builtins</td><td><span class="pill done">done</span></td></tr>
+  <tr><td>3</td><td>BigInt / exceptions / wrappers</td><td><span class="pill done">done</span></td></tr>
+  <tr><td>4</td><td>threaded-code VM + GC + test262 breadth</td><td><span class="pill wip">in progress</span></td></tr>
+</table>
+
+<h2>Test suites <span class="em">live run · 2026-06-20</span></h2>
+<table>
+  <tr><th>suite</th><th>files</th><th>pass rate</th></tr>
+  <tr><td>self-check <code>test/</code></td><td class="mono">442 / 442</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
+  <tr><td><code>test262/batch</code></td><td class="mono">39 / 39</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
+  <tr><td><code>test262/broad</code></td><td class="mono">35 / 36</td><td><span class="prate"><span style="width:97%"></span></span><span class="rate good">97%</span></td></tr>
+  <tr><td><code>test262/broad2</code></td><td class="mono">30 / 30</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
+  <tr><td><code>test262/broad3</code></td><td class="mono">21 / 24</td><td><span class="prate warn"><span style="width:88%"></span></span><span class="rate warn">88%</span></td></tr>
+  <tr><td><code>test262/cases</code></td><td class="mono">4 / 4</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
+  <tr><td><code>test262/harness</code></td><td class="mono">28 / 31</td><td><span class="prate warn"><span style="width:90%"></span></span><span class="rate warn">90%</span></td></tr>
+  <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">157 / 164</td><td><span class="prate"><span style="width:96%"></span></span><span class="rate good">96%</span></td></tr>
+</table>
+
+<h2>Full vendored test262 tree <span class="em">~53k files · 2026-06-15</span></h2>
+<div class="note">
+  Whole vendored tc39 tree (<code>/tmp/t262</code>), run with a <b>fresh wasm instance per test</b> and a
+  <b>1&nbsp;s per-test timeout</b> (timeouts counted as fail). <code>skip</code> = module/async/raw-flagged tests not yet run;
+  <code>intl402</code> is near-zero because <code>Intl</code> is unimplemented. Pass rate = pass / (pass+fail), excluding skips.
+</div>
+<table>
+  <tr><th>area</th><th>pass</th><th>fail</th><th>skip</th><th>timeout</th><th>pass rate</th></tr>
+  <tr><td><code>annexB</code></td><td class="mono">628</td><td class="mono">457</td><td class="mono">1</td><td class="mono">2</td><td><span class="prate warn"><span style="width:58%"></span></span><span class="rate warn">58%</span></td></tr>
+  <tr><td><code>built-ins</code></td><td class="mono">15203</td><td class="mono">7760</td><td class="mono">680</td><td class="mono">1505</td><td><span class="prate warn"><span style="width:66%"></span></span><span class="rate warn">66%</span></td></tr>
+  <tr><td><code>language</code></td><td class="mono">15832</td><td class="mono">2285</td><td class="mono">5594</td><td class="mono">9</td><td><span class="prate"><span style="width:87%"></span></span><span class="rate good">87%</span></td></tr>
+  <tr><td><code>harness</code></td><td class="mono">87</td><td class="mono">12</td><td class="mono">17</td><td class="mono">1</td><td><span class="prate"><span style="width:88%"></span></span><span class="rate good">88%</span></td></tr>
+  <tr><td><code>staging</code></td><td class="mono">708</td><td class="mono">735</td><td class="mono">39</td><td class="mono">22</td><td><span class="prate warn"><span style="width:49%"></span></span><span class="rate warn">49%</span></td></tr>
+  <tr><td><code>intl402</code> <span style="color:var(--faint)">(no Intl)</span></td><td class="mono">31</td><td class="mono">3310</td><td class="mono">0</td><td class="mono">1320</td><td><span class="prate warn"><span style="width:1%"></span></span><span class="rate bad">1%</span></td></tr>
+  <tr class="tot"><td>TOTAL</td><td class="mono">32489</td><td class="mono">14559</td><td class="mono">6331</td><td class="mono">2859</td><td><span class="prate warn"><span style="width:69%"></span></span><span class="rate warn">69%</span></td></tr>
+</table>
+
+<h2>Recently landed <span class="em">newest first</span></h2>
+<table>
+  <tr><th>commit</th><th>change</th></tr>
+  <tr><td class="mono">442f50d</td><td>BigInt <code>&lt;</code> and <code>==</code> compare i64 values exactly, not via f64</td></tr>
+  <tr><td class="mono">397c97b</td><td><code>"use strict"</code> detected anywhere in the Directive Prologue, not just first</td></tr>
+  <tr><td class="mono">fb9ed24</td><td>binary arithmetic/bitwise ops apply <code>ToNumeric</code> to operands (BigInt wrappers)</td></tr>
+  <tr><td class="mono">0c3c3ed</td><td>Proxy revocation function has own <code>name</code> <code>""</code> property</td></tr>
+  <tr><td class="mono">03fcfd4</td><td><code>getOwnPropertySymbols</code> reports array and function symbol keys</td></tr>
+  <tr><td class="mono">12f1a7a</td><td><code>concat</code> IsConcatSpreadable and <code>String.raw</code> accept callable sources</td></tr>
+</table>
+
+<h2>Coverage by area <span class="em">test262, approximate</span></h2>
+<table>
+  <tr><th>area</th><th>notes</th></tr>
+  <tr><td>Proxy</td><td>per-trap spec invariants; built-ins/Proxy ~220, construct/newTarget done</td></tr>
+  <tr><td>Object</td><td>named accessors, descriptors, for-in proto-chain enumeration</td></tr>
+  <tr><td>Date</td><td>~580 passing (timeclip, toPrimitive hints, UTC/year offsets, setters)</td></tr>
+  <tr><td>Collections</td><td>Set/Map proto, ES2024 set methods, WeakMap/WeakSet, groupBy, Symbol.species</td></tr>
+  <tr><td>TypedArrays <span class="pill done">new</span></td><td>%TypedArray% intrinsic, exotic numeric-index semantics, detached-buffer checks, species-create, Float16Array, Uint8Array base64/hex</td></tr>
+  <tr><td>Async / Promises</td><td>microtask job queue, true <code>await</code> suspension, async generators (+<code>.return</code>/<code>.throw</code>), for-await-of, <code>Array.fromAsync</code></td></tr>
+  <tr><td>Destructuring</td><td>cover-grammar bare <code>{pat}=RHS</code> (+133 assignment), for-of/for-in patterns</td></tr>
+  <tr><td>BigInt / Symbol</td><td>wrapper valueOf, @@toPrimitive</td></tr>
+</table>
+
+<h2>Stability</h2>
+<div class="note ok">
+  <span class="good">✓ Crash/hang surface clean.</span> 2026-06-10 sweep: ~13k files, <b>0 traps / 0 hangs</b>.
+  Subsequent crash fixes (number-format scratch, combinator counter, iterator brand-checks) keep it green.
+  Remaining failures are correctness / architectural, not crashes.
+</div>
+
+<h2>Open issues &amp; known gaps</h2>
+
+<div class="note danger">
+  <b>Silent SyntaxError false-pass.</b> The engine swallows compile-time SyntaxErrors
+  (tag=0, no throw) → the harness false-passes any test/include that won't compile.
+  Poisons A/B comparisons; e.g. <code>regExpUtils.js</code> → ~500 RegExp / property-escape
+  tests false-pass. <span class="bad">Highest-priority correctness trap.</span>
+</div>
+
+<table>
+  <tr><th>issue</th><th>impact</th><th>state</th></tr>
+  <tr><td>Block-level lexical scope missing — <code>{let x}</code> clobbers outer; for-let closures capture final value</td><td>needs real nested envs (model on ENTERWITH)</td><td><span class="pill todo">open</span></td></tr>
+  <tr><td>Array/function can't be a [[Prototype]] (proto stored as scope-parent)</td><td>~12–20 tests; deep object-model fix</td><td><span class="pill todo">open</span></td></tr>
+  <tr><td>Multi-declarator for-init <code>for(var a,b; …)</code></td><td>fix written, reverted; reland bundled w/ Unicode regex escapes</td><td><span class="pill wip">staged</span></td></tr>
+  <tr><td>Class inner-name binding missing — named class exprs + static self-ref fail "C is not defined"</td><td>needs isolated class scope (block-scoping infra)</td><td><span class="pill todo">open</span></td></tr>
+  <tr><td>Reference Records</td><td>architectural</td><td><span class="pill todo">open</span></td></tr>
+  <tr><td>test262 breadth gaps — ReferenceError, prelude/includes plumbing</td><td>VM at 22/22 e2e parity but narrow</td><td><span class="pill wip">in progress</span></td></tr>
+</table>
+
+<h2>Next up</h2>
+<ul>
+  <li>Fix silent-SyntaxError swallowing so the harness stops false-passing uncompilable files.</li>
+  <li>Real nested lexical environments → block scoping + per-iteration for-let bindings.</li>
+  <li>Object-model fix so arrays/functions can serve as a [[Prototype]].</li>
+  <li>Reland multi-declarator for-init + Unicode regex escapes together.</li>
+  <li>Broaden test262 plumbing (ReferenceError surfacing, prelude includes).</li>
+</ul>
+
+<footer>
+  Generated 2026-06-11 from repo state &amp; session memory. &nbsp;·&nbsp;
+  Two test layers: self-checking assertion JS (<code>test/</code>) + tc39 test262 (<code>test262/</code>).
+  Chart drawn inline from per-day git activity + dev-session token usage — no external dependencies.
+</footer>
+
+</div>
+
+<script>
+// ---- data ----------------------------------------------------------------
+// per-day activity (NOT cumulative): [label, commits/day, output-tokens/day (M)]
+// commits from `git log`; tokens summed per day across all session transcripts.
+const DAILY = [
+  ["May 28", 108, 0.8], ["May 29", 122, 4.8], ["May 30", 106, 5.9], ["May 31", 0, 0],
+  ["Jun 1", 52, 1.4], ["Jun 2", 50, 2.5], ["Jun 3", 7, 1.6], ["Jun 4", 24, 0.3],
+  ["Jun 5", 32, 1.7], ["Jun 6", 101, 2.1], ["Jun 7", 89, 2.6], ["Jun 8", 66, 3.2],
+  ["Jun 9", 39, 2.7], ["Jun 10", 41, 1.8], ["Jun 11", 28, 3.7],
+  ["Jun 12", 3, 0.7], ["Jun 13", 12, 0.6], ["Jun 14", 45, 2.2], ["Jun 15", 54, 2.65],
+  ["Jun 16", 0, 1.55], ["Jun 17", 0, 0], ["Jun 18", 0, 0], ["Jun 19", 5, 0.23],
+  ["Jun 20", 11, 0.99],
+];
+
+// cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
+// LOC from `git ls-tree` per day's last commit; wasm rebuilt at that commit.
+const GROWTH = [
+  ["May 28", 6200, 49], ["May 29", 8356, 74], ["May 30", 10399, 99], ["May 31", 10399, 99],
+  ["Jun 1", 11716, 111], ["Jun 2", 12379, 118], ["Jun 3", 12480, 121], ["Jun 4", 13169, 129],
+  ["Jun 5", 14682, 147], ["Jun 6", 16239, 167], ["Jun 7", 17190, 179], ["Jun 8", 18191, 193],
+  ["Jun 9", 18665, 197], ["Jun 10", 19517, 215], ["Jun 11", 19938, 225],
+  ["Jun 12", 19987, 226], ["Jun 13", 20095, 227], ["Jun 14", 20541, 231], ["Jun 15", 20976, 236],
+  ["Jun 16", 20976, 236], ["Jun 17", 20976, 236], ["Jun 18", 20976, 236], ["Jun 19", 20976, 236],
+  ["Jun 20", 21086, 237],
+];
+
+// human touch-points to the MAIN engine session (status-dashboard work excluded):
+// i = unique/substantive prompts (intervention), n = repeated nudges ("keep going" / "go").
+// Mined from the main dev transcripts; the status-loop session is not counted.
+const HUMAN = {
+  "May 28": { i:["study if QuickJS has a solid open-source test suite","assertion-based tests are useful too","explore watx via curl","reuse watx for ideas + the initial compiler, drop the canvas runtime"], n:0 },
+  "May 29": { i:["list all points in the original request / design + their impl status","didn't we start with the threaded-VM idea?"], n:22 },
+  "May 30": { i:['drop the "production" engine — check DESIGN.md, stay WAT-native'], n:9 },
+  "Jun 1": { n:4 }, "Jun 2": { n:15 }, "Jun 3": { n:17 }, "Jun 4": { n:7 },
+  "Jun 5": { n:14 }, "Jun 6": { n:13 }, "Jun 7": { n:8 }, "Jun 8": { n:9 }, "Jun 9": { n:7 },
+  "Jun 10": { n:8 }, "Jun 11": { n:6 }, "Jun 12": { n:8 }, "Jun 13": { n:6 }, "Jun 14": { n:15 },
+  "Jun 15": { n:24 }, "Jun 16": { n:4 }, "Jun 19": { n:2 },
+  "Jun 20": { i:["restore the test262 suite from the git repo?"], n:12 },
+};
+
+const NS = "http://www.w3.org/2000/svg";
+function el(name, attrs) { const e = document.createElementNS(NS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+
+// combo chart: commits/day as bars (left axis), tokens/day as a line (right axis)
+function barLineChart(svgId, data) {
+  const svg = document.getElementById(svgId); if (!svg) return;
+  const W = 920, H = 240, pad = { l: 42, r: 52, t: 40, b: 30 };
+  const BLUE = "#6ea8fe", PURP = "#a78bfa", AMBER = "#f5b65b";
+  // bar gradient
+  const def = el("defs", {});
+  const g = el("linearGradient", { id: svgId+"-bar", x1:0, y1:0, x2:0, y2:1 });
+  g.appendChild(el("stop", { offset:"0%",  "stop-color":BLUE, "stop-opacity":.95 }));
+  g.appendChild(el("stop", { offset:"100%","stop-color":BLUE, "stop-opacity":.32 }));
+  def.appendChild(g); svg.appendChild(def);
+
+  const iw = W-pad.l-pad.r, ih = H-pad.t-pad.b, base = pad.t+ih, n = data.length;
+  const slot = iw/n, bw = slot*0.52;
+  const cx = i => pad.l + slot*i + slot/2;
+  const cmax = Math.max(...data.map(d => d[1]));
+  const tmax = Math.max(...data.map(d => d[2]).filter(v => v != null));
+  const Yc = v => base - (v/cmax) * ih;
+  const Yt = v => base - (v/tmax) * ih;
+
+  // gridlines + dual axis labels
+  const ticks = 4;
+  for (let t=0; t<=ticks; t++) {
+    const y = base - (ih*t/ticks);
+    svg.appendChild(el("line", { class:"gridline", x1:pad.l, y1:y, x2:W-pad.r, y2:y }));
+    const l = el("text", { class:"axis", x: pad.l-7, y: y+3, "text-anchor":"end", fill:BLUE });
+    l.textContent = Math.round(cmax*t/ticks); svg.appendChild(l);
+    const r = el("text", { class:"axis", x: W-pad.r+7, y: y+3, "text-anchor":"start", fill:PURP });
+    r.textContent = (tmax*t/ticks).toFixed(0)+"M"; svg.appendChild(r);
+  }
+  // bars (commits/day)
+  data.forEach((d,i) => {
+    const y = Yc(d[1]);
+    const rect = el("rect", { x: cx(i)-bw/2, y: y, width: bw, height: Math.max(0, base-y),
+      rx: 2.5, fill:`url(#${svgId}-bar)`, stroke:BLUE, "stroke-width":1, "stroke-opacity":.45 });
+    const tt = el("title", {}); tt.textContent = data[i][0]+": "+d[1]+" commits"; rect.appendChild(tt);
+    svg.appendChild(rect);
+    const xt = el("text", { class:"axis", x: cx(i), y: H-9, "text-anchor":"middle" });
+    xt.textContent = d[0]; svg.appendChild(xt);
+  });
+  // token line (only where measured)
+  let tl = "", started = false;
+  data.forEach((d,i) => { if (d[2]==null) return; tl += (started?"L":"M")+cx(i)+" "+Yt(d[2])+" "; started = true; });
+  svg.appendChild(el("path", { d:tl, fill:"none", stroke:PURP, "stroke-width":2.5, "stroke-linejoin":"round", "stroke-linecap":"round" }));
+  data.forEach((d,i) => { if (d[2]==null) return;
+    const c = el("circle", { class:"dot", cx:cx(i), cy:Yt(d[2]), r:3, stroke:PURP });
+    const tt = el("title", {}); tt.textContent = data[i][0]+": "+d[2]+"M tokens"; c.appendChild(tt); svg.appendChild(c);
+  });
+  // ---- human touch-point overlay (top lane) --------------------------------
+  data.forEach((d,i) => {
+    const h = (typeof HUMAN !== "undefined") && HUMAN[d[0]]; if (!h) return;
+    const x = cx(i);
+    if (h.n) {                                  // repeated-nudge count
+      const nt = el("text", { x:x, y:pad.t-26, "text-anchor":"middle", "font-size":"9.5",
+        fill:AMBER, "fill-opacity":.8 });
+      nt.textContent = h.n;
+      const ntt = el("title", {}); ntt.textContent = d[0]+": "+h.n+' nudges ("keep going" / "go" / "chk")';
+      nt.appendChild(ntt); svg.appendChild(nt);
+    }
+    if (h.i && h.i.length) {                     // unique-prompt intervention pin
+      svg.appendChild(el("line", { x1:x, y1:pad.t-9, x2:x, y2:base, stroke:AMBER,
+        "stroke-width":1, "stroke-opacity":.20, "stroke-dasharray":"2 3" }));
+      const dia = el("path", { class:"pin", d:`M${x} ${pad.t-19} l5 5 l-5 5 l-5 -5 z`,
+        fill:AMBER, stroke:"#10131a", "stroke-width":.8 });
+      const html = '<div class="vt-h">'+d[0]+' · human intervention</div><ul><li>'
+        + h.i.map(p => p.replace(/&/g,"&amp;").replace(/</g,"&lt;")).join("</li><li>")
+        + "</li></ul>";
+      dia.addEventListener("mouseenter", e => showTip(html, e));
+      dia.addEventListener("mousemove", moveTip);
+      dia.addEventListener("mouseleave", hideTip);
+      svg.appendChild(dia);
+    }
+  });
+}
+
+// shared styled tooltip for chart markers
+let _tip;
+function tipEl() { if (!_tip) { _tip = document.createElement("div"); _tip.id = "viz-tip";
+  document.body.appendChild(_tip); } return _tip; }
+function showTip(html, e) { const t = tipEl(); t.innerHTML = html; t.classList.add("on"); moveTip(e); }
+function moveTip(e) { const t = tipEl(); t.style.left = e.clientX+"px"; t.style.top = e.clientY+"px"; }
+function hideTip() { if (_tip) _tip.classList.remove("on"); }
+
+// dual-axis line chart for cumulative growth: LOC (left, cyan) + wasm KB (right, purple)
+function dualLineChart(svgId, data) {
+  const svg = document.getElementById(svgId); if (!svg) return;
+  const W = 920, H = 240, pad = { l: 46, r: 54, t: 16, b: 30 };
+  const CY = "#5fd3c4", PURP = "#a78bfa";
+  const def = el("defs", {});
+  const g = el("linearGradient", { id: svgId+"-loc", x1:0, y1:0, x2:0, y2:1 });
+  g.appendChild(el("stop", { offset:"0%",  "stop-color":CY, "stop-opacity":.22 }));
+  g.appendChild(el("stop", { offset:"100%","stop-color":CY, "stop-opacity":0 }));
+  def.appendChild(g); svg.appendChild(def);
+
+  const iw = W-pad.l-pad.r, ih = H-pad.t-pad.b, base = pad.t+ih, n = data.length;
+  const X = i => pad.l + (i/(n-1)) * iw;
+  const lmax = Math.max(...data.map(d => d[1]));
+  const wmax = Math.max(...data.map(d => d[2]));
+  const Yl = v => base - (v/lmax) * ih;
+  const Yw = v => base - (v/wmax) * ih;
+  const ticks = 4;
+  for (let t=0; t<=ticks; t++) {
+    const y = base - (ih*t/ticks);
+    svg.appendChild(el("line", { class:"gridline", x1:pad.l, y1:y, x2:W-pad.r, y2:y }));
+    const l = el("text", { class:"axis", x: pad.l-7, y: y+3, "text-anchor":"end", fill:CY });
+    l.textContent = (lmax*t/ticks/1000).toFixed(0)+"k"; svg.appendChild(l);
+    const r = el("text", { class:"axis", x: W-pad.r+7, y: y+3, "text-anchor":"start", fill:PURP });
+    r.textContent = Math.round(wmax*t/ticks); svg.appendChild(r);
+  }
+  data.forEach((d,i) => { const xt = el("text", { class:"axis", x: X(i), y: H-9, "text-anchor":"middle" });
+    xt.textContent = d[0]; svg.appendChild(xt); });
+  // LOC area + line
+  let ll = "";
+  data.forEach((d,i) => { ll += (i?"L":"M")+X(i)+" "+Yl(d[1])+" "; });
+  svg.appendChild(el("path", { d: ll+"L"+X(n-1)+" "+base+" L"+X(0)+" "+base+" Z", fill:`url(#${svgId}-loc)` }));
+  svg.appendChild(el("path", { d:ll, fill:"none", stroke:CY, "stroke-width":2.5, "stroke-linejoin":"round", "stroke-linecap":"round" }));
+  // wasm line
+  let wl = "";
+  data.forEach((d,i) => { wl += (i?"L":"M")+X(i)+" "+Yw(d[2])+" "; });
+  svg.appendChild(el("path", { d:wl, fill:"none", stroke:PURP, "stroke-width":2.5, "stroke-linejoin":"round", "stroke-linecap":"round" }));
+  data.forEach((d,i) => {
+    const c = el("circle", { class:"dot", cx:X(i), cy:Yl(d[1]), r:2.6, stroke:CY });
+    const t1 = el("title", {}); t1.textContent = d[0]+": "+d[1].toLocaleString()+" LOC"; c.appendChild(t1); svg.appendChild(c);
+    const c2 = el("circle", { class:"dot", cx:X(i), cy:Yw(d[2]), r:2.6, stroke:PURP });
+    const t2 = el("title", {}); t2.textContent = d[0]+": "+d[2]+" KB"; c2.appendChild(t2); svg.appendChild(c2);
+  });
+}
+
+barLineChart("chart-daily", DAILY);
+dualLineChart("chart-growth", GROWTH);
+</script>
+</body>
+</html>
