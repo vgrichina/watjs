@@ -5899,6 +5899,8 @@
   (call $scope_define (call $val_payload (local.get $O)) (cstring "@@agbusy") (call $num (f64.convert_i32_s (local.get $b)))))
 (func $agen_front_np (param $O i64) (result i64) (effects)
   (call $arr_get (call $agen_queue (local.get $O)) (i32.add (i32.mul (call $agen_head (local.get $O)) (i32.const 3)) (i32.const 2))))
+(func $agen_front_val (param $O i64) (result i64) (effects)  ;; the value arg of the front request (e.g. the .return() value)
+  (call $arr_get (call $agen_queue (local.get $O)) (i32.add (i32.mul (call $agen_head (local.get $O)) (i32.const 3)) (i32.const 1))))
 ;; resolve the front request's promise from a completed step, advance the head. Returns 1 (continue pump).
 ;; AsyncGeneratorResolve for a return/completion: resolve np with { value: ? Await(value),
 ;; done:true } — the value is awaited (so .return(promise) yields its resolved value), a
@@ -5915,7 +5917,12 @@
   (if (call $vm_done (local.get $ctx))
     (then
       (if (call $err)
-        (then (let $e i64 (call $err_val)) (call $set_err (i32.const 0)) (call $promise_settle (local.get $np) (i32.const 2) (local.get $e)))
+        (then (let $e i64 (call $err_val)) (call $set_err (i32.const 0))
+          ;; return-completion sentinel (a .return() ran its finally to completion) → resolve
+          ;; { value: Await(returnValue), done:true }; any other error rejects the promise.
+          (if (i64.eq (local.get $e) (i64.load (i32.const 832)))
+            (then (call $agen_settle_done (local.get $np) (i64.load (call $scope_find_local (call $val_payload (local.get $O)) (cstring "@@agretval")))))
+            (else (call $promise_settle (local.get $np) (i32.const 2) (local.get $e)))))
         (else (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 1)))))
       (call $agen_advance (local.get $O))
       (return (i32.const 1))))
@@ -5943,16 +5950,37 @@
             (then (call $agen_settle_done (local.get $np) (local.get $val)))
             (else (call $promise_resolve_with (local.get $np) (call $agen_result (call $v_undef) (i32.const 1)))))))  ;; next on a done gen → {undefined, done:true}
         (call $agen_advance (local.get $O)) (br $lp)))
-    (if (i32.eq (local.get $kind) (i32.const 1))  ;; return on a running gen → close it (no finally), { value: Await(val), done:true }
+    (if (i32.eq (local.get $kind) (i32.const 1))  ;; return on a suspended gen
       (then
-        (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
-        (call $agen_settle_done (local.get $np) (local.get $val))
-        (call $agen_advance (local.get $O)) (br $lp)))
-    (if (i32.eq (local.get $kind) (i32.const 2))  ;; throw on a running gen → close (no in-body try/catch resumption yet) and reject
-      (then
-        (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
-        (call $promise_settle (local.get $np) (i32.const 2) (local.get $val))
-        (call $agen_advance (local.get $O)) (br $lp)))
+        ;; suspended inside a try/finally (runOnReturn handler in the chain) → run the finally via
+        ;; the return-completion sentinel, then complete (after_step turns the escaped sentinel into
+        ;; { value: Await(returnVal), done:true }). Otherwise close immediately (no finally to run).
+        (let $rfin i32 (i32.const 0))
+        (let $rh i32 (i32.load (i32.add (local.get $ctx) (i32.const 32))))
+        (block $rwe (loop $rwl
+          (br_if $rwe (i32.eqz (local.get $rh)))
+          (if (i32.load (i32.add (local.get $rh) (i32.const 24))) (then (set! $rfin (i32.const 1)) (br $rwe)))
+          (set! $rh (i32.load (i32.add (local.get $rh) (i32.const 20))))
+          (br $rwl)))
+        (if (local.get $rfin)
+          (then
+            ;; remember the return value across any yield/await inside the finally — by the time the
+            ;; sentinel escapes, the queue front may be a later .next() request, so front_val is wrong.
+            (call $scope_define (call $val_payload (local.get $O)) (cstring "@@agretval") (local.get $val))
+            (call $set_err (i32.const 1)) (call $set_err_val (i64.load (i32.const 832)))
+            (let $vr i64 (call $vm_step (local.get $ctx) (call $v_undef)))
+            (if (i32.eqz (call $agen_after_step (local.get $O) (local.get $vr))) (then (br $stop)))
+            (br $lp))
+          (else
+            (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
+            (call $agen_settle_done (local.get $np) (local.get $val))
+            (call $agen_advance (local.get $O)) (br $lp)))))
+    (if (i32.eq (local.get $kind) (i32.const 2))  ;; throw on a suspended gen → resume BY THROWING so an in-body
+      (then                                         ;; try/catch (or try/finally) runs; uncaught closes + rejects (via after_step)
+        (call $set_err (i32.const 1)) (call $set_err_val (local.get $val))
+        (let $vt i64 (call $vm_step (local.get $ctx) (call $v_undef)))
+        (if (i32.eqz (call $agen_after_step (local.get $O) (local.get $vt))) (then (br $stop)))
+        (br $lp)))
     (let $v i64 (call $vm_step (local.get $ctx) (local.get $val)))  ;; kind 0 (next): resume value = val
     (if (i32.eqz (call $agen_after_step (local.get $O) (local.get $v))) (then (br $stop)))  ;; awaited → stop, resume later
     (br $lp))))
