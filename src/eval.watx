@@ -6178,17 +6178,25 @@
               (if (call $err) (then (return (call $v_undef))))
               (return (call $v_true)))
             (else (return (call $call_native (i32.const 206) (i32.const 3) (local.get $rdfb) (call $v_undef)))))))
+      ;; spec step 2: ToPropertyKey(propertyKey) runs BEFORE the descriptor is examined —
+      ;; a key whose toString/valueOf throws must propagate here (e.g. Reflect.defineProperty({}, p)).
+      (let $rpkey i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (call $err) (then (return (call $v_undef))))
       (if (i32.and (i32.or (call $is_object (local.get $rpt)) (i32.or (call $is_function (local.get $rpt)) (call $is_array (local.get $rpt)))) (i32.or (call $is_object (local.get $rpd)) (i32.or (call $is_function (local.get $rpd)) (call $is_array (local.get $rpd)))))
         (then
           ;; soft mode: a [[DefineOwnProperty]] rejection records reg 668 instead of throwing
           (i32.store (i32.const 664) (i32.const 1))
           (i32.store (i32.const 668) (i32.const 0))
           (if (call $is_function (local.get $rpt))
-            (then (call $apply_descriptor (call $fn_def_scope (local.get $rpt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (local.get $rpd)))
-            (else (call $apply_descriptor (call $val_payload (local.get $rpt)) (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (local.get $rpd))))
+            (then (call $apply_descriptor (call $fn_def_scope (local.get $rpt)) (local.get $rpkey) (local.get $rpd)))
+            (else (call $apply_descriptor (call $val_payload (local.get $rpt)) (local.get $rpkey) (local.get $rpd))))
           (i32.store (i32.const 664) (i32.const 0))
           (if (call $err) (then (return (call $v_undef))))  ;; a genuine exception (e.g. a descriptor getter threw) propagates
           (return (call $mk_bool (i32.eqz (i32.load (i32.const 668)))))))
+      ;; step 3: ToPropertyDescriptor(attributes) — a non-object descriptor (incl. the 2-arg
+      ;; `undefined` form) throws TypeError, but only once the target itself is an object.
+      (if (i32.or (call $is_object (local.get $rpt)) (i32.or (call $is_function (local.get $rpt)) (call $is_array (local.get $rpt))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 207))  ;; Reflect.getOwnPropertyDescriptor(target, key)
     (then (return (call $call_native (i32.const 156) (local.get $argc) (local.get $argv) (call $v_undef)))))
