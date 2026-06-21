@@ -6004,8 +6004,25 @@
       (let $rspok i32 (call $setproto_internal (local.get $rspt) (local.get $rspp)))
       (if (call $err) (then (return (call $v_undef))))
       (return (call $mk_bool (local.get $rspok)))))
-  (if (i32.eq (local.get $id) (i32.const 200))  ;; Reflect.get(target, key)
-    (then (return (call $get_prop (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
+  (if (i32.eq (local.get $id) (i32.const 200))  ;; Reflect.get(target, key[, receiver])
+    (then
+      (let $rgtgt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $rgkey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      ;; a separate receiver (arg2) only changes an ACCESSOR getter's `this`; for a plain-object
+      ;; target with receiver≠target, walk the chain: accessor → call getter with the receiver,
+      ;; data → the value. Otherwise fall back to ordinary [[Get]] (this=target).
+      (if (i32.and (i32.ge_s (local.get $argc) (i32.const 3)) (i32.and (call $is_object (local.get $rgtgt)) (i32.eqz (call $strict_eq (call $argn (local.get $argv) (local.get $argc) (i32.const 2)) (local.get $rgtgt)))))
+        (then
+          (let $rgrecv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+          (let $rgslot i32 (call $scope_find (call $val_payload (local.get $rgtgt)) (call $to_prop_key (local.get $rgkey))))
+          (if (i32.eqz (local.get $rgslot)) (then (return (call $v_undef))))
+          (if (call $entry_is_accessor (local.get $rgslot))
+            (then
+              (let $rggetter i64 (i64.load (call $val_payload (i64.load (local.get $rgslot)))))
+              (if (call $is_function (local.get $rggetter)) (then (return (call $call_fn0 (local.get $rggetter) (local.get $rgrecv)))))
+              (return (call $v_undef))))
+          (return (i64.load (local.get $rgslot)))))
+      (return (call $get_prop (local.get $rgtgt) (local.get $rgkey)))))
   (if (i32.eq (local.get $id) (i32.const 201))  ;; Reflect.set(target, key, value[, receiver]) → boolean
     (then
       (let $rstgt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
