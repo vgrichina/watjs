@@ -5208,9 +5208,7 @@
   (if (local.get $gpr) (then (i32.store (local.get $g) (local.get $gpr)))
     (else (if (i32.load (i32.const 488)) (then (i32.store (local.get $g) (i32.load (i32.const 488)))))))
   (call $scope_define (local.get $g) (cstring "@@ctx") (call $num (f64.convert_i32_s (local.get $ctx))))
-  (call $scope_define_attr (local.get $g) (cstring "next") (call $mk_native (i32.const 150) (cstring "next")) (i32.const 12))  ;; methods are DontEnum {W,C}
-  (call $scope_define_attr (local.get $g) (cstring "return") (call $mk_native (i32.const 420) (cstring "return")) (i32.const 12))
-  (call $scope_define_attr (local.get $g) (cstring "throw") (call $mk_native (i32.const 421) (cstring "throw")) (i32.const 12))
+  ;; next/return/throw are inherited from %GeneratorPrototype% / %AsyncGeneratorPrototype% (not own)
   ;; async generator (fn flag bit7): mark the object so next/return/throw return promises,
   ;; and expose Symbol.asyncIterator → this (native 342 = Iterator.prototype[@@iterator] → this).
   (if (local.get $isag)
