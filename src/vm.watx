@@ -5590,27 +5590,99 @@
   (call $scope_define (local.get $o) (cstring "value") (local.get $value))
   (call $scope_define (local.get $o) (cstring "done") (call $mk_bool (local.get $done)))
   (call $mk_obj (local.get $o)))
-(func $agen_drive (param $ctx i32) (param $np i64) (param $resumeval i64) (effects)
-  (if (call $vm_done (local.get $ctx))
-    (then (call $promise_resolve_with (local.get $np) (call $agen_result (call $v_undef) (i32.const 1))) (return)))
-  (let $v i64 (call $vm_step (local.get $ctx) (local.get $resumeval)))
+;; ── AsyncGeneratorEnqueue + drain (spec request queue) ──
+;; The agen object O carries @@ctx (vm ctx), a request queue @@agqueue (flat triples
+;; [kind,value,np], kind 0=next/1=return/2=throw), a head index @@aghead, and @@agbusy
+;; (a request is currently executing). next/return/throw enqueue a request and start the
+;; pump only when idle, so a re-entrant call while suspended-on-await just queues.
+(func $agen_ctx (param $O i64) (result i32) (effects)
+  (i32.trunc_f64_s (call $to_num (i64.load (call $scope_find_local (call $val_payload (local.get $O)) (cstring "@@ctx"))))))
+(func $agen_queue (param $O i64) (result i32) (effects)
+  (let $qs i32 (call $scope_find_local (call $val_payload (local.get $O)) (cstring "@@agqueue")))
+  (if (i32.eqz (local.get $qs))
+    (then
+      (call $scope_define (call $val_payload (local.get $O)) (cstring "@@agqueue") (call $mk_arr (call $arr_new (i32.const 8))))
+      (set! $qs (call $scope_find_local (call $val_payload (local.get $O)) (cstring "@@agqueue")))))
+  (call $val_payload (i64.load (local.get $qs))))
+(func $agen_head (param $O i64) (result i32) (effects)
+  (let $hs i32 (call $scope_find_local (call $val_payload (local.get $O)) (cstring "@@aghead")))
+  (if i32 (local.get $hs) (then (i32.trunc_f64_s (call $to_num (i64.load (local.get $hs))))) (else (i32.const 0))))
+(func $agen_advance (param $O i64) (effects)
+  (call $scope_define (call $val_payload (local.get $O)) (cstring "@@aghead") (call $num (f64.convert_i32_s (i32.add (call $agen_head (local.get $O)) (i32.const 1))))))
+(func $agen_busy (param $O i64) (result i32) (effects)
+  (let $bs i32 (call $scope_find_local (call $val_payload (local.get $O)) (cstring "@@agbusy")))
+  (if i32 (local.get $bs) (then (i32.trunc_f64_s (call $to_num (i64.load (local.get $bs))))) (else (i32.const 0))))
+(func $agen_set_busy (param $O i64) (param $b i32) (effects)
+  (call $scope_define (call $val_payload (local.get $O)) (cstring "@@agbusy") (call $num (f64.convert_i32_s (local.get $b)))))
+(func $agen_front_np (param $O i64) (result i64) (effects)
+  (call $arr_get (call $agen_queue (local.get $O)) (i32.add (i32.mul (call $agen_head (local.get $O)) (i32.const 3)) (i32.const 2))))
+;; resolve the front request's promise from a completed step, advance the head. Returns 1 (continue pump).
+(func $agen_after_step (param $O i64) (param $v i64) (result i32) (effects)
+  (let $ctx i32 (call $agen_ctx (local.get $O)))
+  (let $np i64 (call $agen_front_np (local.get $O)))
   (if (call $vm_done (local.get $ctx))
     (then
       (if (call $err)
-        (then (let $ae i64 (call $err_val)) (call $set_err (i32.const 0)) (call $promise_settle (local.get $np) (i32.const 2) (local.get $ae)))
-        (else (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 1)))))  ;; gen returned
-      (return)))
-  (if (i32.eq (i32.load (i32.const 708)) (i32.const 1))  ;; await → suspend, resume when the awaited promise settles
-    (then (call $agen_register_cont (call $vm_promise_resolve (local.get $v)) (local.get $ctx) (local.get $np)) (return)))
-  (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 0))))  ;; yield → {value, done:false}
-(func $agen_register_cont (param $aw i64) (param $ctx i32) (param $np i64) (effects)
-  (let $co i32 (call $obj_new (i32.const 4)))
-  (call $scope_define (local.get $co) (cstring "@@actx") (call $num (f64.convert_i32_s (local.get $ctx))))
-  (call $scope_define (local.get $co) (cstring "@@arp") (local.get $np))
+        (then (let $e i64 (call $err_val)) (call $set_err (i32.const 0)) (call $promise_settle (local.get $np) (i32.const 2) (local.get $e)))
+        (else (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 1)))))
+      (call $agen_advance (local.get $O))
+      (return (i32.const 1))))
+  (if (i32.eq (i32.load (i32.const 708)) (i32.const 1))  ;; await → suspend; front stays, resume via continuation
+    (then (call $agen_register_cont (call $vm_promise_resolve (local.get $v)) (local.get $O)) (return (i32.const 0))))
+  ;; yield → resolve {value, done:false}, advance to the next queued request
+  (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 0)))
+  (call $agen_advance (local.get $O))
+  (i32.const 1))
+(func $agen_pump (param $O i64) (effects)
+  (let $ctx i32 (call $agen_ctx (local.get $O)))
+  (block $stop (loop $lp
+    (let $q i32 (call $agen_queue (local.get $O)))
+    (let $base i32 (i32.mul (call $agen_head (local.get $O)) (i32.const 3)))
+    (if (i32.ge_s (local.get $base) (call $arr_len (local.get $q)))  ;; queue drained → idle
+      (then (call $agen_set_busy (local.get $O) (i32.const 0)) (br $stop)))
+    (let $kind i32 (i32.trunc_f64_s (call $to_num (call $arr_get (local.get $q) (local.get $base)))))
+    (let $val i64 (call $arr_get (local.get $q) (i32.add (local.get $base) (i32.const 1))))
+    (let $np i64 (call $arr_get (local.get $q) (i32.add (local.get $base) (i32.const 2))))
+    (if (call $vm_done (local.get $ctx))  ;; gen already completed → settle without resuming
+      (then
+        (if (i32.eq (local.get $kind) (i32.const 2))  ;; throw → reject with the reason
+          (then (call $promise_settle (local.get $np) (i32.const 2) (local.get $val)))
+          (else (call $promise_resolve_with (local.get $np) (call $agen_result (if i64 (i32.eq (local.get $kind) (i32.const 1)) (then (local.get $val)) (else (call $v_undef))) (i32.const 1)))))  ;; return→{value}, next→{undefined}
+        (call $agen_advance (local.get $O)) (br $lp)))
+    (if (i32.eq (local.get $kind) (i32.const 1))  ;; return on a running gen → close it (no finally), {value,done:true}
+      (then
+        (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
+        (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $val) (i32.const 1)))
+        (call $agen_advance (local.get $O)) (br $lp)))
+    (if (i32.eq (local.get $kind) (i32.const 2))  ;; throw on a running gen → close (no in-body try/catch resumption yet) and reject
+      (then
+        (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
+        (call $promise_settle (local.get $np) (i32.const 2) (local.get $val))
+        (call $agen_advance (local.get $O)) (br $lp)))
+    (let $v i64 (call $vm_step (local.get $ctx) (local.get $val)))  ;; kind 0 (next): resume value = val
+    (if (i32.eqz (call $agen_after_step (local.get $O) (local.get $v))) (then (br $stop)))  ;; awaited → stop, resume later
+    (br $lp))))
+(func $agen_enqueue (param $O i64) (param $kind i32) (param $value i64) (result i64) (effects)
+  (let $np i64 (call $mk_promise (i32.const 0) (call $v_undef)))
+  (let $q i32 (call $agen_queue (local.get $O)))
+  (call $arr_push (local.get $q) (call $num (f64.convert_i32_s (local.get $kind))))
+  (call $arr_push (local.get $q) (local.get $value))
+  (call $arr_push (local.get $q) (local.get $np))
+  (if (i32.eqz (call $agen_busy (local.get $O)))
+    (then (call $agen_set_busy (local.get $O) (i32.const 1)) (call $agen_pump (local.get $O))))
+  (local.get $np))
+(func $agen_register_cont (param $aw i64) (param $O i64) (effects)
+  (let $co i32 (call $obj_new (i32.const 2)))
+  (call $scope_define (local.get $co) (cstring "@@agen") (local.get $O))
   (let $cov i64 (call $mk_obj (local.get $co)))
   (drop (call $promise_then (local.get $aw)
     (call $promise_bound_settler (i32.const 458) (local.get $cov))     ;; resume with value
     (call $promise_bound_settler (i32.const 459) (local.get $cov)))))  ;; resume by throwing
+;; resume a suspended async-generator after its awaited promise settles (errval already set
+;; for the reject path), then continue draining the request queue.
+(func $agen_resume (param $O i64) (param $resumeval i64) (effects)
+  (let $v i64 (call $vm_step (call $agen_ctx (local.get $O)) (local.get $resumeval)))
+  (if (call $agen_after_step (local.get $O) (local.get $v)) (then (call $agen_pump (local.get $O)))))
 
 (func $vm_make_async (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (param $thisv i64) (result i64) (effects)
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
