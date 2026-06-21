@@ -29,4 +29,9 @@ if (!GenProto.hasOwnProperty("throw")) throw "throw not own";
 if (g().hasOwnProperty("next")) throw "next should not be own on instance";
 var nd = Object.getOwnPropertyDescriptor(GenProto, "next");
 if (nd.writable !== true || nd.enumerable !== false || nd.configurable !== true) throw "next desc";
+// g.constructor / @@toStringTag / .prototype's [[Prototype]] resolve through %Generator%
+if (g.constructor !== GF) throw "g.constructor !== GeneratorFunction";
+if (Object.prototype.toString.call(g) !== "[object GeneratorFunction]") throw "gen fn toString";
+if (Object.getPrototypeOf(g.prototype) !== GF.prototype.prototype) throw "g.prototype proto !== %GeneratorPrototype%";
+if (typeof g.call !== "function" || typeof g.bind !== "function") throw "g.call/bind lost";
 print("ok");

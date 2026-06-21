@@ -660,6 +660,8 @@
               (if (i32.eqz (call $is_object (local.get $vproto)))  ;; lazily create .prototype (constructor functions)
                 (then
                   (set! $vproto (call $mk_obj (call $obj_new (i32.const 8))))
+                  (let $gipp i32 (call $gen_inst_proto (local.get $fn)))  ;; generator → inherit %GeneratorPrototype%
+                  (if (local.get $gipp) (then (i32.store (call $val_payload (local.get $vproto)) (local.get $gipp))))
                   (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vproto))
                   (call $scope_define_attr (call $val_payload (local.get $vproto)) (cstring "constructor") (local.get $cont) (i32.const 12))))  ;; F.prototype.constructor === F {W:true,E:false,C:true}
               (return (local.get $vproto))))
@@ -700,6 +702,12 @@
                   (return (i64.load (local.get $vslot)))))))
           (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
           (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
+          ;; a generator fn inherits %Generator%/%AsyncGenerator% OWN props (constructor → %GeneratorFunction%,
+          ;; @@toStringTag "GeneratorFunction") BEFORE the %Function.prototype% chain.
+          (let $gfpr i32 (call $gen_fn_proto (local.get $fn)))
+          (if (local.get $gfpr)
+            (then (let $gfsl i32 (call $scope_find_local (local.get $gfpr) (local.get $ks)))
+              (if (local.get $gfsl) (then (return (i64.load (local.get $gfsl)))))))
           (let $vinh i32 (call $fn_inherited_slot (local.get $ks)))
           (if (local.get $vinh)
             (then
@@ -874,6 +882,20 @@
     (then (call $fn_ownsc (local.get $fn)))
     (else (call $fn_props (local.get $fn)))))
 
+;; for a generator VM fn (magic 527), the [[Prototype]] of its .prototype object is
+;; %GeneratorPrototype% (792) / %AsyncGeneratorPrototype% (796, async-gen flag bit7);
+;; 0 for ordinary functions (their .prototype is a plain Object.prototype-rooted object).
+(func $gen_inst_proto (param $fn i32) (result i32) (effects)
+  (if i32 (i32.eq (i32.load (local.get $fn)) (i32.const 1448232527))
+    (then (i32.load (if i32 (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 128)) (then (i32.const 796)) (else (i32.const 792)))))
+    (else (i32.const 0))))
+;; the generator fn's OWN [[Prototype]] %Generator% (800) / %AsyncGenerator% (804) — carries
+;; constructor (→ %GeneratorFunction%) and @@toStringTag ("GeneratorFunction"). 0 otherwise.
+(func $gen_fn_proto (param $fn i32) (result i32) (effects)
+  (if i32 (i32.eq (i32.load (local.get $fn)) (i32.const 1448232527))
+    (then (i32.load (if i32 (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 128)) (then (i32.const 804)) (else (i32.const 800)))))
+    (else (i32.const 0))))
+
 ;; get-or-create a function's .prototype object value
 (func $fn_get_prototype (param $fn i32) (result i64) (effects)
   ;; VM functions (magic 526..528) store .prototype at @16, NOT in the @12 props
@@ -883,6 +905,8 @@
       (let $vp i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
       (if (call $is_object (local.get $vp)) (then (return (local.get $vp))))
       (let $vpo i32 (call $obj_new (i32.const 8)))
+      (let $gipp i32 (call $gen_inst_proto (local.get $fn)))  ;; generator → inherit %GeneratorPrototype%
+      (if (local.get $gipp) (then (i32.store (local.get $vpo) (local.get $gipp))))
       (let $vpv i64 (call $mk_obj (local.get $vpo)))
       (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vpv))
       (call $scope_define_attr (local.get $vpo) (cstring "constructor") (call $mk_fn (local.get $fn)) (i32.const 12))
