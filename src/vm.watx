@@ -5619,6 +5619,15 @@
 (func $agen_front_np (param $O i64) (result i64) (effects)
   (call $arr_get (call $agen_queue (local.get $O)) (i32.add (i32.mul (call $agen_head (local.get $O)) (i32.const 3)) (i32.const 2))))
 ;; resolve the front request's promise from a completed step, advance the head. Returns 1 (continue pump).
+;; AsyncGeneratorResolve for a return/completion: resolve np with { value: ? Await(value),
+;; done:true } — the value is awaited (so .return(promise) yields its resolved value), a
+;; rejection rejects np. (vm_promise_resolve adopts a thenable; settler 515 wraps it.)
+(func $agen_settle_done (param $np i64) (param $value i64) (effects)
+  (let $co i32 (call $obj_new (i32.const 2)))
+  (call $scope_define (local.get $co) (cstring "@@arp") (local.get $np))
+  (drop (call $promise_then (call $vm_promise_resolve (local.get $value))
+    (call $promise_bound_settler (i32.const 515) (call $mk_obj (local.get $co)))   ;; fulfilled → np = {value, done:true}
+    (call $promise_bound_settler (i32.const 416) (local.get $np)))))                ;; rejected → reject np with the reason
 (func $agen_after_step (param $O i64) (param $v i64) (result i32) (effects)
   (let $ctx i32 (call $agen_ctx (local.get $O)))
   (let $np i64 (call $agen_front_np (local.get $O)))
@@ -5649,12 +5658,14 @@
       (then
         (if (i32.eq (local.get $kind) (i32.const 2))  ;; throw → reject with the reason
           (then (call $promise_settle (local.get $np) (i32.const 2) (local.get $val)))
-          (else (call $promise_resolve_with (local.get $np) (call $agen_result (if i64 (i32.eq (local.get $kind) (i32.const 1)) (then (local.get $val)) (else (call $v_undef))) (i32.const 1)))))  ;; return→{value}, next→{undefined}
+          (else (if (i32.eq (local.get $kind) (i32.const 1))  ;; return → { value: Await(val), done:true }
+            (then (call $agen_settle_done (local.get $np) (local.get $val)))
+            (else (call $promise_resolve_with (local.get $np) (call $agen_result (call $v_undef) (i32.const 1)))))))  ;; next on a done gen → {undefined, done:true}
         (call $agen_advance (local.get $O)) (br $lp)))
-    (if (i32.eq (local.get $kind) (i32.const 1))  ;; return on a running gen → close it (no finally), {value,done:true}
+    (if (i32.eq (local.get $kind) (i32.const 1))  ;; return on a running gen → close it (no finally), { value: Await(val), done:true }
       (then
         (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
-        (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $val) (i32.const 1)))
+        (call $agen_settle_done (local.get $np) (local.get $val))
         (call $agen_advance (local.get $O)) (br $lp)))
     (if (i32.eq (local.get $kind) (i32.const 2))  ;; throw on a running gen → close (no in-body try/catch resumption yet) and reject
       (then
