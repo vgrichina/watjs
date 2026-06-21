@@ -5015,17 +5015,9 @@
       (if (call $is_object (local.get $thisv))
         (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@asyncgen")) (i32.const 0))
           (then (return (call $agen_enqueue (local.get $thisv) (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
-      (let $gtctx i32 (call $gen_ctx_or_throw (local.get $thisv)))
-      (if (call $err) (then (return (call $v_undef))))
-      ;; basic model (no in-body try/catch resumption): close and propagate the error
-      (i32.store (i32.add (local.get $gtctx) (i32.const 16)) (i32.const 1))
-      ;; async generator: .throw(e) → a rejected Promise (not a synchronous throw)
-      (if (call $is_object (local.get $thisv))
-        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@asyncgen")) (i32.const 0))
-          (then (return (call $mk_promise (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))))
-      (call $set_err (i32.const 1))
-      (call $set_err_val (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (return (call $v_undef))))
+      ;; sync generator: resume by throwing — an in-body try/catch (handler chain saved at the
+      ;; yield) catches it; uncaught closes the gen and propagates.
+      (return (call $vm_gen_throw (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 151))  ;; Promise.resolve(v) — `this` (the constructor C) must be an Object
     (then
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv))))

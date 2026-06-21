@@ -5227,6 +5227,23 @@
     (then (call $throw_type (cstring "TypeError") (cstring "not a generator")) (return (i32.const 0))))
   (i32.trunc_f64_s (call $to_num (i64.load (local.get $gcs)))))
 
+;; gen.throw(e): resume the generator by THROWING e at the suspension point, so an in-body
+;; try/catch (whose handler chain was saved in the ctx at YIELD) can catch it. If uncaught the
+;; generator closes and the error propagates to the caller. A completed/suspendedStart gen has
+;; no in-body handler → the error just propagates (gen closed).
+(func $vm_gen_throw (param $genv i64) (param $errv i64) (result i64) (effects)
+  (let $ctx i32 (call $gen_ctx_or_throw (local.get $genv)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (call $vm_done (local.get $ctx))  ;; throwing into a completed generator → re-throw to the caller
+    (then (call $set_err (i32.const 1)) (call $set_err_val (local.get $errv)) (return (call $v_undef))))
+  (call $set_err (i32.const 1)) (call $set_err_val (local.get $errv))
+  (let $v i64 (call $vm_step (local.get $ctx) (call $v_undef)))  ;; resume → err unwinds to the saved handler
+  (if (call $err) (then (return (call $v_undef))))  ;; uncaught → gen closed, propagate to caller
+  (let $r i32 (call $obj_new (i32.const 2)))  ;; caught → ran to the next yield / completion
+  (call $scope_define (local.get $r) (cstring "value") (local.get $v))
+  (call $scope_define (local.get $r) (cstring "done") (call $mk_bool (call $vm_done (local.get $ctx))))
+  (call $mk_obj (local.get $r)))
+
 ;; gen.next(): resume the generator context, return { value, done }
 (func $vm_gen_result (param $genv i64) (param $resumeval i64) (result i64) (effects)
   (let $ctx i32 (call $gen_ctx_or_throw (local.get $genv)))
