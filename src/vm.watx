@@ -3644,6 +3644,7 @@
   (let $ctx i32 (call $heap_alloc (i32.const 40)))
   (let $gs i32 (call $scope_new (i32.const 0) (i32.const 256)))
   (call $setup_globals (local.get $gs))  ;; builtins, prototypes, Math, etc.
+  (call $setup_gen_protos)
   (call $scope_define (local.get $gs) (cstring "this") (call $mk_obj (local.get $gs)))  ;; global `this` = the global object
   (i32.store (local.get $ctx) (local.get $code))
   (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.const 0))           ;; ip
@@ -5202,14 +5203,17 @@
   ;; calling frame's loop unwinds — i.e. the generator call throws, per spec.
   (drop (call $vm_step (local.get $ctx) (call $v_undef)))
   (let $g i32 (call $obj_new (i32.const 4)))
-  (if (i32.load (i32.const 488)) (then (i32.store (local.get $g) (i32.load (i32.const 488)))))  ;; inherit %Iterator.prototype%
+  (let $isag i32 (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))) (i32.const 128)))
+  (let $gpr i32 (i32.load (if i32 (local.get $isag) (then (i32.const 796)) (else (i32.const 792)))))
+  (if (local.get $gpr) (then (i32.store (local.get $g) (local.get $gpr)))
+    (else (if (i32.load (i32.const 488)) (then (i32.store (local.get $g) (i32.load (i32.const 488)))))))
   (call $scope_define (local.get $g) (cstring "@@ctx") (call $num (f64.convert_i32_s (local.get $ctx))))
   (call $scope_define_attr (local.get $g) (cstring "next") (call $mk_native (i32.const 150) (cstring "next")) (i32.const 12))  ;; methods are DontEnum {W,C}
   (call $scope_define_attr (local.get $g) (cstring "return") (call $mk_native (i32.const 420) (cstring "return")) (i32.const 12))
   (call $scope_define_attr (local.get $g) (cstring "throw") (call $mk_native (i32.const 421) (cstring "throw")) (i32.const 12))
   ;; async generator (fn flag bit7): mark the object so next/return/throw return promises,
   ;; and expose Symbol.asyncIterator → this (native 342 = Iterator.prototype[@@iterator] → this).
-  (if (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))) (i32.const 128))
+  (if (local.get $isag)
     (then
       (call $scope_define (local.get $g) (cstring "@@asyncgen") (call $v_true))
       (call $scope_define_attr (local.get $g) (cstring "@@asyncIterator") (call $mk_native (i32.const 342) (cstring "[Symbol.asyncIterator]")) (i32.const 12))))
