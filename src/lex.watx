@@ -201,6 +201,8 @@
       (let $en i32 (i32.const 0))
       (block $ee (loop $el
         (let $c i32 (call $ch_at (i32.const 0)))
+        (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator in the exponent → skip
+          (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $el)))
         (br_if $ee (i32.eqz (call $is_digit (local.get $c))))
         (set! $en (i32.add (i32.mul (local.get $en) (i32.const 10)) (i32.sub (local.get $c) (i32.const 48))))
         (call $set_pos (i32.add (call $pos) (i32.const 1)))
