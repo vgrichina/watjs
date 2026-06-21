@@ -1333,4 +1333,9 @@
             (then (call $set_fail) (return)))))
       (call $scope_define (call $fn_props (local.get $sfn)) (local.get $sfk) (local.get $val))
       (return)))
-  (call $throw_type (cstring "TypeError") (cstring "cannot set property of non-object")))
+  ;; primitive base: null/undefined → always TypeError; a number/string/boolean/symbol/bigint
+  ;; auto-boxes to a temp wrapper whose [[Set]] with a primitive receiver returns false →
+  ;; sloppy = silent no-op, strict = TypeError (set_fail honors reg 392).
+  (if (i32.or (call $is_null (local.get $cont)) (call $is_undefined (local.get $cont)))
+    (then (call $throw_type (cstring "TypeError") (cstring "Cannot set property of null or undefined")))
+    (else (call $set_fail))))
