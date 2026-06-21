@@ -4981,6 +4981,23 @@
         (call $scope_define (local.get $feo) (local.get $fekk) (local.get $fev))
         (br $fel2)))
       (return (call $mk_obj (local.get $feo)))))
+  ;; AsyncGeneratorPrototype next/return/throw (516/517/518): a bad `this` rejects the returned
+  ;; promise with a TypeError (spec: AsyncGeneratorValidate is performed inside the method, after
+  ;; the promise capability is created); a valid async generator delegates to the request queue.
+  (if (i32.or (i32.eq (local.get $id) (i32.const 516)) (i32.or (i32.eq (local.get $id) (i32.const 517)) (i32.eq (local.get $id) (i32.const 518))))
+    (then
+      (let $aok i32 (i32.const 0))
+      (if (call $is_object (local.get $thisv))  ;; nested (i32.and isn't short-circuit) — don't probe a non-object `this`
+        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@asyncgen")) (i32.const 0))
+          (then (set! $aok (i32.const 1))))))
+      (if (i32.eqz (local.get $aok))
+        (then
+          (call $throw_type (cstring "TypeError") (cstring "AsyncGenerator method called on a non-AsyncGenerator"))
+          (let $arej i64 (call $err_val)) (call $set_err (i32.const 0))
+          (return (call $mk_promise (i32.const 2) (local.get $arej)))))
+      (return (call $agen_enqueue (local.get $thisv)
+        (if i32 (i32.eq (local.get $id) (i32.const 516)) (then (i32.const 0)) (else (if i32 (i32.eq (local.get $id) (i32.const 517)) (then (i32.const 1)) (else (i32.const 2)))))
+        (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 150))  ;; generator .next([v]) — resumes the VM context
     (then
       ;; async generator → drive the body with await-suspension AND yield; .next() returns a
@@ -9198,6 +9215,7 @@
 (func $native_arity (param $id i32) (result i32) (effects)
   (if (i32.or (i32.eq (local.get $id) (i32.const 513)) (i32.eq (local.get $id) (i32.const 514))) (then (return (i32.const 1))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 150)) (i32.or (i32.eq (local.get $id) (i32.const 420)) (i32.eq (local.get $id) (i32.const 421)))) (then (return (i32.const 1))))  ;; Generator/AsyncGenerator .next/.return/.throw — length 1
+  (if (i32.or (i32.eq (local.get $id) (i32.const 516)) (i32.or (i32.eq (local.get $id) (i32.const 517)) (i32.eq (local.get $id) (i32.const 518)))) (then (return (i32.const 1))))  ;; AsyncGeneratorPrototype next/return/throw — length 1
   ;; TA validating wrappers (485-504) take their .length from the delegated Array native.
   (if (i32.eq (local.get $id) (i32.const 485)) (then (return (call $native_arity (i32.const 27)))))
   (if (i32.eq (local.get $id) (i32.const 486)) (then (return (call $native_arity (i32.const 23)))))
@@ -9876,9 +9894,11 @@
   (i32.store (local.get $agp) (local.get $ip))
   (i32.store (i32.const 796) (local.get $agp))
   (call $scope_define_attr (local.get $agp) (cstring "@@toStringTag") (call $mk_str (cstring "AsyncGenerator")) (i32.const 4))
-  (call $scope_define_attr (local.get $agp) (cstring "next") (call $mk_native (i32.const 150) (cstring "next")) (i32.const 12))
-  (call $scope_define_attr (local.get $agp) (cstring "return") (call $mk_native (i32.const 420) (cstring "return")) (i32.const 12))
-  (call $scope_define_attr (local.get $agp) (cstring "throw") (call $mk_native (i32.const 421) (cstring "throw")) (i32.const 12))
+  ;; async-strict next/return/throw (516/517/518): a bad `this` (non-object or not an async
+  ;; generator) → a REJECTED promise, not a synchronous throw (unlike the sync 150/420/421).
+  (call $scope_define_attr (local.get $agp) (cstring "next") (call $mk_native (i32.const 516) (cstring "next")) (i32.const 12))
+  (call $scope_define_attr (local.get $agp) (cstring "return") (call $mk_native (i32.const 517) (cstring "return")) (i32.const 12))
+  (call $scope_define_attr (local.get $agp) (cstring "throw") (call $mk_native (i32.const 518) (cstring "throw")) (i32.const 12))
   (let $agen i32 (call $obj_new (i32.const 4)))
   (i32.store (local.get $agen) (local.get $op))
   (i32.store (i32.const 804) (local.get $agen))
