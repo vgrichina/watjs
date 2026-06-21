@@ -4443,6 +4443,10 @@
           (then
             (let $dfn i32 (call $val_payload (local.get $dobj)))
             (let $dfk i32 (call $to_prop_key (local.get $dkey)))
+            ;; a function's own `prototype` is non-configurable (constructors only; arrows/
+            ;; methods/bound have none) → delete is refused (false / strict throw).
+            (if (i32.and (call $str_eq (local.get $dfk) (cstring "prototype")) (call $fn_own (local.get $dfn) (cstring "prototype")))
+              (then (set! $dres (call $v_false))))
             ;; computed `length` is configurable: park a "@@dellen" marker in the
             ;; @12 props store so fn_own/getOwnPropertyDescriptor report it absent.
             ;; Only for NATIVE fns — a VM fn's @12 is its code pointer (fn_props
