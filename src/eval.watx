@@ -7742,15 +7742,19 @@
       ;; target must be an object/array/function; primitives → TypeError
       (if (i32.eqz (i32.or (call $is_object (local.get $ob)) (i32.or (call $is_array (local.get $ob)) (call $is_function (local.get $ob)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object.defineProperty called on non-object")) (return (call $v_undef))))
+      ;; spec step 2: ToPropertyKey(key) runs BEFORE ToPropertyDescriptor — a key whose
+      ;; toString/valueOf throws propagates here (Object.defineProperty({}, throwingKey) with no desc).
+      (let $okey i32 (call $to_prop_key (local.get $ky)))
+      (if (call $err) (then (return (call $v_undef))))
       ;; descriptor must be an object; else TypeError
       (if (i32.eqz (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
       (if (call $is_object (local.get $ob))
-        (then (call $apply_descriptor (call $val_payload (local.get $ob)) (call $to_prop_key (local.get $ky)) (local.get $de))))
+        (then (call $apply_descriptor (call $val_payload (local.get $ob)) (local.get $okey) (local.get $de))))
       ;; functions: define into the function's own-prop scope (native @12 / VM @16)
       (if (call $is_function (local.get $ob))
         (then
-          (let $fdk i32 (call $to_prop_key (local.get $ky)))
+          (let $fdk i32 (local.get $okey))
           ;; length/name are virtual {W:false,E:false,C:true} props not yet materialized in
           ;; the scope; seed them so a partial redefine preserves the configurable attribute
           ;; (and a second defineProperty doesn't see a phantom non-configurable property)
