@@ -5303,6 +5303,8 @@
   (i32.store (i32.add (local.get $ctx) (i32.const 28)) (local.get $gscope))
   (i32.store (i32.add (local.get $ctx) (i32.const 32)) (i32.const 0))  ;; handler chain
   (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 0))  ;; await resume flag
+  (i32.store (i32.add (local.get $ctx) (i32.const 40)) (i32.const 0))  ;; not at a yield*
+  (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 0))  ;; not executing (re-entrancy guard)
   ;; eager param eval: run the prologue (defaults/destructuring) now, suspending at
   ;; GENPRO_SUSPEND. A throw here sets the err flag, which vm_step returns and the
   ;; calling frame's loop unwinds — i.e. the generator call throws, per spec.
@@ -5409,12 +5411,17 @@
 (func $vm_gen_throw (param $genv i64) (param $errv i64) (result i64) (effects)
   (let $ctx i32 (call $gen_ctx_or_throw (local.get $genv)))
   (if (call $err) (then (return (call $v_undef))))
+  (if (i32.load (i32.add (local.get $ctx) (i32.const 44)))  ;; already running → TypeError, complete
+    (then (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
+          (call $throw_type (cstring "TypeError") (cstring "generator is already running")) (return (call $v_undef))))
   ;; suspended at a yield* → deliver the throw to the inner iterator (rkind=1, value=errv) and
   ;; resume normally; the loop's YSSTEP handles inner.throw / IteratorClose+TypeError.
   (if (i32.load (i32.add (local.get $ctx) (i32.const 40)))
     (then
       (i32.store (i32.const 836) (i32.const 1))
+      (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 1))
       (let $vt i64 (call $vm_step (local.get $ctx) (local.get $errv)))
+      (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 0))
       (if (call $err) (then (return (call $v_undef))))
       (let $rt i32 (call $obj_new (i32.const 2)))
       (call $scope_define (local.get $rt) (cstring "value") (local.get $vt))
@@ -5423,7 +5430,9 @@
   (if (call $vm_done (local.get $ctx))  ;; throwing into a completed generator → re-throw to the caller
     (then (call $set_err (i32.const 1)) (call $set_err_val (local.get $errv)) (return (call $v_undef))))
   (call $set_err (i32.const 1)) (call $set_err_val (local.get $errv))
+  (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 1))
   (let $v i64 (call $vm_step (local.get $ctx) (call $v_undef)))  ;; resume → err unwinds to the saved handler
+  (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 0))
   (if (call $err) (then (return (call $v_undef))))  ;; uncaught → gen closed, propagate to caller
   (let $r i32 (call $obj_new (i32.const 2)))  ;; caught → ran to the next yield / completion
   (call $scope_define (local.get $r) (cstring "value") (local.get $v))
@@ -5438,12 +5447,17 @@
 (func $vm_gen_return (param $genv i64) (param $value i64) (result i64) (effects)
   (let $ctx i32 (call $gen_ctx_or_throw (local.get $genv)))
   (if (call $err) (then (return (call $v_undef))))
+  (if (i32.load (i32.add (local.get $ctx) (i32.const 44)))  ;; already running → TypeError, complete
+    (then (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
+          (call $throw_type (cstring "TypeError") (cstring "generator is already running")) (return (call $v_undef))))
   ;; suspended at a yield* → deliver return to the inner iterator (rkind=2, value) and resume; the
   ;; loop's YSSTEP calls inner.return and decides yield-again vs complete (per spec done flag).
   (if (i32.load (i32.add (local.get $ctx) (i32.const 40)))
     (then
       (i32.store (i32.const 836) (i32.const 2))
+      (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 1))
       (let $vr i64 (call $vm_step (local.get $ctx) (local.get $value)))
+      (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 0))
       (if (call $err) (then (return (call $v_undef))))
       (let $rr i32 (call $obj_new (i32.const 2)))
       (call $scope_define (local.get $rr) (cstring "value") (local.get $vr))
@@ -5466,7 +5480,9 @@
       (return (call $mk_obj (local.get $r0)))))
   ;; suspended inside try/finally: throw the sentinel to run the finally(s).
   (call $set_err (i32.const 1)) (call $set_err_val (i64.load (i32.const 832)))
+  (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 1))
   (let $v i64 (call $vm_step (local.get $ctx) (call $v_undef)))
+  (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 0))
   (let $r i32 (call $obj_new (i32.const 2)))
   (if i64 (call $err)
     (then
@@ -5489,6 +5505,10 @@
 (func $vm_gen_result (param $genv i64) (param $resumeval i64) (result i64) (effects)
   (let $ctx i32 (call $gen_ctx_or_throw (local.get $genv)))
   (if (call $err) (then (return (call $v_undef))))
+  ;; resuming a generator that is currently running its own body → TypeError, and complete it
+  (if (i32.load (i32.add (local.get $ctx) (i32.const 44)))
+    (then (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
+          (call $throw_type (cstring "TypeError") (cstring "generator is already running")) (return (call $v_undef))))
   (let $r i32 (call $obj_new (i32.const 2)))
   (if (call $vm_done (local.get $ctx))
     (then
@@ -5496,7 +5516,9 @@
       (call $scope_define (local.get $r) (cstring "done") (call $v_true)))
     (else
       (i32.store (i32.const 836) (i32.const 0))  ;; resume kind = next (for a yield* delegation point)
+      (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 1))  ;; mark executing
       (let $v i64 (call $vm_step (local.get $ctx) (local.get $resumeval)))
+      (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 0))  ;; clear executing
       (call $scope_define (local.get $r) (cstring "value") (local.get $v))
       (call $scope_define (local.get $r) (cstring "done") (call $mk_bool (call $vm_done (local.get $ctx))))))
   (call $mk_obj (local.get $r)))
