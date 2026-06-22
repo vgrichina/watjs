@@ -3048,6 +3048,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip iterables is not iterable")) (return (call $v_undef))))
       (let $zmode i32 (i32.const 0))
       (let $zpad i32 (call $arr_new (i32.const 4)))
+      (let $zpaditer i64 (call $v_undef))  ;; padding iterator (longest mode) — pulled lazily, count values
+      (let $zhaspad i32 (i32.const 0))
       ;; read options (mode then padding) BEFORE iterating the iterables
       (if (i32.eqz (call $is_undefined (local.get $zopts)))
         (then
@@ -3071,8 +3073,11 @@
                 (then
                   (if (i32.eqz (i32.or (call $is_object (local.get $zpv)) (i32.or (call $is_array (local.get $zpv)) (call $is_string (local.get $zpv)))))
                     (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip padding is not iterable")) (return (call $v_undef))))
-                  (call $spread_into (local.get $zpad) (local.get $zpv))
-                  (if (call $err) (then (return (call $v_undef))))))))))
+                  ;; defer pulling until iterableCount is known — pull exactly count values (the
+                  ;; padding iterable may be infinite, so eagerly spreading it would never return).
+                  (set! $zpaditer (call $vm_get_iter (local.get $zpv)))
+                  (if (call $err) (then (return (call $v_undef))))
+                  (set! $zhaspad (i32.const 1))))))))
       ;; iterate iterables → open each sub-iterator
       (let $zitems i32 (call $arr_new (i32.const 4)))
       (call $spread_into (local.get $zitems) (local.get $ziterables))
@@ -3092,6 +3097,29 @@
         (call $arr_push (local.get $znexts) (call $get_prop (local.get $zsub) (call $mk_str (cstring "next"))))
         (call $arr_push (local.get $zdf) (call $v_false))
         (set! $zk (i32.add (local.get $zk) (i32.const 1))) (br $zcl)))
+      ;; longest mode with an explicit padding iterable: pull exactly iterableCount values (lazily,
+      ;; so an infinite padding iterator terminates); if it finishes early the rest are undefined;
+      ;; if not exhausted, close it.
+      (if (i32.and (i32.eq (local.get $zmode) (i32.const 1)) (local.get $zhaspad))
+        (then
+          (let $zpn i64 (call $get_prop (local.get $zpaditer) (call $mk_str (cstring "next"))))
+          (let $zpbuf i32 (call $heap_alloc (i32.const 8)))
+          (let $zpdone i32 (i32.const 0))
+          (let $zpi i32 (i32.const 0))
+          (let $zpcount i32 (call $arr_len (local.get $zitems)))
+          (block $zppe (loop $zppl
+            (br_if $zppe (i32.ge_s (local.get $zpi) (local.get $zpcount)))
+            (if (local.get $zpdone)
+              (then (call $arr_push (local.get $zpad) (call $v_undef)))
+              (else
+                (let $zpr i64 (call $call_val (local.get $zpn) (i32.const 0) (local.get $zpbuf) (local.get $zpaditer)))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (call $truthy (call $get_prop (local.get $zpr) (call $mk_str (cstring "done"))))
+                  (then (set! $zpdone (i32.const 1)) (call $arr_push (local.get $zpad) (call $v_undef)))
+                  (else (call $arr_push (local.get $zpad) (call $get_prop (local.get $zpr) (call $mk_str (cstring "value"))))))))
+            (set! $zpi (i32.add (local.get $zpi) (i32.const 1))) (br $zppl)))
+          (if (i32.eqz (local.get $zpdone)) (then (call $iter_close (local.get $zpaditer))
+            (if (call $err) (then (return (call $v_undef))))))))
       (let $zo i32 (call $obj_new (i32.const 12)))
       (if (i32.load (i32.const 488)) (then (i32.store (local.get $zo) (i32.load (i32.const 488)))))
       (call $scope_define (local.get $zo) (cstring "@@ziters") (call $mk_arr (local.get $ziters)))
