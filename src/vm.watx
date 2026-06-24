@@ -5738,7 +5738,11 @@
   (let $bf i32 (call $heap_alloc (i32.const 44)))
   (i32.store (local.get $bf) (i32.const 1448232540))                                  ;; bound magic
   (i32.store (i32.add (local.get $bf) (i32.const 8)) (i32.const 1))                    ;; .length
-  (i32.store (i32.add (local.get $bf) (i32.const 12)) (i32.const 0))                   ;; props
+  ;; name as an own data property "" {W:false,E:false,C:true} — these settlers are anonymous
+  ;; built-in functions; spec requires name (and length) to be own properties.
+  (let $bps i32 (call $scope_new (i32.const 0) (i32.const 4)))
+  (i32.store (i32.add (local.get $bf) (i32.const 12)) (local.get $bps))               ;; props
+  (call $scope_define_attr (local.get $bps) (cstring "name") (call $mk_str (cstring "")) (i32.const 4))
   (i64.store (i32.add (local.get $bf) (i32.const 16)) (local.get $promise))           ;; bound this = the promise
   (i64.store (i32.add (local.get $bf) (i32.const 24)) (call $mk_native (local.get $nid) (cstring "")))  ;; target native
   (i32.store (i32.add (local.get $bf) (i32.const 32)) (i32.const 0))                   ;; bargc
