@@ -4132,6 +4132,22 @@
   (local.get $thisv))
 
 ;; Promise.withResolvers() (this = C). NewPromiseCapability(C): construct C with a
+;; SpeciesConstructor(O, %Promise%): C = O.constructor (undefined → %Promise%); S = C[@@species]
+;; (null/undefined → %Promise%); S must be a constructor. Returns the constructor (or %Promise%
+;; reg844), or sets err + returns undef on a non-object constructor / non-constructor species.
+(func $promise_species_ctor (param $O i64) (result i64) (effects)
+  (let $C i64 (call $get_prop (local.get $O) (call $mk_str (cstring "constructor"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (call $is_undefined (local.get $C)) (then (return (i64.load (i32.const 844)))))
+  (if (i32.eqz (i32.or (call $is_object (local.get $C)) (call $is_function (local.get $C))))
+    (then (call $throw_type (cstring "TypeError") (cstring "SpeciesConstructor: constructor is not an object")) (return (call $v_undef))))
+  (let $S i64 (call $get_prop (local.get $C) (call $mk_str (cstring "@@species"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.or (call $is_undefined (local.get $S)) (call $is_null (local.get $S))) (then (return (i64.load (i32.const 844)))))
+  (if (call $is_constructor (local.get $S)) (then (return (local.get $S))))
+  (call $throw_type (cstring "TypeError") (cstring "SpeciesConstructor: species is not a constructor"))
+  (call $v_undef))
+
 ;; capabilities executor (native 475) that captures resolve/reject, then return
 ;; { promise, resolve, reject }.
 (func $promise_with_resolvers (param $thisv i64) (result i64) (effects)
@@ -5073,7 +5089,24 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Promise.resolve called on a non-object")) (return (call $v_undef))))
       (return (call $vm_promise_resolve (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 152))  ;; promise.then(onFulfilled, onRejected)
-    (then (return (call $promise_then (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
+    (then
+      (if (i32.eqz (call $vm_is_promise (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Promise.prototype.then called on incompatible receiver")) (return (call $v_undef))))
+      (let $thsc i64 (call $promise_species_ctor (local.get $thisv)))  ;; C = SpeciesConstructor(this, %Promise%)
+      (if (call $err) (then (return (call $v_undef))))
+      (let $thF i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $thR i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      ;; fast path: the default %Promise% — settle an internal result promise directly (unchanged).
+      (if (call $strict_eq (local.get $thsc) (i64.load (i32.const 844)))
+        (then (return (call $promise_then (local.get $thisv) (local.get $thF) (local.get $thR)))))
+      ;; species path: result promise via NewPromiseCapability(C); pipe the internal result into it.
+      (let $thcap i64 (call $promise_with_resolvers (local.get $thsc)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $thint i64 (call $promise_then (local.get $thisv) (local.get $thF) (local.get $thR)))
+      (drop (call $promise_then (local.get $thint)
+        (call $get_prop (local.get $thcap) (call $mk_str (cstring "resolve")))
+        (call $get_prop (local.get $thcap) (call $mk_str (cstring "reject")))))
+      (return (call $get_prop (local.get $thcap) (call $mk_str (cstring "promise"))))))
   (if (i32.eq (local.get $id) (i32.const 408))  ;; promise.catch(onRejected) = Invoke(this, "then", [undefined, onRejected])
     (then
       ;; spec: ? Invoke(O, "then", …) — call the receiver's OWN `then` (a custom thenable's,
@@ -10494,6 +10527,7 @@
   (call $scope_define (local.get $dproto) (cstring "setYear") (call $mk_native (i32.const 261) (cstring "setYear")))
   ;; Promise constructor (synchronous model; see vm.watx) + Promise.prototype (reg 608)
   (let $promf i64 (call $def_native (local.get $g) (cstring "Promise") (i32.const 192)))
+  (i64.store (i32.const 844) (local.get $promf))  ;; %Promise% intrinsic — for SpeciesConstructor fast-path
   (let $promproto i32 (call $obj_new (i32.const 8)))
   (i32.store (i32.const 608) (local.get $promproto))
   (call $scope_define_attr (local.get $promproto) (cstring "then") (call $mk_native (i32.const 152) (cstring "then")) (i32.const 12))
