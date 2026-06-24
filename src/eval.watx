@@ -9258,6 +9258,11 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 150)) (i32.or (i32.eq (local.get $id) (i32.const 420)) (i32.eq (local.get $id) (i32.const 421)))) (then (return (i32.const 1))))  ;; Generator/AsyncGenerator .next/.return/.throw — length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 516)) (i32.or (i32.eq (local.get $id) (i32.const 517)) (i32.eq (local.get $id) (i32.const 518)))) (then (return (i32.const 1))))  ;; AsyncGeneratorPrototype next/return/throw — length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 355)) (i32.eq (local.get $id) (i32.const 357))) (then (return (i32.const 1))))  ;; Iterator.zip / Iterator.zipKeyed — length 1
+  (if (i32.eq (local.get $id) (i32.const 152)) (then (return (i32.const 2))))  ;; Promise.prototype.then(onF, onR) — length 2
+  (if (i32.or (i32.eq (local.get $id) (i32.const 408)) (i32.or (i32.eq (local.get $id) (i32.const 409))  ;; Promise.prototype catch/finally
+    (i32.or (i32.eq (local.get $id) (i32.const 151)) (i32.or (i32.eq (local.get $id) (i32.const 414))  ;; Promise resolve/reject
+    (i32.or (i32.eq (local.get $id) (i32.const 410)) (i32.or (i32.eq (local.get $id) (i32.const 411))  ;; Promise all/race
+    (i32.or (i32.eq (local.get $id) (i32.const 412)) (i32.eq (local.get $id) (i32.const 413))))))))) (then (return (i32.const 1))))  ;; Promise allSettled/any — length 1
   ;; TA validating wrappers (485-504) take their .length from the delegated Array native.
   (if (i32.eq (local.get $id) (i32.const 485)) (then (return (call $native_arity (i32.const 27)))))
   (if (i32.eq (local.get $id) (i32.const 486)) (then (return (call $native_arity (i32.const 23)))))
