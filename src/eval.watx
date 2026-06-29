@@ -3285,12 +3285,14 @@
   ;; ── Map (id 120 ctor, 121 set, 122 get, 123 has, 124 delete, 125 forEach, 126 size, 127 clear) ──
   (if (i32.eq (local.get $id) (i32.const 120))  ;; new Map()
     (then
+      ;; super() from a subclass → init the derived `this` with [[MapData]]; direct new Map → fresh.
       (let $mo i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 344)) (then (i32.store (local.get $mo) (i32.load (i32.const 344)))))  ;; [[Prototype]] = Map.prototype
+      (if (call $is_object (local.get $thisv)) (then (set! $mo (call $val_payload (local.get $thisv)))))
       (call $scope_define (local.get $mo) (cstring "@@mk") (call $mk_arr (call $arr_new (i32.const 4))))
       (call $scope_define (local.get $mo) (cstring "@@mv") (call $mk_arr (call $arr_new (i32.const 4))))
       ;; new Map(iterable of [k,v]): AddEntriesFromIterable with adder = Get(map,"set")
-      (let $mov i64 (call $mk_obj (local.get $mo)))
+      (let $mov i64 (if i64 (call $is_object (local.get $thisv)) (then (local.get $thisv)) (else (call $mk_obj (local.get $mo)))))
       (let $marg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eqz (i32.or (call $is_null (local.get $marg)) (call $is_undefined (local.get $marg))))
         (then
@@ -3414,12 +3416,15 @@
   ;; ── Set (id 130 ctor, 131 add, 132 has, 133 delete, 134 forEach, 135 size, 136 clear) ──
   (if (i32.eq (local.get $id) (i32.const 130))  ;; new Set()
     (then
+      ;; super() from a subclass passes the derived `this` (proto = Subclass.prototype) — init THAT
+      ;; object with the [[SetData]] slot; a direct `new Set` (no `this`) gets a fresh Set.prototype one.
       (let $so i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 348)) (then (i32.store (local.get $so) (i32.load (i32.const 348)))))  ;; [[Prototype]] = Set.prototype
+      (if (call $is_object (local.get $thisv)) (then (set! $so (call $val_payload (local.get $thisv)))))
       (call $scope_define (local.get $so) (cstring "@@sk") (call $mk_arr (call $arr_new (i32.const 4))))
       ;; new Set(iterable): adder = Get(set,"add") (subclass-overridable), then iterate
       ;; closing the iterator if add() throws
-      (let $sov i64 (call $mk_obj (local.get $so)))
+      (let $sov i64 (if i64 (call $is_object (local.get $thisv)) (then (local.get $thisv)) (else (call $mk_obj (local.get $so)))))
       (let $sarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eqz (i32.or (call $is_null (local.get $sarg)) (call $is_undefined (local.get $sarg))))
         (then
