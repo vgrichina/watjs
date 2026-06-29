@@ -1786,10 +1786,11 @@
             (then (call $throw_type (cstring "RangeError") (cstring "DataView: byteLength is out of bounds")) (return (call $v_undef))))))
       (let $dvo i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 508)) (then (i32.store (local.get $dvo) (i32.load (i32.const 508)))))
+      (if (call $is_object (local.get $thisv)) (then (set! $dvo (call $val_payload (local.get $thisv)))))  ;; super() from a subclass → init `this`
       (call $scope_define (local.get $dvo) (cstring "@@dvab") (local.get $dvb))
       (call $scope_define (local.get $dvo) (cstring "@@dvoff") (call $num (f64.convert_i32_s (local.get $dvoff))))
       (call $scope_define (local.get $dvo) (cstring "@@dvlen") (call $num (f64.convert_i32_s (local.get $dvlen))))
-      (return (call $mk_obj (local.get $dvo)))))
+      (return (if i64 (call $is_object (local.get $thisv)) (then (local.get $thisv)) (else (call $mk_obj (local.get $dvo)))))))
   ;; accessors (brand-checked)
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 380)) (i32.le_s (local.get $id) (i32.const 382)))
     (then
@@ -6112,9 +6113,10 @@
       (call $ta_zero (local.get $abd) (local.get $abn))
       (let $abo i32 (call $obj_new (i32.const 4)))
       (if (i32.load (i32.const 524)) (then (i32.store (local.get $abo) (i32.load (i32.const 524)))))  ;; link ArrayBuffer.prototype
+      (if (call $is_object (local.get $thisv)) (then (set! $abo (call $val_payload (local.get $thisv)))))  ;; super() from a subclass → init `this`
       (call $scope_define (local.get $abo) (cstring "@@abdata") (call $num (f64.convert_i32_s (local.get $abd))))
       (call $scope_define (local.get $abo) (cstring "@@ablen") (call $num (f64.convert_i32_s (local.get $abn))))
-      (return (call $mk_obj (local.get $abo)))))
+      (return (if i64 (call $is_object (local.get $thisv)) (then (local.get $thisv)) (else (call $mk_obj (local.get $abo)))))))
   (if (i32.eq (local.get $id) (i32.const 209))  ;; new Proxy(target, handler)
     (then (return (call $make_proxy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
   (if (i32.eq (local.get $id) (i32.const 450))  ;; Proxy.revocable(target, handler) → { proxy, revoke }

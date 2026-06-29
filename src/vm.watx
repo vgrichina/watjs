@@ -4086,6 +4086,9 @@
             ;; (Covers requires-new natives — which otherwise throw — AND call-able ones like Date/RegExp.)
             (if (i32.eq (local.get $op) (i32.const 86))
               (then
+                ;; a non-constructor native base (e.g. Symbol) → super() throws TypeError
+                (if (i32.eqz (call $native_is_ctor (i32.load (local.get $cfn))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "super constructor is not a constructor")) (set! $sp (local.get $rbase)) (br $disp)))
                 (let $scNt i32 (call $scope_find (local.get $scope) (cstring "@@newtarget")))
                 (i64.store (i32.const 656) (if i64 (local.get $scNt) (then (i64.load (local.get $scNt))) (else (call $v_undef))))
                 (i32.store (i32.const 640) (i32.const 1))  ;; super() IS a construct (Date/RegExp/wrappers read this)
@@ -4916,6 +4919,10 @@
         (let $scsCallee i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $scsThis i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        ;; super() into a non-constructor native base (e.g. Symbol) → TypeError
+        (if (call $is_function (local.get $scsCallee))
+          (then (if (i32.and (i32.lt_s (i32.load (call $val_payload (local.get $scsCallee))) (i32.const 1448232526)) (i32.eqz (call $native_is_ctor (i32.load (call $val_payload (local.get $scsCallee))))))
+            (then (call $throw_type (cstring "TypeError") (cstring "super constructor is not a constructor")) (br $disp)))))
         ;; park the derived class's new.target so the parent CLASS ctor isn't rejected by the
         ;; "cannot be invoked without 'new'" check in vm_call_fn, and new.target propagates to it
         (let $scsNtSlot i32 (call $scope_find (local.get $scope) (cstring "@@newtarget")))
