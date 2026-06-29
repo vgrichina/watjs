@@ -7443,16 +7443,22 @@
               (let $maargs i32 (call $heap_alloc (i32.const 8)))
               (i64.store (local.get $maargs) (call $mk_str (call $to_str (local.get $thisv))))
               (return (call $call_val (local.get $mamatcher) (i32.const 1) (local.get $maargs) (local.get $maa)))))))
-      ;; string/other argument: rx = new RegExp(regexp, "g"); return rx[@@matchAll](S)
+      ;; string/other argument (or @@matchAll absent): S = ToString(this); rx = RegExpCreate(R,"g");
+      ;; return ? Invoke(rx, @@matchAll, «S») — Invoke (not the internal native) so an overridden
+      ;; RegExp.prototype[@@matchAll] is honored. ToString(this) happens BEFORE RegExpCreate (spec order).
+      (let $maS i64 (call $mk_str (call $to_str (local.get $thisv))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $maDef2 i64 (i64.load (call $scope_find_local (i32.load (i32.const 152)) (cstring "RegExp"))))
       (let $maCa2 i32 (call $heap_alloc (i32.const 16)))
       (i64.store (local.get $maCa2) (local.get $maa))
       (i64.store (i32.add (local.get $maCa2) (i32.const 8)) (call $mk_str (cstring "g")))
       (let $maRx i64 (call $vm_construct (local.get $maDef2) (i32.const 2) (local.get $maCa2) (local.get $maDef2)))
       (if (call $err) (then (return (call $v_undef))))
+      (let $maMM i64 (call $get_prop (local.get $maRx) (call $mk_str (cstring "@@matchAll"))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $maArgs2 i32 (call $heap_alloc (i32.const 8)))
-      (i64.store (local.get $maArgs2) (call $mk_str (call $to_str (local.get $thisv))))
-      (return (call $call_native (i32.const 426) (i32.const 1) (local.get $maArgs2) (local.get $maRx)))))
+      (i64.store (local.get $maArgs2) (local.get $maS))
+      (return (call $call_val (local.get $maMM) (i32.const 1) (local.get $maArgs2) (local.get $maRx)))))
   (if (i32.eq (local.get $id) (i32.const 435))  ;; String.fromCodePoint(...codePoints)
     (then
       (let $fcbuf i32 (call $str_alloc (i32.mul (local.get $argc) (i32.const 4))))  ;; ≤4 UTF-8 bytes per code point
