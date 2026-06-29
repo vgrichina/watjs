@@ -4546,12 +4546,20 @@
       (if (call $is_string (local.get $esa))
         (then (return (call $vm_eval_str (call $val_payload (local.get $esa))))))
       (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 4))  ;; Number(x)
+  (if (i32.eq (local.get $id) (i32.const 4))  ;; Number(x) / new Number(x) (incl. super() from a subclass)
     (then
-      (if (i32.eqz (local.get $argc)) (then (return (call $num (f64.const 0)))))
-      (let $nbv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (call $is_bigint (local.get $nbv)) (then (return (call $num (f64.convert_i64_s (call $bigint_val (local.get $nbv)))))))  ;; Number(bigint)
-      (return (call $num (call $to_num (local.get $nbv))))))
+      (let $nval i64 (call $num (f64.const 0)))
+      (if (i32.ge_s (local.get $argc) (i32.const 1))
+        (then
+          (let $nbv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (if (call $is_bigint (local.get $nbv))
+            (then (set! $nval (call $num (f64.convert_i64_s (call $bigint_val (local.get $nbv))))))  ;; Number(bigint)
+            (else (set! $nval (call $num (call $to_num (local.get $nbv))))))))
+      (if (call $err) (then (return (call $v_undef))))
+      ;; super() from a subclass (construct flag + object `this`) → init the derived instance's [[NumberData]]
+      (if (i32.and (i32.load (i32.const 640)) (call $is_object (local.get $thisv)))
+        (then (call $scope_define (call $val_payload (local.get $thisv)) (cstring "__prim__") (local.get $nval)) (i32.store (i32.const 640) (i32.const 0)) (return (local.get $thisv))))
+      (return (local.get $nval))))
   (if (i32.eq (local.get $id) (i32.const 247))  ;; BigInt(x)
     (then
       (let $bgv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
@@ -4565,12 +4573,21 @@
           (return (call $mk_bigint (call $f64_sat_i64 (local.get $bgf))))))  ;; saturating (i64-limited BigInt; avoids trap on huge values)
       (if (call $is_string (local.get $bgv)) (then (return (call $mk_bigint (call $f64_sat_i64 (call $str_to_num (call $val_payload (local.get $bgv))))))))
       (call $throw_type (cstring "TypeError") (cstring "Cannot convert to a BigInt")) (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 5))  ;; String(x)
+  (if (i32.eq (local.get $id) (i32.const 5))  ;; String(x) / new String(x) (incl. super() from a subclass)
     (then
-      (if (i32.eqz (local.get $argc)) (then (return (call $mk_str (cstring "")))))
-      (return (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
-  (if (i32.eq (local.get $id) (i32.const 6))  ;; Boolean(x)
-    (then (return (call $mk_bool (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+      (let $sval i64 (if i64 (i32.eqz (local.get $argc)) (then (call $mk_str (cstring ""))) (else (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+      (if (call $err) (then (return (call $v_undef))))
+      ;; super() from a subclass → init [[StringData]]. (Note: exotic length/index props are NOT
+      ;; added here — a String subclass instance carries __prim__ but lacks the indexed exotics.)
+      (if (i32.and (i32.load (i32.const 640)) (call $is_object (local.get $thisv)))
+        (then (call $scope_define (call $val_payload (local.get $thisv)) (cstring "__prim__") (local.get $sval)) (i32.store (i32.const 640) (i32.const 0)) (return (local.get $thisv))))
+      (return (local.get $sval))))
+  (if (i32.eq (local.get $id) (i32.const 6))  ;; Boolean(x) / new Boolean(x) (incl. super() from a subclass)
+    (then
+      (let $bval i64 (call $mk_bool (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (if (i32.and (i32.load (i32.const 640)) (call $is_object (local.get $thisv)))
+        (then (call $scope_define (call $val_payload (local.get $thisv)) (cstring "__prim__") (local.get $bval)) (i32.store (i32.const 640) (i32.const 0)) (return (local.get $thisv))))
+      (return (local.get $bval))))
   (if (i32.eq (local.get $id) (i32.const 220))  ;; Number.prototype.valueOf — this must be a Number
     (then
       (if (call $is_object (local.get $thisv))
