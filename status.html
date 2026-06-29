@@ -124,20 +124,20 @@
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
   <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
   <div class="meta">
-    <span class="chip">status as of <b>2026-06-20</b></span>
+    <span class="chip">status as of <b>2026-06-29</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>957b753</b></span>
-    <span class="chip"><b>1006</b> commits</span>
+    <span class="chip">@ <b>4c7d80d</b></span>
+    <span class="chip"><b>1040</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">21.2k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">238 KB</div><div class="l">watjs.wasm artifact</div></div>
-  <div class="card"><div class="n">443</div><div class="l">self-check JS tests</div></div>
+  <div class="card"><div class="n">22.0k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">245 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">459</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">~13k</div><div class="l">test262 files swept</div></div>
-  <div class="card"><div class="n">45.1M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">47.9M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -183,17 +183,17 @@
   <tr><td>4</td><td>threaded-code VM + GC + test262 breadth</td><td><span class="pill wip">in progress</span></td></tr>
 </table>
 
-<h2>Test suites <span class="em">live run · 2026-06-20</span></h2>
+<h2>Test suites <span class="em">live run · 2026-06-29</span></h2>
 <table>
   <tr><th>suite</th><th>files</th><th>pass rate</th></tr>
-  <tr><td>self-check <code>test/</code></td><td class="mono">443 / 443</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
+  <tr><td>self-check <code>test/</code></td><td class="mono">459 / 459</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/batch</code></td><td class="mono">39 / 39</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/broad</code></td><td class="mono">35 / 36</td><td><span class="prate"><span style="width:97%"></span></span><span class="rate good">97%</span></td></tr>
   <tr><td><code>test262/broad2</code></td><td class="mono">30 / 30</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/broad3</code></td><td class="mono">21 / 24</td><td><span class="prate warn"><span style="width:88%"></span></span><span class="rate warn">88%</span></td></tr>
   <tr><td><code>test262/cases</code></td><td class="mono">4 / 4</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
-  <tr><td><code>test262/harness</code></td><td class="mono">28 / 31</td><td><span class="prate warn"><span style="width:90%"></span></span><span class="rate warn">90%</span></td></tr>
-  <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">157 / 164</td><td><span class="prate"><span style="width:96%"></span></span><span class="rate good">96%</span></td></tr>
+  <tr><td><code>test262/harness</code></td><td class="mono">29 / 31</td><td><span class="prate"><span style="width:94%"></span></span><span class="rate good">94%</span></td></tr>
+  <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">158 / 164</td><td><span class="prate"><span style="width:96%"></span></span><span class="rate good">96%</span></td></tr>
 </table>
 
 <h2>Full vendored test262 tree <span class="em">~53k files · 2026-06-15</span></h2>
@@ -216,12 +216,12 @@
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
-  <tr><td class="mono">957b753</td><td>separate function own-props from <code>.prototype</code> scope (de-conflate statics)</td></tr>
-  <tr><td class="mono">fabc181</td><td><code>delete fn.prototype</code> is refused (a function's prototype is non-configurable)</td></tr>
-  <tr><td class="mono">39b92d8</td><td><code>Object.defineProperty</code>: ToPropertyKey before the descriptor-object check</td></tr>
-  <tr><td class="mono">5e73966</td><td><code>Reflect.get</code> honors the <code>receiver</code> argument for accessor getters</td></tr>
-  <tr><td class="mono">340db12</td><td><code>Array.from</code>: iterable source uses <code>Construct(C)</code>, not <code>Construct(C,[len])</code></td></tr>
-  <tr><td class="mono">0aa4254</td><td>fix <code>&amp;&amp;</code> right-operand precedence: parse BitwiseOR, not just comparison</td></tr>
+  <tr><td class="mono">9806a93</td><td><code>Array.prototype.splice</code> on a huge-length array-like: RangeError, not an OOB crash</td></tr>
+  <tr><td class="mono">5fde71a</td><td><code>Object.prototype.toString</code>: <code>@@toStringTag</code> override for all values (Symbol/BigInt via prototype)</td></tr>
+  <tr><td class="mono">b8a12b1</td><td>derived constructor return semantics: object-or-undefined, else TypeError</td></tr>
+  <tr><td class="mono">0449899</td><td>derived class ctor: ReferenceError if it returns without calling <code>super()</code></td></tr>
+  <tr><td class="mono">afaae93</td><td>subclassing <code>Boolean</code>/<code>Number</code>/<code>String</code>: <code>super()</code> initializes <code>[[*Data]]</code></td></tr>
+  <tr><td class="mono">02e2185</td><td>subclassing <code>Promise</code>/<code>Set</code>/<code>Map</code>/<code>RegExp</code>/<code>Date</code>: <code>super()</code> into the native base ctor yields a real instance</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -291,7 +291,9 @@ const DAILY = [
   ["Jun 9", 39, 2.7], ["Jun 10", 41, 1.8], ["Jun 11", 28, 3.7],
   ["Jun 12", 3, 0.7], ["Jun 13", 12, 0.6], ["Jun 14", 45, 2.2], ["Jun 15", 54, 2.65],
   ["Jun 16", 0, 1.55], ["Jun 17", 0, 0], ["Jun 18", 0, 0], ["Jun 19", 5, 0.23],
-  ["Jun 20", 22, 1.15],
+  ["Jun 20", 22, 1.15], ["Jun 21", 22, 2.81], ["Jun 22", 1, 0.07], ["Jun 23", 4, 0],
+  ["Jun 24", 0, 0.25], ["Jun 25", 0, 0], ["Jun 26", 0, 0], ["Jun 27", 0, 0],
+  ["Jun 28", 3, 0], ["Jun 29", 6, 0.52],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -303,7 +305,9 @@ const GROWTH = [
   ["Jun 9", 18665, 197], ["Jun 10", 19517, 215], ["Jun 11", 19938, 225],
   ["Jun 12", 19987, 226], ["Jun 13", 20095, 227], ["Jun 14", 20541, 231], ["Jun 15", 20976, 236],
   ["Jun 16", 20976, 236], ["Jun 17", 20976, 236], ["Jun 18", 20976, 236], ["Jun 19", 20976, 236],
-  ["Jun 20", 21240, 238],
+  ["Jun 20", 21240, 238], ["Jun 21", 21784, 242], ["Jun 22", 21812, 243], ["Jun 23", 21888, 243],
+  ["Jun 24", 21888, 243], ["Jun 25", 21888, 243], ["Jun 26", 21888, 243], ["Jun 27", 21888, 243],
+  ["Jun 28", 21933, 244], ["Jun 29", 22002, 245],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
@@ -317,7 +321,9 @@ const HUMAN = {
   "Jun 5": { n:14 }, "Jun 6": { n:13 }, "Jun 7": { n:8 }, "Jun 8": { n:9 }, "Jun 9": { n:7 },
   "Jun 10": { n:8 }, "Jun 11": { n:6 }, "Jun 12": { n:8 }, "Jun 13": { n:6 }, "Jun 14": { n:15 },
   "Jun 15": { n:24 }, "Jun 16": { n:4 }, "Jun 19": { n:2 },
-  "Jun 20": { i:["restore the test262 suite from the git repo?","can we have faster test verification?","change approach — go for the bold architectural changes needed to unblock the rest"], n:15 },
+  "Jun 20": { i:["restore the test262 suite from the git repo?","can we have faster test verification?"], n:9 },
+  "Jun 21": { i:["change approach — go for the bold architectural changes needed to unblock the rest"], n:20 },
+  "Jun 22": { n:1 }, "Jun 24": { n:3 }, "Jun 29": { n:6 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
