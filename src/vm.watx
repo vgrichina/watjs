@@ -1742,6 +1742,9 @@
   (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
   (i32.store (i32.const 372) (local.get $savehc)) (i32.store (i32.const 376) (local.get $savehb))  ;; restore enclosing hoist list
   (i32.store (i32.const 388) (local.get $savestrict))  ;; restore enclosing strictness
+  ;; a DERIVED class ctor (classf==2) that reaches the implicit end-return must have called super()
+  ;; — else `this` was never initialized → ReferenceError (CHECKSUPER op 108).
+  (if (i32.eq (local.get $classf) (i32.const 2)) (then (call $vm_emit_op (local.get $code) (i32.const 108))))
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; default RET undefined
   (call $vm_patch (local.get $code) (local.get $pj))
@@ -2640,7 +2643,7 @@
         (drop (call $eat (i32.const 21))))  ;; optional ';'
       (else (if (call $str_eq (local.get $mn) (cstring "constructor"))
         (then
-          (i32.store (i32.const 404) (i32.const 1))  ;; mark: this fnbody is a class constructor (no plain call)
+          (i32.store (i32.const 404) (if i32 (local.get $superT) (then (i32.const 2)) (else (i32.const 1))))  ;; class ctor; 2 = DERIVED (extends) → must call super()
           (call $vm_c_fnbody (local.get $code) (i32.const 0))
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ctorT))
           (set! $hasctor (i32.const 1)))
@@ -3948,6 +3951,12 @@
         (i32.store (i32.add (local.get $ctx) (i32.const 40)) (i32.const 1))  ;; yield* suspend
         (i32.store (i32.const 708) (i32.const 0))  ;; suspend-kind = yield
         (return (i64.load (i32.add (local.get $stack) (local.get $sp))))))
+    (if (i32.eq (local.get $op) (i32.const 108))  ;; CHECKSUPER — derived ctor reached its end without super() → ReferenceError
+      (then
+        (if (i32.eqz (call $scope_find (local.get $scope) (cstring "@@superok")))
+          (then (call $throw_type (cstring "ReferenceError") (cstring "Must call super constructor before accessing 'this' or returning from derived constructor"))
+                (br $disp)))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 105))  ;; LOADRKIND — push the resume kind (reg836: 0 next / 1 throw / 2 return)
       (then
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $num (f64.convert_i32_s (i32.load (i32.const 836)))))
@@ -4022,6 +4031,7 @@
       (then
         (let $argc i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (if (i32.eq (local.get $op) (i32.const 86)) (then (call $scope_define (local.get $scope) (cstring "@@superok") (call $v_true))))  ;; super() called → `this` initialized (for CHECKSUPER)
         (let $isM i32 (i32.or (i32.eq (local.get $op) (i32.const 33)) (i32.eq (local.get $op) (i32.const 86))))  ;; method call (or super-call) → receiver below the callee
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))  ;; callee slot
         (let $rbase i32 (if i32 (local.get $isM) (then (i32.sub (local.get $cbase) (i32.const 8))) (else (local.get $cbase))))  ;; result base
@@ -4910,6 +4920,7 @@
         ;; "cannot be invoked without 'new'" check in vm_call_fn, and new.target propagates to it
         (let $scsNtSlot i32 (call $scope_find (local.get $scope) (cstring "@@newtarget")))
         (i64.store (i32.const 656) (if i64 (local.get $scsNtSlot) (then (i64.load (local.get $scsNtSlot))) (else (call $v_undef))))
+        (call $scope_define (local.get $scope) (cstring "@@superok") (call $v_true))  ;; super(...) called → `this` initialized (for CHECKSUPER)
         (i32.store (i32.const 640) (i32.const 1))  ;; super() IS a construct (Date/RegExp/wrappers read the native-construct flag)
         (call $set_cur_scope (local.get $scope))
         (let $scsArr i32 (call $val_payload (local.get $scsArgs)))
