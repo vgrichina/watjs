@@ -3666,11 +3666,13 @@
   ;; ── WeakMap (ctor 320, set 321, get 322, has 323, delete 324) ──
   (if (i32.eq (local.get $id) (i32.const 320))  ;; new WeakMap()
     (then
+      ;; super() from a subclass → init the derived `this`; direct new WeakMap → fresh.
       (let $wmo i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 480)) (then (i32.store (local.get $wmo) (i32.load (i32.const 480)))))
+      (if (call $is_object (local.get $thisv)) (then (set! $wmo (call $val_payload (local.get $thisv)))))
       (call $scope_define (local.get $wmo) (cstring "@@wmk") (call $mk_arr (call $arr_new (i32.const 4))))
       (call $scope_define (local.get $wmo) (cstring "@@wmv") (call $mk_arr (call $arr_new (i32.const 4))))
-      (let $wmov i64 (call $mk_obj (local.get $wmo)))
+      (let $wmov i64 (if i64 (call $is_object (local.get $thisv)) (then (local.get $thisv)) (else (call $mk_obj (local.get $wmo)))))
       (let $wmarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eqz (i32.or (call $is_null (local.get $wmarg)) (call $is_undefined (local.get $wmarg))))
         (then
@@ -3773,10 +3775,12 @@
   ;; ── WeakSet (ctor 325, add 326, has 327, delete 328) ──
   (if (i32.eq (local.get $id) (i32.const 325))  ;; new WeakSet()
     (then
+      ;; super() from a subclass → init the derived `this`; direct new WeakSet → fresh.
       (let $wso i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 484)) (then (i32.store (local.get $wso) (i32.load (i32.const 484)))))
+      (if (call $is_object (local.get $thisv)) (then (set! $wso (call $val_payload (local.get $thisv)))))
       (call $scope_define (local.get $wso) (cstring "@@wsk") (call $mk_arr (call $arr_new (i32.const 4))))
-      (let $wsov i64 (call $mk_obj (local.get $wso)))
+      (let $wsov i64 (if i64 (call $is_object (local.get $thisv)) (then (local.get $thisv)) (else (call $mk_obj (local.get $wso)))))
       (let $wsarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eqz (i32.or (call $is_null (local.get $wsarg)) (call $is_undefined (local.get $wsarg))))
         (then
