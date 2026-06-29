@@ -1593,6 +1593,8 @@
   (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0)) (i32.store (i32.const 404) (i32.const 0)) (i32.store (i32.const 692) (i32.const 0))  ;; clear so nested fns don't inherit
   (let $savefin i32 (i32.load (i32.const 320)))  ;; nested fn: a return runs only THIS fn's finallys
   (i32.store (i32.const 320) (i32.const 0))
+  (let $savederctor i32 (i32.load (i32.const 852)))  ;; reg852: compiling a DERIVED ctor body? (return-stmt → DERIVEDRETCHECK)
+  (i32.store (i32.const 852) (i32.eq (local.get $classf) (i32.const 2)))
   (let $savehc i32 (i32.load (i32.const 372)))  ;; nested fn: its own hoist list
   (let $savehb i32 (i32.load (i32.const 376)))
   (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))
@@ -1739,6 +1741,7 @@
   (call $vm_c_stmt (local.get $code))  ;; body block
   (i32.store (i32.const 788) (local.get $saveagen))  ;; restore enclosing async-generator-context
   (i32.store (i32.const 672) (local.get $savegen))  ;; restore enclosing generator-context
+  (i32.store (i32.const 852) (local.get $savederctor))  ;; restore enclosing derived-ctor compile flag
   (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
   (i32.store (i32.const 372) (local.get $savehc)) (i32.store (i32.const 376) (local.get $savehb))  ;; restore enclosing hoist list
   (i32.store (i32.const 388) (local.get $savestrict))  ;; restore enclosing strictness
@@ -2790,10 +2793,14 @@
       (if (call $tok_is_kw (cstring "return"))
         (then
           (call $next_token)
+          ;; in a DERIVED class ctor, `return expr` must be Object/undefined (else TypeError) and
+          ;; `return undefined`/`return;` requires super() first (else ReferenceError) — DERIVEDRETCHECK (109).
+          (let $dctor i32 (i32.load (i32.const 852)))
           (if (i32.or (call $nl_before) (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0)))))  ;; ASI: newline after `return` → return;
             (then
               (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
               (call $vm_finally_emit_all (local.get $code))  ;; run enclosing finally blocks first
+              (if (local.get $dctor) (then (call $vm_emit_op (local.get $code) (i32.const 109))))
               (call $vm_emit_op (local.get $code) (i32.const 20))
               (drop (call $eat (i32.const 21)))
               (return)))
@@ -2803,7 +2810,14 @@
           (if (i32.load (i32.const 320))
             (then
               (call $vm_finally_emit_all (local.get $code))
+              (if (local.get $dctor) (then (call $vm_emit_op (local.get $code) (i32.const 109))))
               (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET
+              (drop (call $eat (i32.const 21)))
+              (return)))
+          (if (local.get $dctor)  ;; derived ctor: validate the return value (no tail-call peephole)
+            (then
+              (call $vm_emit_op (local.get $code) (i32.const 109))
+              (call $vm_emit_op (local.get $code) (i32.const 20))
               (drop (call $eat (i32.const 21)))
               (return)))
           (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 19))  ;; ends in CALL?
@@ -3956,6 +3970,17 @@
         (if (i32.eqz (call $scope_find (local.get $scope) (cstring "@@superok")))
           (then (call $throw_type (cstring "ReferenceError") (cstring "Must call super constructor before accessing 'this' or returning from derived constructor"))
                 (br $disp)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 109))  ;; DERIVEDRETCHECK — validate a derived ctor's `return value` (value on TOS, peeked)
+      (then
+        (let $drv i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        (if (call $is_undefined (local.get $drv))
+          (then  ;; `return undefined`/`return;` → result is `this`, which requires super() first
+            (if (i32.eqz (call $scope_find (local.get $scope) (cstring "@@superok")))
+              (then (call $throw_type (cstring "ReferenceError") (cstring "Must call super constructor in derived class before returning")) (br $disp))))
+          (else  ;; a non-undefined, non-object return value from a derived ctor → TypeError
+            (if (i32.eqz (i32.or (call $is_object (local.get $drv)) (i32.or (call $is_array (local.get $drv)) (i32.or (call $is_function (local.get $drv)) (call $is_proxy (local.get $drv))))))
+              (then (call $throw_type (cstring "TypeError") (cstring "Derived constructors may only return object or undefined")) (br $disp)))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 105))  ;; LOADRKIND — push the resume kind (reg836: 0 next / 1 throw / 2 return)
       (then
