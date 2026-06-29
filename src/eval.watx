@@ -4156,6 +4156,7 @@
   (let $capo i32 (call $obj_new (i32.const 6)))
   (let $capv i64 (call $mk_obj (local.get $capo)))
   (let $wrex i64 (call $promise_bound_settler (i32.const 475) (local.get $capv)))  ;; capabilities executor bound to capv
+  (i32.store (i32.add (call $val_payload (local.get $wrex)) (i32.const 8)) (i32.const 2))  ;; GetCapabilitiesExecutor.length = 2 (resolve, reject)
   (let $wrbuf i32 (call $heap_alloc (i32.const 8)))
   (i64.store (local.get $wrbuf) (local.get $wrex))
   (let $wrprom i64 (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $wrbuf) (local.get $thisv)))
@@ -5997,8 +5998,17 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Promise resolver is not a function")) (return (call $v_undef))))
       ;; Create a pending promise and give the executor resolve/reject bound to it, so a
       ;; resolve/reject called LATER (after the executor returns) still settles this promise
-      ;; and fires its registered reactions.
-      (let $prom i64 (call $mk_promise (i32.const 0) (call $v_undef)))
+      ;; and fires its registered reactions. When invoked via super() from a subclass, `this` is
+      ;; the derived instance (proto = Subclass.prototype) — initialize THAT object so the subclass
+      ;; instance carries the promise internal slots; otherwise create a fresh Promise.prototype one.
+      (let $prom i64 (if i64 (call $is_object (local.get $thisv))
+        (then
+          (let $pso i32 (call $val_payload (local.get $thisv)))
+          (call $scope_define (local.get $pso) (cstring "@@promise") (call $v_true))
+          (call $scope_define (local.get $pso) (cstring "@@pstate") (call $num (f64.const 0)))
+          (call $scope_define (local.get $pso) (cstring "@@pval") (call $v_undef))
+          (local.get $thisv))
+        (else (call $mk_promise (i32.const 0) (call $v_undef)))))
       (let $peav i32 (call $heap_alloc (i32.const 16)))
       (i64.store (local.get $peav) (call $promise_bound_settler (i32.const 415) (local.get $prom)))
       (i64.store (i32.add (local.get $peav) (i32.const 8)) (call $promise_bound_settler (i32.const 416) (local.get $prom)))

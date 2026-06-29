@@ -4072,7 +4072,23 @@
           (then
             ;; a native constructor that requires `new` (Map/Set/typed array/…) invoked as a plain function → TypeError
             (if (call $native_requires_new (i32.load (local.get $cfn)))
-              (then (call $throw_type (cstring "TypeError") (cstring "Constructor requires 'new'")) (set! $sp (local.get $rbase)) (br $disp)))
+              (then
+                ;; EXCEPT super(args) into a native base ctor (op 86) — construct it with the derived
+                ;; class's new.target (like SUPERCALLSPREAD), so `class X extends Promise/Set/… { ctor(){ super() } }`
+                ;; produces a proper X instance instead of throwing.
+                (if (i32.eq (local.get $op) (i32.const 86))
+                  (then
+                    (let $scNt i32 (call $scope_find (local.get $scope) (cstring "@@newtarget")))
+                    (i64.store (i32.const 656) (if i64 (local.get $scNt) (then (i64.load (local.get $scNt))) (else (call $v_undef))))
+                    (call $set_cur_scope (local.get $scope))
+                    (let $scRes i64 (call $call_val (i64.load (i32.add (local.get $stack) (local.get $cbase))) (local.get $argc) (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.const 8))) (i64.load (i32.add (local.get $stack) (local.get $rbase)))))
+                    (i64.store (i32.const 656) (i64.const 0))
+                    (if (call $err) (then (set! $sp (local.get $rbase)) (br $disp)))
+                    (set! $sp (local.get $rbase))
+                    (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $scRes))
+                    (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+                    (br $disp)))
+                (call $throw_type (cstring "TypeError") (cstring "Constructor requires 'new'")) (set! $sp (local.get $rbase)) (br $disp)))
             (let $thisv i64 (if i64 (local.get $isM) (then (i64.load (i32.add (local.get $stack) (local.get $rbase)))) (else (call $v_undef))))
             (call $set_cur_scope (local.get $scope))  ;; so a native eval()/Function() runs in the VM's current scope
             (i32.store (i32.const 640) (i32.const 0))  ;; native-construct flag: plain call → 0
