@@ -143,9 +143,13 @@
   (f64.const 0))
 
 (func $strict_eq (param $a i64) (param $b i64) (result i32) (effects)
-  ;; BigInt: compare by value (distinct boxes for equal values), never === a non-bigint
+  ;; BigInt: compare by value (distinct boxes for equal values), never === a non-bigint.
+  ;; nested if (NOT i32.and): i32.and isn't short-circuit, so bigint_val(b) would run on a
+  ;; non-bigint b and read its bits as a heap pointer → OOB (e.g. 0n === 0.1).
   (if (call $is_bigint (local.get $a))
-    (then (return (i32.and (call $is_bigint (local.get $b)) (i64.eq (call $bigint_val (local.get $a)) (call $bigint_val (local.get $b)))))))
+    (then (if (call $is_bigint (local.get $b))
+            (then (return (i64.eq (call $bigint_val (local.get $a)) (call $bigint_val (local.get $b)))))
+            (else (return (i32.const 0))))))
   (if (call $is_bigint (local.get $b)) (then (return (i32.const 0))))
   (if i32 (call $is_number (local.get $a))
     (then (if i32 (call $is_number (local.get $b))
