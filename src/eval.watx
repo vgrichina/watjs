@@ -4490,20 +4490,19 @@
     (then
       (if (call $is_undefined (local.get $thisv)) (then (return (call $mk_str (cstring "[object Undefined]")))))
       (if (call $is_null (local.get $thisv)) (then (return (call $mk_str (cstring "[object Null]")))))
-      ;; primitive number/string/boolean brands (per OrdinaryToPrimitive ToObject)
+      ;; ToObject(this) then a STRING Get(O,@@toStringTag) OVERRIDES the builtin tag — applies to
+      ;; primitives too (auto-boxed: BigInt/Symbol get "BigInt"/"Symbol" from their wrapper proto,
+      ;; and a test override on Number/BigInt/etc. prototype wins). Non-string @@toStringTag → builtin.
+      (let $ttv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@toStringTag"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (call $is_string (local.get $ttv))
+        (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "[object ") (call $val_payload (local.get $ttv))) (cstring "]"))))))
+      ;; builtin tags by type (the @@toStringTag override above takes precedence)
       (if (call $is_number (local.get $thisv)) (then (return (call $mk_str (cstring "[object Number]")))))
       (if (call $is_string (local.get $thisv)) (then (return (call $mk_str (cstring "[object String]")))))
       (if (call $is_boolean (local.get $thisv)) (then (return (call $mk_str (cstring "[object Boolean]")))))
-      (if (call $is_bigint (local.get $thisv)) (then (return (call $mk_str (cstring "[object BigInt]")))))
-      (if (call $is_symbol (local.get $thisv)) (then (return (call $mk_str (cstring "[object Symbol]")))))
-      ;; a string Symbol.toStringTag (@@toStringTag) overrides the builtin tag
-      ;; (Get walks the prototype chain, so built-ins tag via their prototype)
-      (if (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv))))
-        (then
-          (let $ttv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@toStringTag"))))
-          (if (call $err) (then (return (call $v_undef))))
-          (if (call $is_string (local.get $ttv))
-            (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "[object ") (call $val_payload (local.get $ttv))) (cstring "]"))))))))
+      ;; Symbol/BigInt are NOT in the builtinTag list — their "Symbol"/"BigInt" tags come solely from
+      ;; the @@toStringTag on their wrapper prototype (handled above); a deleted tag → "[object Object]".
       (if (call $is_array (local.get $thisv)) (then (return (call $mk_str (cstring "[object Array]")))))
       (if (call $is_function (local.get $thisv)) (then (return (call $mk_str (cstring "[object Function]")))))
       ;; wrapper objects + Date get their builtin tags
