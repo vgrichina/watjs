@@ -904,6 +904,25 @@
 ;; receiver's indices + length (the dense path would mutate a throwaway copy).
 ;; Returns the array of removed elements. Indices fit i32 for realistic receivers.
 (func $splice_generic (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
+  ;; spec guard: the removed-elements array is ArrayCreate(actualDeleteCount) → RangeError if it
+  ;; exceeds 2^32-1. Compute actualStart/actualDeleteCount in f64 (the i32 path below saturates on a
+  ;; huge array-like `length`, which otherwise loops/OOBs). Real arrays (len ≤ 2^32-1) never trip this.
+  (let $gslf f64 (call $alike_len_f64 (local.get $thisv)))
+  (let $grs f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+  (if (f64.ne (local.get $grs) (local.get $grs)) (then (set! $grs (f64.const 0))) (else (set! $grs (f64.trunc (local.get $grs)))))
+  (let $gasf f64 (if f64 (f64.lt (local.get $grs) (f64.const 0)) (then (let $t f64 (f64.add (local.get $gslf) (local.get $grs))) (if f64 (f64.gt (local.get $t) (f64.const 0)) (then (local.get $t)) (else (f64.const 0)))) (else (if f64 (f64.lt (local.get $grs) (local.get $gslf)) (then (local.get $grs)) (else (local.get $gslf))))))
+  (let $gdcf f64 (f64.sub (local.get $gslf) (local.get $gasf)))  ;; default (argc<2): len - actualStart
+  (if (i32.ge_s (local.get $argc) (i32.const 2))
+    (then
+      (let $gdr f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+      (if (f64.ne (local.get $gdr) (local.get $gdr)) (then (set! $gdr (f64.const 0))) (else (set! $gdr (f64.trunc (local.get $gdr)))))
+      (if (f64.lt (local.get $gdr) (f64.const 0)) (then (set! $gdr (f64.const 0))))
+      (if (f64.lt (local.get $gdr) (local.get $gdcf)) (then (set! $gdcf (local.get $gdr))))))
+  (if (i32.eq (local.get $argc) (i32.const 1)) (then (set! $gdcf (f64.sub (local.get $gslf) (local.get $gasf)))))
+  (if (i32.eqz (local.get $argc)) (then (set! $gdcf (f64.const 0))))
+  (if (f64.gt (local.get $gdcf) (f64.const 4294967295))
+    (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
+  (if (call $err) (then (return (call $v_undef))))
   (let $gsl i32 (call $alike_len (local.get $thisv)))
   (let $gss i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
   (if (i32.lt_s (local.get $gss) (i32.const 0)) (then (set! $gss (i32.add (local.get $gsl) (local.get $gss))) (if (i32.lt_s (local.get $gss) (i32.const 0)) (then (set! $gss (i32.const 0))))))
