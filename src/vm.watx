@@ -2624,7 +2624,7 @@
             (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND fn → [smethT]
             (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP smethT
           (else
-            (call $vm_emit_op (local.get $code) (if i32 (local.get $gsi) (then (i32.const 66)) (else (i32.const 67))))  ;; DEFGET/DEFSET → [proto]
+            (call $vm_emit_op (local.get $code) (if i32 (local.get $gsi) (then (i32.const 110)) (else (i32.const 111))))  ;; DEFGET_NE/DEFSET_NE → [proto] (class accessors are non-enumerable)
             (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP proto
         (br $cml)))
     (call $cursor_restore (local.get $gsc))  ;; not an accessor
@@ -5114,9 +5114,13 @@
         (call $set_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (local.get $key) (local.get $v))
         (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))
         (br $disp)))
-    ;; object-literal property definers — [obj, key, val] → define on obj, leave [obj]
-    (if (i32.or (i32.eq (local.get $op) (i32.const 65)) (i32.or (i32.eq (local.get $op) (i32.const 66)) (i32.eq (local.get $op) (i32.const 67))))  ;; DEFDATA/DEFGET/DEFSET
+    ;; object-literal / class property definers — [obj, key, val] → define on obj, leave [obj].
+    ;; DEFGET/DEFSET (66/67) create ENUMERABLE accessors (object literals); DEFGET_NE/DEFSET_NE
+    ;; (110/111) create NON-ENUMERABLE accessors (class instance accessors) — ACC|C = 5.
+    (if (i32.or (i32.eq (local.get $op) (i32.const 65)) (i32.or (i32.eq (local.get $op) (i32.const 66)) (i32.or (i32.eq (local.get $op) (i32.const 67))
+          (i32.or (i32.eq (local.get $op) (i32.const 110)) (i32.eq (local.get $op) (i32.const 111))))))  ;; DEFDATA/DEFGET/DEFSET/DEFGET_NE/DEFSET_NE
       (then
+        (let $disget i32 (i32.or (i32.eq (local.get $op) (i32.const 66)) (i32.eq (local.get $op) (i32.const 110))))  ;; getter ops
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $dv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
@@ -5125,7 +5129,7 @@
         ;; computed-key name inference (no-op for literal keys, already named)
         (call $vm_infer_name (local.get $dv) (local.get $dk)
           (if i32 (i32.eq (local.get $op) (i32.const 65)) (then (i32.const 0))
-            (else (if i32 (i32.eq (local.get $op) (i32.const 66)) (then (cstring "get ")) (else (cstring "set "))))))
+            (else (if i32 (local.get $disget) (then (cstring "get ")) (else (cstring "set "))))))
         (if (i32.eq (local.get $op) (i32.const 65))
           ;; literal `__proto__: v` sets [[Prototype]] DIRECTLY (Object/Null only), via the
           ;; internal [[SetPrototypeOf]] — it must NOT invoke an inherited __proto__ setter.
@@ -5133,7 +5137,8 @@
             (then (if (i32.or (call $is_object (local.get $dv)) (call $is_null (local.get $dv)))
               (then (drop (call $setproto_internal (local.get $dobj) (local.get $dv))))))
             (else (call $set_prop (local.get $dobj) (local.get $dk) (local.get $dv)))))                              ;; DEFDATA
-          (else (call $scope_set_accessor (call $val_payload (local.get $dobj)) (call $to_prop_key (local.get $dk)) (i32.eq (local.get $op) (i32.const 66)) (local.get $dv))))  ;; DEFGET(66)/DEFSET(67) — to_prop_key so a SYMBOL key → "@@sym:…" matches get/set_prop
+          (else (call $scope_set_accessor_attr (call $val_payload (local.get $dobj)) (call $to_prop_key (local.get $dk)) (local.get $disget) (local.get $dv)
+                  (if i32 (i32.or (i32.eq (local.get $op) (i32.const 66)) (i32.eq (local.get $op) (i32.const 67))) (then (i32.const 7)) (else (i32.const 5))))))  ;; obj-literal → E|C, class → C only
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 101))  ;; DEFDATA_OWN — [obj,key,val] → CreateDataProperty (own enumerable {W,E,C}).
       (then                                        ;; Used for COMPUTED object-literal keys: a computed `['__proto__']` makes an own

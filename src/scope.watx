@@ -105,8 +105,14 @@
   (local.get $slot))
 
 ;; set just the getter (isGet=1) or setter (isGet=0) of `name`, merging with an
-;; existing accessor (so separate get/set definitions combine).
+;; existing accessor (so separate get/set definitions combine). Default attrs ACC|E|C.
 (func $scope_set_accessor (param $s i32) (param $name i32) (param $isGet i32) (param $fn i64) (effects)
+  (call $scope_set_accessor_attr (local.get $s) (local.get $name) (local.get $isGet) (local.get $fn) (i32.const 7)))
+
+;; like scope_set_accessor but the freshly-created accessor uses `attrs` (e.g. ACC|C = 5 for a
+;; non-enumerable class instance accessor). An in-place merge with an existing accessor keeps
+;; that accessor's attrs (so `get x`+`set x` of a class stay non-enumerable from the first half).
+(func $scope_set_accessor_attr (param $s i32) (param $name i32) (param $isGet i32) (param $fn i64) (param $attrs i32) (effects)
   (let $slot i32 (call $scope_find_local (local.get $s) (local.get $name)))
   (if (local.get $slot)
     (then
@@ -116,9 +122,10 @@
           (i64.store (i32.add (local.get $cell) (if i32 (local.get $isGet) (then (i32.const 0)) (else (i32.const 8)))) (local.get $fn))
           (return)))))
   ;; otherwise create a fresh accessor
-  (call $scope_define_accessor (local.get $s) (local.get $name)
+  (call $scope_define_accessor_attr (local.get $s) (local.get $name)
     (if i64 (local.get $isGet) (then (local.get $fn)) (else (call $v_undef)))
-    (if i64 (local.get $isGet) (then (call $v_undef)) (else (local.get $fn)))))
+    (if i64 (local.get $isGet) (then (call $v_undef)) (else (local.get $fn)))
+    (local.get $attrs)))
 
 ;; delete `name` from scope `s` (own only). Returns 1 if it was present.
 (func $scope_delete (param $s i32) (param $name i32) (result i32) (effects)
