@@ -10407,8 +10407,8 @@
   (call $scope_define_attr (local.get $bigproto) (cstring "@@toStringTag") (call $mk_str (cstring "BigInt")) (i32.const 4))
   (call $scope_define_attr (local.get $bigproto) (cstring "constructor") (local.get $bigf) (i32.const 12))
   (call $scope_define_attr (call $fn_def_scope (local.get $bigf)) (cstring "prototype") (call $mk_obj (local.get $bigproto)) (i32.const 0))
-  (call $set_prop (local.get $bigf) (call $mk_str (cstring "asIntN")) (call $mk_native (i32.const 418) (cstring "asIntN")))
-  (call $set_prop (local.get $bigf) (call $mk_str (cstring "asUintN")) (call $mk_native (i32.const 419) (cstring "asUintN")))
+  (call $scope_define_attr (call $fn_def_scope (local.get $bigf)) (cstring "asIntN") (call $mk_native (i32.const 418) (cstring "asIntN")) (i32.const 12))   ;; {W:true,E:false,C:true}
+  (call $scope_define_attr (call $fn_def_scope (local.get $bigf)) (cstring "asUintN") (call $mk_native (i32.const 419) (cstring "asUintN")) (i32.const 12))
   (let $mapf i64 (call $def_native (local.get $g) (cstring "Map") (i32.const 120)))
   (let $setf i64 (call $def_native (local.get $g) (cstring "Set") (i32.const 130)))
   ;; Map.prototype (reg 344) — methods shared via the prototype; instances hold only @@mk/@@mv
