@@ -1190,7 +1190,10 @@
       (if (call $ta_valid_idx (local.get $n) (local.get $len))
         (then (i64.store (i32.add (local.get $buf) (i32.mul (i32.trunc_f64_s (local.get $n)) (i32.const 8))) (call $bigint_val (local.get $bv)))))
       (return (i32.const 1))))
-  ;; numeric TypedArray: ToNumber(value) runs once, regardless of index validity
+  ;; numeric TypedArray: ToNumber(value) runs once, regardless of index validity.
+  ;; ToNumber(BigInt) is a TypeError (a BigInt can't be assigned to a non-BigInt TypedArray).
+  (if (call $is_bigint (local.get $val))
+    (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt to a number")) (return (i32.const 1))))
   (let $cval f64 (call $to_num (local.get $val)))
   (if (call $err) (then (return (i32.const 1))))
   (if (local.get $bo) (then (if (call $is_detached_buf (i64.load (local.get $bo))) (then (return (i32.const 1))))))

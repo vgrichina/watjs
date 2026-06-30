@@ -1226,6 +1226,31 @@
 ;; ToBigInt(value): BigInt→itself, Boolean→0n/1n, String→StringToBigInt (SyntaxError on a
 ;; non-integer numeric string), Object→ToPrimitive(number) then recurse; Number/Symbol/null/
 ;; undefined→TypeError. Sets $err on failure. (Distinct from BigInt(x), which DOES accept Numbers.)
+;; StringToBigInt: parse a string as a BigInt integer literal. Valid = whitespace-trimmed integer
+;; (decimal with optional sign, or 0x/0o/0b radix) — NO decimal point, NO exponent, NO Infinity/NaN.
+;; Returns the BigInt value, or sets err + a SyntaxError and returns undefined. (Reuses str_to_num
+;; for whitespace handling + value; adds the integer-literal format validation str_to_num lacks.)
+(func $bigint_str_value (param $ks i32) (result i64) (effects)
+  (let $sn f64 (call $str_to_num (local.get $ks)))
+  (let $bad i32 (i32.const 0))
+  (if (f64.ne (local.get $sn) (local.get $sn)) (then (set! $bad (i32.const 1))))                         ;; NaN (unparseable)
+  (if (f64.gt (f64.abs (local.get $sn)) (f64.const 1.7976931348623157e308)) (then (set! $bad (i32.const 1))))  ;; Infinity
+  (if (f64.ne (local.get $sn) (f64.trunc (local.get $sn))) (then (set! $bad (i32.const 1))))             ;; non-integer ("1.5")
+  ;; scan for '.' (decimal point) and 'e'/'E' (exponent) — but 'e'/'E' are hex digits in a 0x literal.
+  (let $hex i32 (i32.ge_s (call $str_find (local.get $ks) (cstring "0x") (i32.const 0)) (i32.const 0)))
+  (if (i32.eqz (local.get $hex)) (then (if (i32.ge_s (call $str_find (local.get $ks) (cstring "0X") (i32.const 0)) (i32.const 0)) (then (set! $hex (i32.const 1))))))
+  (let $sl i32 (call $str_len (local.get $ks)))
+  (let $si i32 (i32.const 0))
+  (block $se (loop $sloop
+    (br_if $se (i32.ge_s (local.get $si) (local.get $sl)))
+    (let $c i32 (call $str_byte (local.get $ks) (local.get $si)))
+    (if (i32.eq (local.get $c) (i32.const 46)) (then (set! $bad (i32.const 1))))  ;; '.'
+    (if (i32.eqz (local.get $hex)) (then (if (i32.or (i32.eq (local.get $c) (i32.const 101)) (i32.eq (local.get $c) (i32.const 69))) (then (set! $bad (i32.const 1))))))  ;; 'e'/'E' exponent
+    (set! $si (i32.add (local.get $si) (i32.const 1))) (br $sloop)))
+  (if (local.get $bad)
+    (then (call $throw_type (cstring "SyntaxError") (cstring "Cannot convert string to a BigInt")) (return (call $v_undef))))
+  (call $mk_bigint (call $f64_sat_i64 (local.get $sn))))
+
 (func $to_bigint (param $v i64) (result i64) (effects)
   (let $p i64 (local.get $v))
   (if (call $is_object (local.get $v))
@@ -1233,11 +1258,7 @@
   (if (call $is_bigint (local.get $p)) (then (return (local.get $p))))
   (if (call $is_boolean (local.get $p)) (then (return (call $mk_bigint (i64.extend_i32_u (call $val_payload (local.get $p)))))))
   (if (call $is_string (local.get $p))
-    (then
-      (let $sn f64 (call $str_to_num (call $val_payload (local.get $p))))
-      (if (i32.or (f64.ne (local.get $sn) (local.get $sn)) (f64.ne (local.get $sn) (f64.nearest (local.get $sn))))
-        (then (call $throw_type (cstring "SyntaxError") (cstring "Cannot convert string to a BigInt")) (return (call $v_undef))))
-      (return (call $mk_bigint (call $f64_sat_i64 (local.get $sn))))))
+    (then (return (call $bigint_str_value (call $val_payload (local.get $p))))))
   (call $throw_type (cstring "TypeError") (cstring "Cannot convert value to a BigInt")) (call $v_undef))
 
 ;; store a JS value into element idx: BigInt64/BigUint64 do ToBigInt, else ToNumber.
@@ -4594,7 +4615,7 @@
           (if (i32.or (f64.ne (local.get $bgf) (local.get $bgf)) (f64.ne (local.get $bgf) (f64.nearest (local.get $bgf))))
             (then (call $throw_type (cstring "RangeError") (cstring "The number is not a safe integer")) (return (call $v_undef))))
           (return (call $mk_bigint (call $f64_sat_i64 (local.get $bgf))))))  ;; saturating (i64-limited BigInt; avoids trap on huge values)
-      (if (call $is_string (local.get $bgv)) (then (return (call $mk_bigint (call $f64_sat_i64 (call $str_to_num (call $val_payload (local.get $bgv))))))))
+      (if (call $is_string (local.get $bgv)) (then (return (call $bigint_str_value (call $val_payload (local.get $bgv))))))
       (call $throw_type (cstring "TypeError") (cstring "Cannot convert to a BigInt")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 5))  ;; String(x) / new String(x) (incl. super() from a subclass)
     (then
