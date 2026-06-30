@@ -277,6 +277,57 @@
       (return (i32.add (local.get $i) (i32.const 1)))))  ;; past ]
   (i32.add (local.get $ppos) (i32.const 1)))
 
+;; is `e` a character-class escape letter (\d \D \w \W \s \S)? these are sets, not single chars.
+(func $re_is_classesc (param $e i32) (result i32) (effects)
+  (i32.or (i32.eq (local.get $e) (i32.const 100)) (i32.or (i32.eq (local.get $e) (i32.const 68))
+    (i32.or (i32.eq (local.get $e) (i32.const 119)) (i32.or (i32.eq (local.get $e) (i32.const 87))
+      (i32.or (i32.eq (local.get $e) (i32.const 115)) (i32.eq (local.get $e) (i32.const 83))))))))
+
+;; decode a literal escape at offset i (p[i] == '\') inside a char class.
+;; returns (codepoint << 4 | bytes-consumed-incl-backslash). \d\D\w\W\s\S must be
+;; filtered out by the caller (they are sets, handled via re_esc_match).
+(func $re_litesc (param $p i32) (param $i i32) (result i32) (effects)
+  (let $e i32 (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 1)))))
+  ;; \xHH
+  (if (i32.eq (local.get $e) (i32.const 120))
+    (then
+      (let $h1 i32 (call $hexval (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 2))))))
+      (let $h2 i32 (call $hexval (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 3))))))
+      (if (i32.and (i32.ge_s (local.get $h1) (i32.const 0)) (i32.ge_s (local.get $h2) (i32.const 0)))
+        (then (return (i32.or (i32.shl (i32.add (i32.mul (local.get $h1) (i32.const 16)) (local.get $h2)) (i32.const 4)) (i32.const 4)))))
+      (return (i32.or (i32.shl (i32.const 120) (i32.const 4)) (i32.const 2)))))  ;; malformed → literal 'x'
+  ;; \uHHHH or \u{H+}
+  (if (i32.eq (local.get $e) (i32.const 117))
+    (then
+      (if (i32.eq (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 2)))) (i32.const 123))  ;; '{'
+        (then
+          (let $j i32 (i32.add (local.get $i) (i32.const 3)))
+          (let $acc i32 (i32.const 0))
+          (block $de (loop $dl
+            (let $hc i32 (call $hexval (i32.load8_u (i32.add (local.get $p) (local.get $j)))))
+            (br_if $de (i32.lt_s (local.get $hc) (i32.const 0)))   ;; stops at '}' (or any non-hex)
+            (set! $acc (i32.add (i32.mul (local.get $acc) (i32.const 16)) (local.get $hc)))
+            (set! $j (i32.add (local.get $j) (i32.const 1)))
+            (br $dl)))
+          (return (i32.or (i32.shl (local.get $acc) (i32.const 4)) (i32.add (i32.sub (local.get $j) (local.get $i)) (i32.const 1))))))  ;; consume through '}'
+      (let $u1 i32 (call $hexval (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 2))))))
+      (let $u2 i32 (call $hexval (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 3))))))
+      (let $u3 i32 (call $hexval (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 4))))))
+      (let $u4 i32 (call $hexval (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 5))))))
+      (if (i32.and (i32.ge_s (local.get $u1) (i32.const 0)) (i32.and (i32.ge_s (local.get $u2) (i32.const 0)) (i32.and (i32.ge_s (local.get $u3) (i32.const 0)) (i32.ge_s (local.get $u4) (i32.const 0)))))
+        (then (return (i32.or (i32.shl (i32.add (i32.add (i32.add (i32.mul (local.get $u1) (i32.const 4096)) (i32.mul (local.get $u2) (i32.const 256))) (i32.mul (local.get $u3) (i32.const 16))) (local.get $u4)) (i32.const 4)) (i32.const 6)))))
+      (return (i32.or (i32.shl (i32.const 117) (i32.const 4)) (i32.const 2)))))  ;; malformed → literal 'u'
+  ;; single-char escapes (in a class, \b is backspace, not a word boundary)
+  (let $lit i32 (local.get $e))
+  (if (i32.eq (local.get $e) (i32.const 110)) (then (set! $lit (i32.const 10))))   ;; \n
+  (if (i32.eq (local.get $e) (i32.const 116)) (then (set! $lit (i32.const 9))))    ;; \t
+  (if (i32.eq (local.get $e) (i32.const 114)) (then (set! $lit (i32.const 13))))   ;; \r
+  (if (i32.eq (local.get $e) (i32.const 102)) (then (set! $lit (i32.const 12))))   ;; \f
+  (if (i32.eq (local.get $e) (i32.const 118)) (then (set! $lit (i32.const 11))))   ;; \v
+  (if (i32.eq (local.get $e) (i32.const 98))  (then (set! $lit (i32.const 8))))    ;; \b (backspace in class)
+  (if (i32.eq (local.get $e) (i32.const 48))  (then (set! $lit (i32.const 0))))    ;; \0
+  (i32.or (i32.shl (local.get $lit) (i32.const 4)) (i32.const 2)))
+
 ;; does char class [start..end) (between [ and ]) match `ch`?
 (func $re_class_match (param $p i32) (param $start i32) (param $end i32) (param $ch i32) (result i32) (effects)
   (if (i32.lt_s (local.get $ch) (i32.const 0)) (then (return (i32.const 0))))
@@ -284,26 +335,45 @@
   (let $neg i32 (i32.const 0))
   (if (i32.eq (i32.load8_u (i32.add (local.get $p) (local.get $i))) (i32.const 94)) (then (set! $neg (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1)))))
   (let $found i32 (i32.const 0))
+  (let $lo i32 (i32.const 0))
+  (let $hi i32 (i32.const 0))
+  (let $rstart i32 (i32.const 0))   ;; offset just past the low atom (where a '-' range op would sit)
+  (let $packed i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $end)))
     (let $c i32 (i32.load8_u (i32.add (local.get $p) (local.get $i))))
     (if (i32.eq (local.get $c) (i32.const 92))  ;; escape in class
       (then
-        (if (call $re_esc_match (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 1)))) (local.get $ch)) (then (set! $found (i32.const 1))))
-        (set! $i (i32.add (local.get $i) (i32.const 2)))
-        (br $l)))
-    ;; range a-b ?
-    (if (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 2)) (local.get $end))
-          (i32.eq (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 1)))) (i32.const 45)))
+        (let $e1 i32 (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 1)))))
+        (if (call $re_is_classesc (local.get $e1))  ;; \d \w \s … — a set, never a range endpoint
+          (then
+            (if (call $re_esc_match (local.get $e1) (local.get $ch)) (then (set! $found (i32.const 1))))
+            (set! $i (i32.add (local.get $i) (i32.const 2)))
+            (br $l)))
+        (set! $packed (call $re_litesc (local.get $p) (local.get $i)))
+        (set! $lo (i32.shr_u (local.get $packed) (i32.const 4)))
+        (set! $rstart (i32.add (local.get $i) (i32.and (local.get $packed) (i32.const 15)))))
+      (else
+        (set! $lo (local.get $c))
+        (set! $rstart (i32.add (local.get $i) (i32.const 1)))))
+    ;; range  lo-hi  ?  (a '-' at rstart with a real char after it, not the closing ])
+    (if (i32.and (i32.lt_s (i32.add (local.get $rstart) (i32.const 1)) (local.get $end))
+          (i32.eq (i32.load8_u (i32.add (local.get $p) (local.get $rstart))) (i32.const 45)))  ;; '-'
       (then
-        (let $hi i32 (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 2)))))
-        (if (i32.and (i32.ge_s (local.get $ch) (local.get $c)) (i32.le_s (local.get $ch) (local.get $hi))) (then (set! $found (i32.const 1))))
+        (if (i32.eq (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $rstart) (i32.const 1)))) (i32.const 92))
+          (then
+            (set! $packed (call $re_litesc (local.get $p) (i32.add (local.get $rstart) (i32.const 1))))
+            (set! $hi (i32.shr_u (local.get $packed) (i32.const 4)))
+            (set! $i (i32.add (i32.add (local.get $rstart) (i32.const 1)) (i32.and (local.get $packed) (i32.const 15)))))
+          (else
+            (set! $hi (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $rstart) (i32.const 1)))))
+            (set! $i (i32.add (local.get $rstart) (i32.const 2)))))
+        (if (i32.and (i32.ge_s (local.get $ch) (local.get $lo)) (i32.le_s (local.get $ch) (local.get $hi))) (then (set! $found (i32.const 1))))
         (if (i32.load (i32.const 272))  ;; case-insensitive: also test the swapped-case char
-          (then (if (i32.and (i32.ge_s (call $re_swapc (local.get $ch)) (local.get $c)) (i32.le_s (call $re_swapc (local.get $ch)) (local.get $hi))) (then (set! $found (i32.const 1))))))
-        (set! $i (i32.add (local.get $i) (i32.const 3)))
+          (then (if (i32.and (i32.ge_s (call $re_swapc (local.get $ch)) (local.get $lo)) (i32.le_s (call $re_swapc (local.get $ch)) (local.get $hi))) (then (set! $found (i32.const 1))))))
         (br $l)))
-    (if (call $re_eqc (local.get $ch) (local.get $c)) (then (set! $found (i32.const 1))))
-    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (if (call $re_eqc (local.get $ch) (local.get $lo)) (then (set! $found (i32.const 1))))
+    (set! $i (local.get $rstart))
     (br $l)))
   (if i32 (local.get $neg) (then (i32.eqz (local.get $found))) (else (local.get $found))))
 
