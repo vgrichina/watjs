@@ -4615,7 +4615,8 @@
       (if (call $is_number (local.get $bgv))
         (then
           (let $bgf f64 (call $tonum_raw (local.get $bgv)))
-          (if (i32.or (f64.ne (local.get $bgf) (local.get $bgf)) (f64.ne (local.get $bgf) (f64.nearest (local.get $bgf))))
+          ;; NaN, ±Infinity, or non-integer → RangeError (NumberToBigInt requires an integral Number)
+          (if (i32.or (f64.ne (local.get $bgf) (local.get $bgf)) (i32.or (f64.gt (f64.abs (local.get $bgf)) (f64.const 1.7976931348623157e308)) (f64.ne (local.get $bgf) (f64.nearest (local.get $bgf)))))
             (then (call $throw_type (cstring "RangeError") (cstring "The number is not a safe integer")) (return (call $v_undef))))
           (return (call $mk_bigint (call $f64_sat_i64 (local.get $bgf))))))  ;; saturating (i64-limited BigInt; avoids trap on huge values)
       (if (call $is_string (local.get $bgv)) (then (return (call $bigint_str_value (call $val_payload (local.get $bgv))))))
@@ -9416,6 +9417,7 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 150)) (i32.or (i32.eq (local.get $id) (i32.const 420)) (i32.eq (local.get $id) (i32.const 421)))) (then (return (i32.const 1))))  ;; Generator/AsyncGenerator .next/.return/.throw — length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 516)) (i32.or (i32.eq (local.get $id) (i32.const 517)) (i32.eq (local.get $id) (i32.const 518)))) (then (return (i32.const 1))))  ;; AsyncGeneratorPrototype next/return/throw — length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 355)) (i32.eq (local.get $id) (i32.const 357))) (then (return (i32.const 1))))  ;; Iterator.zip / Iterator.zipKeyed — length 1
+  (if (i32.or (i32.eq (local.get $id) (i32.const 418)) (i32.eq (local.get $id) (i32.const 419))) (then (return (i32.const 2))))  ;; BigInt.asIntN(bits, bigint) / asUintN — length 2
   (if (i32.eq (local.get $id) (i32.const 152)) (then (return (i32.const 2))))  ;; Promise.prototype.then(onF, onR) — length 2
   (if (i32.or (i32.eq (local.get $id) (i32.const 408)) (i32.or (i32.eq (local.get $id) (i32.const 409))  ;; Promise.prototype catch/finally
     (i32.or (i32.eq (local.get $id) (i32.const 151)) (i32.or (i32.eq (local.get $id) (i32.const 414))  ;; Promise resolve/reject
