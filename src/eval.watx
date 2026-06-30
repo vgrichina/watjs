@@ -4607,6 +4607,9 @@
   (if (i32.eq (local.get $id) (i32.const 247))  ;; BigInt(x)
     (then
       (let $bgv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; spec: prim = ToPrimitive(value, number) — an object's valueOf/toString runs (and may throw)
+      (if (i32.or (call $is_object (local.get $bgv)) (i32.or (call $is_array (local.get $bgv)) (call $is_function (local.get $bgv))))
+        (then (set! $bgv (call $to_primitive (local.get $bgv))) (if (call $err) (then (return (call $v_undef))))))
       (if (call $is_bigint (local.get $bgv)) (then (return (local.get $bgv))))
       (if (call $is_boolean (local.get $bgv)) (then (return (call $mk_bigint (i64.extend_i32_u (call $val_payload (local.get $bgv)))))))
       (if (call $is_number (local.get $bgv))
