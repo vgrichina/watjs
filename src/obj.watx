@@ -1112,9 +1112,10 @@
     (then
       (if (call $key_is_length (local.get $key)) (then (return (call $v_true))))
       (let $aip i32 (call $val_payload (local.get $obj)))
-      ;; element index present (non-hole)?
+      ;; element index present (non-hole)? present → true; hole → fall through to
+      ;; the @12 (deopted-index) scope and the prototype chain (a hole can be inherited)
       (let $aidx i32 (call $str_array_index (call $to_prop_key (local.get $key))))
-      (if (i32.ge_s (local.get $aidx) (i32.const 0)) (then (return (call $mk_bool (call $arr_has (local.get $aip) (local.get $aidx))))))
+      (if (i32.ge_s (local.get $aidx) (i32.const 0)) (then (if (call $arr_has (local.get $aip) (local.get $aidx)) (then (return (call $v_true))))))
       ;; named property in the @12 scope?
       (let $anp i32 (i32.load (i32.add (local.get $aip) (i32.const 12))))
       (if (local.get $anp) (then (if (call $scope_find_local (local.get $anp) (call $to_prop_key (local.get $key))) (then (return (call $v_true))))))
