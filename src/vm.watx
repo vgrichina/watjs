@@ -3441,7 +3441,15 @@
                   (let $fin2 i32 (call $ident_name)) (call $next_token)
                   (if (i32.eq (call $tok_kind) (i32.const 24))
                     (then (call $next_token) (call $vm_c_expr (local.get $code))
-                          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fin2)))
+                          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fin2))
+                          ;; a comma-sequence init `for (k=0, i=0; …)` — the first assignment took the
+                          ;; STOREVAR fast path; append the remaining AssignmentExpressions (value POPped).
+                          (block $fice (loop $ficl
+                            (br_if $fice (i32.ne (call $tok_kind) (i32.const 22)))  ;; not ','
+                            (call $next_token)  ;; consume ','
+                            (call $vm_c_expr (local.get $code))
+                            (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
+                            (br $ficl))))
                     (else (call $look_restore) (call $vm_c_commaexpr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11))))))))
           (call $expect (i32.const 21) (cstring "expected ;"))
           (let $ftop i32 (call $vm_emit_cursor))
