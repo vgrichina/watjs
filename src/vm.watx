@@ -2737,14 +2737,17 @@
     (then
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $smethT))
       (call $vm_emit_op (local.get $code) (i32.const 100))))  ;; APPLYSMETHS → [ctor]
-  ;; run static field initializers on the constructor (this=ctor) — only when present, so SETPROTO stays the terminal op for class-expression name inference
+  ;; a binding-name class (class Foo {} / class Named {}) names its constructor BEFORE static field
+  ;; initializers run, so `this.name` / C.name inside a static field or block sees the class name
+  ;; (spec: SetFunctionName precedes static-element evaluation). Anonymous class expressions have no
+  ;; clsname here (their name is inferred at the assignment site) → SETPROTO stays terminal for that.
+  (if (local.get $clsname)
+    (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $clsname))))
+  ;; run static field initializers on the constructor (this=ctor) — only when present, so SETPROTO/SETNAME stays the terminal op for class-expression name inference
   (if (local.get $hasstatic)
     (then
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $staticT))
       (call $vm_emit_op (local.get $code) (i32.const 88))))
-  ;; a binding-name class (class Foo {} / class Named {}) names its constructor
-  (if (local.get $clsname)
-    (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $clsname))))
   ;; expression → leave [ctor] on the stack; declaration → bind the name
   (if (i32.eqz (local.get $isExpr))
     (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; STOREVAR C
