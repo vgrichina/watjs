@@ -50,19 +50,20 @@
 ;; @12 contlist, @16 contcount.
 (func $vm_label_push (param $name i32) (result i32) (effects)
   (let $cnt i32 (i32.load (i32.const 228)))
-  (let $e i32 (i32.add (i32.load (i32.const 252)) (i32.mul (local.get $cnt) (i32.const 20))))
+  (let $e i32 (i32.add (i32.load (i32.const 252)) (i32.mul (local.get $cnt) (i32.const 24))))  ;; entry stride 24 (@20 = finally-base)
   (i32.store (local.get $e) (local.get $name))
   (i32.store (i32.add (local.get $e) (i32.const 4)) (call $heap_alloc (i32.const 1024)))
   (i32.store (i32.add (local.get $e) (i32.const 8)) (i32.const 0))
   (i32.store (i32.add (local.get $e) (i32.const 12)) (call $heap_alloc (i32.const 1024)))
   (i32.store (i32.add (local.get $e) (i32.const 16)) (i32.const 0))
+  (i32.store (i32.add (local.get $e) (i32.const 20)) (i32.load (i32.const 320)))  ;; finally-base at this label's start → labeled break/continue re-emits finallys/closes/scope-pops down to here
   (i32.store (i32.const 228) (i32.add (local.get $cnt) (i32.const 1)))
   (local.get $e))
 (func $vm_label_find (param $name i32) (result i32) (effects)
   (let $i i32 (i32.sub (i32.load (i32.const 228)) (i32.const 1)))
   (block $e (loop $l
     (br_if $e (i32.lt_s (local.get $i) (i32.const 0)))
-    (let $en i32 (i32.add (i32.load (i32.const 252)) (i32.mul (local.get $i) (i32.const 20))))
+    (let $en i32 (i32.add (i32.load (i32.const 252)) (i32.mul (local.get $i) (i32.const 24))))
     (if (call $str_eq (i32.load (local.get $en)) (local.get $name)) (then (return (local.get $en))))
     (set! $i (i32.sub (local.get $i) (i32.const 1)))
     (br $l)))
@@ -119,6 +120,11 @@
   (i32.store (local.get $e) (i32.const 1))
   (i32.store (i32.add (local.get $e) (i32.const 4)) (local.get $itname))
   (i32.store (i32.const 320) (i32.add (local.get $n) (i32.const 1))))
+(func $vm_finally_push_scope (effects)  ;; kind 2 = pop a lexical scope (with-scope / block scope) on abrupt exit
+  (let $n i32 (i32.load (i32.const 320)))
+  (let $e i32 (i32.add (i32.load (i32.const 772)) (i32.mul (local.get $n) (i32.const 8))))
+  (i32.store (local.get $e) (i32.const 2))
+  (i32.store (i32.const 320) (i32.add (local.get $n) (i32.const 1))))
 (func $vm_finally_pop (effects)
   (i32.store (i32.const 320) (i32.sub (i32.load (i32.const 320)) (i32.const 1))))
 ;; Re-emit finally blocks inline (innermost first) down to depth $base, before an
@@ -134,6 +140,8 @@
     (br_if $e (i32.lt_s (local.get $i) (local.get $base)))
     (i32.store (i32.const 320) (local.get $i))
     (let $ent i32 (i32.add (i32.load (i32.const 772)) (i32.mul (local.get $i) (i32.const 8))))
+    (if (i32.eq (i32.load (local.get $ent)) (i32.const 2))
+      (then (call $vm_emit_op (local.get $code) (i32.const 94)))  ;; kind 2: pop a lexical scope (LEAVEWITH) — stack-neutral
     (if (i32.eq (i32.load (local.get $ent)) (i32.const 1))
       (then  ;; iterator close: LOADVAR itname; CLOSEITER (it.return()) — stack-neutral
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $ent) (i32.const 4))))
@@ -142,7 +150,7 @@
         (let $save i32 (call $cursor_save))
         (call $cursor_restore (i32.load (i32.add (local.get $ent) (i32.const 4))))
         (call $vm_c_stmt (local.get $code))  ;; the finally '{...}' block (stack-neutral)
-        (call $cursor_restore (local.get $save))))
+        (call $cursor_restore (local.get $save)))))
     (br $l)))
   (i32.store (i32.const 320) (local.get $n)))
 (func $vm_finally_emit_all (param $code i32) (effects)
@@ -2858,7 +2866,9 @@
       (call $vm_c_expr (local.get $code))  ;; object → [obj]
       (call $next_token)  ;; ')'
       (call $vm_emit_op (local.get $code) (i32.const 93))  ;; ENTERWITH (consumes obj, pushes with-scope)
+      (call $vm_finally_push_scope)  ;; break/continue/return through the body must pop the with-scope
       (call $vm_c_stmt (local.get $code))  ;; body
+      (call $vm_finally_pop)
       (call $vm_emit_op (local.get $code) (i32.const 94))  ;; LEAVEWITH (normal completion)
       (return)))
   ;; block { ... }
@@ -2988,7 +2998,10 @@
           (if (i32.and (i32.eqz (call $nl_before)) (i32.eq (call $tok_kind) (i32.const 3)))  ;; break LABEL (no newline between) → that labeled loop's break list
             (then
               (let $be i32 (call $vm_label_find (call $ident_name))) (call $next_token)
-              (if (local.get $be) (then (call $vm_label_add (local.get $be) (i32.const 0) (call $vm_emit_jump (local.get $code) (i32.const 12))))))
+              (if (local.get $be)
+                (then
+                  (call $vm_finally_emit_to (local.get $code) (i32.load (i32.add (local.get $be) (i32.const 20))))  ;; run finallys/iterator-closes/scope-pops between here and the labeled statement
+                  (call $vm_label_add (local.get $be) (i32.const 0) (call $vm_emit_jump (local.get $code) (i32.const 12))))))
             (else (if (i32.load (i32.const 208))  ;; plain break → innermost loop
               (then
                 (call $vm_finally_emit_to (local.get $code) (i32.load (i32.const 360)))  ;; run finallys between break and the loop
@@ -3002,7 +3015,10 @@
           (if (i32.and (i32.eqz (call $nl_before)) (i32.eq (call $tok_kind) (i32.const 3)))  ;; continue LABEL (no newline between)
             (then
               (let $ce i32 (call $vm_label_find (call $ident_name))) (call $next_token)
-              (if (local.get $ce) (then (call $vm_label_add (local.get $ce) (i32.const 1) (call $vm_emit_jump (local.get $code) (i32.const 12))))))
+              (if (local.get $ce)
+                (then
+                  (call $vm_finally_emit_to (local.get $code) (i32.load (i32.add (local.get $ce) (i32.const 20))))  ;; run finallys/iterator-closes/scope-pops between here and the labeled loop
+                  (call $vm_label_add (local.get $ce) (i32.const 1) (call $vm_emit_jump (local.get $code) (i32.const 12))))))
             (else (if (i32.load (i32.const 216))  ;; plain continue
               (then
                 (call $vm_finally_emit_to (local.get $code) (i32.load (i32.const 360)))  ;; run finallys between continue and the loop
