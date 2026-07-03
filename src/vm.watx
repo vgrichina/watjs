@@ -3863,6 +3863,12 @@
     (let $fisblock i32 (i32.const 0))
     (if (call $is_string (local.get $fname))
       (then (if (call $str_eq (call $val_payload (local.get $fname)) (cstring "@@staticblock")) (then (set! $fisblock (i32.const 1))))))
+    ;; a STATIC field named "prototype" (thisobj is the constructor function) is a
+    ;; [[DefineOwnProperty]] against the ctor's non-configurable "prototype" → TypeError.
+    (if (call $is_function (local.get $thisobj))
+      (then (if (call $is_string (local.get $fname))
+        (then (if (call $str_eq (call $val_payload (local.get $fname)) (cstring "prototype"))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot define a static class field named 'prototype'")) (return)))))))
     (if (local.get $fisblock)
       (then (drop (call $call_val (local.get $fthunk) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $thisobj))))
       (else
