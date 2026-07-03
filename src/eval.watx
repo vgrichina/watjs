@@ -7855,8 +7855,19 @@
               (i64.store (local.get $srargs) (call $mk_str (local.get $sub)))
               (i64.store (i32.add (local.get $srargs) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
               (return (call $call_val (local.get $srm) (i32.const 2) (local.get $srargs) (local.get $a0)))))))
+      ;; match(102)/search(104): arg has no own @@match/@@search (handled above) → per spec
+      ;; rx = RegExpCreate(arg), Return Invoke(rx, @@match/@@search, «S»). Delegating to
+      ;; RegExp.prototype's method makes String.prototype.{match,search} honor an override.
+      (if (i32.or (i32.eq (local.get $id) (i32.const 102)) (i32.eq (local.get $id) (i32.const 104)))
+        (then
+          (let $mrxp i32 (if i32 (call $is_undefined (local.get $a0)) (then (cstring "")) (else (call $re_pat_of (local.get $a0)))))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $mrx i64 (call $mk_regexp (local.get $mrxp) (cstring "")))
+          (let $msym i64 (call $get_prop (local.get $mrx) (call $mk_str (if i32 (i32.eq (local.get $id) (i32.const 102)) (then (cstring "@@match")) (else (cstring "@@search"))))))
+          (if (call $err) (then (return (call $v_undef))))
+          (return (call $call_val (local.get $msym) (i32.const 1) (call $argv1 (call $mk_str (local.get $sub))) (local.get $mrx)))))
       (call $re_apply_flags (local.get $a0))
-      ;; match/replace/search with undefined → RegExp(undefined) = empty pattern (NOT "undefined")
+      ;; replace with undefined → RegExp(undefined) = empty pattern (NOT "undefined")
       (let $pat i32 (if i32 (call $is_undefined (local.get $a0)) (then (cstring "")) (else (call $re_pat_of (local.get $a0)))))
       (let $start i32 (call $re_search_str (local.get $pat) (local.get $sub)))
       (if (i32.eq (local.get $id) (i32.const 104))  ;; search → index

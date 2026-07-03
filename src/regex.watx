@@ -811,6 +811,17 @@
         (else (call $to_str (local.get $v)))))
     (else (call $to_str (local.get $v)))))
 
+;; RegExpCreate(pattern, flags): build a fresh RegExp object (parent = RegExp.prototype) from
+;; already-stringified pattern/flags. Used by String.prototype.match/matchAll/search to delegate
+;; to RegExp.prototype[@@match/@@matchAll/@@search] per spec (so a subclass override is honored).
+(func $mk_regexp (param $pat i32) (param $flg i32) (result i64) (effects)
+  (let $ro i32 (call $obj_new (i32.const 8)))
+  (i32.store (local.get $ro) (i32.load (i32.const 324)))  ;; scope parent = RegExp.prototype
+  (call $scope_define_attr (local.get $ro) (cstring "__re_src__") (call $mk_str (local.get $pat)) (i32.const 0))
+  (call $scope_define_attr (local.get $ro) (cstring "__re_flags__") (call $mk_str (local.get $flg)) (i32.const 0))
+  (call $scope_define_attr (local.get $ro) (cstring "lastIndex") (call $num (f64.const 0)) (i32.const 8))
+  (call $mk_obj (local.get $ro)))
+
 ;; RegExpExec(R, S): if R.exec is callable, Call(exec, R, «S») and validate the result
 ;; is Object|null; else (R must be a RegExp) run the builtin exec (native 167). $sval is
 ;; the string VALUE. Returns an array | null | whatever a user exec returns; sets $err on abrupt.
