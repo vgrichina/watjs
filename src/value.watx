@@ -61,6 +61,10 @@
 ;; so it reads as undefined yet is distinguishable for HasProperty/enumeration.
 (func $v_hole  (result i64) (effects) (call $box (i32.const 0) (i32.const 1)))
 (func $is_hole (param $v i64) (result i32) (effects) (i64.eq (local.get $v) (call $v_hole)))
+;; TDZ sentinel (undefined-tagged, payload 2): an uninitialized binding — currently the
+;; `this` of a derived constructor before super() is called. Reading it → ReferenceError.
+(func $v_tdz  (result i64) (effects) (call $box (i32.const 0) (i32.const 2)))
+(func $is_tdz (param $v i64) (result i32) (effects) (i64.eq (local.get $v) (call $v_tdz)))
 (func $v_null  (result i64) (effects) (call $box (i32.const 1) (i32.const 0)))
 (func $v_false (result i64) (effects) (call $box (i32.const 2) (i32.const 0)))
 (func $v_true  (result i64) (effects) (call $box (i32.const 2) (i32.const 1)))
