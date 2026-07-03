@@ -5840,7 +5840,7 @@
     (then (let $clte i64 (i64.load (i32.const 764)))  ;; the shared %ThrowTypeError% intrinsic (NOT a fresh one — must === fn.caller's getter)
           (call $scope_define_accessor_attr (local.get $ao) (cstring "callee") (local.get $clte) (local.get $clte) (i32.const 0)))
     (else (call $scope_define_attr (local.get $ao) (cstring "callee") (call $mk_fn (local.get $cfn)) (i32.const 12))))
-  (let $i i32 (local.get $anp))  ;; extra (unmapped) args → data props
+  (let $i i32 (i32.const 0))  ;; ALL args → own data props (mapped indices too, so gOPD/ownKeys/hasOwn see them; [[Get]]/[[Set]] still alias the param for idx<@@anp)
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
     (call $scope_define (local.get $ao) (call $num_to_str (f64.convert_i32_s (local.get $i))) (i64.load (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.mul (i32.add (local.get $i) (i32.const 1)) (i32.const 8))))))
@@ -5871,7 +5871,7 @@
     (then (let $clte i64 (i64.load (i32.const 764)))  ;; the shared %ThrowTypeError% intrinsic (NOT a fresh one — must === fn.caller's getter)
           (call $scope_define_accessor_attr (local.get $ao) (cstring "callee") (local.get $clte) (local.get $clte) (i32.const 0)))
     (else (call $scope_define_attr (local.get $ao) (cstring "callee") (call $mk_fn (local.get $cfn)) (i32.const 12))))
-  (let $i i32 (local.get $anp))
+  (let $i i32 (i32.const 0))  ;; ALL args → own data props (see vm_make_arguments)
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $argc)))
     (call $scope_define (local.get $ao) (call $num_to_str (f64.convert_i32_s (local.get $i))) (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
