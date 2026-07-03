@@ -1356,8 +1356,10 @@
       (else (if i32 (i32.eq (local.get $k) (i32.const 49)) (then (i32.const 41)) (else (i32.const 42))))))
     (br $l))))
 
-;; relational / equality:  < 29  > 30  <= 31  >= 32  === 26  → opcodes 14..18
-(func $vm_c_cmp (param $code i32) (effects)
+;; relational:  < 29  > 30  <= 31  >= 32  instanceof  in  → opcodes 14..17/59/60
+;; (RelationalExpression binds TIGHTER than EqualityExpression: `a in b !== c` is
+;; `(a in b) !== c`, not `((a in b) !== c) …`).
+(func $vm_c_rel (param $code i32) (effects)
   (call $vm_c_shift (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
@@ -1368,21 +1370,30 @@
           (then (call $next_token) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 59)) (br $l)))
         (if (call $tok_is_kw (cstring "in"))
           (then (call $next_token) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 60)) (br $l)))))
-    ;; < 29 > 30 <= 31 >= 32 === 26 !== 28 == 25 != 27
+    ;; < 29 > 30 <= 31 >= 32
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 29)) (i32.or (i32.eq (local.get $k) (i32.const 30))
-      (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.or (i32.eq (local.get $k) (i32.const 32))
-      (i32.or (i32.eq (local.get $k) (i32.const 26)) (i32.or (i32.eq (local.get $k) (i32.const 28))
-      (i32.or (i32.eq (local.get $k) (i32.const 25)) (i32.eq (local.get $k) (i32.const 27)))))))))))
+      (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.eq (local.get $k) (i32.const 32)))))))
     (call $next_token)
     (call $vm_c_shift (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 29)) (then (i32.const 14))
       (else (if i32 (i32.eq (local.get $k) (i32.const 30)) (then (i32.const 15))
-      (else (if i32 (i32.eq (local.get $k) (i32.const 31)) (then (i32.const 16))
-      (else (if i32 (i32.eq (local.get $k) (i32.const 32)) (then (i32.const 17))
-      (else (if i32 (i32.eq (local.get $k) (i32.const 26)) (then (i32.const 18))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 31)) (then (i32.const 16)) (else (i32.const 17))))))))
+    (br $l))))
+
+;; equality:  === 26  !== 28  == 25  != 27  → opcodes 18/24/25/26 (looser than relational)
+(func $vm_c_cmp (param $code i32) (effects)
+  (call $vm_c_rel (local.get $code))
+  (block $e (loop $l
+    (let $k i32 (call $tok_kind))
+    (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 26)) (i32.or (i32.eq (local.get $k) (i32.const 28))
+      (i32.or (i32.eq (local.get $k) (i32.const 25)) (i32.eq (local.get $k) (i32.const 27)))))))
+    (call $next_token)
+    (call $vm_c_rel (local.get $code))
+    (call $vm_emit_op (local.get $code)
+      (if i32 (i32.eq (local.get $k) (i32.const 26)) (then (i32.const 18))
       (else (if i32 (i32.eq (local.get $k) (i32.const 28)) (then (i32.const 24))
-      (else (if i32 (i32.eq (local.get $k) (i32.const 25)) (then (i32.const 25)) (else (i32.const 26))))))))))))))))
+      (else (if i32 (i32.eq (local.get $k) (i32.const 25)) (then (i32.const 25)) (else (i32.const 26))))))))
     (br $l))))
 
 ;; bitwise &  ^  |  (between equality and logical-and; & tightest, | loosest)
