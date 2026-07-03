@@ -170,10 +170,14 @@
   (let $i i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
-    ;; Map/Set use SameValueZero: NaN matches NaN (same_value), +0 matches -0
-    ;; (strict_eq) — the union of the two is exactly SameValueZero.
-    (let $mfk i64 (call $arr_get (local.get $keys) (local.get $i)))
-    (if (i32.or (call $strict_eq (local.get $mfk) (local.get $key)) (call $same_value (local.get $mfk) (local.get $key))) (then (return (local.get $i))))
+    ;; skip tombstone slots — arr_get normalizes a hole to undefined, so without this a
+    ;; search for `undefined` would spuriously match any deleted entry.
+    (if (call $arr_has (local.get $keys) (local.get $i))
+      (then
+        ;; Map/Set use SameValueZero: NaN matches NaN (same_value), +0 matches -0
+        ;; (strict_eq) — the union of the two is exactly SameValueZero.
+        (let $mfk i64 (call $arr_get (local.get $keys) (local.get $i)))
+        (if (i32.or (call $strict_eq (local.get $mfk) (local.get $key)) (call $same_value (local.get $mfk) (local.get $key))) (then (return (local.get $i))))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $l)))
   (i32.const -1))
@@ -3387,6 +3391,41 @@
   (if (i32.load (local.get $protoreg)) (then (i32.store (call $val_payload (local.get $it)) (i32.load (local.get $protoreg)))))
   (local.get $it))
 
+;; count non-tombstone (non-hole) slots of a Map/Set backing array (@@mk/@@sk).
+;; delete/clear leave tombstones (v_hole) in place so live iterators keep valid cursors.
+(func $coll_count (param $arr i32) (result i32) (effects)
+  (let $n i32 (call $arr_len (local.get $arr)))
+  (let $i i32 (i32.const 0)) (let $c i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (if (call $arr_has (local.get $arr) (local.get $i)) (then (set! $c (i32.add (local.get $c) (i32.const 1)))))  ;; arr_has=0 for a tombstone (raw hole slot); arr_get would normalize it to undefined
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (local.get $c))
+
+;; a fresh dense array of the non-tombstone elements of a Map/Set backing array — for read-only
+;; consumers (ES2024 Set methods, groupBy) that iterate by index and would otherwise see the
+;; arr_get-normalized `undefined` of a deleted slot.
+(func $coll_snapshot (param $arr i32) (result i32) (effects)
+  (let $out i32 (call $arr_new (i32.const 4)))
+  (let $i i32 (i32.const 0)) (let $n i32 (call $arr_len (local.get $arr)))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (if (call $arr_has (local.get $arr) (local.get $i)) (then (call $arr_push (local.get $out) (call $arr_get (local.get $arr) (local.get $i)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (local.get $out))
+
+;; Map/Set iterator over the LIVE backing arrays (keysval for the hole-check + keys, valsval for
+;; values). kind 0=keys, 1=values, 2=entries [k,v]. next() (native 523) skips tombstones and reads
+;; the live length each call, so add/delete mid-iteration is observed per spec.
+(func $coll_iter2 (param $keysval i64) (param $valsval i64) (param $kind i32) (param $protoreg i32) (result i64) (effects)
+  (let $it i32 (call $obj_new (i32.const 8)))
+  (if (i32.load (local.get $protoreg)) (then (i32.store (local.get $it) (i32.load (local.get $protoreg)))))
+  (call $scope_define (local.get $it) (cstring "@@citk") (local.get $keysval))
+  (call $scope_define (local.get $it) (cstring "@@citv") (local.get $valsval))
+  (call $scope_define (local.get $it) (cstring "@@citi") (call $num (f64.const 0)))
+  (call $scope_define (local.get $it) (cstring "@@citkind") (call $num (f64.convert_i32_s (local.get $kind))))
+  (call $mk_obj (local.get $it)))
+
 (func $native_collections (param $id i32) (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
   ;; ── Map (id 120 ctor, 121 set, 122 get, 123 has, 124 delete, 125 forEach, 126 size, 127 clear) ──
   (if (i32.eq (local.get $id) (i32.const 120))  ;; new Map()
@@ -3461,7 +3500,8 @@
       (if (i32.eq (local.get $id) (i32.const 124))  ;; delete(k)
         (then
           (if (i32.lt_s (local.get $midx) (i32.const 0)) (then (return (call $v_false))))
-          (call $arr_remove (local.get $mk) (local.get $midx)) (call $arr_remove (local.get $mv) (local.get $midx))
+          ;; tombstone in place (keep the slot + order) so live iterators keep valid cursors
+          (call $arr_set (local.get $mk) (local.get $midx) (call $v_hole)) (call $arr_set (local.get $mv) (local.get $midx) (call $v_hole))
           (return (call $v_true))))
       (if (i32.eq (local.get $id) (i32.const 125))  ;; forEach(cb)
         (then
@@ -3470,21 +3510,27 @@
             (then (call $throw_type (cstring "TypeError") (cstring "Map.prototype.forEach callback is not a function")) (return (call $v_undef))))
           (let $mi i32 (i32.const 0))
           (block $mfe (loop $mfl
-            (br_if $mfe (i32.ge_s (local.get $mi) (call $arr_len (local.get $mk))))
-            (let $cba i32 (call $heap_alloc (i32.const 24)))
-            (i64.store (local.get $cba) (call $arr_get (local.get $mv) (local.get $mi)))
-            (i64.store (i32.add (local.get $cba) (i32.const 8)) (call $arr_get (local.get $mk) (local.get $mi)))
-            (i64.store (i32.add (local.get $cba) (i32.const 16)) (local.get $thisv))
-            (drop (call $call_val (local.get $mcb) (i32.const 3) (local.get $cba) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+            (br_if $mfe (i32.ge_s (local.get $mi) (call $arr_len (local.get $mk))))  ;; live length
+            (if (call $arr_has (local.get $mk) (local.get $mi))  ;; skip tombstones (arr_has=0 for a hole)
+              (then
+                (let $cba i32 (call $heap_alloc (i32.const 24)))
+                (i64.store (local.get $cba) (call $arr_get (local.get $mv) (local.get $mi)))
+                (i64.store (i32.add (local.get $cba) (i32.const 8)) (call $arr_get (local.get $mk) (local.get $mi)))
+                (i64.store (i32.add (local.get $cba) (i32.const 16)) (local.get $thisv))
+                (drop (call $call_val (local.get $mcb) (i32.const 3) (local.get $cba) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+                (if (call $err) (then (return (call $v_undef))))))
             (set! $mi (i32.add (local.get $mi) (i32.const 1)))
             (br $mfl)))
           (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 126))  ;; size getter
-        (then (return (call $num (f64.convert_i32_s (call $arr_len (local.get $mk)))))))
+        (then (return (call $num (f64.convert_i32_s (call $coll_count (local.get $mk)))))))
       (if (i32.eq (local.get $id) (i32.const 127))  ;; clear()
-        (then
-          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@mk") (call $mk_arr (call $arr_new (i32.const 4))))
-          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@mv") (call $mk_arr (call $arr_new (i32.const 4))))
+        (then  ;; tombstone every slot IN PLACE (keep the arrays so a live iterator sees "done")
+          (let $mci i32 (i32.const 0))
+          (block $mce (loop $mcl
+            (br_if $mce (i32.ge_s (local.get $mci) (call $arr_len (local.get $mk))))
+            (call $arr_set (local.get $mk) (local.get $mci) (call $v_hole)) (call $arr_set (local.get $mv) (local.get $mci) (call $v_hole))
+            (set! $mci (i32.add (local.get $mci) (i32.const 1))) (br $mcl)))
           (return (call $v_undef))))
       (return (call $v_undef))))
   ;; ── Map.prototype.getOrInsert(441) / getOrInsertComputed(442) — the "upsert" proposal ──
@@ -3578,7 +3624,7 @@
       (if (i32.eq (local.get $id) (i32.const 133))  ;; delete(v)
         (then
           (if (i32.lt_s (local.get $sidx) (i32.const 0)) (then (return (call $v_false))))
-          (call $arr_remove (local.get $sk) (local.get $sidx))
+          (call $arr_set (local.get $sk) (local.get $sidx) (call $v_hole))  ;; tombstone in place (keep order + live cursors)
           (return (call $v_true))))
       (if (i32.eq (local.get $id) (i32.const 134))  ;; forEach(cb)
         (then
@@ -3587,20 +3633,27 @@
             (then (call $throw_type (cstring "TypeError") (cstring "Set.prototype.forEach callback is not a function")) (return (call $v_undef))))
           (let $si i32 (i32.const 0))
           (block $sfe (loop $sfl
-            (br_if $sfe (i32.ge_s (local.get $si) (call $arr_len (local.get $sk))))
-            (let $scba i32 (call $heap_alloc (i32.const 24)))
-            (i64.store (local.get $scba) (call $arr_get (local.get $sk) (local.get $si)))
-            (i64.store (i32.add (local.get $scba) (i32.const 8)) (call $arr_get (local.get $sk) (local.get $si)))
-            (i64.store (i32.add (local.get $scba) (i32.const 16)) (local.get $thisv))
-            (drop (call $call_val (local.get $scb) (i32.const 3) (local.get $scba) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+            (br_if $sfe (i32.ge_s (local.get $si) (call $arr_len (local.get $sk))))  ;; live length
+            (if (call $arr_has (local.get $sk) (local.get $si))  ;; skip tombstones (arr_has=0 for a hole)
+              (then
+                (let $scba i32 (call $heap_alloc (i32.const 24)))
+                (i64.store (local.get $scba) (call $arr_get (local.get $sk) (local.get $si)))
+                (i64.store (i32.add (local.get $scba) (i32.const 8)) (call $arr_get (local.get $sk) (local.get $si)))
+                (i64.store (i32.add (local.get $scba) (i32.const 16)) (local.get $thisv))
+                (drop (call $call_val (local.get $scb) (i32.const 3) (local.get $scba) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+                (if (call $err) (then (return (call $v_undef))))))
             (set! $si (i32.add (local.get $si) (i32.const 1)))
             (br $sfl)))
           (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 135))  ;; size getter
-        (then (return (call $num (f64.convert_i32_s (call $arr_len (local.get $sk)))))))
+        (then (return (call $num (f64.convert_i32_s (call $coll_count (local.get $sk)))))))
       (if (i32.eq (local.get $id) (i32.const 136))  ;; clear()
-        (then
-          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@sk") (call $mk_arr (call $arr_new (i32.const 4))))
+        (then  ;; tombstone every slot IN PLACE (keep the array so a live iterator sees "done")
+          (let $sci i32 (i32.const 0))
+          (block $sce2 (loop $scl2
+            (br_if $sce2 (i32.ge_s (local.get $sci) (call $arr_len (local.get $sk))))
+            (call $arr_set (local.get $sk) (local.get $sci) (call $v_hole))
+            (set! $sci (i32.add (local.get $sci) (i32.const 1))) (br $scl2)))
           (return (call $v_undef))))
       (return (call $v_undef))))
   ;; ── ES2024 Set methods: union(310) intersection(311) difference(312)
@@ -3614,7 +3667,7 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))
       (let $other i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eqz (call $gsr (local.get $other))) (then (return (call $v_undef))))
-      (let $osk i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
+      (let $osk i32 (call $coll_snapshot (call $coll_arr (local.get $thisv) (cstring "@@sk"))))  ;; compacted (no tombstones)
       (let $thisSize i32 (call $arr_len (local.get $osk)))
       (let $otherSize i32 (i32.load (i32.const 456)))
       (let $hasf i64 (i64.load (i32.const 464)))
@@ -3704,11 +3757,14 @@
           (block $se (loop $sl
             (br_if $se (i32.ge_s (local.get $i) (call $arr_len (local.get $ka))))
             (let $v i64 (call $arr_get (local.get $ka) (local.get $i)))
-            (if (i32.ge_s (call $map_find (local.get $osk) (local.get $v)) (i32.const 0))
+            ;; spec checks O.[[SetData]] LIVE (it may be mutated by the other's keys iterator),
+            ;; while resultSetData is the start-of-op snapshot copied above.
+            (if (i32.ge_s (call $map_find (call $coll_arr (local.get $thisv) (cstring "@@sk")) (local.get $v)) (i32.const 0))
               (then  ;; in O → remove from result if present
                 (let $ridx i32 (call $map_find (local.get $rsk) (local.get $v)))
                 (if (i32.ge_s (local.get $ridx) (i32.const 0)) (then (call $arr_remove (local.get $rsk) (local.get $ridx)))))
-              (else (call $set_add1 (local.get $rsk) (local.get $v))))
+              (else  ;; not in O → append to result if not already present
+                (if (i32.lt_s (call $map_find (local.get $rsk) (local.get $v)) (i32.const 0)) (then (call $set_add1 (local.get $rsk) (local.get $v))))))
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $sl)))
           (return (local.get $ress))))
       ;; ----- isSubsetOf (314) -----
@@ -5671,6 +5727,52 @@
           (call $scope_define (local.get $itres) (cstring "done") (call $v_false))
           (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@i") (call $num (f64.convert_i32_s (i32.add (local.get $itix) (i32.const 1)))))))
       (return (call $mk_obj (local.get $itres)))))
+  ;; Map/Set iterator .next() (native 523): tombstone-skipping over the LIVE backing arrays.
+  (if (i32.eq (local.get $id) (i32.const 523))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.prototype.next called on incompatible receiver")) (return (call $v_undef))))
+      (let $citks i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@citk")))
+      (if (i32.eqz (local.get $citks))
+        (then (call $throw_type (cstring "TypeError") (cstring "next called on a non-Map/Set-iterator")) (return (call $v_undef))))
+      (let $cres i32 (call $obj_new (i32.const 2)))
+      ;; a finished iterator has @@citk = undefined (sticky done — a later add does NOT resume it)
+      (let $ckv i64 (i64.load (local.get $citks)))
+      (if (call $is_undefined (local.get $ckv))
+        (then
+          (call $scope_define (local.get $cres) (cstring "value") (call $v_undef))
+          (call $scope_define (local.get $cres) (cstring "done") (call $v_true))
+          (return (call $mk_obj (local.get $cres)))))
+      (let $ckarr i32 (call $val_payload (local.get $ckv)))
+      (let $cvarr i32 (call $val_payload (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@citv")))))
+      (let $ckind i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@citkind"))))))
+      (let $cix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@citi"))))))
+      ;; skip tombstones; read the LIVE length each iteration
+      (block $cfound
+        (block $cdone
+          (loop $cl
+            (br_if $cdone (i32.ge_s (local.get $cix) (call $arr_len (local.get $ckarr))))  ;; exhausted
+            (br_if $cfound (call $arr_has (local.get $ckarr) (local.get $cix)))  ;; live entry (arr_has=0 for tombstones)
+            (set! $cix (i32.add (local.get $cix) (i32.const 1))) (br $cl)))
+        ;; exhausted → sticky done (clear @@citk)
+        (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@citk") (call $v_undef))
+        (call $scope_define (local.get $cres) (cstring "value") (call $v_undef))
+        (call $scope_define (local.get $cres) (cstring "done") (call $v_true))
+        (return (call $mk_obj (local.get $cres))))
+      ;; found a live entry at $cix
+      (let $cval i64 (call $v_undef))
+      (if (i32.eq (local.get $ckind) (i32.const 0)) (then (set! $cval (call $arr_get (local.get $ckarr) (local.get $cix)))))
+      (if (i32.eq (local.get $ckind) (i32.const 1)) (then (set! $cval (call $arr_get (local.get $cvarr) (local.get $cix)))))
+      (if (i32.eq (local.get $ckind) (i32.const 2))
+        (then
+          (let $cpair i32 (call $arr_new (i32.const 2)))
+          (call $arr_push (local.get $cpair) (call $arr_get (local.get $ckarr) (local.get $cix)))
+          (call $arr_push (local.get $cpair) (call $arr_get (local.get $cvarr) (local.get $cix)))
+          (set! $cval (call $mk_arr (local.get $cpair)))))
+      (call $scope_define (local.get $cres) (cstring "value") (local.get $cval))
+      (call $scope_define (local.get $cres) (cstring "done") (call $v_false))
+      (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@citi") (call $num (f64.convert_i32_s (i32.add (local.get $cix) (i32.const 1)))))
+      (return (call $mk_obj (local.get $cres)))))
   ;; --- number methods (this = the number) ---
   (if (i32.or (i32.eq (local.get $id) (i32.const 145)) (i32.eq (local.get $id) (i32.const 146)))
     (then
@@ -6091,45 +6193,24 @@
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv))
                      (if i32 (i32.eq (local.get $id) (i32.const 175)) (then (cstring "@@sk")) (else (cstring "@@mk")))))
         (then (call $throw_type (cstring "TypeError") (cstring "Method called on incompatible receiver")) (return (call $v_undef))))))
-  (if (i32.eq (local.get $id) (i32.const 175))  ;; Set @@iterator/values (this = set) → Set Iterator over @@sk
-    (then (return (call $coll_iter (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@sk"))) (i32.const 732)))))
-  (if (i32.eq (local.get $id) (i32.const 176))  ;; Map.keys (this = map) → Map Iterator over @@mk
-    (then (return (call $coll_iter (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mk"))) (i32.const 728)))))
-  (if (i32.eq (local.get $id) (i32.const 177))  ;; Map.values (this = map) → Map Iterator over @@mv
-    (then (return (call $coll_iter (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mv"))) (i32.const 728)))))
-  (if (i32.eq (local.get $id) (i32.const 178))  ;; Map.entries/@@iterator (this = map) → iterator over [k,v] pairs
+  ;; Map/Set iterators reference the LIVE backing arrays (@@mk/@@mv/@@sk) via coll_iter2 —
+  ;; tombstone-skipping + live-length, so delete/add mid-iteration is observed per spec.
+  (if (i32.eq (local.get $id) (i32.const 175))  ;; Set @@iterator/values → live @@sk, kind values
+    (then (return (call $coll_iter2 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@sk"))) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@sk"))) (i32.const 1) (i32.const 732)))))
+  (if (i32.eq (local.get $id) (i32.const 176))  ;; Map.keys → live @@mk, kind keys
+    (then (return (call $coll_iter2 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mk"))) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mv"))) (i32.const 0) (i32.const 728)))))
+  (if (i32.eq (local.get $id) (i32.const 177))  ;; Map.values → live @@mv, kind values
+    (then (return (call $coll_iter2 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mk"))) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mv"))) (i32.const 1) (i32.const 728)))))
+  (if (i32.eq (local.get $id) (i32.const 178))  ;; Map.entries/@@iterator → live @@mk/@@mv, kind entries
     (then
-      (let $emk i32 (call $coll_arr (local.get $thisv) (cstring "@@mk")))
-      (let $emv i32 (call $coll_arr (local.get $thisv) (cstring "@@mv")))
-      (let $epairs i32 (call $arr_new (i32.const 4)))
-      (let $ei i32 (i32.const 0))
-      (block $epe (loop $epl
-        (br_if $epe (i32.ge_s (local.get $ei) (call $arr_len (local.get $emk))))
-        (let $epair i32 (call $arr_new (i32.const 2)))
-        (call $arr_push (local.get $epair) (call $arr_get (local.get $emk) (local.get $ei)))
-        (call $arr_push (local.get $epair) (call $arr_get (local.get $emv) (local.get $ei)))
-        (call $arr_push (local.get $epairs) (call $mk_arr (local.get $epair)))
-        (set! $ei (i32.add (local.get $ei) (i32.const 1)))
-        (br $epl)))
-      (return (call $coll_iter (call $mk_arr (local.get $epairs)) (i32.const 728)))))
+      (return (call $coll_iter2 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mk"))) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@mv"))) (i32.const 2) (i32.const 728)))))
   (if (i32.eq (local.get $id) (i32.const 440))  ;; Set.prototype.entries (this = set) → iterator over [v,v] pairs
     (then
       (if (i32.eqz (call $is_object (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "Set.prototype.entries called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@sk")))
         (then (call $throw_type (cstring "TypeError") (cstring "Set.prototype.entries called on incompatible receiver")) (return (call $v_undef))))
-      (let $sek i32 (call $coll_arr (local.get $thisv) (cstring "@@sk")))
-      (let $sepairs i32 (call $arr_new (i32.const 4)))
-      (let $sei i32 (i32.const 0))
-      (block $sepe (loop $sepl
-        (br_if $sepe (i32.ge_s (local.get $sei) (call $arr_len (local.get $sek))))
-        (let $sepair i32 (call $arr_new (i32.const 2)))
-        (call $arr_push (local.get $sepair) (call $arr_get (local.get $sek) (local.get $sei)))
-        (call $arr_push (local.get $sepair) (call $arr_get (local.get $sek) (local.get $sei)))
-        (call $arr_push (local.get $sepairs) (call $mk_arr (local.get $sepair)))
-        (set! $sei (i32.add (local.get $sei) (i32.const 1)))
-        (br $sepl)))
-      (return (call $coll_iter (call $mk_arr (local.get $sepairs)) (i32.const 732)))))
+      (return (call $coll_iter2 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@sk"))) (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@sk"))) (i32.const 2) (i32.const 732)))))
   (if (i32.eq (local.get $id) (i32.const 171))  ;; Number.prototype.toExponential(d)
     (then
       (let $exv f64 (call $num_this (local.get $thisv)))
@@ -10697,12 +10778,12 @@
   (let $mapiterproto i32 (call $obj_new (i32.const 4)))
   (i32.store (local.get $mapiterproto) (local.get $iterproto))
   (i32.store (i32.const 728) (local.get $mapiterproto))
-  (call $scope_define_attr (local.get $mapiterproto) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")) (i32.const 12))
+  (call $scope_define_attr (local.get $mapiterproto) (cstring "next") (call $mk_native (i32.const 523) (cstring "next")) (i32.const 12))
   (call $scope_define_attr (local.get $mapiterproto) (cstring "@@toStringTag") (call $mk_str (cstring "Map Iterator")) (i32.const 4))
   (let $setiterproto i32 (call $obj_new (i32.const 4)))
   (i32.store (local.get $setiterproto) (local.get $iterproto))
   (i32.store (i32.const 732) (local.get $setiterproto))
-  (call $scope_define_attr (local.get $setiterproto) (cstring "next") (call $mk_native (i32.const 94) (cstring "next")) (i32.const 12))
+  (call $scope_define_attr (local.get $setiterproto) (cstring "next") (call $mk_native (i32.const 523) (cstring "next")) (i32.const 12))
   (call $scope_define_attr (local.get $setiterproto) (cstring "@@toStringTag") (call $mk_str (cstring "Set Iterator")) (i32.const 4))
   (let $striterproto i32 (call $obj_new (i32.const 4)))
   (i32.store (local.get $striterproto) (local.get $iterproto))
