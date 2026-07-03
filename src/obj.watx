@@ -647,11 +647,20 @@
               (if (call $is_function (local.get $get)) (then (return (call $call_fn0 (local.get $get) (local.get $cont)))))
               (return (call $v_undef))))
           (return (i64.load (local.get $slot)))))
-      ;; Object.prototype fallback methods (objects have no real proto object yet)
-      (if (call $str_eq (call $to_prop_key (local.get $key)) (cstring "hasOwnProperty"))
-        (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
-      (if (call $str_eq (call $to_prop_key (local.get $key)) (cstring "propertyIsEnumerable"))
-        (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
+      ;; not found on the object or its prototype chain. A normal object parents to
+      ;; Object.prototype (obj_new → scope_new(reg 328)), so hasOwnProperty/toString/…
+      ;; are found by the scope_find above. The GLOBAL object (mem 204) inherits
+      ;; Object.prototype too, but is the root scope (parent 0, so scope_find stopped
+      ;; before Object.prototype) — resolve its inherited members directly.
+      (if (i32.eq (local.get $o) (i32.load (i32.const 204)))
+        (then
+          (let $goslot i32 (call $scope_find_local (i32.load (i32.const 328)) (call $to_prop_key (local.get $key))))
+          (if (local.get $goslot)
+            (then
+              (if (call $entry_is_accessor (local.get $goslot))
+                (then (let $gog i64 (i64.load (call $val_payload (i64.load (local.get $goslot))))) (if (call $is_function (local.get $gog)) (then (return (call $call_fn0 (local.get $gog) (local.get $cont))))) (return (call $v_undef))))
+              (return (i64.load (local.get $goslot)))))))
+      ;; else a genuinely null-[[Prototype]] object (Object.create(null) / Object.groupBy) → undefined.
       (return (call $v_undef))))
   (if (call $is_function (local.get $cont))
     (then
