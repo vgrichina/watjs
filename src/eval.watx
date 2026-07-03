@@ -3024,16 +3024,25 @@
   (if (i32.eq (local.get $id) (i32.const 349))
     (then
       (let $ifo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      ;; GetIteratorFlattenable: GetMethod(O, @@iterator) — a present-but-not-callable @@iterator
-      ;; (e.g. 0) is a TypeError (only undefined/null falls back to using O directly as the iterator).
+      ;; GetIteratorFlattenable: method = GetMethod(O, @@iterator). undefined/null → O itself IS the
+      ;; iterator (fallback); callable → Call(method, O) (must return an Object); non-callable → TypeError.
+      (let $ifit i64 (call $v_undef))
       (if (call $is_object (local.get $ifo))
         (then
           (let $ifm i64 (call $get_prop (local.get $ifo) (call $make_symbol (cstring "@@iterator") (cstring "Symbol.iterator"))))
           (if (call $err) (then (return (call $v_undef))))
-          (if (i32.and (i32.eqz (i32.or (call $is_undefined (local.get $ifm)) (call $is_null (local.get $ifm)))) (i32.eqz (call $is_function (local.get $ifm))))
-            (then (call $throw_type (cstring "TypeError") (cstring "@@iterator is not a function")) (return (call $v_undef))))))
-      (let $ifit i64 (call $vm_get_iter (local.get $ifo)))   ;; throws for non-iterables/primitives
-      (if (call $err) (then (return (call $v_undef))))
+          (if (i32.or (call $is_undefined (local.get $ifm)) (call $is_null (local.get $ifm)))
+            (then (set! $ifit (local.get $ifo)))  ;; fallback: treat O as the iterator
+            (else
+              (if (i32.eqz (call $is_function (local.get $ifm)))
+                (then (call $throw_type (cstring "TypeError") (cstring "@@iterator is not a function")) (return (call $v_undef))))
+              (set! $ifit (call $call_val (local.get $ifm) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $ifo)))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.eqz (call $is_object (local.get $ifit)))
+                (then (call $throw_type (cstring "TypeError") (cstring "@@iterator did not return an object")) (return (call $v_undef)))))))
+        (else
+          (set! $ifit (call $vm_get_iter (local.get $ifo)))   ;; strings → their iterator; other primitives throw
+          (if (call $err) (then (return (call $v_undef))))))
       ;; already an Iterator (proto chain reaches %Iterator.prototype%) → return as-is
       (if (call $is_object (local.get $ifit))
         (then
