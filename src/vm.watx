@@ -3882,6 +3882,10 @@
     (let $key i64 (call $arr_get (local.get $a) (i32.add (local.get $i) (i32.const 1))))
     (let $fn i64 (call $arr_get (local.get $a) (i32.add (local.get $i) (i32.const 2))))
     (let $pk i32 (call $to_prop_key (local.get $key)))
+    ;; a static method/accessor named "prototype" is a [[DefineOwnProperty]] on the ctor's
+    ;; non-configurable, non-writable "prototype" — DefinePropertyOrThrow → TypeError.
+    (if (call $str_eq (local.get $pk) (cstring "prototype"))
+      (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine the 'prototype' property of a class constructor")) (return)))
     (if (i32.eqz (local.get $kind))
       (then  ;; method: infer name from key (computed), define non-enumerable {W,C}
         (call $vm_infer_name (local.get $fn) (local.get $key) (i32.const 0))
