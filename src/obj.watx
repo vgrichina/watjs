@@ -626,15 +626,17 @@
           (if (i32.or (call $is_number (local.get $key))
                       (i32.and (call $is_string (local.get $key)) (call $ta_is_canon_str (call $val_payload (local.get $key)))))
             (then (return (call $v_undef))))))
-      ;; mapped arguments: a numeric index < @@anp aliases a parameter slot
+      ;; mapped arguments: a numeric index (number OR canonical string key) < @@anp aliases a
+      ;; parameter slot — read the live parameter (the own property is only the descriptor shell).
+      (let $amidx i32 (i32.const -1))
       (if (call $is_number (local.get $key))
-        (then
-          (let $asl i32 (call $scope_find_local (local.get $o) (cstring "@@as")))
-          (if (local.get $asl)
-            (then
-              (let $idx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
-              (if (call $args_mapped (local.get $o) (local.get $idx))  ;; still aliased (not severed/deleted)
-                (then (return (call $args_get_param (local.get $o) (local.get $idx)))))))))
+        (then (let $amkn f64 (call $tonum_raw (local.get $key)))  ;; range-guard: i32.trunc_f64_s traps outside signed-i32
+              (if (i32.and (f64.ge (local.get $amkn) (f64.const 0)) (f64.lt (local.get $amkn) (f64.const 2147483648)))
+                (then (set! $amidx (i32.trunc_f64_s (local.get $amkn)))))))
+      (if (call $is_string (local.get $key)) (then (set! $amidx (call $str_array_index (call $val_payload (local.get $key))))))
+      (if (i32.ge_s (local.get $amidx) (i32.const 0))
+        (then (if (call $args_mapped (local.get $o) (local.get $amidx))
+          (then (return (call $args_get_param (local.get $o) (local.get $amidx)))))))
       ;; scope_find walks the parent chain = prototype chain
       (let $slot i32 (call $scope_find (local.get $o) (call $to_prop_key (local.get $key))))
       (if (local.get $slot)
@@ -1338,17 +1340,19 @@
           (if (local.get $frsl)
             (then (if (i32.eqz (call $entry_is_accessor (local.get $frsl))) (then (call $set_fail) (return))))
             (else (call $set_fail) (return)))))
-      ;; mapped arguments: writing a numeric index < @@anp writes the parameter slot
+      ;; mapped arguments: writing a numeric index (number OR canonical string) < @@anp writes the
+      ;; parameter slot (gOPD reads the live param, so the own-prop shell needn't be synced).
+      (let $smidx i32 (i32.const -1))
       (if (call $is_number (local.get $key))
-        (then
-          (let $asl i32 (call $scope_find_local (local.get $o) (cstring "@@as")))
-          (if (local.get $asl)
-            (then
-              (let $idx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
-              (if (call $args_mapped (local.get $o) (local.get $idx))  ;; still aliased → write the parameter (gOPD reads the live param, so the own-prop shell needn't be synced)
-                (then
-                  (call $args_set_param (local.get $o) (local.get $idx) (local.get $val))
-                  (return)))))))
+        (then (let $smkn f64 (call $tonum_raw (local.get $key)))  ;; range-guard against i32.trunc_f64_s trap
+              (if (i32.and (f64.ge (local.get $smkn) (f64.const 0)) (f64.lt (local.get $smkn) (f64.const 2147483648)))
+                (then (set! $smidx (i32.trunc_f64_s (local.get $smkn)))))))
+      (if (call $is_string (local.get $key)) (then (set! $smidx (call $str_array_index (call $val_payload (local.get $key))))))
+      (if (i32.ge_s (local.get $smidx) (i32.const 0))
+        (then (if (call $args_mapped (local.get $o) (local.get $smidx))
+          (then
+            (call $args_set_param (local.get $o) (local.get $smidx) (local.get $val))
+            (return)))))
       (let $ks i32 (call $to_prop_key (local.get $key)))
       (let $slot i32 (call $scope_find (local.get $o) (local.get $ks)))
       (if (local.get $slot)  ;; guard before entry_kind (i32.and would deref slot-4 even when 0)
