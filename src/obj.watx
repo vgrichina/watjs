@@ -1389,7 +1389,11 @@
           ;; assigning `.prototype` REPLACES the prototype object (@16), so new
           ;; instances inherit from it — not a nested prototype.prototype property
           (if (call $str_eq (call $to_prop_key (local.get $key)) (cstring "prototype"))
-            (then (i64.store (i32.add (local.get $sfn) (i32.const 16)) (local.get $val)) (return)))
+            (then
+              ;; class ctor (flags bit3) or a defineProperty'd non-writable prototype (bit5) → refuse the write
+              (let $spf i32 (i32.load (i32.add (i32.add (local.get $sfn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $sfn) (i32.const 8))) (i32.const 4)))))
+              (if (i32.and (local.get $spf) (i32.const 264)) (then (call $set_fail) (return)))
+              (i64.store (i32.add (local.get $sfn) (i32.const 16)) (local.get $val)) (return)))
           (let $sosc i32 (call $fn_ownsc (local.get $sfn)))  ;; own (static) prop scope @(48+np*4)
           (let $svk i32 (call $to_prop_key (local.get $key)))
           (let $svs i32 (call $scope_find_local (local.get $sosc) (local.get $svk)))
