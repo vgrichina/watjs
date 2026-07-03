@@ -4098,10 +4098,16 @@
       (then
         (let $argc i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
-        (if (i32.eq (local.get $op) (i32.const 86)) (then (call $scope_define (local.get $scope) (cstring "@@superok") (call $v_true))))  ;; super() called → `this` initialized (for CHECKSUPER)
         (let $isM i32 (i32.or (i32.eq (local.get $op) (i32.const 33)) (i32.eq (local.get $op) (i32.const 86))))  ;; method call (or super-call) → receiver below the callee
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))  ;; callee slot
         (let $rbase i32 (if i32 (local.get $isM) (then (i32.sub (local.get $cbase) (i32.const 8))) (else (local.get $cbase))))  ;; result base
+        (if (i32.eq (local.get $op) (i32.const 86))  ;; SUPERCALL → binds `this`
+          (then
+            ;; calling super() a second time re-binds `this` → ReferenceError (this already initialized)
+            (let $sok i32 (call $scope_find (local.get $scope) (cstring "@@superok")))
+            (if (i32.and (i32.ne (local.get $sok) (i32.const 0)) (call $truthy (i64.load (local.get $sok))))
+              (then (call $throw_type (cstring "ReferenceError") (cstring "super() called twice")) (set! $sp (local.get $rbase)) (br $disp)))
+            (call $scope_define (local.get $scope) (cstring "@@superok") (call $v_true))))  ;; super() called → `this` initialized (for CHECKSUPER / this-TDZ)
         ;; function Proxy callee → dispatch through call_val (handles the apply trap)
         (if (call $is_proxy (i64.load (i32.add (local.get $stack) (local.get $cbase))))
           (then
