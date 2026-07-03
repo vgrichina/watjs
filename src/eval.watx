@@ -806,6 +806,26 @@
     (then (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))
     (else (call $arr_get (local.get $arr) (local.get $i)))))
 
+;; HasProperty(O, i) for a dense-iterating array method (forEach/map/filter/reduce/
+;; indexOf/…): present in the dense store, or — for a REAL-array receiver — inherited
+;; from the prototype chain (Array.prototype[i]). The object array-like path already
+;; materialized inherited indices into `arr` (js_in-gated in alike_arr), so its arr_has
+;; is authoritative; gating the proto walk on is_array keeps the object path unchanged
+;; and preserves the dense fast path for the common (unpolluted-prototype) case.
+(func $dense_visit (param $thisv i64) (param $arr i32) (param $i i32) (result i32) (effects)
+  (if (call $arr_has (local.get $arr) (local.get $i)) (then (return (i32.const 1))))
+  (if (call $is_array (local.get $thisv))
+    (then (return (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $i))) (local.get $thisv))))))
+  (i32.const 0))
+;; the element value for a visited index: the dense element if present (fast path),
+;; else — for a real array — the inherited value via [[Get]] on the prototype chain.
+(func $dense_get (param $thisv i64) (param $arr i32) (param $i i32) (result i64) (effects)
+  (if i64 (call $arr_has (local.get $arr) (local.get $i))
+    (then (call $arr_get (local.get $arr) (local.get $i)))
+    (else (if i64 (call $is_array (local.get $thisv))
+      (then (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))
+      (else (call $arr_get (local.get $arr) (local.get $i)))))))
+
 ;; CopyDataProperties from a PROXY source (object spread `{...proxy}` / rest, Object.assign): spec
 ;; [[OwnPropertyKeys]] (ownKeys trap, in trap order incl. symbols), then per key [[GetOwnProperty]]
 ;; (gopd trap) and copy ONLY present + enumerable (and not in the exclusion list) via [[Get]]→[[Set]].
@@ -7170,9 +7190,9 @@
           (let $i i32 (i32.const 0))
           (let $cargv i32 (call $heap_alloc (i32.const 24)))
           (block $fe (loop $fl (br_if $fe (i32.ge_s (local.get $i) (local.get $n)))
-            (if (call $arr_has (local.get $arr) (local.get $i))  ;; skip holes
+            (if (call $dense_visit (local.get $thisv) (local.get $arr) (local.get $i))  ;; HasProperty (own or inherited)
               (then
-                (let $el i64 (call $arr_get (local.get $arr) (local.get $i)))
+                (let $el i64 (call $dense_get (local.get $thisv) (local.get $arr) (local.get $i)))
                 (i64.store (local.get $cargv) (local.get $el))
                 (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
                 (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
@@ -7192,16 +7212,16 @@
               (let $rfound i32 (i32.const 0))
               (block $fnd (loop $fl2
                 (br_if $fnd (i32.ge_s (local.get $i) (local.get $n)))
-                (if (call $arr_has (local.get $arr) (local.get $i))
-                  (then (set! $racc (call $arr_get (local.get $arr) (local.get $i))) (set! $i (i32.add (local.get $i) (i32.const 1))) (set! $rfound (i32.const 1)) (br $fnd)))
+                (if (call $dense_visit (local.get $thisv) (local.get $arr) (local.get $i))
+                  (then (set! $racc (call $dense_get (local.get $thisv) (local.get $arr) (local.get $i))) (set! $i (i32.add (local.get $i) (i32.const 1))) (set! $rfound (i32.const 1)) (br $fnd)))
                 (set! $i (i32.add (local.get $i) (i32.const 1))) (br $fl2)))
               (if (i32.eqz (local.get $rfound)) (then (call $throw_type (cstring "TypeError") (cstring "Reduce of empty array with no initial value")) (return (call $v_undef))))))
           (let $cargv i32 (call $heap_alloc (i32.const 32)))
           (block $de (loop $dl (br_if $de (i32.ge_s (local.get $i) (local.get $n)))
-            (if (call $arr_has (local.get $arr) (local.get $i))  ;; skip holes
+            (if (call $dense_visit (local.get $thisv) (local.get $arr) (local.get $i))  ;; HasProperty (own or inherited)
               (then
                 (i64.store (local.get $cargv) (local.get $racc))
-                (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $arr_get (local.get $arr) (local.get $i)))
+                (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $dense_get (local.get $thisv) (local.get $arr) (local.get $i)))
                 (i64.store (i32.add (local.get $cargv) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $i))))
                 (i64.store (i32.add (local.get $cargv) (i32.const 24)) (local.get $thisv))
                 (set! $racc (call $call_val (local.get $a0) (i32.const 4) (local.get $cargv) (call $v_undef)))
@@ -7222,16 +7242,16 @@
           (let $rrf i32 (i32.const 0))
           (block $rfnd (loop $rfl
             (br_if $rfnd (i32.lt_s (local.get $ri) (i32.const 0)))
-            (if (call $arr_has (local.get $rarr) (local.get $ri))
-              (then (set! $racc2 (call $arr_get (local.get $rarr) (local.get $ri))) (set! $ri (i32.sub (local.get $ri) (i32.const 1))) (set! $rrf (i32.const 1)) (br $rfnd)))
+            (if (call $dense_visit (local.get $thisv) (local.get $rarr) (local.get $ri))
+              (then (set! $racc2 (call $dense_get (local.get $thisv) (local.get $rarr) (local.get $ri))) (set! $ri (i32.sub (local.get $ri) (i32.const 1))) (set! $rrf (i32.const 1)) (br $rfnd)))
             (set! $ri (i32.sub (local.get $ri) (i32.const 1))) (br $rfl)))
           (if (i32.eqz (local.get $rrf)) (then (call $throw_type (cstring "TypeError") (cstring "Reduce of empty array with no initial value")) (return (call $v_undef))))))
       (let $rcargv i32 (call $heap_alloc (i32.const 32)))
       (block $rde (loop $rdl (br_if $rde (i32.lt_s (local.get $ri) (i32.const 0)))
-        (if (call $arr_has (local.get $rarr) (local.get $ri))  ;; skip holes
+        (if (call $dense_visit (local.get $thisv) (local.get $rarr) (local.get $ri))  ;; HasProperty (own or inherited)
           (then
             (i64.store (local.get $rcargv) (local.get $racc2))
-            (i64.store (i32.add (local.get $rcargv) (i32.const 8)) (call $arr_get (local.get $rarr) (local.get $ri)))
+            (i64.store (i32.add (local.get $rcargv) (i32.const 8)) (call $dense_get (local.get $thisv) (local.get $rarr) (local.get $ri)))
             (i64.store (i32.add (local.get $rcargv) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $ri))))
             (i64.store (i32.add (local.get $rcargv) (i32.const 24)) (local.get $thisv))
             (set! $racc2 (call $call_val (local.get $rfn) (i32.const 4) (local.get $rcargv) (call $v_undef)))
@@ -9158,7 +9178,7 @@
               (if (i32.lt_s (local.get $lfi) (local.get $li)) (then (set! $li (local.get $lfi))))))
           (block $lie (loop $lil
             (br_if $lie (i32.lt_s (local.get $li) (i32.const 0)))
-            (if (i32.and (call $arr_has (local.get $arr) (local.get $li)) (call $strict_eq (call $arr_get (local.get $arr) (local.get $li)) (local.get $a0))) (then (return (call $num (f64.convert_i32_s (local.get $li))))))
+            (if (i32.and (call $dense_visit (local.get $thisv) (local.get $arr) (local.get $li)) (call $strict_eq (call $dense_get (local.get $thisv) (local.get $arr) (local.get $li)) (local.get $a0))) (then (return (call $num (f64.convert_i32_s (local.get $li))))))
             (set! $li (i32.sub (local.get $li) (i32.const 1)))
             (br $lil)))
           (return (call $num (f64.const -1)))))
@@ -9222,7 +9242,7 @@
               (if (i32.lt_s (local.get $i) (i32.const 0)) (then (set! $i (i32.const 0))))))
           (block $se (loop $sl
             (br_if $se (i32.ge_s (local.get $i) (local.get $n)))
-            (if (i32.and (call $arr_has (local.get $arr) (local.get $i)) (call $strict_eq (call $arr_get (local.get $arr) (local.get $i)) (local.get $a0)))
+            (if (i32.and (call $dense_visit (local.get $thisv) (local.get $arr) (local.get $i)) (call $strict_eq (call $dense_get (local.get $thisv) (local.get $arr) (local.get $i)) (local.get $a0)))
               (then (return (call $num (f64.convert_i32_s (local.get $i))))))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $sl)))
@@ -9316,9 +9336,9 @@
           (let $cargv i32 (call $heap_alloc (i32.const 24)))
           (block $fe (loop $fl
             (br_if $fe (i32.ge_s (local.get $i) (local.get $n)))
-            (if (call $arr_has (local.get $arr) (local.get $i))  ;; spec: skip holes
+            (if (call $dense_visit (local.get $thisv) (local.get $arr) (local.get $i))  ;; HasProperty (own or inherited)
               (then
-                (i64.store (local.get $cargv) (call $arr_get (local.get $arr) (local.get $i)))
+                (i64.store (local.get $cargv) (call $dense_get (local.get $thisv) (local.get $arr) (local.get $i)))
                 (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
                 (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
                 (let $res i64 (call $call_val (local.get $a0) (i32.const 3) (local.get $cargv) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))  ;; thisArg = 2nd arg
