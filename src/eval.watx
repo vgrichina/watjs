@@ -7096,12 +7096,21 @@
       ;; find/findIndex/some/every — callback (elem,i,arr)
       (let $i i32 (i32.const 0))
       (let $cargv i32 (call $heap_alloc (i32.const 24)))
+      ;; a real-array receiver reads the dense store, which omits INHERITED indices
+      ;; (Array.prototype[i]); some/every must still visit them (HasProperty) and every
+      ;; method must Get the inherited value. The object path already materialized these.
+      (let $isarr i32 (call $is_array (local.get $thisv)))
       (block $fe (loop $fl
         (br_if $fe (i32.ge_s (local.get $i) (local.get $n)))
-        ;; some/every (76/77) skip holes; find/findIndex (74/75) visit every index
-        (if (i32.or (call $arr_has (local.get $arr) (local.get $i)) (i32.lt_s (local.get $id) (i32.const 76)))
+        (let $fpres i32 (call $arr_has (local.get $arr) (local.get $i)))
+        ;; some/every (76/77) skip absent indices (HasProperty); find/findIndex (74/75) visit every index
+        (if (i32.or (local.get $fpres) (i32.or (i32.lt_s (local.get $id) (i32.const 76))
+              (i32.and (local.get $isarr) (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $i))) (local.get $thisv))))))
           (then
             (let $el i64 (call $arr_get (local.get $arr) (local.get $i)))
+            ;; inherited index on a real array (own-hole) → Get the value off the prototype chain
+            (if (i32.and (local.get $isarr) (i32.eqz (local.get $fpres)))
+              (then (set! $el (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))))
             (i64.store (local.get $cargv) (local.get $el))
             (i64.store (i32.add (local.get $cargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $i))))
             (i64.store (i32.add (local.get $cargv) (i32.const 16)) (local.get $thisv))
