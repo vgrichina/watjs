@@ -5173,11 +5173,19 @@
       ;; sync generator: resume by throwing — an in-body try/catch (handler chain saved at the
       ;; yield) catches it; uncaught closes the gen and propagates.
       (return (call $vm_gen_throw (local.get $thisv) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
-  (if (i32.eq (local.get $id) (i32.const 151))  ;; Promise.resolve(v) — `this` (the constructor C) must be an Object
+  (if (i32.eq (local.get $id) (i32.const 151))  ;; Promise.resolve(v) — `this` (C) must be an Object; a non-constructor C fails NewPromiseCapability
     (then
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv))))
         (then (call $throw_type (cstring "TypeError") (cstring "Promise.resolve called on a non-object")) (return (call $v_undef))))
-      (return (call $vm_promise_resolve (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+      ;; if the value is already a promise whose .constructor is C, return it as-is (no NewPromiseCapability)
+      (let $prv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $vm_is_promise (local.get $prv))
+        (then (if (call $strict_eq (call $get_prop (local.get $prv) (call $mk_str (cstring "constructor"))) (local.get $thisv))
+          (then (return (local.get $prv))))))
+      ;; otherwise NewPromiseCapability(C) requires IsConstructor(C)
+      (if (i32.eqz (call $is_constructor (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Promise.resolve called on a non-constructor")) (return (call $v_undef))))
+      (return (call $vm_promise_resolve (local.get $prv)))))
   (if (i32.eq (local.get $id) (i32.const 152))  ;; promise.then(onFulfilled, onRejected)
     (then
       (if (i32.eqz (call $vm_is_promise (local.get $thisv)))
@@ -5250,10 +5258,10 @@
     (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@v"))))))
   (if (i32.eq (local.get $id) (i32.const 522))  ;; throwThunk → throw the captured original reason
     (then (call $set_err (i32.const 1)) (call $set_err_val (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@r")))) (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 414))  ;; Promise.reject(r) — `this` (the constructor C) must be an Object
+  (if (i32.eq (local.get $id) (i32.const 414))  ;; Promise.reject(r) — NewPromiseCapability(C) requires `this` (C) to be a constructor
     (then
-      (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv))))
-        (then (call $throw_type (cstring "TypeError") (cstring "Promise.reject called on a non-object")) (return (call $v_undef))))
+      (if (i32.eqz (call $is_constructor (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Promise.reject called on a non-constructor")) (return (call $v_undef))))
       (return (call $mk_promise (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 452))  ;; async continuation: awaited promise fulfilled → resume with its value
     (then
