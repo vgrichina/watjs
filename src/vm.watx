@@ -2502,6 +2502,11 @@
 ;; STOREVARs it under the class name.
 (func $vm_c_class (param $code i32) (param $isExpr i32) (effects)
   (call $next_token)  ;; 'class'
+  ;; a class definition (heritage + body: constructor, methods, accessors, field initializers,
+  ;; static blocks) is ALWAYS strict-mode code. Force reg 388 = strict for the whole class so
+  ;; every member's vm_c_fnbody inherits it; restore the enclosing strictness on exit.
+  (let $clssave i32 (i32.load (i32.const 388)))
+  (i32.store (i32.const 388) (i32.const 1))
   (let $clsname i32 (i32.const 0))  ;; optional (anonymous class expression)
   (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eqz (call $tok_is_kw (cstring "extends"))))
     (then (set! $clsname (call $ident_name)) (call $next_token)))
@@ -2740,7 +2745,8 @@
   ;; expression → leave [ctor] on the stack; declaration → bind the name
   (if (i32.eqz (local.get $isExpr))
     (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; STOREVAR C
-  (i32.store (i32.const 680) (local.get $litstart)) (i32.store (i32.const 684) (call $vm_emit_cursor)))  ;; record class-literal span [680,684] for name-inference (overwrites ctor's fnbody span)
+  (i32.store (i32.const 680) (local.get $litstart)) (i32.store (i32.const 684) (call $vm_emit_cursor))  ;; record class-literal span [680,684] for name-inference (overwrites ctor's fnbody span)
+  (i32.store (i32.const 388) (local.get $clssave)))  ;; restore enclosing strictness
 
 ;; statement compiler — emits bytecode (control flow via jumps, not re-scanning)
 (func $vm_c_stmt (param $code i32) (effects)
