@@ -4774,21 +4774,37 @@
     (then
       (if (i32.or (call $is_null (call $argn (local.get $argv) (local.get $argc) (i32.const 0))) (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
-      (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (let $keys i32 (call $own_enum_keys (local.get $a) (i32.const 0)))
+      (let $a i64 (call $to_object (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))  ;; ToObject (string prim → wrapper, so char-index descriptors resolve)
+      ;; EnumerableOwnPropertyNames: snapshot ALL own string keys ONCE (allNames=1), then per key
+      ;; run [[GetOwnProperty]] and RE-CHECK enumerable, then Get. A getter fired during an earlier
+      ;; key's Get can flip a later key's enumerability (observable) — so the filter must be per-key,
+      ;; not an upfront enumerable-only snapshot.
+      (let $keys i32 (call $own_enum_keys (local.get $a) (i32.const 1)))
       (let $arr i32 (call $arr_new (i32.const 16)))
       (let $i i32 (i32.const 0))
+      (let $descbuf i32 (call $heap_alloc (i32.const 16)))
       (block $ke (loop $kl
         (br_if $ke (i32.ge_s (local.get $i) (call $arr_len (local.get $keys))))
         (let $nm i64 (call $arr_get (local.get $keys) (local.get $i)))
-        (let $vv i64 (call $get_prop (local.get $a) (local.get $nm)))
-        (if (i32.eq (local.get $id) (i32.const 91))
-          (then (call $arr_push (local.get $arr) (local.get $vv)))
-          (else  ;; entries → [key, value]
-            (let $pair i32 (call $arr_new (i32.const 2)))
-            (call $arr_push (local.get $pair) (local.get $nm))
-            (call $arr_push (local.get $pair) (local.get $vv))
-            (call $arr_push (local.get $arr) (call $mk_arr (local.get $pair)))))
+        ;; desc = O.[[GetOwnProperty]](nm) (getOwnPropertyDescriptor: no getter fired)
+        (i64.store (local.get $descbuf) (local.get $a))
+        (i64.store (i32.add (local.get $descbuf) (i32.const 8)) (local.get $nm))
+        (let $desc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $descbuf) (call $v_undef)))
+        (if (call $err) (then (return (call $v_undef))))
+        ;; a key deleted by an earlier getter → desc is undefined (nested if: i32.and is NOT
+        ;; short-circuit, so it must not evaluate get_prop on an undefined desc).
+        (if (i32.eqz (call $is_undefined (local.get $desc)))
+          (then (if (call $truthy (call $get_prop (local.get $desc) (call $mk_str (cstring "enumerable"))))
+          (then
+            (let $vv i64 (call $get_prop (local.get $a) (local.get $nm)))  ;; Get (fires a getter)
+            (if (call $err) (then (return (call $v_undef))))
+            (if (i32.eq (local.get $id) (i32.const 91))
+              (then (call $arr_push (local.get $arr) (local.get $vv)))
+              (else  ;; entries → [key, value]
+                (let $pair i32 (call $arr_new (i32.const 2)))
+                (call $arr_push (local.get $pair) (local.get $nm))
+                (call $arr_push (local.get $pair) (local.get $vv))
+                (call $arr_push (local.get $arr) (call $mk_arr (local.get $pair)))))))))
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (br $kl)))
       (return (call $mk_arr (local.get $arr)))))
