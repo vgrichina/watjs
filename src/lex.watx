@@ -435,17 +435,19 @@
 ;; matching `}`, correctly tracking nested braces, strings, and nested templates.
 (func $skip_template_expr (effects)
   (let $bd i32 (i32.const 1))
+  (let $prev i32 (i32.const 0))  ;; last significant char (0=start); decides `/` regex-vs-division
   (block $e (loop $l
     (let $c i32 (call $ch_at (i32.const 0)))
     (br_if $e (i32.eq (local.get $c) (i32.const -1)))
-    (if (i32.eq (local.get $c) (i32.const 123)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1))) (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $l)))  ;; {
+    (if (i32.eq (local.get $c) (i32.const 123)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1))) (call $set_pos (i32.add (call $pos) (i32.const 1))) (set! $prev (i32.const 123)) (br $l)))  ;; {
     (if (i32.eq (local.get $c) (i32.const 125))  ;; }
       (then
         (set! $bd (i32.sub (local.get $bd) (i32.const 1)))
         (call $set_pos (i32.add (call $pos) (i32.const 1)))
         (if (i32.eqz (local.get $bd)) (then (br $e)))
+        (set! $prev (i32.const 125))
         (br $l)))
-    (if (i32.eq (local.get $c) (i32.const 96)) (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (call $skip_template) (br $l)))  ;; nested template
+    (if (i32.eq (local.get $c) (i32.const 96)) (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (call $skip_template) (set! $prev (i32.const 41)) (br $l)))  ;; nested template (value)
     (if (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const 39)))  ;; "string" / 'string'
       (then
         (let $q i32 (local.get $c))
@@ -457,7 +459,50 @@
           (if (i32.eq (local.get $sc) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))
           (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $ql)))
         (call $set_pos (i32.add (call $pos) (i32.const 1)))  ;; closing quote
+        (set! $prev (i32.const 41))  ;; a string is a value → following `/` is division
         (br $l)))
+    (if (i32.eq (local.get $c) (i32.const 47))  ;; '/'  — comment, regex literal, or division
+      (then
+        (let $c1 i32 (call $ch_at (i32.const 1)))
+        (if (i32.eq (local.get $c1) (i32.const 47))  ;; // line comment
+          (then
+            (block $lce (loop $lcl
+              (let $lc i32 (call $ch_at (i32.const 0)))
+              (br_if $lce (i32.or (i32.eq (local.get $lc) (i32.const -1)) (i32.or (i32.eq (local.get $lc) (i32.const 10)) (i32.eq (local.get $lc) (i32.const 13)))))
+              (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $lcl)))
+            (br $l)))
+        (if (i32.eq (local.get $c1) (i32.const 42))  ;; /* block comment */
+          (then
+            (call $set_pos (i32.add (call $pos) (i32.const 2)))
+            (block $bce (loop $bcl
+              (let $bc i32 (call $ch_at (i32.const 0)))
+              (br_if $bce (i32.eq (local.get $bc) (i32.const -1)))
+              (if (i32.and (i32.eq (local.get $bc) (i32.const 42)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 47))) (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $bce)))
+              (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $bcl)))
+            (br $l)))
+        ;; regex vs division: regex UNLESS the previous significant char can end an expression
+        ;; (alnum / _ / $ / ) / ] ). A regex literal may contain quotes/braces that must NOT be
+        ;; treated as string/brace tokens — skip it as a unit (respecting [char classes] and \escapes).
+        (if (i32.eqz (i32.or (call $is_alnum (local.get $prev))
+                       (i32.or (i32.eq (local.get $prev) (i32.const 41)) (i32.eq (local.get $prev) (i32.const 93)))))  ;; ) ]
+          (then  ;; regex literal
+            (call $set_pos (i32.add (call $pos) (i32.const 1)))  ;; past '/'
+            (let $incls i32 (i32.const 0))
+            (block $rxe (loop $rxl
+              (let $rc i32 (call $ch_at (i32.const 0)))
+              (br_if $rxe (i32.eq (local.get $rc) (i32.const -1)))
+              (if (i32.eq (local.get $rc) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $rxl)))  ;; \escape → skip 2
+              (if (i32.eq (local.get $rc) (i32.const 91)) (then (set! $incls (i32.const 1))))  ;; [
+              (if (i32.eq (local.get $rc) (i32.const 93)) (then (set! $incls (i32.const 0))))  ;; ]
+              (if (i32.and (i32.eq (local.get $rc) (i32.const 47)) (i32.eqz (local.get $incls))) (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $rxe)))  ;; closing /
+              (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $rxl)))
+            (block $rfe (loop $rfl (br_if $rfe (i32.eqz (call $is_alpha (call $ch_at (i32.const 0))))) (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $rfl)))  ;; flags
+            (set! $prev (i32.const 41))  ;; regex is a value
+            (br $l))
+          (else (call $set_pos (i32.add (call $pos) (i32.const 1))) (set! $prev (i32.const 47)) (br $l)))))  ;; division
+    ;; any other char: advance; track it as the previous significant char if not whitespace
+    (if (i32.eqz (i32.or (i32.eq (local.get $c) (i32.const 32)) (i32.or (i32.eq (local.get $c) (i32.const 9)) (i32.or (i32.eq (local.get $c) (i32.const 10)) (i32.eq (local.get $c) (i32.const 13))))))
+      (then (set! $prev (local.get $c))))
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $l))))
 
