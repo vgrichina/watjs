@@ -4249,6 +4249,12 @@
         (let $protos i32 (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
         ;; superCtor's .prototype — via get_prop so it works for native AND VM superclasses
         (let $sproto i64 (call $get_prop (local.get $superc) (call $mk_str (cstring "prototype"))))
+        (if (call $err) (then (br $disp)))
+        ;; a non-null superclass's .prototype must be an Object or null; a bound function has none
+        ;; (undefined) → TypeError (spec ClassDefinitionEvaluation step 6.f).
+        (if (i32.and (i32.eqz (call $is_null (local.get $superc)))
+                     (i32.and (i32.eqz (call $is_object (local.get $sproto))) (i32.eqz (call $is_null (local.get $sproto)))))
+          (then (call $throw_type (cstring "TypeError") (cstring "Class extends value does not have a valid prototype property")) (br $disp)))
         (if (call $is_object (local.get $sproto)) (then (i32.store (local.get $protos) (call $val_payload (local.get $sproto)))))  ;; proto chain → super.prototype
         (call $scope_define (local.get $protos) (cstring "@@super") (local.get $superc))
         (call $scope_define (local.get $protos) (cstring "@@superproto") (local.get $sproto))
