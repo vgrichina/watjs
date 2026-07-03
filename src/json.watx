@@ -296,6 +296,22 @@
   (call $v_undef))
 
 ;; top-level entry: parse the whole source; trailing junk is a SyntaxError.
+;; CreateDataProperty(obj, key, v) via [[DefineOwnProperty]] with a full {W,E,C} data
+;; descriptor — Reflect.defineProperty (native 206) so a Proxy defineProperty trap runs
+;; (throw propagated) and an ordinary non-configurable property blocks the redefine
+;; (returns false, no throw), matching CreateDataProperty. Sets $err on a propagated throw.
+(func $json_create_data_prop (param $obj i64) (param $key i32) (param $v i64) (effects)
+  (let $jdesc i64 (call $mk_obj (call $obj_new (i32.const 8))))
+  (call $set_prop (local.get $jdesc) (call $mk_str (cstring "value")) (local.get $v))
+  (call $set_prop (local.get $jdesc) (call $mk_str (cstring "writable")) (call $mk_bool (i32.const 1)))
+  (call $set_prop (local.get $jdesc) (call $mk_str (cstring "enumerable")) (call $mk_bool (i32.const 1)))
+  (call $set_prop (local.get $jdesc) (call $mk_str (cstring "configurable")) (call $mk_bool (i32.const 1)))
+  (let $jcbuf i32 (call $heap_alloc (i32.const 24)))
+  (i64.store (local.get $jcbuf) (local.get $obj))
+  (i64.store (i32.add (local.get $jcbuf) (i32.const 8)) (call $mk_str (local.get $key)))
+  (i64.store (i32.add (local.get $jcbuf) (i32.const 16)) (local.get $jdesc))
+  (drop (call $call_native (i32.const 206) (i32.const 3) (local.get $jcbuf) (call $v_undef))))
+
 ;; InternalizeJSONProperty: recursively apply a JSON.parse reviver bottom-up.
 (func $json_revive (param $holder i64) (param $key i32) (param $reviver i64) (result i64) (effects)
   (let $val i64 (call $get_prop (local.get $holder) (call $mk_str (local.get $key))))
@@ -317,15 +333,18 @@
           (let $jk i32 (call $val_payload (call $arr_get (local.get $jkeys) (local.get $ji2))))
           (let $je2 i64 (call $json_revive (local.get $val) (local.get $jk) (local.get $reviver)))
           (if (call $is_undefined (local.get $je2))
-            ;; reviver returned undefined → [[Delete]], which respects configurability
-            ;; (a non-configurable property is left in place, keeping its value).
+            ;; reviver returned undefined → ? val.[[Delete]](P) via Reflect.deleteProperty
+            ;; (native 203): respects configurability for an ordinary object (non-configurable
+            ;; stays, no throw) AND routes through a Proxy deleteProperty trap, propagating its throw.
             (then
-              (let $jdsc i32 (call $val_payload (local.get $val)))
-              (let $jdsl i32 (call $scope_find_local (local.get $jdsc) (local.get $jk)))
-              (if (local.get $jdsl)
-                (then (if (call $entry_configurable (local.get $jdsl))
-                  (then (drop (call $scope_delete (local.get $jdsc) (local.get $jk))))))))
-            (else (call $set_prop (local.get $val) (call $mk_str (local.get $jk)) (local.get $je2))))
+              (let $jdbuf i32 (call $heap_alloc (i32.const 16)))
+              (i64.store (local.get $jdbuf) (local.get $val))
+              (i64.store (i32.add (local.get $jdbuf) (i32.const 8)) (call $mk_str (local.get $jk)))
+              (drop (call $call_native (i32.const 203) (i32.const 2) (local.get $jdbuf) (call $v_undef)))
+              (if (call $err) (then (return (call $v_undef)))))
+            (else  ;; CreateDataProperty(val, P, newElement) via [[DefineOwnProperty]] (proxy-aware, throws propagated)
+              (call $json_create_data_prop (local.get $val) (local.get $jk) (local.get $je2))
+              (if (call $err) (then (return (call $v_undef))))))
           (set! $ji2 (i32.add (local.get $ji2) (i32.const 1))) (br $jol)))))))
   (let $jav i32 (call $heap_alloc (i32.const 16)))
   (i64.store (local.get $jav) (call $mk_str (local.get $key)))
