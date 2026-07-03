@@ -1768,13 +1768,16 @@
                (i32.load (i32.add (local.get $params) (i32.mul (local.get $ci) (i32.const 4)))))
     (set! $ci (i32.add (local.get $ci) (i32.const 1)))
     (br $cl)))
-  ;; non-simple parameter list (a rest param or any default initializer) → bit4. Such a function
-  ;; gets an UNMAPPED arguments object even in sloppy mode (spec: IsSimpleParameterList false).
+  ;; non-simple parameter list (rest param, any default initializer, or a destructuring pattern)
+  ;; → bit4. Such a function gets an UNMAPPED arguments object even in sloppy mode (spec:
+  ;; IsSimpleParameterList false).
   (let $nonsimple i32 (i32.ge_s (local.get $restidx) (i32.const 0)))
   (let $nsi i32 (i32.const 0))
   (block $nse (loop $nsl
     (br_if $nse (i32.ge_s (local.get $nsi) (local.get $np)))
-    (if (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $nsi) (i32.const 4)))) (i32.const 0)) (then (set! $nonsimple (i32.const 1)) (br $nse)))
+    (if (i32.or (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $nsi) (i32.const 4)))) (i32.const 0))
+                (i32.ne (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $nsi) (i32.const 4)))) (i32.const 0)))
+      (then (set! $nonsimple (i32.const 1)) (br $nse)))
     (set! $nsi (i32.add (local.get $nsi) (i32.const 1)))
     (br $nsl)))
   ;; .name: the declared name (named fn decl/expr), or 0 → "" until inferred
