@@ -2574,6 +2574,13 @@
       (set! $superT (call $vm_tmpname))
       (call $vm_c_postfix (local.get $code))
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $superT))))
+  ;; a NAMED class has an inner immutable binding of its own name, scoped to the class body, that
+  ;; methods / static blocks / field initializers reference. Push the class scope AFTER the ClassHeritage
+  ;; (extends) is evaluated — the name is NOT yet bound during the heritage, so `class C extends C {}` is a
+  ;; ReferenceError. Its closures capture this scope; the ctor is assigned into it before static
+  ;; initializers run; it is popped after (method/field closures keep it alive). Anonymous classes skip it.
+  (if (local.get $clsname)
+    (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; ENTERSCOPE clsname
   (call $next_token)  ;; '{'
   (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWOBJ 0 → empty proto
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $protoT))
@@ -2794,12 +2801,19 @@
   ;; clsname here (their name is inferred at the assignment site) → SETPROTO stays terminal for that.
   (if (local.get $clsname)
     (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $clsname))))
+  ;; assign the constructor into the inner class-name binding (class scope) BEFORE static
+  ;; initializers run, so `static { C.x }` / `static f = C` and method bodies resolve the name.
+  (if (local.get $clsname)
+    (then (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; DUP; STOREVAR C (inner) → keeps [ctor]
   ;; run static field initializers on the constructor (this=ctor) — only when present, so SETPROTO/SETNAME stays the terminal op for class-expression name inference
   (if (local.get $hasstatic)
     (then
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $staticT))
       (call $vm_emit_op (local.get $code) (i32.const 88))))
-  ;; expression → leave [ctor] on the stack; declaration → bind the name
+  ;; pop the class scope (method/field closures retain it); the inner binding is no longer current
+  (if (local.get $clsname)
+    (then (call $vm_emit_op (local.get $code) (i32.const 94))))  ;; LEAVEWITH
+  ;; expression → leave [ctor] on the stack; declaration → bind the name in the ENCLOSING scope
   (if (i32.eqz (local.get $isExpr))
     (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; STOREVAR C
   (i32.store (i32.const 680) (local.get $litstart)) (i32.store (i32.const 684) (call $vm_emit_cursor))  ;; record class-literal span [680,684] for name-inference (overwrites ctor's fnbody span)
@@ -4942,6 +4956,14 @@
     (if (i32.eq (local.get $op) (i32.const 94))  ;; LEAVEWITH — restore the enclosing scope
       (then
         (set! $scope (call $scope_parent (local.get $scope)))
+        (call $set_cur_scope (local.get $scope))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 113))  ;; ENTERSCOPE (operand: name) — push a fresh DECLARATIVE scope and
+      (then                                        ;; bind `name`=undefined DIRECTLY in it (not var-target, so it does not
+        (let $esn i32 (i32.load (i32.add (local.get $code) (local.get $ip))))  ;; leak to the enclosing function scope). LEAVEWITH (94) pops it.
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (set! $scope (call $scope_new (local.get $scope) (i32.const 4)))
+        (call $scope_define (local.get $scope) (local.get $esn) (call $v_undef))
         (call $set_cur_scope (local.get $scope))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 95))  ;; DELETEVAR (operand: name) — delete an identifier reference
