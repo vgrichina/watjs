@@ -4608,11 +4608,13 @@
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $typeof_val (i64.load (i32.add (local.get $stack) (local.get $t)))))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 63))  ;; TONUM (unary +, in place) — ToNumber
+    (if (i32.eq (local.get $op) (i32.const 63))  ;; TONUM (unary +, in place) — ToNumber (throws for BigInt, unlike Number())
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
-        (i64.store (i32.add (local.get $stack) (local.get $t))
-                   (call $num (call $to_num (i64.load (i32.add (local.get $stack) (local.get $t))))))
+        (let $tv i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
+        (if (call $is_bigint (local.get $tv))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (br $disp)))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (call $num (call $to_num (local.get $tv))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 97))  ;; TONUMERIC (in place) — ToNumeric: BigInt stays BigInt, else ToNumber
       (then
