@@ -4285,6 +4285,14 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $superc i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $protos i32 (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))))
+        ;; `class C extends null` — the class prototype's [[Prototype]] is null; the ctor is still
+        ;; derived (@@super=null) so `this` is TDZ and a super() with a null parent throws at runtime.
+        (if (call $is_null (local.get $superc))
+          (then
+            (i32.store (local.get $protos) (i32.const 0))  ;; prototype [[Prototype]] = null
+            (call $scope_define (local.get $protos) (cstring "@@super") (call $v_null))
+            (call $scope_define (local.get $protos) (cstring "@@superproto") (call $v_null))
+            (br $disp)))
         ;; superCtor's .prototype — via get_prop so it works for native AND VM superclasses
         (let $sproto i64 (call $get_prop (local.get $superc) (call $mk_str (cstring "prototype"))))
         (if (call $err) (then (br $disp)))
