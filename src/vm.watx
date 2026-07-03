@@ -645,12 +645,14 @@
                       (br $ssl2)))))
                   (call $next_token)  ;; ')'
                   (call $vm_emit_op (local.get $code) (i32.const 103))  ;; SUPERCALLSPREAD
+                  (call $vm_emit_op (local.get $code) (i32.const 112))  ;; RUNFIELDS: bind this + fields after super()
                   (return)))
               (let $sargc i32 (i32.const 0))
               (if (i32.ne (call $tok_kind) (i32.const 16))
                 (then (block $se (loop $sl (call $vm_c_expr (local.get $code)) (set! $sargc (i32.add (local.get $sargc) (i32.const 1))) (br_if $se (i32.eqz (call $eat (i32.const 22)))) (br $sl)))))
               (call $next_token)  ;; ')'
               (call $vm_emit_op (local.get $code) (i32.const 86)) (call $vm_emit_op (local.get $code) (local.get $sargc))  ;; SUPERCALL (CALLM, exempt from class-ctor-without-new check)
+              (call $vm_emit_op (local.get $code) (i32.const 112))  ;; RUNFIELDS: bind this + fields after super()
               (return)))
           (if (i32.eq (call $tok_kind) (i32.const 23))  ;; super.method(...)
             (then
@@ -1844,6 +1846,7 @@
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "arguments"))  ;; LOADVAR arguments
   (call $vm_emit_op (local.get $code) (i32.const 53))  ;; SPREAD arguments into the args array
   (call $vm_emit_op (local.get $code) (i32.const 103))  ;; SUPERCALLSPREAD
+  (call $vm_emit_op (local.get $code) (i32.const 112))  ;; RUNFIELDS: bind this + fields after super()
   (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP super result
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET undefined
@@ -3911,6 +3914,22 @@
     (then (call $vm_run_field_inits (local.get $thisobj) (local.get $parentproto))))
   (let $fislot i32 (call $scope_find_local (call $val_payload (local.get $protoval)) (cstring "@@fieldinits")))
   (if (local.get $fislot) (then (call $vm_apply_fields (local.get $thisobj) (i64.load (local.get $fislot))))))
+;; run ONLY this class level's own instance-field initializers (no proto-chain recursion). With the
+;; this-TDZ model each class's fields run right after ITS `this` is set — base at ctor entry, derived
+;; via the RUNFIELDS op right after super(). Clears reg 640/656 (super-construct / parked newTarget)
+;; across the thunks so a field-initializer CALL isn't mis-read as a construct.
+(func $vm_run_own_fields (param $thisobj i64) (param $protoval i64) (effects)
+  (if (i32.eqz (call $is_object (local.get $protoval))) (then (return)))
+  (let $fislot i32 (call $scope_find_local (call $val_payload (local.get $protoval)) (cstring "@@fieldinits")))
+  (if (local.get $fislot)
+    (then
+      (let $sav640 i32 (i32.load (i32.const 640)))
+      (let $sav656 i64 (i64.load (i32.const 656)))
+      (i32.store (i32.const 640) (i32.const 0))
+      (i64.store (i32.const 656) (i64.const 0))
+      (call $vm_apply_fields (local.get $thisobj) (i64.load (local.get $fislot)))
+      (i32.store (i32.const 640) (local.get $sav640))
+      (i64.store (i32.const 656) (local.get $sav656)))))
 
 ;; run from the context's saved (ip, sp) until the next YIELD or HALT.
 ;; YIELD → returns the yielded value, state saved for the next call (done=0).
@@ -4101,19 +4120,9 @@
         (let $isM i32 (i32.or (i32.eq (local.get $op) (i32.const 33)) (i32.eq (local.get $op) (i32.const 86))))  ;; method call (or super-call) → receiver below the callee
         (let $cbase i32 (i32.sub (local.get $sp) (i32.mul (i32.add (local.get $argc) (i32.const 1)) (i32.const 8))))  ;; callee slot
         (let $rbase i32 (if i32 (local.get $isM) (then (i32.sub (local.get $cbase) (i32.const 8))) (else (local.get $cbase))))  ;; result base
-        (if (i32.eq (local.get $op) (i32.const 86))  ;; SUPERCALL → binds `this`
-          (then
-            ;; calling super() a second time re-binds `this` → ReferenceError (this already initialized)
-            (let $sok i32 (call $scope_find (local.get $scope) (cstring "@@superok")))
-            (if (i32.and (i32.ne (local.get $sok) (i32.const 0)) (call $truthy (i64.load (local.get $sok))))
-              (then (call $throw_type (cstring "ReferenceError") (cstring "super() called twice")) (set! $sp (local.get $rbase)) (br $disp)))
-            (call $scope_define (local.get $scope) (cstring "@@superok") (call $v_true))  ;; super() called → `this` initialized (for CHECKSUPER / this-TDZ)
-            ;; install the constructed object as `this` (was the TDZ sentinel) — update the binding
-            ;; in place wherever it lives (the ctor scope, possibly through an arrow's parent chain).
-            (let $nwsl i32 (call $scope_find (local.get $scope) (cstring "@@newo")))
-            (if (local.get $nwsl)
-              (then (let $tsl i32 (call $scope_find (local.get $scope) (cstring "this")))
-                    (if (local.get $tsl) (then (i64.store (local.get $tsl) (i64.load (local.get $nwsl)))))))))
+        ;; NOTE: super() binds `this` (rebind from the TDZ sentinel), the double-super ReferenceError,
+        ;; and InitializeInstanceFields all happen in the RUNFIELDS op that the compiler emits right
+        ;; AFTER this call returns — matching spec order (Construct base first, then BindThisValue).
         ;; function Proxy callee → dispatch through call_val (handles the apply trap)
         (if (call $is_proxy (i64.load (i32.add (local.get $stack) (local.get $cbase))))
           (then
@@ -4250,6 +4259,11 @@
                 (local.get $cflags)))))))
         (if (i32.and (local.get $cflags) (i32.const 8))  ;; class ctor → @@homeproto for lexical super()
           (then (call $scope_define (local.get $cns) (cstring "@@homeproto") (call $get_prop (call $mk_fn (local.get $cfn)) (call $mk_str (cstring "prototype"))))))
+        ;; a BASE class ctor reached via super() → its `this` (receiver) is initialized → run its own fields
+        (if (i32.eq (local.get $op) (i32.const 86))
+          (then (if (i32.and (local.get $cflags) (i32.const 8))
+            (then (if (i32.eqz (local.get $calleederived))
+              (then (call $vm_run_own_fields (i64.load (i32.add (local.get $stack) (local.get $rbase))) (i64.load (i32.add (local.get $cfn) (i32.const 16))))))))))
         (if (i32.eq (local.get $op) (i32.const 21))  ;; TAILCALL: reuse current frame
           (then (set! $sp (i32.load (i32.add (local.get $frame) (i32.const 12)))))
           (else  ;; CALL / CALLM: push a new frame; result base drops callee (+ receiver)
@@ -4375,7 +4389,7 @@
         (call $scope_define (local.get $cns) (cstring "this") (if i64 (local.get $nwderived) (then (call $v_tdz)) (else (call $mk_obj (local.get $newo)))))
         (if (local.get $nwderived) (then (call $scope_define (local.get $cns) (cstring "@@newo") (call $mk_obj (local.get $newo)))))
         (call $scope_define (local.get $cns) (cstring "@@homeproto") (local.get $cproto))  ;; home prototype (carries @@super) for lexical super()
-        (call $vm_run_field_inits (call $mk_obj (local.get $newo)) (local.get $cproto))  ;; per-instance field initializers
+        (if (i32.eqz (local.get $nwderived)) (then (call $vm_run_own_fields (call $mk_obj (local.get $newo)) (local.get $cproto))))  ;; base → fields now; derived → RUNFIELDS after super()
         (let $fr i32 (call $heap_alloc (i32.const 24)))
         (i32.store (local.get $fr) (local.get $ip))
         (i32.store (i32.add (local.get $fr) (i32.const 4)) (local.get $frame))
@@ -4450,7 +4464,7 @@
         (let $nsderived i32 (i32.ne (call $scope_find_local (call $val_payload (local.get $nscproto)) (cstring "@@super")) (i32.const 0)))
         (call $scope_define (local.get $nscns) (cstring "this") (if i64 (local.get $nsderived) (then (call $v_tdz)) (else (call $mk_obj (local.get $nsnewo)))))
         (if (local.get $nsderived) (then (call $scope_define (local.get $nscns) (cstring "@@newo") (call $mk_obj (local.get $nsnewo)))))
-        (call $vm_run_field_inits (call $mk_obj (local.get $nsnewo)) (local.get $nscproto))  ;; per-instance field initializers
+        (if (i32.eqz (local.get $nsderived)) (then (call $vm_run_own_fields (call $mk_obj (local.get $nsnewo)) (local.get $nscproto))))  ;; base → fields now; derived → RUNFIELDS
         (let $nsfr i32 (call $heap_alloc (i32.const 24)))
         (i32.store (local.get $nsfr) (local.get $ip))
         (i32.store (i32.add (local.get $nsfr) (i32.const 4)) (local.get $frame))
@@ -5035,20 +5049,14 @@
         ;; "cannot be invoked without 'new'" check in vm_call_fn, and new.target propagates to it
         (let $scsNtSlot i32 (call $scope_find (local.get $scope) (cstring "@@newtarget")))
         (i64.store (i32.const 656) (if i64 (local.get $scsNtSlot) (then (i64.load (local.get $scsNtSlot))) (else (call $v_undef))))
-        ;; super() twice → `this` already initialized → ReferenceError
-        (let $scsSok i32 (call $scope_find (local.get $scope) (cstring "@@superok")))
-        (if (i32.and (i32.ne (local.get $scsSok) (i32.const 0)) (call $truthy (i64.load (local.get $scsSok))))
-          (then (call $throw_type (cstring "ReferenceError") (cstring "super() called twice")) (br $disp)))
-        (call $scope_define (local.get $scope) (cstring "@@superok") (call $v_true))  ;; super(...) called → `this` initialized (for CHECKSUPER)
+        ;; the super() this-rebind, double-super ReferenceError, and field init all happen in the
+        ;; RUNFIELDS op emitted right after this (spec order: Construct base, THEN BindThisValue).
         (i32.store (i32.const 640) (i32.const 1))  ;; super() IS a construct (Date/RegExp/wrappers read the native-construct flag)
         (call $set_cur_scope (local.get $scope))
         (let $scsArr i32 (call $val_payload (local.get $scsArgs)))
         (let $scsRes i64 (call $call_val (local.get $scsCallee) (call $arr_len (local.get $scsArr)) (call $arr_data (local.get $scsArr)) (local.get $scsThis)))
         (i64.store (i32.const 656) (i64.const 0))  ;; clear the parked newTarget (vm_call_fn also clears, but a thrown call may not reach it)
         (if (call $err) (then (br $disp)))
-        ;; install the constructed object as `this` (was the TDZ sentinel)
-        (let $scsTsl i32 (call $scope_find (local.get $scope) (cstring "this")))
-        (if (local.get $scsTsl) (then (i64.store (local.get $scsTsl) (local.get $scsThis))))
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $scsRes))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
@@ -5168,6 +5176,23 @@
         (let $smarr i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $smctor i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left in place
         (call $vm_apply_smeths (local.get $smctor) (local.get $smarr))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 112))  ;; RUNFIELDS — emitted right after super(): BindThisValue(result) + double-super check + InitializeInstanceFields
+      (then
+        ;; a second super() → `this` already bound → ReferenceError (the base ctor already ran, per spec)
+        (let $rfsok i32 (call $scope_find (local.get $scope) (cstring "@@superok")))
+        (if (i32.and (i32.ne (local.get $rfsok) (i32.const 0)) (call $truthy (i64.load (local.get $rfsok))))
+          (then (call $throw_type (cstring "ReferenceError") (cstring "super() called twice")) (br $disp)))
+        (call $scope_define (local.get $scope) (cstring "@@superok") (call $v_true))  ;; for CHECKSUPER at ctor end
+        ;; BindThisValue = @@newo (the object super() threaded to the base ctor as receiver and inited)
+        (let $rfnwo i32 (call $scope_find (local.get $scope) (cstring "@@newo")))
+        (let $rftsl i32 (call $scope_find (local.get $scope) (cstring "this")))
+        (if (i32.and (i32.ne (local.get $rfnwo) (i32.const 0)) (i32.ne (local.get $rftsl) (i32.const 0)))
+          (then
+            (i64.store (local.get $rftsl) (i64.load (local.get $rfnwo)))  ;; `this` = @@newo
+            (let $rfhp i32 (call $scope_find (local.get $scope) (cstring "@@homeproto")))
+            (if (i32.ne (local.get $rfhp) (i32.const 0))
+              (then (call $vm_run_own_fields (i64.load (local.get $rftsl)) (i64.load (local.get $rfhp)))))))
         (br $disp)))
     (if (i32.or (i32.eq (local.get $op) (i32.const 74)) (i32.eq (local.get $op) (i32.const 75)))  ;; CLOSEITER: 74 normal/break (IteratorClose) / 75 throw-completion (suppress return's own error)
       (then
@@ -5726,6 +5751,10 @@
   ;; C-extends-B-extends-A chain resolves to the outermost @@super → infinite recursion).
   (if (i32.and (local.get $vcflags) (i32.const 8))
     (then (call $scope_define (local.get $ns) (cstring "@@homeproto") (call $get_prop (call $mk_fn (local.get $fn)) (call $mk_str (cstring "prototype"))))))
+  ;; base class ctor via the native bridge → run its own fields (vm_run_own_fields clears reg 640/656)
+  (if (i32.and (local.get $vcflags) (i32.const 8))
+    (then (if (i32.eqz (local.get $vcderived))
+      (then (call $vm_run_own_fields (local.get $thisv) (i64.load (i32.add (local.get $fn) (i32.const 16))))))))
   ;; new.target: $vm_construct parks the newTarget in reg 656 (raw 0 = none) just
   ;; before this call; consume it here so `new.target` is bound inside the body
   ;; (a plain call leaves it 0 → new.target resolves lexically/undefined).
