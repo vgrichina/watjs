@@ -396,6 +396,34 @@
           (return (i64.load (local.get $oslot)))))))
   (call $v_undef))
 
+;; ── mapped-arguments [[ParameterMap]] helpers (scope $o = the arguments object) ──
+;; An index is still mapped to its parameter iff idx∈[0,@@anp) AND its own property exists
+;; as a WRITABLE data property. Severing (defineProperty writable:false / accessor) makes the
+;; own prop non-writable/accessor, and delete removes it — both auto-unmap via this derivation
+;; (no separate sever-set needed).
+(func $args_mapped (param $o i32) (param $idx i32) (result i32) (effects)
+  (if (i32.lt_s (local.get $idx) (i32.const 0)) (then (return (i32.const 0))))
+  (let $asl i32 (call $scope_find_local (local.get $o) (cstring "@@as")))
+  (if (i32.eqz (local.get $asl)) (then (return (i32.const 0))))
+  (let $anpl i32 (call $scope_find_local (local.get $o) (cstring "@@anp")))
+  (if (i32.eqz (local.get $anpl)) (then (return (i32.const 0))))
+  (if (i32.ge_s (local.get $idx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $anpl))))) (then (return (i32.const 0))))
+  (let $ps i32 (call $scope_find_local (local.get $o) (call $num_to_str (f64.convert_i32_s (local.get $idx)))))
+  (if (i32.eqz (local.get $ps)) (then (return (i32.const 0))))
+  (if (call $entry_is_accessor (local.get $ps)) (then (return (i32.const 0))))
+  (call $entry_writable (local.get $ps)))
+;; read the parameter slot aliased by arguments index $idx (caller ensures args_mapped)
+(func $args_get_param (param $o i32) (param $idx i32) (result i64) (effects)
+  (let $asc i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@as"))))))
+  (let $afn i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@af"))))))
+  (let $aps i32 (call $scope_find (local.get $asc) (i32.load (i32.add (i32.add (local.get $afn) (i32.const 28)) (i32.mul (local.get $idx) (i32.const 4))))))
+  (if i64 (local.get $aps) (then (i64.load (local.get $aps))) (else (call $v_undef))))
+;; write the parameter slot aliased by arguments index $idx
+(func $args_set_param (param $o i32) (param $idx i32) (param $val i64) (effects)
+  (let $asc i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@as"))))))
+  (let $afn i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@af"))))))
+  (call $scope_define (local.get $asc) (i32.load (i32.add (i32.add (local.get $afn) (i32.const 28)) (i32.mul (local.get $idx) (i32.const 4)))) (local.get $val)))
+
 ;; get_prop(container, key) -> value
 (func $get_prop (param $cont i64) (param $key i64) (result i64) (effects)
   (if (call $is_array (local.get $cont))
@@ -605,12 +633,8 @@
           (if (local.get $asl)
             (then
               (let $idx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
-              (if (i32.and (i32.ge_s (local.get $idx) (i32.const 0)) (i32.lt_s (local.get $idx) (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@anp")))))))
-                (then
-                  (let $asc i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $asl)))))
-                  (let $afn i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@af"))))))
-                  (let $aps i32 (call $scope_find (local.get $asc) (i32.load (i32.add (i32.add (local.get $afn) (i32.const 28)) (i32.mul (local.get $idx) (i32.const 4))))))
-                  (return (if i64 (local.get $aps) (then (i64.load (local.get $aps))) (else (call $v_undef))))))))))
+              (if (call $args_mapped (local.get $o) (local.get $idx))  ;; still aliased (not severed/deleted)
+                (then (return (call $args_get_param (local.get $o) (local.get $idx)))))))))
       ;; scope_find walks the parent chain = prototype chain
       (let $slot i32 (call $scope_find (local.get $o) (call $to_prop_key (local.get $key))))
       (if (local.get $slot)
@@ -1321,11 +1345,9 @@
           (if (local.get $asl)
             (then
               (let $idx i32 (i32.trunc_f64_s (call $tonum_raw (local.get $key))))
-              (if (i32.and (i32.ge_s (local.get $idx) (i32.const 0)) (i32.lt_s (local.get $idx) (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@anp")))))))
+              (if (call $args_mapped (local.get $o) (local.get $idx))  ;; still aliased → write the parameter (gOPD reads the live param, so the own-prop shell needn't be synced)
                 (then
-                  (let $asc i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $asl)))))
-                  (let $afn i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@af"))))))
-                  (call $scope_define (local.get $asc) (i32.load (i32.add (i32.add (local.get $afn) (i32.const 28)) (i32.mul (local.get $idx) (i32.const 4)))) (local.get $val))
+                  (call $args_set_param (local.get $o) (local.get $idx) (local.get $val))
                   (return)))))))
       (let $ks i32 (call $to_prop_key (local.get $key)))
       (let $slot i32 (call $scope_find (local.get $o) (local.get $ks)))
