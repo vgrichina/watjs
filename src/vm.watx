@@ -1232,6 +1232,46 @@
       (let $pop i32 (if i32 (i32.eq (local.get $k) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
       (call $next_token)
       (let $pvn i32 (call $ident_name)) (call $next_token)
+      ;; member/index target: `++obj.key` / `++obj[i]` / `++a.b.c` (rooted at the identifier).
+      ;; Emit the object, walk the access chain, and do read-modify-write on the LAST access.
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; '.' / '['
+        (then
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; LOADVAR obj
+          (block $pme (loop $pml
+            (if (i32.eq (call $tok_kind) (i32.const 23))  ;; '.' key
+              (then
+                (call $next_token)
+                (let $pk i32 (call $ident_name)) (call $next_token)
+                (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; more chain → plain GETPROP
+                  (then (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $pk)) (br $pml))
+                  (else  ;; LAST access → RMW, result = new value
+                    (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP obj
+                    (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $pk))  ;; GETPROP old
+                    (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC
+                    (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → new
+                    (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 82)) (else (i32.const 34)))) (call $vm_emit_op (local.get $code) (local.get $pk))  ;; SETPROP → [new]
+                    (br $pme))))
+              (else  ;; '[' index
+                (call $next_token)
+                (call $vm_c_expr (local.get $code))  ;; index → [obj, key]
+                (call $next_token)  ;; ']'
+                (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; more chain → plain GETIDX
+                  (then (call $vm_emit_op (local.get $code) (i32.const 31)) (br $pml))
+                  (else  ;; LAST access → indexed RMW
+                    (let $pck i32 (call $vm_tmpname)) (let $pcv i32 (call $vm_tmpname))
+                    (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pck))  ;; STOREVAR key → [obj]
+                    (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [obj,obj]
+                    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pck))  ;; LOADVAR key → [obj,obj,key]
+                    (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [obj, old]
+                    (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC
+                    (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → [obj, new]
+                    (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pcv))  ;; STOREVAR new → [obj]
+                    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pck))  ;; LOADVAR key → [obj,key]
+                    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pcv))  ;; LOADVAR new → [obj,key,new]
+                    (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 83)) (else (i32.const 35))))  ;; SETIDX → [new]
+                    (br $pme)))))))
+          (return)))
+      ;; bare identifier target
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; LOADVAR
       (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC (BigInt preserved)
       (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → new value
