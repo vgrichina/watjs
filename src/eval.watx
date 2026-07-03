@@ -8127,6 +8127,25 @@
       (let $gsv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.or (call $is_null (local.get $gsv)) (call $is_undefined (local.get $gsv)))  ;; ToObject → TypeError
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      ;; Proxy: run the ownKeys trap through the FULL invariant check (proxy_own_keys throws
+      ;; on a violation even for string keys), then keep only the Symbol keys. No trap → target.
+      (if (call $is_proxy (local.get $gsv))
+        (then
+          (let $gsokt i64 (call $proxy_trap (local.get $gsv) (cstring "ownKeys")))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_function (local.get $gsokt))
+            (then
+              (let $gsallk i32 (call $proxy_own_keys (local.get $gsv) (local.get $gsokt)))  ;; validated key list (throws on violation)
+              (if (call $err) (then (return (call $v_undef))))
+              (let $gspout i32 (call $arr_new (i32.const 4)))
+              (let $gspi i32 (i32.const 0))
+              (block $gspe (loop $gspl
+                (br_if $gspe (i32.ge_s (local.get $gspi) (call $arr_len (local.get $gsallk))))
+                (let $gspk i64 (call $arr_get (local.get $gsallk) (local.get $gspi)))
+                (if (call $is_symbol (local.get $gspk)) (then (call $arr_push (local.get $gspout) (local.get $gspk))))
+                (set! $gspi (i32.add (local.get $gspi) (i32.const 1))) (br $gspl)))
+              (return (call $mk_arr (local.get $gspout))))
+            (else (return (call $call_native (i32.const 248) (i32.const 1) (call $argv1 (call $proxy_target (local.get $gsv))) (call $v_undef)))))))
       (let $gsarr i32 (call $arr_new (i32.const 4)))
       ;; pick the symbol-bearing own-property scope by type: object payload / array @12 /
       ;; function (VM @16 prototype scope, native @12) — mirrors own_enum_keys.
