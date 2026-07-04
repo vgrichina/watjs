@@ -1815,7 +1815,7 @@
       (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))
       (let $stsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $stsn i32 (call $alike_len (local.get $stsrc)))
-      (if (i32.gt_s (i32.add (local.get $stoff) (local.get $stsn)) (local.get $stlen))
+      (if (i32.gt_s (local.get $stoff) (i32.sub (local.get $stlen) (local.get $stsn)))  ;; offset+srcLen > targetLen, overflow-free (offset ToIndex-capped 2^31-1 would overflow i32 on +)
         (then (call $throw_type (cstring "RangeError") (cstring "TypedArray.set: source too large")) (return (call $v_undef))))
       (call $ta_set_copy (local.get $stbuf) (local.get $stoff) (local.get $stelem) (local.get $stsrc) (local.get $stsn))
       (return (call $v_undef))))

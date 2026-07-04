@@ -12,4 +12,10 @@ if (new Uint32Array(buf, 0, 4).length !== 4) throw new Error("full view");
 if (new Uint32Array(buf, 16, 0).length !== 0) throw new Error("empty at end");
 if (new Uint8Array([1, 2, 3, 4, 5]).length !== 5) throw new Error("from array");
 if (new Float64Array(new ArrayBuffer(8)).length !== 1) throw new Error("auto length");
+// TypedArray.prototype.set(source, offset): offset+srcLen > targetLen must not overflow i32.
+if (!isRange(function () { new Uint32Array(4).set([1, 2], 2147483647); })) throw new Error("set huge offset");
+if (!isRange(function () { new Uint32Array(4).set([1, 2], 3); })) throw new Error("set 3+2>4");
+var sa = new Uint32Array(4); sa.set([7, 8], 2);
+if (sa[2] !== 7 || sa[3] !== 8) throw new Error("valid set");
+
 print("ok");
