@@ -147,12 +147,32 @@
   (if (local.get $neg) (then (set! $pos (i32.sub (local.get $pos) (i32.const 1))) (i32.store8 (i32.add (local.get $buf) (local.get $pos)) (i32.const 45))))
   (call $str_from_src (i32.add (local.get $buf) (local.get $pos)) (i32.sub (i32.const 64) (local.get $pos))))
 
+;; Convert a large NON-NEGATIVE f64 integer to a radix string via f64 repeated division —
+;; used when the integer part exceeds i32 range (an i32/i64 truncation would TRAP, e.g.
+;; (1e300).toString(2)). Digits past 2^53 are approximate (the f64 can't represent every
+;; integer there), matching the value's own imprecision.
+(func $num_to_radix_big (param $ip f64) (param $radix i32) (result i32) (effects)
+  (let $buf i32 (call $heap_alloc (i32.const 1152)))  ;; up to ~1024 binary digits + slack
+  (let $pos i32 (i32.const 1152))
+  (let $rf f64 (f64.convert_i32_s (local.get $radix)))
+  (block $e (loop $l
+    (br_if $e (f64.le (local.get $ip) (f64.const 0)))
+    (let $q f64 (f64.floor (f64.div (local.get $ip) (local.get $rf))))
+    (let $dig i32 (i32.trunc_f64_s (f64.sub (local.get $ip) (f64.mul (local.get $q) (local.get $rf)))))  ;; in [0,radix), safe
+    (set! $pos (i32.sub (local.get $pos) (i32.const 1)))
+    (i32.store8 (i32.add (local.get $buf) (local.get $pos)) (if i32 (i32.lt_s (local.get $dig) (i32.const 10)) (then (i32.add (i32.const 48) (local.get $dig))) (else (i32.add (i32.const 87) (local.get $dig)))))
+    (set! $ip (local.get $q))
+    (br $l)))
+  (call $str_from_src (i32.add (local.get $buf) (local.get $pos)) (i32.sub (i32.const 1152) (local.get $pos))))
+
 ;; float → string in `radix` (2..36), including a fractional part: (3.5).toString(2)="11.1"
 (func $num_to_radix_f (param $x f64) (param $radix i32) (result i32) (effects)
   (let $neg i32 (f64.lt (local.get $x) (f64.const 0)))
   (let $a f64 (f64.abs (local.get $x)))
   (let $ip f64 (f64.floor (local.get $a)))
-  (let $istr i32 (call $num_to_radix (i32.trunc_f64_s (local.get $ip)) (local.get $radix)))
+  (let $istr i32 (if i32 (f64.lt (local.get $ip) (f64.const 2147483648))
+                   (then (call $num_to_radix (i32.trunc_f64_s (local.get $ip)) (local.get $radix)))
+                   (else (call $num_to_radix_big (local.get $ip) (local.get $radix)))))
   (let $res i32 (if i32 (local.get $neg) (then (call $str_concat (cstring "-") (local.get $istr))) (else (local.get $istr))))
   (let $frac f64 (f64.sub (local.get $a) (local.get $ip)))
   (if (f64.gt (local.get $frac) (f64.const 0))
@@ -178,8 +198,14 @@
 (func $num_to_fixed (param $x f64) (param $d i32) (result i32) (effects)
   (let $neg i32 (f64.lt (local.get $x) (f64.const 0)))
   (set! $x (f64.abs (local.get $x)))
+  ;; Cap the scaled precision at 18 fractional digits: 10^18 < 2^63 keeps the digit extraction inside
+  ;; i64 range (an i32/larger-i64 truncation of the scaled value TRAPS — this is the toFixed(10) crash).
+  ;; f64 carries only ~17 significant digits, so digits past position 18 are formatted as trailing zeros
+  ;; (exact for values that terminate within 18 places — the common case; approximate for the rest, but
+  ;; never a trap).
+  (let $de i32 (if i32 (i32.gt_s (local.get $d) (i32.const 18)) (then (i32.const 18)) (else (local.get $d))))
   (let $pow f64 (f64.const 1)) (let $i i32 (i32.const 0))
-  (block $pe (loop $pl (br_if $pe (i32.ge_s (local.get $i) (local.get $d))) (set! $pow (f64.mul (local.get $pow) (f64.const 10))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $pl)))
+  (block $pe (loop $pl (br_if $pe (i32.ge_s (local.get $i) (local.get $de))) (set! $pow (f64.mul (local.get $pow) (f64.const 10))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $pl)))
   (let $scaled f64 (f64.floor (f64.add (f64.mul (local.get $x) (local.get $pow)) (f64.const 0.5))))
   (let $intp f64 (f64.floor (f64.div (local.get $scaled) (local.get $pow))))
   (let $fracf f64 (f64.sub (local.get $scaled) (f64.mul (local.get $intp) (local.get $pow))))
@@ -187,12 +213,16 @@
   (if (i32.gt_s (local.get $d) (i32.const 0))
     (then
       (let $fbuf i32 (call $str_alloc (local.get $d)))
-      (let $fv i32 (i32.trunc_f64_s (local.get $fracf)))
-      (let $k i32 (i32.sub (local.get $d) (i32.const 1)))
+      ;; positions [de, d) are trailing zeros; [0, de) hold the extracted fractional digits (i64)
+      (let $z i32 (local.get $de))
+      (block $ze (loop $zl (br_if $ze (i32.ge_s (local.get $z) (local.get $d)))
+        (call $str_set_byte (local.get $fbuf) (local.get $z) (i32.const 48)) (set! $z (i32.add (local.get $z) (i32.const 1))) (br $zl)))
+      (let $fv i64 (i64.trunc_f64_s (local.get $fracf)))
+      (let $k i32 (i32.sub (local.get $de) (i32.const 1)))
       (block $fe (loop $fl
         (br_if $fe (i32.lt_s (local.get $k) (i32.const 0)))
-        (call $str_set_byte (local.get $fbuf) (local.get $k) (i32.add (i32.const 48) (i32.rem_u (local.get $fv) (i32.const 10))))
-        (set! $fv (i32.div_u (local.get $fv) (i32.const 10)))
+        (call $str_set_byte (local.get $fbuf) (local.get $k) (i32.add (i32.const 48) (i32.wrap_i64 (i64.rem_u (local.get $fv) (i64.const 10)))))
+        (set! $fv (i64.div_u (local.get $fv) (i64.const 10)))
         (set! $k (i32.sub (local.get $k) (i32.const 1)))
         (br $fl)))
       (set! $res (call $str_concat (local.get $res) (call $str_concat (cstring ".") (local.get $fbuf))))))
