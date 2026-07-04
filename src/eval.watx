@@ -7096,18 +7096,29 @@
           (if (i32.or (i32.eqz (call $str_len (local.get $s))) (i32.le_s (local.get $cnt) (i32.const 0)))
             (then (return (call $mk_str (cstring "")))))
           ;; a non-empty result whose LENGTH (count * strlen, in i64 to avoid overflow) would exceed the
-          ;; max string length → RangeError. Checking count alone missed e.g. "ab".repeat(1e9) = 2e9 chars
-          ;; (count < 2^30 but the result overflows the buffer → memory-access trap).
-          (if (i64.ge_s (i64.mul (i64.extend_i32_s (local.get $cnt)) (i64.extend_i32_s (call $str_len (local.get $s)))) (i64.const 1073741824))
+          ;; string-length cap → RangeError. The cap (2^24 chars) fits the 32 MB linear memory; larger
+          ;; would exhaust it. Checking count alone missed e.g. "ab".repeat(1e9) (count < 2^30, 2e9 chars).
+          (let $rsl i32 (call $str_len (local.get $s)))
+          (let $rtot i64 (i64.mul (i64.extend_i32_s (local.get $cnt)) (i64.extend_i32_s (local.get $rsl))))
+          (if (i64.ge_s (local.get $rtot) (i64.const 16777216))
             (then (call $throw_type (cstring "RangeError") (cstring "Invalid string length")) (return (call $v_undef))))
-          (let $out i32 (cstring ""))
+          ;; build in a SINGLE allocation of `total` bytes, copying s `count` times (O(n), not the O(n^2)
+          ;; of repeated str_concat which never frees in the bump allocator → OOM/trap even at ~100K chars).
+          (let $rbuf i32 (call $str_alloc (i32.wrap_i64 (local.get $rtot))))
+          (let $rbi i32 (i32.const 0))
           (let $k i32 (i32.const 0))
           (block $re (loop $rl
             (br_if $re (i32.ge_s (local.get $k) (local.get $cnt)))
-            (set! $out (call $str_concat (local.get $out) (local.get $s)))
+            (let $rj i32 (i32.const 0))
+            (block $rce (loop $rcl
+              (br_if $rce (i32.ge_s (local.get $rj) (local.get $rsl)))
+              (call $str_set_byte (local.get $rbuf) (i32.add (local.get $rbi) (local.get $rj)) (call $str_byte (local.get $s) (local.get $rj)))
+              (set! $rj (i32.add (local.get $rj) (i32.const 1)))
+              (br $rcl)))
+            (set! $rbi (i32.add (local.get $rbi) (local.get $rsl)))
             (set! $k (i32.add (local.get $k) (i32.const 1)))
             (br $rl)))
-          (return (call $mk_str (local.get $out)))))
+          (return (call $mk_str (local.get $rbuf)))))
       (if (i32.or (i32.eq (local.get $id) (i32.const 66)) (i32.eq (local.get $id) (i32.const 67)))  ;; padStart/padEnd
         (then
           (let $padt i32 (call $to_int_idx (call $tonum_fmtarg (local.get $a0))))  ;; ToLength(maxLength); BigInt/Symbol→TypeError
@@ -7115,8 +7126,8 @@
           (let $padsl i32 (call $str_len (local.get $s)))
           ;; maxLength ≤ length → return S WITHOUT coercing fillString (spec order)
           (if (i32.ge_s (local.get $padsl) (local.get $padt)) (then (return (call $mk_str (local.get $s)))))
-          ;; a result that would exceed the max string length → RangeError (avoids OOB)
-          (if (i32.ge_s (local.get $padt) (i32.const 1073741824))
+          ;; a result exceeding the string-length cap (2^24, fits the 32 MB memory) → RangeError (avoids OOM)
+          (if (i32.ge_s (local.get $padt) (i32.const 16777216))
             (then (call $throw_type (cstring "RangeError") (cstring "Invalid string length")) (return (call $v_undef))))
           ;; fillString: absent/undefined → " "; Symbol → TypeError; else ToString
           (let $pads i32 (cstring " "))
@@ -7127,13 +7138,17 @@
               (set! $pads (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
               (if (call $err) (then (return (call $v_undef))))))
           (if (i32.eqz (call $str_len (local.get $pads))) (then (return (call $mk_str (local.get $s)))))  ;; empty filler
+          ;; build the padding in ONE allocation of `padn` bytes, cycling through the fill string
+          ;; (O(n); the old repeated str_concat + substr was O(n^2) in the no-free bump allocator).
           (let $padn i32 (i32.sub (local.get $padt) (local.get $padsl)))
-          (let $padb i32 (cstring ""))
+          (let $padfl i32 (call $str_len (local.get $pads)))
+          (let $padb i32 (call $str_alloc (local.get $padn)))
+          (let $pi i32 (i32.const 0))
           (block $pe2 (loop $pl2
-            (br_if $pe2 (i32.ge_s (call $str_len (local.get $padb)) (local.get $padn)))
-            (set! $padb (call $str_concat (local.get $padb) (local.get $pads)))
+            (br_if $pe2 (i32.ge_s (local.get $pi) (local.get $padn)))
+            (call $str_set_byte (local.get $padb) (local.get $pi) (call $str_byte (local.get $pads) (i32.rem_s (local.get $pi) (local.get $padfl))))
+            (set! $pi (i32.add (local.get $pi) (i32.const 1)))
             (br $pl2)))
-          (set! $padb (call $substr (local.get $padb) (i32.const 0) (local.get $padn)))
           (if (i32.eq (local.get $id) (i32.const 66))
             (then (return (call $mk_str (call $str_concat (local.get $padb) (local.get $s)))))
             (else (return (call $mk_str (call $str_concat (local.get $s) (local.get $padb))))))))
