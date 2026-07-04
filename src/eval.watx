@@ -5496,15 +5496,11 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 418)) (i32.eq (local.get $id) (i32.const 419)))  ;; BigInt.asIntN(bits,v) / asUintN(bits,v)
     (then
       ;; ToIndex(bits) first, then ToBigInt(value) — the latter ToPrimitives an object arg.
-      ;; ToIndex = ToIntegerOrInfinity then RangeError if <0 or >2^53-1. ToNumber(BigInt) → TypeError.
-      (if (call $is_bigint (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt to a number")) (return (call $v_undef))))
-      (let $anbf f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+      ;; ToIndex handles ToPrimitive(number) + BigInt→TypeError (incl. a BigInt-wrapper object,
+      ;; whose valueOf yields a BigInt) + RangeError if <0 or >2^53-1.
+      (let $anbi i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
-      (set! $anbf (if f64 (f64.ne (local.get $anbf) (local.get $anbf)) (then (f64.const 0)) (else (f64.trunc (local.get $anbf)))))  ;; ToIntegerOrInfinity (NaN→0)
-      (if (i32.or (f64.lt (local.get $anbf) (f64.const 0)) (f64.gt (local.get $anbf) (f64.const 9007199254740991)))
-        (then (call $throw_type (cstring "RangeError") (cstring "Invalid bits")) (return (call $v_undef))))
-      (let $anbits i32 (if i32 (f64.ge (local.get $anbf) (f64.const 64)) (then (i32.const 64)) (else (i32.trunc_f64_s (local.get $anbf)))))
+      (let $anbits i32 (if i32 (i32.ge_s (local.get $anbi) (i32.const 64)) (then (i32.const 64)) (else (local.get $anbi))))
       (let $anv i64 (call $to_bigint (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
       (if (call $err) (then (return (call $v_undef))))
       (let $aniv i64 (call $bigint_val (local.get $anv)))
