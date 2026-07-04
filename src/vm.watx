@@ -2223,9 +2223,11 @@
 ;; 1 = assignment destructuring (`[x]=…`) → assign up the chain (strict: ReferenceError
 ;; if undeclared; sloppy: implicit global); 0 = binding (`var [x]=…`) → define-in-current.
 (func $vm_emit_dstr_store (param $code i32) (param $name i32) (effects)
-  (if (i32.load (i32.const 676))
-    (then (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $name)))
-    (else (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $name)))))  ;; declarator mode: DEFINIT binds in the CURRENT scope (STOREVAR would walk up and clobber an outer/global)
+  (if (i32.eq (i32.load (i32.const 676)) (i32.const 2))
+    (then (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $name)))  ;; lexical binding (catch param): LEXDEFINIT binds in the CURRENT (declarative) scope, not the var scope
+    (else (if (i32.load (i32.const 676))
+      (then (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $name)))
+      (else (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $name)))))))  ;; declarator mode: DEFINIT binds via the nearest var scope
 
 (func $vm_c_destructure_param (param $code i32) (param $srcTmp i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [ array pattern ] — via iterator protocol
@@ -3188,7 +3190,8 @@
           (let $hascatch i32 (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "catch"))))
           (let $jcatch i32 (i32.const 0))
           (let $fincur i32 (i32.const 0))
-          (if (local.get $hascatch)
+          (let $catchscope i32 (i32.const 0))  ;; set to 1 when a DESTRUCTURING catch param gets its own declarative
+          (if (local.get $hascatch)            ;; environment. Simple `catch(e)` stays unscoped: B.3.5 lets a same-named `var` alias it.
             (then
               (call $next_token)  ;; 'catch'
               (if (i32.eq (call $tok_kind) (i32.const 15))  ;; catch (...) — optional binding
@@ -3196,11 +3199,21 @@
                   (call $next_token)  ;; '('
                   (if (i32.or (i32.eq (call $tok_kind) (i32.const 17)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; catch ({…}) / catch ([…]) destructuring
                     (then
-                      ;; bind the exception to a fresh temp, then destructure it into the
-                      ;; pattern's names at the start of the catch handler (before the body)
+                      ;; A destructuring catch parameter introduces its own declarative environment (spec
+                      ;; CatchClause) — its bound names must NOT leak to the enclosing scope (and a `var` of
+                      ;; the same name is an early error, so no aliasing). Push a fresh scope, bind the
+                      ;; pattern leaves lexically into it, and pop on every exit. Only entered at runtime when
+                      ;; the catch executes (normal path jumps the whole catch), so it stays balanced. Gated to
+                      ;; the no-finally form to keep the finally-stack simple.
+                      (if (i32.eqz (local.get $prefin))
+                        (then (set! $catchscope (i32.const 1))
+                              (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)))
                       (let $catchtmp i32 (call $vm_tmpname))
                       (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $catchtmp))
+                      (let $csdm i32 (i32.load (i32.const 676)))
+                      (if (local.get $catchscope) (then (i32.store (i32.const 676) (i32.const 2))))  ;; catch pattern leaves bind lexically into the fresh scope
                       (call $vm_c_destructure_param (local.get $code) (local.get $catchtmp))  ;; consumes the pattern
+                      (i32.store (i32.const 676) (local.get $csdm))
                       (call $next_token))  ;; ')'
                     (else
                       (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; simple binding
@@ -3231,7 +3244,10 @@
                   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@excf"))  ;; LOADVAR @@excf
                   (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW (re-raise)
                   (call $cursor_restore (local.get $aftercatch))))  ;; back to 'finally' for the normal-path emission
-              (if (i32.eqz (local.get $prefin)) (then (set! $jcatch (call $vm_emit_jump (local.get $code) (i32.const 12))))))  ;; JMP → Lnormal (no finally)
+              (if (i32.eqz (local.get $prefin))
+                (then
+                  (if (local.get $catchscope) (then (call $vm_finally_pop) (call $vm_emit_op (local.get $code) (i32.const 94))))  ;; pop the catch environment on normal completion (LEAVEWITH)
+                  (set! $jcatch (call $vm_emit_jump (local.get $code) (i32.const 12))))))  ;; JMP → Lnormal (no finally)
             (else
               ;; try/finally with no catch: bind exc to @@exc, run finally, then re-throw
               (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@exc"))
@@ -5248,10 +5264,13 @@
       (then
         (let $dvnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
-        ;; define = undefined in the current scope ONLY if absent (a bare redeclare
-        ;; must not reset an already-assigned binding)
-        (if (i32.eqz (call $scope_find_local (local.get $scope) (local.get $dvnm)))
-          (then (call $scope_define_attr (local.get $scope) (local.get $dvnm) (call $v_undef) (i32.const 10))))  ;; E|W; non-configurable (var binding not deletable)
+        ;; a `var` binding lives in the VARIABLE environment (nearest non-with, non-lexical scope),
+        ;; not any active declarative/lexical scope — matters when a var is hoisted while a lexical
+        ;; scope is active (direct eval inside a block/catch environment). Define = undefined ONLY if
+        ;; absent (a bare redeclare must not reset an already-assigned binding).
+        (let $dvtgt i32 (call $scope_var_target (local.get $scope)))
+        (if (i32.eqz (call $scope_find_local (local.get $dvtgt) (local.get $dvnm)))
+          (then (call $scope_define_attr (local.get $dvtgt) (local.get $dvnm) (call $v_undef) (i32.const 10))))  ;; E|W; non-configurable (var binding not deletable)
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 10))  ;; PRINT
       (then
