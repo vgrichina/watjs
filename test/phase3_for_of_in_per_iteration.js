@@ -15,13 +15,13 @@ if (kf.map(function (f) { return f(); }).join() !== "x,y,z") throw new Error("fo
 
 // var head still shares
 var vs = [];
-for (var v of [1, 2, 3]) vs.push(function () { return v; });
+for (var vv of [1, 2, 3]) vs.push(function () { return vv; });
 if (vs[0]() !== 3) throw new Error("for-of var shares");
 
 // head does not leak past the loop
 var leaked = false;
-for (let v of [1]) {}
-try { v; leaked = true; } catch (e) {}
+for (let notdeclared of [1]) {}
+try { notdeclared; leaked = true; } catch (e) {}
 if (leaked) throw new Error("for-of head leaked");
 
 // continue: skipped iteration not captured
