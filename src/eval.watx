@@ -6345,6 +6345,20 @@
       (if (call $err) (then (return (call $v_undef))))
       (let $abn i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
+      ;; GetArrayBufferMaxByteLengthOption(options): if options is an object with a defined maxByteLength,
+      ;; ToIndex it (RangeError for an excessive value) and require byteLength ≤ it — spec-required
+      ;; validation the ctor performs even though the resizable buffer itself isn't otherwise modelled.
+      (let $abopt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.or (call $is_object (local.get $abopt)) (i32.or (call $is_array (local.get $abopt)) (call $is_function (local.get $abopt))))
+        (then
+          (let $abmbl i64 (call $get_prop (local.get $abopt) (call $mk_str (cstring "maxByteLength"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.eqz (call $is_undefined (local.get $abmbl)))
+            (then
+              (let $abmax i32 (call $to_index (local.get $abmbl)))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.gt_s (local.get $abn) (local.get $abmax))
+                (then (call $throw_type (cstring "RangeError") (cstring "ArrayBuffer byteLength exceeds maxByteLength")) (return (call $v_undef))))))))
       (let $abd i32 (call $heap_alloc (i32.add (local.get $abn) (i32.const 8))))
       (call $ta_zero (local.get $abd) (local.get $abn))
       (let $abo i32 (call $obj_new (i32.const 4)))
