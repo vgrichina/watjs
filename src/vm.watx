@@ -439,7 +439,8 @@
         (call $lex_init) (call $next_token)
         (call $vm_c_expr (local.get $code))
         (call $set_src (local.get $tssrc) (local.get $tslen)) (call $cursor_restore (local.get $tscur))
-        (call $vm_emit_op (local.get $code) (i32.const 2))  ;; ADD (concat with ToString)
+        (call $vm_emit_op (local.get $code) (i32.const 115))  ;; TOSTR: template substitution is ToString (string-hint), NOT `+`/default-hint
+        (call $vm_emit_op (local.get $code) (i32.const 2))  ;; ADD (string + string → concat)
         (set! $ti (i32.add (local.get $ti) (i32.const 1)))  ;; past }
         (set! $tseg (local.get $ti)))  ;; next segment starts after }
       (else
@@ -4835,9 +4836,22 @@
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (let $tv i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
-        (if (call $is_bigint (local.get $tv))
+        ;; ToNumber: an object arg ToPrimitive(number)s first, so a BigInt-wrapper (or any object whose
+        ;; valueOf/@@toPrimitive yields a BigInt) is rejected — not silently unboxed to a Number by to_num.
+        (let $tp i64 (local.get $tv))
+        (if (i32.or (call $is_object (local.get $tv)) (i32.or (call $is_array (local.get $tv)) (call $is_function (local.get $tv))))
+          (then (set! $tp (call $to_primitive_h (local.get $tv) (i32.const 1))) (if (call $err) (then (br $disp)))))
+        (if (call $is_bigint (local.get $tp))
           (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (br $disp)))
-        (i64.store (i32.add (local.get $stack) (local.get $t)) (call $num (call $to_num (local.get $tv))))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (call $num (call $to_num (local.get $tp))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 115))  ;; TOSTR (in place) — ToString: string-hint ToPrimitive for objects; TypeError for a Symbol. Used by template substitution (which is ToString, not `+`).
+      (then
+        (let $tst i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $tsv i64 (i64.load (i32.add (local.get $stack) (local.get $tst))))
+        (if (call $is_symbol (local.get $tsv))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (br $disp)))
+        (i64.store (i32.add (local.get $stack) (local.get $tst)) (call $mk_str (call $to_str (local.get $tsv))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 97))  ;; TONUMERIC (in place) — ToNumeric: BigInt stays BigInt, else ToNumber
       (then
