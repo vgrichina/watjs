@@ -4490,11 +4490,17 @@
         (call $mk_str (call $str_concat (cstring "bound ") (local.get $bnamestr))) (i32.const 4))
       ;; bound .length = max(0, ToIntegerOrInfinity(target.length) − boundArgsCount), as f64 so it can be
       ;; Infinity or exceed i32 range. Stored as a {C} own "length" prop (read by get_prop before @8).
-      (let $btlenf f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length")))))
+      ;; spec: L = 0 unless target's "length" is a NUMBER; then max(0, ToIntegerOrInfinity(len) − argc).
+      ;; A non-Number length (e.g. a Symbol) is IGNORED, not coerced (to_num would throw on a Symbol).
+      (let $btlenv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))
       (if (call $err) (then (return (call $v_undef))))
-      (let $btint f64 (if f64 (f64.ne (local.get $btlenf) (local.get $btlenf)) (then (f64.const 0)) (else (f64.trunc (local.get $btlenf)))))  ;; ToIntegerOrInfinity (NaN→0; ±Inf preserved by trunc)
-      (let $bnpf f64 (f64.sub (local.get $btint) (f64.convert_i32_s (local.get $bargc))))
-      (if (f64.le (local.get $bnpf) (f64.const 0)) (then (set! $bnpf (f64.const 0))))  ;; max(_, +0): also normalizes -0 → +0
+      (let $bnpf f64 (f64.const 0))
+      (if (call $is_number (local.get $btlenv))
+        (then
+          (let $btlenf f64 (call $tonum_raw (local.get $btlenv)))
+          (let $btint f64 (if f64 (f64.ne (local.get $btlenf) (local.get $btlenf)) (then (f64.const 0)) (else (f64.trunc (local.get $btlenf)))))  ;; ToIntegerOrInfinity (NaN→0; ±Inf preserved)
+          (set! $bnpf (f64.sub (local.get $btint) (f64.convert_i32_s (local.get $bargc))))
+          (if (f64.le (local.get $bnpf) (f64.const 0)) (then (set! $bnpf (f64.const 0))))))  ;; max(_, +0)
       (call $scope_define_attr (call $fn_props (local.get $bf)) (cstring "length") (call $num (local.get $bnpf)) (i32.const 4))
       (return (call $mk_fn (local.get $bf)))))
   ;; Object.prototype.propertyIsEnumerable(key) — this = the object
