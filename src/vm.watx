@@ -182,6 +182,21 @@
 (func $vm_stmt_pos (param $prevk i32) (result i32) (effects)
   (i32.or (i32.eqz (local.get $prevk)) (i32.or (i32.eq (local.get $prevk) (i32.const 17))
     (i32.or (i32.eq (local.get $prevk) (i32.const 18)) (i32.eq (local.get $prevk) (i32.const 21))))))
+;; AnnexB B.3.3: a `function NAME` in an IfStatement/loop single-statement clause
+;; position (e.g. `if(x) function f(){}` / `if(x); else function f(){}`) creates a
+;; VAR/global binding for NAME initialized to `undefined` at instantiation time; the
+;; function value is assigned only when the declaration is reached at runtime (which
+;; the ordinary decl-in-statement compilation handles via STOREVAR up the chain).
+;; Cursor at 'function'. Emit DEFVAR(name); skip the whole decl (cursor left at '}').
+(func $vm_hoist_clause_fn (param $code i32) (effects)
+  (call $look_save)
+  (call $next_token)  ;; past 'function'
+  (if (i32.eq (call $tok_kind) (i32.const 12)) (then (call $next_token)))  ;; '*' (generator)
+  (if (i32.eq (call $tok_kind) (i32.const 3))
+    (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))))  ;; DEFVAR NAME = undefined-if-absent
+  (call $look_restore)  ;; back to 'function'
+  (call $hoist_skip_fn))  ;; skip the whole decl body
+
 ;; Scan the upcoming body for statement-position `function NAME` declarations at
 ;; depth==decldepth, compile each hoisted (CLOSURE+STOREVAR) and record its pos.
 ;; decldepth=1 for a function body (cursor at '{'); 0 for the program top level.
@@ -189,26 +204,38 @@
   (let $start i32 (call $cursor_save))
   (let $depth i32 (i32.const 0))
   (let $prevk i32 (i32.const 0))
+  (let $prevelse i32 (i32.const 0))  ;; previous significant token was the `else` keyword
   (block $he (loop $hl
     (let $k i32 (call $tok_kind))
     (br_if $he (i32.eqz (local.get $k)))  ;; EOF
     (if (i32.or (i32.eq (local.get $k) (i32.const 17)) (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.eq (local.get $k) (i32.const 19))))
-      (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $prevk (local.get $k)) (call $next_token) (br $hl)))
+      (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $prevk (local.get $k)) (set! $prevelse (i32.const 0)) (call $next_token) (br $hl)))
     (if (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.eq (local.get $k) (i32.const 20))))
       (then (set! $depth (i32.sub (local.get $depth) (i32.const 1)))
             (br_if $he (i32.lt_s (local.get $depth) (local.get $decldepth)))  ;; body closed
-            (set! $prevk (local.get $k)) (call $next_token) (br $hl)))
+            (set! $prevk (local.get $k)) (set! $prevelse (i32.const 0)) (call $next_token) (br $hl)))
     (if (i32.and (i32.eq (local.get $depth) (local.get $decldepth))
-          (i32.and (i32.eq (local.get $k) (i32.const 3))
-            (i32.and (call $tok_is_kw (cstring "function")) (call $vm_stmt_pos (local.get $prevk)))))
+          (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function"))))
       (then
-        (call $vm_hoist_record (call $pos))
-        (let $fnm i32 (call $vm_c_function (local.get $code)))  ;; emits PUSH fn (consumes the whole decl)
-        (if (local.get $fnm)
-          (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fnm)))  ;; STOREVAR
-          (else (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP (anonymous — shouldn't happen for a decl)
-        (set! $prevk (i32.const 21))
-        (br $hl)))
+        (if (call $vm_stmt_pos (local.get $prevk))
+          (then  ;; genuine statement-position declaration → value-hoist
+            (call $vm_hoist_record (call $pos))
+            (let $fnm i32 (call $vm_c_function (local.get $code)))  ;; emits PUSH fn (consumes the whole decl)
+            (if (local.get $fnm)
+              (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fnm)))  ;; STOREVAR
+              (else (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP (anonymous — shouldn't happen for a decl)
+            (set! $prevk (i32.const 21)) (set! $prevelse (i32.const 0))
+            (br $hl))
+          (else  ;; AnnexB clause position (`if(x) function f`, `else function f`) → var binding = undefined
+            (if (i32.or (i32.eq (local.get $prevk) (i32.const 16)) (local.get $prevelse))
+              (then
+                (call $vm_hoist_clause_fn (local.get $code))
+                ;; clause_fn leaves the cursor ON the fn body's '}', whose matching '{' was consumed
+                ;; internally — advance past it so the loop doesn't mis-decrement $depth (which would
+                ;; look like the body closed and abort hoisting of any following sibling declarations).
+                (call $next_token) (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0))
+                (br $hl)))))))
+    (set! $prevelse (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "else"))))
     (set! $prevk (local.get $k)) (call $next_token) (br $hl)))
   (call $cursor_restore (local.get $start)))
 ;; skip a `function`/`function*` NAME (params){body} declaration without emitting
@@ -3782,11 +3809,15 @@
 ;; just skip its body. $pd = paren/bracket depth, $prevk = previous token kind.
 (func $vm_hoist (param $code i32) (effects)
   (let $pd i32 (i32.const 0))
+  (let $bd i32 (i32.const 0))  ;; brace depth (separate from pd; gates AnnexB clause-fn hoisting to the true top level)
   (let $prevk i32 (i32.const 0))
+  (let $prevelse i32 (i32.const 0))  ;; previous significant token was the `else` keyword
   (call $next_token)
   (block $done (loop $scan
     (let $k i32 (call $tok_kind))
     (br_if $done (i32.eq (local.get $k) (i32.const 0)))
+    (if (i32.eq (local.get $k) (i32.const 17)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1)))))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 18)) (i32.gt_s (local.get $bd) (i32.const 0))) (then (set! $bd (i32.sub (local.get $bd) (i32.const 1)))))
     (if (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.eq (local.get $k) (i32.const 19)))
       (then (set! $pd (i32.add (local.get $pd) (i32.const 1)))))
     (if (i32.and (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.eq (local.get $k) (i32.const 20))) (i32.gt_s (local.get $pd) (i32.const 0)))
@@ -3795,15 +3826,20 @@
       (then
         (if (call $tok_is_kw (cstring "function"))
           (then
-            (if (i32.and (i32.eqz (local.get $pd))
-                  (i32.or (i32.eqz (local.get $prevk)) (i32.or (i32.eq (local.get $prevk) (i32.const 21)) (i32.or (i32.eq (local.get $prevk) (i32.const 17)) (i32.eq (local.get $prevk) (i32.const 18))))))
+            (if (i32.and (i32.eqz (local.get $pd)) (call $vm_stmt_pos (local.get $prevk)))
               (then  ;; declaration → compile + bind here (cursor ends at next statement)
                 (let $hfnm i32 (call $vm_c_function (local.get $code)))
                 (if (local.get $hfnm)
                   (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $hfnm)))
                   (else (call $vm_emit_op (local.get $code) (i32.const 11))))
-                (set! $prevk (i32.const 18)))
-              (else (call $hoist_skip_fn)))  ;; expression → skip body (cursor at '}')
+                (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0)))
+              (else
+                (if (i32.and (i32.eqz (local.get $bd)) (i32.and (i32.eqz (local.get $pd)) (i32.or (i32.eq (local.get $prevk) (i32.const 16)) (local.get $prevelse))))
+                  (then (call $vm_hoist_clause_fn (local.get $code)))  ;; AnnexB clause fn at true top level → DEFVAR NAME + skip
+                  (else (call $hoist_skip_fn)))  ;; expression / block-interior clause fn → skip body (cursor at '}')
+                ;; both skip paths leave the cursor ON the fn body's '}', whose matching '{' was consumed
+                ;; internally (never seen by this loop) — so advance past it, else the loop mis-decrements $bd.
+                (call $next_token) (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0))))
             (br $scan)))
         (if (call $tok_is_kw (cstring "var"))
           (then
@@ -3813,6 +3849,7 @@
               ;; so a `var X` hoist never clobbers an already-hoisted `function X` (or an
               ;; earlier var). STOREVAR (unconditional) overwrote the function with undefined.
               (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))))))))
+    (set! $prevelse (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "else"))))
     (set! $prevk (local.get $k))
     (call $next_token)
     (br $scan))))
