@@ -636,7 +636,16 @@
   (i32.store (i32.const 432) (i32.const 0))
   (if (call $is_function (local.get $rep))
     (then (i64.store (i32.const 424) (local.get $rep)))
-    (else (if (call $is_array (local.get $rep)) (then (i32.store (i32.const 432) (call $jstr_plist (local.get $rep)))))))
+    (else
+      ;; IsArray sees through Proxies (spec IsArray recurses to [[ProxyTarget]]); a Proxy wrapping an
+      ;; array is an array replacer. Unwrap to the target array to build the property list.
+      (let $jrep i64 (local.get $rep))
+      (block $jpe (loop $jpl
+        (br_if $jpe (i32.eqz (call $is_proxy (local.get $jrep))))
+        (set! $jrep (call $proxy_target (local.get $jrep)))
+        (if (call $is_null (local.get $jrep)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform 'IsArray' on a proxy that has been revoked")) (return (i32.const 0))))
+        (br $jpl)))
+      (if (call $is_array (local.get $jrep)) (then (i32.store (i32.const 432) (call $jstr_plist (local.get $jrep)))))))
   (i32.store (i32.const 416) (call $jstr_gap (local.get $sp)))
   (i32.store (i32.const 436) (call $heap_alloc (i32.const 4096)))
   (i32.store (i32.const 440) (i32.const 0))
