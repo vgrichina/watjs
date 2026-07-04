@@ -2047,7 +2047,9 @@
                 (then (call $throw_type (cstring "RangeError") (cstring "start offset is outside the bounds of the buffer")) (return (call $v_undef))))
               (if (local.get $sahaslen)
                 (then
-                  (if (i32.gt_s (i32.add (local.get $boff) (i32.mul (local.get $saexlen) (local.get $bpe))) (local.get $ablen))
+                  ;; boff + length*bpe > byteLength — in i64: length (ToIndex-capped 2^31-1) * bpe overflows i32
+                  ;; → the check would pass and build an out-of-bounds view (new Uint32Array(buf16,8,1e9)).
+                  (if (i64.gt_s (i64.add (i64.extend_i32_s (local.get $boff)) (i64.mul (i64.extend_i32_s (local.get $saexlen)) (i64.extend_i32_s (local.get $bpe)))) (i64.extend_i32_s (local.get $ablen)))
                     (then (call $throw_type (cstring "RangeError") (cstring "length is outside the bounds of the buffer")) (return (call $v_undef))))
                   (set! $len (local.get $saexlen)))
                 (else
