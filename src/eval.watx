@@ -4980,15 +4980,9 @@
       (let $frthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))  ;; mapfn thisArg
       (let $frmapped i32 (i32.const 0))  ;; iterator branch applies mapfn inline (to close on throw)
       (let $fra i32 (call $arr_new (i32.const 4)))
-      (if (call $is_array (local.get $frs))
-        (then
-          (let $frp i32 (call $val_payload (local.get $frs)))
-          (let $fri i32 (i32.const 0))
-          (block $fre (loop $frl
-            (br_if $fre (i32.ge_s (local.get $fri) (call $arr_len (local.get $frp))))
-            (call $arr_push (local.get $fra) (call $arr_get (local.get $frp) (local.get $fri)))
-            (set! $fri (i32.add (local.get $fri) (i32.const 1)))
-            (br $frl)))))
+      ;; a real array is ITERABLE (Array.prototype[@@iterator]); Array.from must use the iterator
+      ;; (fresh Get per element, so a mapFn that mutates the source mid-iteration is observed, and an
+      ;; overridden @@iterator is honored) rather than snapshotting — it falls into the is_object branch.
       (if (call $is_string (local.get $frs))
         (then
           (let $frsp i32 (call $val_payload (local.get $frs)))
@@ -4998,7 +4992,7 @@
             (call $arr_push (local.get $fra) (call $str_char_at (local.get $frsp) (local.get $frj)))
             (set! $frj (i32.add (local.get $frj) (i32.const 1)))
             (br $frsl)))))
-      (if (call $is_object (local.get $frs))
+      (if (i32.or (call $is_object (local.get $frs)) (call $is_array (local.get $frs)))
         (then
           ;; resolve an iterator: @@iterator() if present, else the object itself
           (let $frit i64 (local.get $frs))
@@ -8754,6 +8748,10 @@
         (if (call $is_null (local.get $iax))  ;; revoked proxy → [[IsArray]] throws
           (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform 'IsArray' on a proxy that has been revoked")) (return (call $v_undef))))
         (br $ial)))
+      ;; Array.prototype is itself an Array exotic object (spec) but is modelled as a plain object
+      ;; (reg 160), so is_array is false for it — recognize it explicitly.
+      (if (call $is_object (local.get $iax))
+        (then (if (i32.eq (call $val_payload (local.get $iax)) (i32.load (i32.const 160))) (then (return (call $v_true))))))
       (return (call $mk_bool (call $is_array (local.get $iax))))))
   (if (i32.eq (local.get $id) (i32.const 84))  ;; Number.isNaN(x) — no coercion
     (then
