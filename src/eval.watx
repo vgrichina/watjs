@@ -4143,6 +4143,16 @@
       (call $scope_define (local.get $norm) (cstring "writable") (call $mk_bool (i32.and (local.get $qHasWr) (call $truthy (call $get_prop (local.get $raw) (call $mk_str (cstring "writable")))))))))
   (call $scope_define (local.get $norm) (cstring "enumerable") (call $mk_bool (call $truthy (call $get_prop (local.get $raw) (call $mk_str (cstring "enumerable"))))))
   (call $scope_define (local.get $norm) (cstring "configurable") (call $mk_bool (local.get $qConf)))
+  ;; steps 17-18: IsCompatiblePropertyDescriptor(extensible, resultDesc, targetDesc). When the target
+  ;; property is non-configurable, the trap cannot report it as configurable (nor flip its enumerable
+  ;; flag) — the invariant that keeps a non-configurable property's shape stable through a Proxy.
+  (if (i32.eqz (call $is_undefined (local.get $tdesc)))
+    (then (if (i32.eqz (call $truthy (call $get_prop (local.get $tdesc) (call $mk_str (cstring "configurable")))))
+      (then
+        (if (local.get $qConf)
+          (then (call $throw_type (cstring "TypeError") (cstring "proxy getOwnPropertyDescriptor: cannot report a non-configurable property as configurable")) (return (call $v_undef))))
+        (if (i32.ne (call $truthy (call $get_prop (call $mk_obj (local.get $norm)) (call $mk_str (cstring "enumerable")))) (call $truthy (call $get_prop (local.get $tdesc) (call $mk_str (cstring "enumerable")))))
+          (then (call $throw_type (cstring "TypeError") (cstring "proxy getOwnPropertyDescriptor: cannot change the enumerable attribute of a non-configurable property")) (return (call $v_undef))))))))
   ;; step 19: resultDesc non-configurable
   (if (i32.eqz (local.get $qConf))
     (then
