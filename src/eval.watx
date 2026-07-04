@@ -3171,8 +3171,10 @@
     (then
       (let $ziterables i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $zopts i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-      (if (i32.eqz (i32.or (call $is_object (local.get $ziterables)) (i32.or (call $is_array (local.get $ziterables)) (call $is_string (local.get $ziterables)))))
-        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip iterables is not iterable")) (return (call $v_undef))))
+      ;; spec step 1: if iterables is not an Object, throw TypeError — a primitive (incl. a string) is
+      ;; NOT an Object (the GetIterator that follows is what a non-iterable object fails on).
+      (if (i32.eqz (i32.or (call $is_object (local.get $ziterables)) (i32.or (call $is_array (local.get $ziterables)) (i32.or (call $is_function (local.get $ziterables)) (call $is_proxy (local.get $ziterables))))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip iterables is not an object")) (return (call $v_undef))))
       (let $zmode i32 (i32.const 0))
       (let $zpad i32 (call $arr_new (i32.const 4)))
       (let $zpaditer i64 (call $v_undef))  ;; padding iterator (longest mode) — pulled lazily, count values
