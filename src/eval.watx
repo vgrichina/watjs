@@ -7479,7 +7479,7 @@
         (then
           (let $rsv i64 (i64.load (local.get $rsl)))
           (if (call $is_string (local.get $rsv))
-            (then (if (i32.gt_s (call $str_len (call $val_payload (local.get $rsv))) (i32.const 0)) (then (return (local.get $rsv))))))))
+            (then (if (i32.gt_s (call $str_len (call $val_payload (local.get $rsv))) (i32.const 0)) (then (return (call $mk_str (call $re_escape_source (call $val_payload (local.get $rsv)))))))))))  ;; EscapeRegExpPattern
       ;; not a RegExp: only RegExp.prototype itself yields "(?:)"; any other object throws
       (if (i32.eq (call $val_payload (local.get $thisv)) (i32.load (i32.const 324)))
         (then (return (call $mk_str (cstring "(?:)")))))

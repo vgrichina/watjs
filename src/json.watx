@@ -46,6 +46,31 @@
     (br $l)))
   (call $str_concat (local.get $out) (cstring "\"")))
 
+;; EscapeRegExpPattern: escape a RegExp source so that /S/ re-parses to the same pattern —
+;; an unescaped `/` → `\/`, and line terminators → their escapes. A `\` escapes the next char
+;; (copied verbatim, so `\/` stays `\/`). Used by RegExp.prototype.source.
+(func $re_escape_source (param $s i32) (result i32) (effects)
+  (let $n i32 (call $str_len (local.get $s)))
+  (let $out i32 (cstring ""))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
+    (if (i32.eq (local.get $c) (i32.const 92))  ;; '\' → keep it and the next char verbatim
+      (then
+        (let $b1 i32 (call $str_alloc (i32.const 1))) (call $str_set_byte (local.get $b1) (i32.const 0) (i32.const 92)) (set! $out (call $str_concat (local.get $out) (local.get $b1)))
+        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (if (i32.lt_s (local.get $i) (local.get $n))
+          (then (let $b2 i32 (call $str_alloc (i32.const 1))) (call $str_set_byte (local.get $b2) (i32.const 0) (call $str_byte (local.get $s) (local.get $i))) (set! $out (call $str_concat (local.get $out) (local.get $b2))) (set! $i (i32.add (local.get $i) (i32.const 1)))))
+        (br $l)))
+    (if (i32.eq (local.get $c) (i32.const 47)) (then (set! $out (call $str_concat (local.get $out) (cstring "\\/"))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))  ;; '/' → '\/'
+    (if (i32.eq (local.get $c) (i32.const 10)) (then (set! $out (call $str_concat (local.get $out) (cstring "\\n"))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))  ;; LF
+    (if (i32.eq (local.get $c) (i32.const 13)) (then (set! $out (call $str_concat (local.get $out) (cstring "\\r"))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))  ;; CR
+    (let $bc i32 (call $str_alloc (i32.const 1))) (call $str_set_byte (local.get $bc) (i32.const 0) (local.get $c)) (set! $out (call $str_concat (local.get $out) (local.get $bc)))
+    (set! $i (i32.add (local.get $i) (i32.const 1)))
+    (br $l)))
+  (local.get $out))
+
 ;; serialize value → heap Str ptr, or 0 for undefined/function (skip / "null").
 (func $json_str (param $v i64) (result i32) (effects)
   (if (call $is_number (local.get $v))
