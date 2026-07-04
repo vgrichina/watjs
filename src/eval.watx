@@ -6958,6 +6958,24 @@
   ;; --- string2 methods (this = string): 60 split,61 trim,62 repeat,63 includes,64 startsWith,65 endsWith,66 padStart,67 padEnd,68 at ---
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 60)) (i32.le_s (local.get $id) (i32.const 68)))
     (then
+      ;; split (60): the @@split protocol is resolved on the RAW receiver BEFORE ToString(this) — spec
+      ;; RequireObjectCoercible(O) → GetMethod(sep,@@split) → Call(splitter, sep, «O, limit»); ToString(O)
+      ;; only on the fall-through. Passing O (not the coerced string) also matters for a custom @@split.
+      (if (i32.eq (local.get $id) (i32.const 60))
+        (then
+          (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+            (then (call $throw_type (cstring "TypeError") (cstring "String.prototype.split called on null or undefined")) (return (call $v_undef))))
+          (let $spa0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (if (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (i32.or (call $is_undefined (local.get $spa0)) (call $is_null (local.get $spa0)))))
+            (then
+              (let $spm0 i64 (call $get_prop (local.get $spa0) (call $mk_str (cstring "@@split"))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (call $is_function (local.get $spm0))
+                (then
+                  (let $spa i32 (call $heap_alloc (i32.const 16)))
+                  (i64.store (local.get $spa) (local.get $thisv))  ;; O (raw receiver), NOT ToString(O)
+                  (i64.store (i32.add (local.get $spa) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+                  (return (call $call_val (local.get $spm0) (i32.const 2) (local.get $spa) (local.get $spa0)))))))))
       (let $s i32 (call $to_str (local.get $thisv)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       ;; includes/startsWith/endsWith reject a RegExp search argument (IsRegExp → TypeError);
@@ -7010,18 +7028,7 @@
             (then (let $r0 i32 (call $arr_new (i32.const 2))) (call $arr_push (local.get $r0) (call $mk_str (local.get $s)))
               (call $split_apply_limit (local.get $r0) (local.get $argv) (local.get $argc))  ;; limit 0 → [] even for undefined separator
               (return (call $mk_arr (local.get $r0)))))
-          ;; @@split protocol: a separator with a @@split method handles split itself
-          ;; (covers RegExp.prototype[@@split] for a regex separator + custom @@split)
-          (if (i32.eqz (call $is_null (local.get $a0)))
-            (then
-              (let $spm i64 (call $get_prop (local.get $a0) (call $mk_str (cstring "@@split"))))
-              (if (call $err) (then (return (call $v_undef))))
-              (if (call $is_function (local.get $spm))
-                (then
-                  (let $spargs i32 (call $heap_alloc (i32.const 16)))
-                  (i64.store (local.get $spargs) (call $mk_str (local.get $s)))
-                  (i64.store (i32.add (local.get $spargs) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
-                  (return (call $call_val (local.get $spm) (i32.const 2) (local.get $spargs) (local.get $a0)))))))
+          ;; (@@split delegation was already resolved on the raw receiver before ToString above.)
           ;; ToUint32(limit) NOW (spec step 4) — before ToString(separator) below (step 5), so a
           ;; throwing limit wins over a throwing separator (limit-touint32-error.js).
           (let $shas i32 (i32.const 0))
