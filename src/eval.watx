@@ -4468,6 +4468,10 @@
           (if (call $err) (then (return (call $v_undef))))
           (set! $n (call $to_int_idx (local.get $alen)))
           (if (i32.lt_s (local.get $n) (i32.const 0)) (then (set! $n (i32.const 0))))
+          ;; an excessive arg count would overflow n*8 (i32) and/or exhaust the 32 MB memory → RangeError
+          ;; instead of an OOB trap. 2^20 args is far beyond any real call.
+          (if (i32.gt_s (local.get $n) (i32.const 1048576))
+            (then (call $throw_type (cstring "RangeError") (cstring "argument list too large")) (return (call $v_undef))))
           (set! $buf (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $n) (i32.const 0)) (then (local.get $n)) (else (i32.const 1))) (i32.const 8))))
           (let $i i32 (i32.const 0))
           (block $aae (loop $aal
@@ -6623,6 +6627,7 @@
       (if (call $err) (then (return (call $v_undef))))
       (set! $ran (call $to_int_idx (local.get $ralen)))
       (if (i32.lt_s (local.get $ran) (i32.const 0)) (then (set! $ran (i32.const 0))))
+      (if (i32.gt_s (local.get $ran) (i32.const 1048576)) (then (call $throw_type (cstring "RangeError") (cstring "argument list too large")) (return (call $v_undef))))
       (set! $rab (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $ran) (i32.const 0)) (then (local.get $ran)) (else (i32.const 1))) (i32.const 8))))
       (let $rai i32 (i32.const 0))
       (block $rae (loop $ral
@@ -6651,6 +6656,7 @@
       (if (call $err) (then (return (call $v_undef))))
       (set! $rcn (call $to_int_idx (local.get $rclen)))
       (if (i32.lt_s (local.get $rcn) (i32.const 0)) (then (set! $rcn (i32.const 0))))
+      (if (i32.gt_s (local.get $rcn) (i32.const 1048576)) (then (call $throw_type (cstring "RangeError") (cstring "argument list too large")) (return (call $v_undef))))
       (set! $rcbuf (call $heap_alloc (i32.mul (if i32 (i32.gt_s (local.get $rcn) (i32.const 0)) (then (local.get $rcn)) (else (i32.const 1))) (i32.const 8))))
       (let $rci i32 (i32.const 0))
       (block $rce (loop $rcl
