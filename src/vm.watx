@@ -3595,31 +3595,47 @@
               (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))
                 (then
                   (call $next_token)  ;; consume var/let/const
-                  (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))  ;; [..]/{..} destructuring pattern
-                    (then
-                      (let $fpatcur i32 (call $cursor_save))
-                      (let $fpsd i32 (i32.const 0))
-                      (block $fpske (loop $fpskl
-                        (let $fpk i32 (call $tok_kind))
-                        (br_if $fpske (i32.eq (local.get $fpk) (i32.const 0)))
-                        (if (i32.or (i32.eq (local.get $fpk) (i32.const 19)) (i32.or (i32.eq (local.get $fpk) (i32.const 17)) (i32.eq (local.get $fpk) (i32.const 15)))) (then (set! $fpsd (i32.add (local.get $fpsd) (i32.const 1)))))
-                        (if (i32.or (i32.eq (local.get $fpk) (i32.const 20)) (i32.or (i32.eq (local.get $fpk) (i32.const 18)) (i32.eq (local.get $fpk) (i32.const 16))))
-                          (then (set! $fpsd (i32.sub (local.get $fpsd) (i32.const 1))) (if (i32.eqz (local.get $fpsd)) (then (call $next_token) (br $fpske)))))
-                        (call $next_token) (br $fpskl)))
-                      (call $next_token)  ;; consume '='
-                      (call $vm_c_expr (local.get $code))
-                      (let $fvtmp i32 (call $vm_tmpname))
-                      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fvtmp))
-                      (let $fvpost i32 (call $cursor_save))
-                      (call $cursor_restore (local.get $fpatcur))
-                      (call $vm_c_destructure_param (local.get $code) (local.get $fvtmp))
-                      (call $cursor_restore (local.get $fvpost)))
-                    (else
-                      (let $fin i32 (call $ident_name)) (call $next_token) (call $next_token)  ;; NAME =
-                      (if (i32.and (local.get $forlex) (i32.ne (call $tok_kind) (i32.const 21))) (then (set! $forletname (local.get $fin))))  ;; single-declarator let/const head → eligible for per-iteration copy (guard: only if this is the sole declarator is checked below by tok after RHS)
-                      (call $vm_c_expr (local.get $code))
-                      (call $vm_emit_op (local.get $code) (if i32 (local.get $forlex) (then (i32.const 114)) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $fin))  ;; let/const → LEXDEFINIT (loop scope); var → DEFINIT (var scope)
-                      (if (i32.eq (call $tok_kind) (i32.const 22)) (then (set! $forletname (i32.const 0)))))))  ;; a comma → multiple declarators: fall back to isolation only (no per-iter copy)
+                  ;; parse the BindingList: one-or-more comma-separated declarators, each a simple
+                  ;; NAME [= init] or a [pattern]/{pattern} = init. A multi-declarator head disables the
+                  ;; single-name per-iteration copy (isolation only).
+                  (let $fmulti i32 (i32.const 0))
+                  (block $fdecls (loop $fdecll
+                    (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))  ;; [..]/{..} destructuring pattern
+                      (then
+                        (let $fpatcur i32 (call $cursor_save))
+                        (let $fpsd i32 (i32.const 0))
+                        (block $fpske (loop $fpskl
+                          (let $fpk i32 (call $tok_kind))
+                          (br_if $fpske (i32.eq (local.get $fpk) (i32.const 0)))
+                          (if (i32.or (i32.eq (local.get $fpk) (i32.const 19)) (i32.or (i32.eq (local.get $fpk) (i32.const 17)) (i32.eq (local.get $fpk) (i32.const 15)))) (then (set! $fpsd (i32.add (local.get $fpsd) (i32.const 1)))))
+                          (if (i32.or (i32.eq (local.get $fpk) (i32.const 20)) (i32.or (i32.eq (local.get $fpk) (i32.const 18)) (i32.eq (local.get $fpk) (i32.const 16))))
+                            (then (set! $fpsd (i32.sub (local.get $fpsd) (i32.const 1))) (if (i32.eqz (local.get $fpsd)) (then (call $next_token) (br $fpske)))))
+                          (call $next_token) (br $fpskl)))
+                        (call $next_token)  ;; consume '='
+                        (call $vm_c_expr (local.get $code))
+                        (let $fvtmp i32 (call $vm_tmpname))
+                        (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fvtmp))
+                        (let $fvpost i32 (call $cursor_save))
+                        (call $cursor_restore (local.get $fpatcur))
+                        (call $vm_c_destructure_param (local.get $code) (local.get $fvtmp))
+                        (call $cursor_restore (local.get $fvpost))
+                        (set! $forletname (i32.const 0)))  ;; destructuring → no per-iteration copy
+                      (else
+                        (let $fin i32 (call $ident_name)) (call $next_token)  ;; NAME
+                        (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' initializer present
+                          (then
+                            (call $next_token)  ;; consume '='
+                            (if (i32.and (i32.eqz (local.get $fmulti)) (local.get $forlex)) (then (set! $forletname (local.get $fin))))  ;; sole let/const declarator → eligible for the per-iteration copy
+                            (call $vm_c_expr (local.get $code))
+                            (call $vm_emit_op (local.get $code) (if i32 (local.get $forlex) (then (i32.const 114)) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $fin)))  ;; let/const → LEXDEFINIT (loop scope); var → DEFINIT (var scope)
+                          (else  ;; no initializer: let/const bind undefined in the loop scope; var → DEFVAR
+                            (if (local.get $forlex)
+                              (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $fin)))
+                              (else (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (local.get $fin))))))))  ;; var no-init → DEFVAR (create-if-absent; a sibling `var b` in a multi-declarator head is not hoisted by vm_hoist's single-declarator scan)
+                    (br_if $fdecls (i32.ne (call $tok_kind) (i32.const 22)))  ;; not ',' → BindingList done
+                    (call $next_token)  ;; consume ','
+                    (set! $fmulti (i32.const 1)) (set! $forletname (i32.const 0))  ;; multiple declarators → isolation only
+                    (br $fdecll))))
                 (else
                   (call $look_save)
                   (let $fin2 i32 (call $ident_name)) (call $next_token)
