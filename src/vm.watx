@@ -3517,6 +3517,20 @@
           (call $cursor_restore (local.get $ofdetect))  ;; not for-of → regular for
           (let $flsave i32 (call $vm_loop_enter))
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
+          ;; a `for (let/const …; …; …)` head binds in a loop scope so it does not leak/clobber the
+          ;; enclosing binding. Push it + kind-2, then raise BOTH the loop's finally-base (reg 360, used
+          ;; by plain break/continue) AND the loop's LABEL finally-base (@20, used by labeled break/
+          ;; continue) above the kind-2 — so continue stays in the loop scope, and break/labeled-break
+          ;; pop it exactly once via the explicit LEAVEWITH at the break-target (not double via finally).
+          ;; return (finally base 0) still pops it. (Per-iteration fresh bindings for closures = TODO.)
+          (let $forlex i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))))
+          (let $forletname i32 (i32.const 0))  ;; the single head let/const name → per-iteration fresh binding (0 = none / multi / destructuring: isolation only)
+          (if (local.get $forlex)
+            (then
+              (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE 0
+              (call $vm_finally_push_scope)
+              (i32.store (i32.const 360) (i32.load (i32.const 320)))  ;; raise plain break/continue base
+              (if (i32.load (i32.const 248)) (then (i32.store (i32.add (i32.load (i32.const 248)) (i32.const 20)) (i32.load (i32.const 320)))))))  ;; raise this loop's label base too
           ;; init (consumes up to ';')
           (if (i32.ne (call $tok_kind) (i32.const 21))
             (then
@@ -3544,8 +3558,10 @@
                       (call $cursor_restore (local.get $fvpost)))
                     (else
                       (let $fin i32 (call $ident_name)) (call $next_token) (call $next_token)  ;; NAME =
+                      (if (i32.and (local.get $forlex) (i32.ne (call $tok_kind) (i32.const 21))) (then (set! $forletname (local.get $fin))))  ;; single-declarator let/const head → eligible for per-iteration copy (guard: only if this is the sole declarator is checked below by tok after RHS)
                       (call $vm_c_expr (local.get $code))
-                      (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $fin)))))  ;; DEFINIT: a `var/let/const` init binds in the CURRENT scope (STOREVAR would walk up and clobber an outer/global)
+                      (call $vm_emit_op (local.get $code) (if i32 (local.get $forlex) (then (i32.const 114)) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $fin))  ;; let/const → LEXDEFINIT (loop scope); var → DEFINIT (var scope)
+                      (if (i32.eq (call $tok_kind) (i32.const 22)) (then (set! $forletname (i32.const 0)))))))  ;; a comma → multiple declarators: fall back to isolation only (no per-iter copy)
                 (else
                   (call $look_save)
                   (let $fin2 i32 (call $ident_name)) (call $next_token)
@@ -3583,6 +3599,16 @@
           (let $fpost i32 (call $cursor_save))
           ;; continue → the update clause (compiled next)
           (call $vm_patch_conts (local.get $code) (call $vm_emit_cursor))
+          ;; CreatePerIterationEnvironment: a `for (let i…)` gets a FRESH binding each iteration so
+          ;; body closures capture per-iteration values. Both normal fall-through and `continue` reach
+          ;; here (before the update), so: copy i forward → pop the current loop scope → push a fresh one
+          ;; → rebind i; the update then runs in (and mutates) the fresh scope. Single-declarator only.
+          (if (local.get $forletname)
+            (then
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $forletname))  ;; LOADVAR i → [v]
+              (call $vm_emit_op (local.get $code) (i32.const 94))  ;; LEAVEWITH (pop current iteration's scope; body closures keep it)
+              (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE 0 (fresh)
+              (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $forletname))))  ;; LEXDEFINIT i = v (copied forward)
           ;; re-scan + compile the update, then loop
           (call $cursor_restore (local.get $fupd))
           (if (i32.ne (call $tok_kind) (i32.const 16))
@@ -3590,6 +3616,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $ftop))  ;; JMP top
           (call $vm_patch (local.get $code) (local.get $fpend))
           (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → end
+          (if (local.get $forlex) (then (call $vm_finally_pop) (call $vm_emit_op (local.get $code) (i32.const 94))))  ;; pop the loop scope (normal end + break both land here)
           (call $cursor_restore (local.get $fpost))  ;; lexer resumes after the body
           (call $vm_loop_exit (local.get $flsave))
           (return)))
