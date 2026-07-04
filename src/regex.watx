@@ -717,8 +717,11 @@
       (then
         (let $cb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $g) (i32.const 1)) (i32.const 8))))
         (let $cs i32 (i32.load (local.get $cb)))
+        ;; ES2025 duplicate group names (same name in different alternatives): a group that CAPTURED
+        ;; wins; a non-capturing (undefined) same-name group must NOT overwrite it — only define
+        ;; undefined when the name isn't already present.
         (if (i32.lt_s (local.get $cs) (i32.const 0))
-          (then (call $scope_define (local.get $go) (local.get $nm) (call $v_undef)))
+          (then (if (i32.eqz (call $scope_find_local (local.get $go) (local.get $nm))) (then (call $scope_define (local.get $go) (local.get $nm) (call $v_undef)))))
           (else (call $scope_define (local.get $go) (local.get $nm) (call $mk_str (call $substr (local.get $sub) (i32.add (local.get $off) (local.get $cs)) (i32.sub (i32.load (i32.add (local.get $cb) (i32.const 4))) (local.get $cs)))))))))
     (set! $g (i32.add (local.get $g) (i32.const 1))) (br $gl)))
   (call $mk_obj (local.get $go)))
@@ -738,7 +741,7 @@
         (let $cb i32 (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $g) (i32.const 1)) (i32.const 8))))
         (let $cs i32 (i32.load (local.get $cb)))
         (if (i32.lt_s (local.get $cs) (i32.const 0))
-          (then (call $scope_define (local.get $go) (local.get $nm) (call $v_undef)))
+          (then (if (i32.eqz (call $scope_find_local (local.get $go) (local.get $nm))) (then (call $scope_define (local.get $go) (local.get $nm) (call $v_undef)))))  ;; duplicate name: a captured group wins over undefined
           (else
             (let $pr i32 (call $arr_new (i32.const 2)))
             (call $arr_push (local.get $pr) (call $num (f64.convert_i32_s (local.get $cs))))
@@ -748,8 +751,30 @@
   (call $mk_obj (local.get $go)))
 
 ;; match a quantified group: body [gstart,gend), then rest from qend. Count-based
+;; A non-quantified group (exactly once): try EACH alternative and, for each, match the CONTINUATION
+;; (the rest of the pattern from qend). This makes alternation a real backtracking point — e.g.
+;; `(a|ab)c` on "abc" must try `a` then, when `c` fails, retry `ab`. (re_match_alt alone returns only
+;; the first matching alternative, so `re_group_rep` committed to it and could not backtrack the choice.)
+(func $re_group_once (param $p i32) (param $plen i32) (param $gstart i32) (param $gend i32) (param $qend i32) (param $s i32) (param $slen i32) (param $spos i32) (param $gidx i32) (result i32) (effects)
+  (let $segstart i32 (local.get $gstart))
+  (block $e (loop $l
+    (let $segend i32 (call $re_find_pipe (local.get $p) (local.get $segstart) (local.get $gend)))
+    (let $me i32 (call $re_match (local.get $p) (local.get $segend) (local.get $segstart) (local.get $s) (local.get $slen) (local.get $spos)))  ;; this alternative
+    (if (i32.ge_s (local.get $me) (i32.const 0))
+      (then
+        (call $re_set_cap (local.get $gidx) (local.get $spos) (local.get $me))
+        (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (local.get $me)))  ;; continuation
+        (if (i32.ge_s (local.get $r) (i32.const 0)) (then (return (local.get $r))))))
+    (br_if $e (i32.ge_s (local.get $segend) (local.get $gend)))
+    (set! $segstart (i32.add (local.get $segend) (i32.const 1)))
+    (br $l)))
+  (i32.const -1))
+
 ;; variable-length repetition (greedy, backtracking on the rep count).
 (func $re_group_rep (param $p i32) (param $plen i32) (param $gstart i32) (param $gend i32) (param $qend i32) (param $min i32) (param $max i32) (param $s i32) (param $slen i32) (param $spos i32) (param $gidx i32) (result i32) (effects)
+  ;; exactly-once group → try each alternative against the continuation (real backtracking).
+  (if (i32.and (i32.eq (local.get $min) (i32.const 1)) (i32.eq (local.get $max) (i32.const 1)))
+    (then (return (call $re_group_once (local.get $p) (local.get $plen) (local.get $gstart) (local.get $gend) (local.get $qend) (local.get $s) (local.get $slen) (local.get $spos) (local.get $gidx)))))
   (let $positions i32 (call $heap_alloc (i32.const 1024)))
   (i32.store (local.get $positions) (local.get $spos))
   (let $count i32 (i32.const 0))
