@@ -7095,9 +7095,11 @@
           ;; empty string or count 0 → "" (any finite count of "" is "", no length cap)
           (if (i32.or (i32.eqz (call $str_len (local.get $s))) (i32.le_s (local.get $cnt) (i32.const 0)))
             (then (return (call $mk_str (cstring "")))))
-          ;; a non-empty result that would exceed the max string length → RangeError
-          (if (i32.ge_s (local.get $cnt) (i32.const 1073741824))
-            (then (call $throw_type (cstring "RangeError") (cstring "Invalid count value")) (return (call $v_undef))))
+          ;; a non-empty result whose LENGTH (count * strlen, in i64 to avoid overflow) would exceed the
+          ;; max string length → RangeError. Checking count alone missed e.g. "ab".repeat(1e9) = 2e9 chars
+          ;; (count < 2^30 but the result overflows the buffer → memory-access trap).
+          (if (i64.ge_s (i64.mul (i64.extend_i32_s (local.get $cnt)) (i64.extend_i32_s (call $str_len (local.get $s)))) (i64.const 1073741824))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid string length")) (return (call $v_undef))))
           (let $out i32 (cstring ""))
           (let $k i32 (i32.const 0))
           (block $re (loop $rl
