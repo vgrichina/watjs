@@ -24,4 +24,10 @@ if (typeof (1e-308).toExponential(15) !== "string") throw new Error("1e-308 toEx
 if ((1.5).toPrecision(3) !== "1.50") throw new Error("normal toPrecision");
 if ((0.1).toString() !== "0.1") throw new Error("normal toString round-trip");
 
+// toString(radix) for non-power-of-2 radixes on huge values must not trap (f64 remainder clamp).
+if (typeof (1e300).toString(36) !== "string" || (1e300).toString(36).length < 150) throw new Error("1e300 base36");
+if ((255).toString(36) !== "73") throw new Error("255 base36");
+if ((1000000).toString(36) !== "lfls") throw new Error("1e6 base36");
+if ((2147483647).toString(36) !== "zik0zj") throw new Error("2^31-1 base36");
+
 print("ok");

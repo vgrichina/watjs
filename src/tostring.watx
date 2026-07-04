@@ -158,7 +158,13 @@
   (block $e (loop $l
     (br_if $e (f64.le (local.get $ip) (f64.const 0)))
     (let $q f64 (f64.floor (f64.div (local.get $ip) (local.get $rf))))
-    (let $dig i32 (i32.trunc_f64_s (f64.sub (local.get $ip) (f64.mul (local.get $q) (local.get $rf)))))  ;; in [0,radix), safe
+    ;; remainder is exactly in [0,radix) for ip ≤ 2^53; above that f64 rounds div/mul so it can fall
+    ;; outside (for non-power-of-2 radixes) and an unclamped i32.trunc would TRAP ((1e300).toString(36)).
+    ;; Clamp to a valid digit — approximate above 2^53 (exact needs big-int), but never a trap.
+    (let $rem f64 (f64.sub (local.get $ip) (f64.mul (local.get $q) (local.get $rf))))
+    (if (f64.lt (local.get $rem) (f64.const 0)) (then (set! $rem (f64.const 0))))
+    (if (f64.ge (local.get $rem) (local.get $rf)) (then (set! $rem (f64.sub (local.get $rf) (f64.const 1)))))
+    (let $dig i32 (i32.trunc_f64_s (local.get $rem)))
     (set! $pos (i32.sub (local.get $pos) (i32.const 1)))
     (i32.store8 (i32.add (local.get $buf) (local.get $pos)) (if i32 (i32.lt_s (local.get $dig) (i32.const 10)) (then (i32.add (i32.const 48) (local.get $dig))) (else (i32.add (i32.const 87) (local.get $dig)))))
     (set! $ip (local.get $q))
