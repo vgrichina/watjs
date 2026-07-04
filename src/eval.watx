@@ -781,6 +781,21 @@
 (func $cdp_throw (param $target i64) (param $idx i32) (param $val i64) (effects)
   (if (call $is_array (local.get $target))
     (then (call $arr_set (call $val_payload (local.get $target)) (local.get $idx) (local.get $val)) (return)))
+  ;; a Proxy target: [[DefineOwnProperty]] must invoke the defineProperty trap (and propagate its
+  ;; throw) — route through Reflect.defineProperty (native 206), not the ordinary-object fast path.
+  (if (call $is_proxy (local.get $target))
+    (then
+      (let $cpd i64 (call $mk_obj (call $obj_new (i32.const 8))))
+      (call $set_prop (local.get $cpd) (call $mk_str (cstring "value")) (local.get $val))
+      (call $set_prop (local.get $cpd) (call $mk_str (cstring "writable")) (call $mk_bool (i32.const 1)))
+      (call $set_prop (local.get $cpd) (call $mk_str (cstring "enumerable")) (call $mk_bool (i32.const 1)))
+      (call $set_prop (local.get $cpd) (call $mk_str (cstring "configurable")) (call $mk_bool (i32.const 1)))
+      (let $cpb i32 (call $heap_alloc (i32.const 24)))
+      (i64.store (local.get $cpb) (local.get $target))
+      (i64.store (i32.add (local.get $cpb) (i32.const 8)) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $idx)))))
+      (i64.store (i32.add (local.get $cpb) (i32.const 16)) (local.get $cpd))
+      (drop (call $call_native (i32.const 206) (i32.const 3) (local.get $cpb) (call $v_undef)))
+      (return)))
   (if (i32.or (call $is_object (local.get $target)) (call $is_function (local.get $target)))
     (then
       (let $cdsc i32 (call $val_payload (local.get $target)))
