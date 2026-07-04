@@ -3479,6 +3479,17 @@
               (let $ofhloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catchIp placeholder
               (call $vm_emit_op (local.get $code) (cstring "@@ofexc"))  ;; catch var
               (call $vm_emit_op (local.get $code) (i32.const 0))  ;; runOnReturn=0 (iterator-close, not a finally)
+              ;; for (let/const x of E): each iteration gets a FRESH binding of x (block-scoped to the
+              ;; loop body) so body closures capture per-iteration values. Push a per-iteration scope INSIDE
+              ;; the handler (throw discards it via the handler's saved scope); kind-2 + raised bases so
+              ;; continue-converge/break-handler pop it explicitly and an OUTER labeled break unwinds it.
+              (let $ofperiter i32 (i32.and (local.get $ofdecl) (i32.and (i32.eqz (local.get $ofisvar)) (i32.eqz (local.get $ofpatcur)))))
+              (if (local.get $ofperiter)
+                (then
+                  (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE 0 (per-iteration)
+                  (call $vm_finally_push_scope)
+                  (i32.store (i32.const 360) (i32.load (i32.const 320)))  ;; plain break/continue base above the kind-2
+                  (if (i32.load (i32.const 248)) (then (i32.store (i32.add (i32.load (i32.const 248)) (i32.const 20)) (i32.load (i32.const 320)))))))  ;; labeled base too
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@ofval"))  ;; LOADVAR @@ofval → [val]
               (if (local.get $ofpatcur)
                 (then  ;; destructuring pattern: bind via vm_c_destructure_param
@@ -3491,11 +3502,13 @@
                   (i32.store (i32.const 676) (local.get $ofsm))
                   (call $cursor_restore (local.get $ofbody)))
                 (else (if (local.get $ofdecl)
-                        (then (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; DEFINIT: a `var/let/const` head binds in the CURRENT scope (else STOREVAR walks up and clobbers an outer/global of the same name)
+                        (then (call $vm_emit_op (local.get $code) (if i32 (local.get $ofperiter) (then (i32.const 114)) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; per-iter let/const → LEXDEFINIT (fresh scope); var → DEFINIT (var scope)
                         (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))))  ;; STOREVAR x: assignment-target head (`for (x of E)`)
               (call $vm_c_stmt (local.get $code))  ;; body
-              ;; normal + continue converge here: POPHANDLER then loop
-              (call $vm_patch_conts (local.get $code) (call $vm_emit_cursor))  ;; continue → POPHANDLER point
+              (if (local.get $ofperiter) (then (call $vm_finally_pop)))  ;; the per-iter kind-2 was for the body only
+              ;; normal + continue converge here: pop the per-iteration scope, POPHANDLER, then loop
+              (call $vm_patch_conts (local.get $code) (call $vm_emit_cursor))  ;; continue → here
+              (if (local.get $ofperiter) (then (call $vm_emit_op (local.get $code) (i32.const 94))))  ;; LEAVEWITH (pop per-iteration scope)
               (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER
               (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $oftop))  ;; JMP top
               ;; throw handler: exc bound to @@ofexc → IteratorClose, re-throw
@@ -3506,7 +3519,8 @@
               (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW (re-raise original)
               (call $vm_patch (local.get $code) (local.get $ofpend))  ;; done (normal exhaustion) → here (no IteratorClose)
               (let $ofskip i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → endAll (skip break-close)
-              (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → here: POPHANDLER + close
+              (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → here: pop per-iter scope, POPHANDLER + close
+              (if (local.get $ofperiter) (then (call $vm_emit_op (local.get $code) (i32.const 94))))  ;; LEAVEWITH (pop the per-iteration scope on break)
               (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER (remove for-of handler)
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; LOADVAR it
               (call $vm_emit_op (local.get $code) (i32.const 74))  ;; CLOSEITER (it.return() on break)
