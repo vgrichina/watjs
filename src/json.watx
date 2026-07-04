@@ -641,5 +641,6 @@
   (i32.store (i32.const 436) (call $heap_alloc (i32.const 4096)))
   (i32.store (i32.const 440) (i32.const 0))
   (let $w i32 (call $obj_new (i32.const 2)))
-  (call $set_prop (call $mk_obj (local.get $w)) (call $mk_str (cstring "")) (local.get $value))
-  (call $jstr_prop (call $mk_str (cstring "")) (call $mk_obj (local.get $w)) (cstring "")))
+  (let $jw i64 (call $mk_obj (local.get $w)))
+  (call $json_create_data_prop (local.get $jw) (cstring "") (local.get $value))  ;; CreateDataProperty, not [[Set]] (a Object.prototype[''] setter must not fire)
+  (call $jstr_prop (call $mk_str (cstring "")) (local.get $jw) (cstring "")))
