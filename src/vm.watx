@@ -1791,7 +1791,10 @@
   ;; generator: suspend after the param prologue (eager param eval per spec — defaults/
   ;; destructuring run when the generator is CALLED, before the body, throwing on call).
   (if (local.get $genf) (then (call $vm_emit_op (local.get $code) (i32.const 77))))  ;; GENPRO_SUSPEND
-  (if (i32.eq (call $tok_kind) (i32.const 17)) (then (call $vm_hoist_fns (local.get $code) (i32.const 1))))  ;; hoist `function NAME` decls (body is a '{...}' block)
+  (if (i32.eq (call $tok_kind) (i32.const 17))
+    (then
+      (call $vm_hoist_fns (local.get $code) (i32.const 1))  ;; hoist `function NAME` decls (body is a '{...}' block)
+      (i32.store (i32.const 856) (i32.const 1))))  ;; the immediate function-body block must NOT get its own lexical scope — the function scope already serves as it (else hoisted inner fn decls, which capture the function scope, can't see the body's let/const)
   ;; reg 672 = "compiling inside a generator body" — so `yield` is the yield-expression
   ;; only here; in sloppy non-generator code it is a plain identifier. Saved/restored
   ;; across this (possibly nested) function body.
@@ -2827,6 +2830,28 @@
   (i32.store (i32.const 680) (local.get $litstart)) (i32.store (i32.const 684) (call $vm_emit_cursor))  ;; record class-literal span [680,684] for name-inference (overwrites ctor's fnbody span)
   (i32.store (i32.const 388) (local.get $clssave)))  ;; restore enclosing strictness
 
+;; does the block starting at the current '{' contain a TOP-LEVEL (depth-1) lexical declaration
+;; (let/const/class)? If so it needs its own block scope. Scans without consuming (cursor restored).
+;; Over-reporting is safe (an empty extra scope); under-reporting would drop block scoping.
+(func $vm_block_has_lexical (result i32) (effects)
+  (let $sv i32 (call $cursor_save))
+  (call $next_token)  ;; past '{'
+  (let $depth i32 (i32.const 1))
+  (let $found i32 (i32.const 0))
+  (block $e (loop $l
+    (let $k i32 (call $tok_kind))
+    (br_if $e (i32.eq (local.get $k) (i32.const 0)))  ;; EOF
+    (if (i32.or (i32.eq (local.get $k) (i32.const 17)) (i32.or (i32.eq (local.get $k) (i32.const 19)) (i32.eq (local.get $k) (i32.const 15))))  ;; { [ (
+      (then (set! $depth (i32.add (local.get $depth) (i32.const 1)))))
+    (if (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.or (i32.eq (local.get $k) (i32.const 20)) (i32.eq (local.get $k) (i32.const 16))))  ;; } ] )
+      (then (set! $depth (i32.sub (local.get $depth) (i32.const 1))) (br_if $e (i32.eqz (local.get $depth)))))  ;; matching '}'
+    (if (i32.and (i32.eq (local.get $depth) (i32.const 1)) (i32.eq (local.get $k) (i32.const 3)))
+      (then (if (i32.or (call $tok_is_kw (cstring "let")) (i32.or (call $tok_is_kw (cstring "const")) (call $tok_is_kw (cstring "class"))))
+        (then (set! $found (i32.const 1)) (br $e)))))
+    (call $next_token) (br $l)))
+  (call $cursor_restore (local.get $sv))
+  (local.get $found))
+
 ;; statement compiler — emits bytecode (control flow via jumps, not re-scanning)
 (func $vm_c_stmt (param $code i32) (effects)
   ;; `with` is a reserved word in strict mode → early SyntaxError. Sloppy `with` is supported
@@ -2874,6 +2899,14 @@
   ;; block { ... }
   (if (i32.eq (call $tok_kind) (i32.const 17))
     (then
+      ;; a block with a top-level let/const/class needs its own lexical scope so those bindings
+      ;; don't clobber/leak to the enclosing scope. Push it (nameless ENTERSCOPE) + register a
+      ;; kind-2 scope-pop so break/continue/return/labeled-break through the block pop it too.
+      ;; the immediate function-body block is flagged (reg 856): don't give it its own scope.
+      (let $isfnbody i32 (i32.load (i32.const 856))) (i32.store (i32.const 856) (i32.const 0))
+      (let $blk i32 (if i32 (local.get $isfnbody) (then (i32.const 0)) (else (call $vm_block_has_lexical))))
+      (if (local.get $blk)
+        (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)))  ;; ENTERSCOPE 0
       (call $next_token)
       (block $be (loop $bl
         (br_if $be (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
@@ -2882,6 +2915,8 @@
         (call $vm_c_stmt (local.get $code))
         (br $bl)))
       (call $next_token)  ;; consume '}'
+      (if (local.get $blk)
+        (then (call $vm_finally_pop) (call $vm_emit_op (local.get $code) (i32.const 94))))  ;; LEAVEWITH (normal completion)
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 3))
     (then
@@ -2953,6 +2988,7 @@
       (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))
         (then
           (let $isconst i32 (call $tok_is_kw (cstring "const")))  ;; const → non-writable binding (reassign throws)
+          (let $isvar i32 (call $tok_is_kw (cstring "var")))      ;; var → hoists to the var scope; let/const bind block-scoped
           (call $next_token)
           (block $vd (loop $vl
             (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))  ;; [..]/{..} pattern = e
@@ -2986,8 +3022,12 @@
                 ;; name inference: `var f = function/arrow(){}` (anonymous literal) → f.name = "f"
                 (if (call $vm_is_anon_fn_def (local.get $afs))
                   (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $nm))))
-                (call $vm_emit_op (local.get $code) (if i32 (local.get $isconst) (then (i32.const 79)) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $nm)))  ;; DEFCONST (const) / DEFINIT (var/let): define in the CURRENT scope
-              (else (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (local.get $nm))))  ;; DEFVAR: `var NAME;` → undefined (hoist)
+                (call $vm_emit_op (local.get $code) (if i32 (local.get $isconst) (then (i32.const 79)) (else (if i32 (local.get $isvar) (then (i32.const 89)) (else (i32.const 114)))))) (call $vm_emit_op (local.get $code) (local.get $nm)))  ;; DEFCONST(const)/DEFINIT(var, var-scope)/LEXDEFINIT(let, block-scope)
+              (else  ;; no initializer
+                (if (local.get $isvar)
+                  (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (local.get $nm)))  ;; DEFVAR: `var NAME;` → undefined (hoist to var scope)
+                  (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+                        (call $vm_emit_op (local.get $code) (if i32 (local.get $isconst) (then (i32.const 79)) (else (i32.const 114)))) (call $vm_emit_op (local.get $code) (local.get $nm))))))  ;; `let NAME;` → undefined in the block scope
             (br_if $vd (i32.eqz (call $eat (i32.const 22))))  ;; ',' → another declarator
             (br $vl)))
           (drop (call $eat (i32.const 21)))
@@ -4974,12 +5014,13 @@
         (set! $scope (call $scope_parent (local.get $scope)))
         (call $set_cur_scope (local.get $scope))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 113))  ;; ENTERSCOPE (operand: name) — push a fresh DECLARATIVE scope and
+    (if (i32.eq (local.get $op) (i32.const 113))  ;; ENTERSCOPE (operand: name, 0=none) — push a fresh DECLARATIVE scope and
       (then                                        ;; bind `name`=undefined DIRECTLY in it (not var-target, so it does not
         (let $esn i32 (i32.load (i32.add (local.get $code) (local.get $ip))))  ;; leak to the enclosing function scope). LEAVEWITH (94) pops it.
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $scope (call $scope_new (local.get $scope) (i32.const 4)))
-        (call $scope_define (local.get $scope) (local.get $esn) (call $v_undef))
+        (call $scope_set_lexical (local.get $scope))  ;; `var` skips past a block/class scope
+        (if (local.get $esn) (then (call $scope_define (local.get $scope) (local.get $esn) (call $v_undef))))  ;; name 0 = a nameless block scope
         (call $set_cur_scope (local.get $scope))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 95))  ;; DELETEVAR (operand: name) — delete an identifier reference
@@ -5092,6 +5133,13 @@
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (call $scope_define_attr (local.get $scope) (local.get $dcnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 18))  ;; E + const-bit(16); non-writable, non-configurable (lexical binding)
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 114))  ;; LEXDEFINIT (operand: name) — `let NAME = e`: writable binding in the
+      (then                                        ;; CURRENT scope (block-scoped), unlike DEFINIT which hoists to the var scope
+        (let $ldnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (call $scope_define_attr (local.get $scope) (local.get $ldnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 10))  ;; E|W; non-configurable
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 89))  ;; DEFINIT (operand: name) — `var/let NAME = e`: define a
       (then                                       ;; WRITABLE binding in the CURRENT scope (so it shadows an
