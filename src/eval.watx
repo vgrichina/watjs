@@ -6965,8 +6965,12 @@
       (if (i32.eq (local.get $id) (i32.const 64))  ;; startsWith(p[, pos])
         (then
           (let $sp2 i32 (call $to_str (local.get $a0)))
+          (let $sslen i32 (call $str_len (local.get $s)))
           (let $spos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
+          (if (call $err) (then (return (call $v_undef))))  ;; ToInteger(position) threw (e.g. Symbol)
           (if (i32.lt_s (local.get $spos) (i32.const 0)) (then (set! $spos (i32.const 0))))
+          (if (i32.gt_s (local.get $spos) (local.get $sslen)) (then (set! $spos (local.get $sslen))))  ;; start = min(max(pos,0),len)
+          (if (i32.gt_s (i32.add (local.get $spos) (call $str_len (local.get $sp2))) (local.get $sslen)) (then (return (call $v_false))))  ;; searchLength+start > len → false (also avoids an OOB substr for pos=Infinity)
           (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (local.get $spos) (call $str_len (local.get $sp2))) (local.get $sp2))))))
       (if (i32.eq (local.get $id) (i32.const 65))  ;; endsWith(searchString[, endPosition])
         (then
