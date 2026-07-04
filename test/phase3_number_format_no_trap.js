@@ -17,4 +17,11 @@ if ((-255).toString(2) !== "-11111111") throw new Error("neg base2");
 if (typeof (1e300).toString(2) !== "string" || (1e300).toString(2).length < 900) throw new Error("1e300 base2 length");
 if ((1e30).toString(16).charAt(0) !== "c") throw new Error("1e30 base16");
 
+// toPrecision/toExponential on extreme-magnitude values must not trap (10^scale overflowed f64).
+if (typeof (1e-300).toPrecision(21) !== "string") throw new Error("1e-300 toPrecision");
+if (typeof (1e300).toPrecision(21) !== "string") throw new Error("1e300 toPrecision");
+if (typeof (1e-308).toExponential(15) !== "string") throw new Error("1e-308 toExponential");
+if ((1.5).toPrecision(3) !== "1.50") throw new Error("normal toPrecision");
+if ((0.1).toString() !== "0.1") throw new Error("normal toString round-trip");
+
 print("ok");

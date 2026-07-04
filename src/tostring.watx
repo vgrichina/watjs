@@ -252,7 +252,13 @@
   ;; (ax*10^scale can exceed 2^64). Extract pdig=min(p,17) digits, then zero-pad to p.
   (let $pdig i32 (if i32 (i32.gt_s (local.get $p) (i32.const 17)) (then (i32.const 17)) (else (local.get $p))))
   (let $scale i32 (i32.sub (i32.sub (local.get $pdig) (i32.const 1)) (local.get $e)))
-  (let $m i64 (i64.trunc_f64_u (f64.add (f64.mul (local.get $ax) (call $pow10 (f64.convert_i32_s (local.get $scale)))) (f64.const 0.5))))
+  ;; m = round(ax * 10^scale). For a NORMAL scale, scale directly (single rounding, most accurate).
+  ;; For an extreme scale (|scale| > 300) 10^scale overflows/underflows f64 → the product becomes
+  ;; Inf/0 and i64.trunc TRAPS (e.g. (1e-300).toPrecision(21)). There, extract from the normalized
+  ;; mantissa $t∈[1,10): $t · 10^(pdig-1) ≤ 10^17 < 2^63 (mathematically ax·10^scale, no overflow).
+  (let $m i64 (if i64 (i32.and (i32.le_s (local.get $scale) (i32.const 300)) (i32.ge_s (local.get $scale) (i32.const -300)))
+    (then (i64.trunc_f64_u (f64.add (f64.mul (local.get $ax) (call $pow10 (f64.convert_i32_s (local.get $scale)))) (f64.const 0.5))))
+    (else (i64.trunc_f64_u (f64.add (f64.mul (local.get $t) (call $pow10 (f64.convert_i32_s (i32.sub (local.get $pdig) (i32.const 1))))) (f64.const 0.5))))))
   ;; rounding carry pushed it to pdig+1 digits → shift back, bump exponent
   (if (i64.ge_u (local.get $m) (call $pow10u (local.get $pdig)))
     (then (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $e (i32.add (local.get $e) (i32.const 1)))))
