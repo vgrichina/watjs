@@ -1049,19 +1049,28 @@
 (func $ta_live_len_p (param $pl i32) (result i32) (effects)
   (let $tln i32 (call $scope_find_local (local.get $pl) (cstring "@@talen")))
   (if (i32.eqz (local.get $tln)) (then (return (i32.const 0))))
-  (if (i32.eqz (call $scope_find_local (local.get $pl) (cstring "@@tatrack")))
-    (then (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))))  ;; fixed view → stored @@talen
+  (let $stored i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))
+  (let $track i32 (if i32 (call $scope_find_local (local.get $pl) (cstring "@@tatrack")) (then (i32.const 1)) (else (i32.const 0))))
+  ;; locate the RESIZABLE backing buffer's current byteLength; a non-resizable backing (no @@abmax) or
+  ;; an unavailable buffer object → a fixed view keeps its stored @@talen (zero change off the fast path).
   (let $lbsl i32 (call $scope_find_local (local.get $pl) (cstring "@@tabufobj")))
-  (if (i32.eqz (local.get $lbsl)) (then (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))))
+  (if (i32.eqz (local.get $lbsl)) (then (return (local.get $stored))))
   (let $lbuf i64 (i64.load (local.get $lbsl)))
-  (if (i32.eqz (call $is_object (local.get $lbuf))) (then (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))))
-  (let $lablsl i32 (call $scope_find_local (call $val_payload (local.get $lbuf)) (cstring "@@ablen")))
-  (if (i32.eqz (local.get $lablsl)) (then (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))))
+  (if (i32.eqz (call $is_object (local.get $lbuf))) (then (return (local.get $stored))))
+  (let $lbpl i32 (call $val_payload (local.get $lbuf)))
+  (if (i32.eqz (call $scope_find_local (local.get $lbpl) (cstring "@@abmax"))) (then (return (local.get $stored))))  ;; non-resizable → stored
+  (let $lablsl i32 (call $scope_find_local (local.get $lbpl) (cstring "@@ablen")))
+  (if (i32.eqz (local.get $lablsl)) (then (return (local.get $stored))))
   (let $labl i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $lablsl)))))
   (let $loff i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@taoffset"))))))
   (let $lbpe i32 (call $ta_bpe (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@taelem")))))))
-  (if (i32.gt_s (local.get $loff) (local.get $labl)) (then (return (i32.const 0))))
-  (i32.div_s (i32.sub (local.get $labl) (local.get $loff)) (local.get $lbpe)))
+  (if (local.get $track)
+    (then  ;; length-tracking: 0 if the offset is past the shrunk buffer, else (byteLength − offset)/bpe
+      (if (i32.gt_s (local.get $loff) (local.get $labl)) (then (return (i32.const 0))))
+      (return (i32.div_s (i32.sub (local.get $labl) (local.get $loff)) (local.get $lbpe)))))
+  ;; fixed view: 0 if offset + length*bpe exceeds the buffer (out of bounds), else the stored @@talen
+  (if (i64.gt_s (i64.add (i64.extend_i32_s (local.get $loff)) (i64.mul (i64.extend_i32_s (local.get $stored)) (i64.extend_i32_s (local.get $lbpe)))) (i64.extend_i32_s (local.get $labl))) (then (return (i32.const 0))))
+  (local.get $stored))
 (func $ta_live_len (param $thisv i64) (result i32) (effects)
   (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (i32.const 0))))
   (call $ta_live_len_p (call $val_payload (local.get $thisv))))
