@@ -164,6 +164,19 @@
     (br $l))))
 
 ;; one-character string from byte index of a string object
+;; UTF-8 code-point byte length from a lead byte (1 for ASCII/continuation, 2/3/4 for multi-byte).
+;; String ITERATION (for-of / spread / @@iterator) yields code points, so it advances by this.
+(func $str_cp_len (param $b i32) (result i32) (effects)
+  (if i32 (i32.lt_u (local.get $b) (i32.const 0xC0)) (then (i32.const 1))       ;; ASCII or a stray continuation byte
+    (else (if i32 (i32.lt_u (local.get $b) (i32.const 0xE0)) (then (i32.const 2))
+      (else (if i32 (i32.lt_u (local.get $b) (i32.const 0xF0)) (then (i32.const 3))
+        (else (i32.const 4))))))))
+;; the code-point CHARACTER (a string of its 1-4 UTF-8 bytes) at byte index $i.
+(func $str_cp_at (param $s i32) (param $i i32) (result i64) (effects)
+  (let $cl i32 (call $str_cp_len (call $str_byte (local.get $s) (local.get $i))))
+  (if (i32.gt_s (i32.add (local.get $i) (local.get $cl)) (call $str_len (local.get $s)))
+    (then (set! $cl (i32.sub (call $str_len (local.get $s)) (local.get $i)))))  ;; clamp a truncated trailing sequence
+  (call $mk_str (call $substr (local.get $s) (local.get $i) (local.get $cl))))
 (func $str_char_at (param $s i32) (param $i i32) (result i64) (effects)
   (if i64 (i32.and (i32.ge_s (local.get $i) (i32.const 0)) (i32.lt_s (local.get $i) (call $str_len (local.get $s))))
     (then

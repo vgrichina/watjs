@@ -305,10 +305,10 @@
       (let $ssp i32 (call $val_payload (local.get $srcv)))
       (let $sn i32 (call $str_len (local.get $ssp)))
       (let $sci i32 (i32.const 0))
-      (block $se (loop $sl
+      (block $se (loop $sl  ;; iterate by CODE POINT (spec String iterator), not by UTF-8 byte
         (br_if $se (i32.ge_s (local.get $sci) (local.get $sn)))
-        (call $arr_push (local.get $dst) (call $str_char_at (local.get $ssp) (local.get $sci)))
-        (set! $sci (i32.add (local.get $sci) (i32.const 1))) (br $sl)))
+        (call $arr_push (local.get $dst) (call $str_cp_at (local.get $ssp) (local.get $sci)))
+        (set! $sci (i32.add (local.get $sci) (call $str_cp_len (call $str_byte (local.get $ssp) (local.get $sci))))) (br $sl)))
       (return)))
   (if (i32.or (call $is_array (local.get $srcv)) (call $is_object (local.get $srcv)))
     (then
@@ -349,10 +349,10 @@
       (let $sn i32 (call $str_len (local.get $sp)))
       (let $ca i32 (call $arr_new (local.get $sn)))
       (let $si i32 (i32.const 0))
-      (block $se (loop $sl
+      (block $se (loop $sl  ;; iterate by CODE POINT (spec String iterator), not by UTF-8 byte
         (br_if $se (i32.ge_s (local.get $si) (local.get $sn)))
-        (call $arr_push (local.get $ca) (call $str_char_at (local.get $sp) (local.get $si)))
-        (set! $si (i32.add (local.get $si) (i32.const 1)))
+        (call $arr_push (local.get $ca) (call $str_cp_at (local.get $sp) (local.get $si)))
+        (set! $si (i32.add (local.get $si) (call $str_cp_len (call $str_byte (local.get $sp) (local.get $si)))))
         (br $sl)))
       (return (call $call_native (i32.const 97) (i32.const 0) (call $heap_alloc (i32.const 8)) (call $mk_arr (local.get $ca))))))
   (if (call $is_object (local.get $v))

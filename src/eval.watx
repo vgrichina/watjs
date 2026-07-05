@@ -5215,10 +5215,10 @@
         (then
           (let $frsp i32 (call $val_payload (local.get $frs)))
           (let $frj i32 (i32.const 0))
-          (block $frse (loop $frsl
+          (block $frse (loop $frsl  ;; Array.from iterates a string by CODE POINT (via its @@iterator)
             (br_if $frse (i32.ge_s (local.get $frj) (call $str_len (local.get $frsp))))
-            (call $arr_push (local.get $fra) (call $str_char_at (local.get $frsp) (local.get $frj)))
-            (set! $frj (i32.add (local.get $frj) (i32.const 1)))
+            (call $arr_push (local.get $fra) (call $str_cp_at (local.get $frsp) (local.get $frj)))
+            (set! $frj (i32.add (local.get $frj) (call $str_cp_len (call $str_byte (local.get $frsp) (local.get $frj)))))
             (br $frsl)))))
       (if (i32.or (call $is_object (local.get $frs)) (call $is_array (local.get $frs)))
         (then
@@ -6065,10 +6065,10 @@
       (let $sisp i32 (call $to_str (local.get $thisv)))
       (let $sica i32 (call $arr_new (i32.add (call $str_len (local.get $sisp)) (i32.const 1))))
       (let $sii i32 (i32.const 0))
-      (block $sie (loop $sil
+      (block $sie (loop $sil  ;; String @@iterator yields CODE POINTS, not UTF-8 bytes
         (br_if $sie (i32.ge_s (local.get $sii) (call $str_len (local.get $sisp))))
-        (call $arr_push (local.get $sica) (call $str_char_at (local.get $sisp) (local.get $sii)))
-        (set! $sii (i32.add (local.get $sii) (i32.const 1)))
+        (call $arr_push (local.get $sica) (call $str_cp_at (local.get $sisp) (local.get $sii)))
+        (set! $sii (i32.add (local.get $sii) (call $str_cp_len (call $str_byte (local.get $sisp) (local.get $sii)))))
         (br $sil)))
       (return (call $coll_iter (call $mk_arr (local.get $sica)) (i32.const 736)))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 270)) (i32.le_s (local.get $id) (i32.const 272)))  ;; String concat/lastIndexOf/normalize
