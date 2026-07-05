@@ -9493,7 +9493,11 @@
               (set! $ui (i32.const 0))
               (block $upe (loop $upl (br_if $upe (i32.ge_s (local.get $ui) (local.get $argc)))
                 (call $arr_set (local.get $arr) (local.get $ui) (call $argn (local.get $argv) (local.get $argc) (local.get $ui)))
-                (set! $ui (i32.add (local.get $ui) (i32.const 1))) (br $upl)))))
+                (set! $ui (i32.add (local.get $ui) (i32.const 1))) (br $upl))))
+            ;; unshift() with no items still performs Set(O,"length",len,true) (spec step 5); a
+            ;; non-writable length (a frozen array) makes that fail → TypeError, even in sloppy mode.
+            (else (if (i32.eqz (call $arr_len_writable (local.get $arr)))
+              (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return (call $v_undef))))))
           (return (call $num (f64.convert_i32_s (i32.add (local.get $n) (local.get $argc)))))))
       (if (i32.eq (local.get $id) (i32.const 20))  ;; push(...args)
         (then
