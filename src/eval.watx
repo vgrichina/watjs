@@ -2260,13 +2260,17 @@
   ;; fire BEFORE species; slice (402) has no callback so either order is observably the same.
   (let $S i64 (call $v_undef))
   (let $resarr i64 (call $v_undef))
+  ;; map/filter over a TypedArray visit every index k<len (no HasProperty skip) — a mid-callback resize
+  ;; yields undefined for shrunk indices. Set the visit-all flag (mem 860) for the delegated Array op.
   (if (i32.eq (local.get $id) (i32.const 400))
     (then
       (set! $S (call $species_constructor (local.get $thisv) (call $v_undef)))
       (if (call $err) (then (return (call $v_undef))))
+      (i32.store (i32.const 860) (i32.const 1))
       (set! $resarr (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef)))))
     (else
+      (if (i32.eq (local.get $id) (i32.const 401)) (then (i32.store (i32.const 860) (i32.const 1))))  ;; filter iterates; slice (402) has no callback
       (set! $resarr (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef))))
       (set! $S (call $species_constructor (local.get $thisv) (call $v_undef)))
