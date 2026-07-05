@@ -1773,7 +1773,6 @@
   (let $params i32 (call $heap_alloc (i32.const 256)))
   (let $pdef i32 (call $heap_alloc (i32.const 256)))   ;; per-param default-expr cursor (0 = none)
   (let $ppat i32 (call $heap_alloc (i32.const 256)))   ;; per-param destructuring-pattern cursor (0 = plain name)
-  (let $ptemp i32 (call $heap_alloc (i32.const 256)))  ;; per-param captured-arg temp name (TDZ left-to-right init)
   (let $restidx i32 (i32.const -1))                    ;; index of a ...rest param, else -1
   (let $np i32 (i32.const 0))
   (if (i32.ne (call $tok_kind) (i32.const 16))
