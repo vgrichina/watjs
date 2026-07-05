@@ -1795,9 +1795,14 @@
         (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
         (call $vm_emit_op (local.get $code) (i32.const 18))  ;; SEQ (=== undefined)
         (let $dsk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → skip (already supplied)
+        ;; the parameter is in its Temporal Dead Zone while its OWN default initializer runs, so a
+        ;; self-reference `function(x = x)` throws a ReferenceError. Earlier params are already
+        ;; initialized (their default stored a value), so `function(x, y = x)` still reads x.
+        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_tdz))
+        (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pname))  ;; STOREVAR TDZ sentinel
         (call $cursor_restore (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $dpi) (i32.const 4)))))
         (call $vm_c_expr (local.get $code))  ;; default expression
-        (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pname))  ;; STOREVAR
+        (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pname))  ;; STOREVAR (clears TDZ)
         (call $vm_patch (local.get $code) (local.get $dsk))))
     (set! $dpi (i32.add (local.get $dpi) (i32.const 1)))
     (br $dpl)))
