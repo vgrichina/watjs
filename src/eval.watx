@@ -593,14 +593,35 @@
 ;; Arrays yield "0".."len-1" then their @12 named-property keys.
 (func $own_enum_keys (param $a i64) (param $allNames i32) (result i32) (effects)
   (let $out i32 (call $arr_new (i32.const 16)))
-  ;; Proxy: ownKeys trap returns the validated key list (else forward to target)
+  ;; Proxy: [[OwnPropertyKeys]] via the ownKeys trap (validated) or the target's full key list. For
+  ;; getOwnPropertyNames (allNames) return them as-is; for Object.keys/for-in, EnumerableOwnPropertyNames
+  ;; calls the proxy's [[GetOwnProperty]] (the gOPD trap — observable) on each STRING key and keeps only
+  ;; the enumerable ones. Previously all keys were returned unfiltered and the gOPD trap was never fired.
   (if (call $is_proxy (local.get $a))
     (then
       (let $okt i64 (call $proxy_trap (local.get $a) (cstring "ownKeys")))
       (if (call $err) (then (return (local.get $out))))
-      (if (call $is_function (local.get $okt))
-        (then (return (call $proxy_own_keys (local.get $a) (local.get $okt))))
-        (else (return (call $own_enum_keys (call $proxy_target (local.get $a)) (local.get $allNames)))))))
+      (let $pkeys i32 (if i32 (call $is_function (local.get $okt))
+        (then (call $proxy_own_keys (local.get $a) (local.get $okt)))
+        (else (call $own_enum_keys (call $proxy_target (local.get $a)) (i32.const 1)))))  ;; all own names of the target
+      (if (call $err) (then (return (local.get $out))))
+      (if (local.get $allNames) (then (return (local.get $pkeys))))
+      (let $pxi i32 (i32.const 0))
+      (let $pxdb i32 (call $heap_alloc (i32.const 16)))
+      (block $pxe (loop $pxl
+        (br_if $pxe (i32.ge_s (local.get $pxi) (call $arr_len (local.get $pkeys))))
+        (let $pxk i64 (call $arr_get (local.get $pkeys) (local.get $pxi)))
+        (if (call $is_string (local.get $pxk))  ;; Object.keys/for-in ignore Symbol keys
+          (then
+            (i64.store (local.get $pxdb) (local.get $a))
+            (i64.store (i32.add (local.get $pxdb) (i32.const 8)) (local.get $pxk))
+            (let $pxd i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $pxdb) (call $v_undef)))  ;; [[GetOwnProperty]] (gOPD trap)
+            (if (call $err) (then (return (local.get $out))))
+            (if (i32.eqz (call $is_undefined (local.get $pxd)))
+              (then (if (call $truthy (call $get_prop (local.get $pxd) (call $mk_str (cstring "enumerable"))))
+                (then (call $arr_push (local.get $out) (local.get $pxk))))))))
+        (set! $pxi (i32.add (local.get $pxi) (i32.const 1))) (br $pxl)))
+      (return (local.get $out))))
   (if (call $is_array (local.get $a))
     (then
       (let $aa i32 (call $val_payload (local.get $a)))
