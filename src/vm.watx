@@ -837,7 +837,7 @@
           (call $vm_patch (local.get $code) (local.get $ljp1))  ;; keep-branch: [a] already on stack
           (call $vm_patch (local.get $code) (local.get $ljp2))
           (return)))
-      (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; postfix i++ / i--
+      (if (i32.and (i32.eqz (call $nl_before)) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))  ;; postfix i++ / i-- (restricted: no LineTerminator before the operator)
         (then
           (let $iop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
           (call $next_token)
@@ -1078,7 +1078,7 @@
             (call $next_token)  ;; ')'
             (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $iargc))  ;; CALLM
             (br $l)))
-        (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; obj[key]++ / obj[key]-- (postfix)
+        (if (i32.and (i32.eqz (call $nl_before)) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))  ;; obj[key]++ / obj[key]-- (postfix; restricted: no LineTerminator before)
           (then
             (let $xop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
             (call $next_token)
@@ -1136,7 +1136,7 @@
             (call $vm_emit_op (local.get $code) (local.get $mcop))
             (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 82)) (else (i32.const 34)))) (call $vm_emit_op (local.get $code) (local.get $key))  ;; SETPROP (strict→82: PutValue throws on non-writable)
             (br $e)))
-        (if (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39)))  ;; obj.key++ / obj.key-- (postfix → old value)
+        (if (i32.and (i32.eqz (call $nl_before)) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))  ;; obj.key++ / obj.key-- (postfix → old value; restricted: no LineTerminator before)
           (then
             (let $mpop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
             (call $next_token)
