@@ -836,6 +836,18 @@
         (else (call $to_str (local.get $v)))))
     (else (call $to_str (local.get $v)))))
 
+;; the [[OriginalFlags]] string ptr of a RegExp (empty string if absent) — used when the RegExp
+;; constructor is given undefined flags for a RegExp pattern (new RegExp(/x/gi) → flags "gi").
+(func $re_flags_of (param $v i64) (result i32) (effects)
+  (if i32 (call $is_object (local.get $v))
+    (then
+      (let $fsl i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "__re_flags__")))
+      (if i32 (local.get $fsl)
+        (then (let $fv i64 (i64.load (local.get $fsl)))
+              (if i32 (call $is_string (local.get $fv)) (then (call $val_payload (local.get $fv))) (else (cstring ""))))
+        (else (cstring ""))))
+    (else (cstring ""))))
+
 ;; RegExpCreate(pattern, flags): build a fresh RegExp object (parent = RegExp.prototype) from
 ;; already-stringified pattern/flags. Used by String.prototype.match/matchAll/search to delegate
 ;; to RegExp.prototype[@@match/@@matchAll/@@search] per spec (so a subclass override is honored).
