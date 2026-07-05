@@ -5915,6 +5915,10 @@
       (let $itIsTA i32 (if i32 (call $is_object (local.get $itarrv))
         (then (i32.ne (call $scope_find_local (local.get $itarr) (cstring "@@taelem")) (i32.const 0)))
         (else (i32.const 0))))
+      ;; a TypedArray iterator re-validates each step (spec: ValidateTypedArray) — if a mid-iteration
+      ;; resize took the (fixed) view out of bounds, next() throws a TypeError.
+      (if (local.get $itIsTA)
+        (then (if (call $ta_is_oob (local.get $itarrv)) (then (call $throw_type (cstring "TypeError") (cstring "TypedArray is out of bounds")) (return (call $v_undef))))))
       (let $itix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
       (let $itkind i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@kind"))))))
       (let $itres i32 (call $obj_new (i32.const 2)))
