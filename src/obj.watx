@@ -617,7 +617,7 @@
               ;; detached buffer → IntegerIndexedElementGet returns undefined
               (let $tgbo i32 (call $scope_find_local (local.get $o) (cstring "@@tabufobj")))
               (if (local.get $tgbo) (then (if (call $is_detached_buf (i64.load (local.get $tgbo))) (then (return (call $v_undef))))))
-              (let $tln i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
+              (let $tln i32 (call $ta_live_len_p (local.get $o)))  ;; live length (tracks a resizable buffer / OOB shrink)
               (if (i32.lt_s (local.get $tidx) (local.get $tln))
                 (then (return (call $ta_read_val (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))) (local.get $tidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tael)))))))
                 (else (return (call $v_undef))))))
@@ -1114,7 +1114,7 @@
         (then
           (let $tik i32 (call $str_array_index (call $to_prop_key (local.get $key))))
           (if (i32.ge_s (local.get $tik) (i32.const 0))
-            (then (return (call $mk_bool (i32.lt_s (local.get $tik) (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (call $val_payload (local.get $obj)) (cstring "@@talen"))))))))))))))
+            (then (return (call $mk_bool (i32.lt_s (local.get $tik) (call $ta_live_len_p (call $val_payload (local.get $obj))))))))))))
   (if (call $is_object (local.get $obj))
     (then (return (call $mk_bool (i32.ne (call $scope_find (call $val_payload (local.get $obj)) (call $to_prop_key (local.get $key))) (i32.const 0))))))
   (if (call $is_array (local.get $obj))
@@ -1194,7 +1194,7 @@
       (set! $n (call $to_num (local.get $dkey)))))
   ;; a detached buffer makes every integer index invalid → the delete succeeds (true)
   (if (call $ta_is_detached (local.get $dobj)) (then (return (i32.const 1))))
-  (let $len i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
+  (let $len i32 (call $ta_live_len_p (local.get $o)))
   (if (call $ta_valid_idx (local.get $n) (local.get $len)) (then (return (i32.const 2))))
   (i32.const 1))
 
@@ -1216,7 +1216,7 @@
       (set! $n (local.get $cn))))
   (let $elem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@taelem"))))))
   (let $bo i32 (call $scope_find_local (local.get $o) (cstring "@@tabufobj")))
-  (let $len i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@talen"))))))
+  (let $len i32 (call $ta_live_len_p (local.get $o)))
   (let $buf i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $o) (cstring "@@tabuf"))))))
   (if (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10)))
     (then  ;; BigInt TypedArray: ToBigInt(value) happens once, before the index validity check

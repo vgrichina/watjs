@@ -832,6 +832,12 @@
 ;; is authoritative; gating the proto walk on is_array keeps the object path unchanged
 ;; and preserves the dense fast path for the common (unpolluted-prototype) case.
 (func $dense_visit (param $thisv i64) (param $arr i32) (param $i i32) (result i32) (effects)
+  ;; a TypedArray receiver: HasProperty(i) is a LIVE, resize-aware bounds check ([[HasProperty]]
+  ;; is called each iteration per spec, so a resize inside the callback shrinks the visited range),
+  ;; not the start-of-call snapshot. is_object gates the scope walk (i32.and is not short-circuit).
+  (if (call $is_object (local.get $thisv))
+    (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))
+      (then (return (i32.lt_s (local.get $i) (call $ta_live_len (local.get $thisv))))))))
   (if (call $arr_has (local.get $arr) (local.get $i)) (then (return (i32.const 1))))
   (if (call $is_array (local.get $thisv))
     (then (return (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $i))) (local.get $thisv))))))
@@ -839,6 +845,11 @@
 ;; the element value for a visited index: the dense element if present (fast path),
 ;; else — for a real array — the inherited value via [[Get]] on the prototype chain.
 (func $dense_get (param $thisv i64) (param $arr i32) (param $i i32) (result i64) (effects)
+  ;; a TypedArray receiver: read the element LIVE via [[Get]] (undefined past a mid-iteration shrink),
+  ;; not from the start-of-call snapshot. is_object gates the scope walk (i32.and is not short-circuit).
+  (if (call $is_object (local.get $thisv))
+    (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))
+      (then (return (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))))))
   (if i64 (call $arr_has (local.get $arr) (local.get $i))
     (then (call $arr_get (local.get $arr) (local.get $i)))
     (else (if i64 (call $is_array (local.get $thisv))
@@ -1019,6 +1030,54 @@
 ;; ToLength of an array-like's `length` as f64 (0 if NaN/negative; capped at 2^53-1).
 ;; Used by the generic array-like mutators to detect the 2^53-1 integer limit and
 ;; to address indices beyond the i32 range without overflow/looping.
+;; A TypedArray's live [[ArrayLength]]. For a length-TRACKING view (@@tatrack) over a resizable
+;; buffer, it is recomputed each read as (buffer.@@ablen − byteOffset) / bytesPerElement, clamped to
+;; 0 when the byteOffset now exceeds the (shrunk) buffer. For a fixed-length view it is the stored
+;; @@talen. Returns 0 for a non-TypedArray. Every internal @@talen read routes through this so a
+;; resize is observed live.
+;; scope-pointer variant (usable from obj.watx element paths which only hold the object scope).
+(func $ta_live_len_p (param $pl i32) (result i32) (effects)
+  (let $tln i32 (call $scope_find_local (local.get $pl) (cstring "@@talen")))
+  (if (i32.eqz (local.get $tln)) (then (return (i32.const 0))))
+  (if (i32.eqz (call $scope_find_local (local.get $pl) (cstring "@@tatrack")))
+    (then (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))))  ;; fixed view → stored @@talen
+  (let $lbsl i32 (call $scope_find_local (local.get $pl) (cstring "@@tabufobj")))
+  (if (i32.eqz (local.get $lbsl)) (then (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))))
+  (let $lbuf i64 (i64.load (local.get $lbsl)))
+  (if (i32.eqz (call $is_object (local.get $lbuf))) (then (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))))
+  (let $lablsl i32 (call $scope_find_local (call $val_payload (local.get $lbuf)) (cstring "@@ablen")))
+  (if (i32.eqz (local.get $lablsl)) (then (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))))
+  (let $labl i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $lablsl)))))
+  (let $loff i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@taoffset"))))))
+  (let $lbpe i32 (call $ta_bpe (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@taelem")))))))
+  (if (i32.gt_s (local.get $loff) (local.get $labl)) (then (return (i32.const 0))))
+  (i32.div_s (i32.sub (local.get $labl) (local.get $loff)) (local.get $lbpe)))
+(func $ta_live_len (param $thisv i64) (result i32) (effects)
+  (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (i32.const 0))))
+  (call $ta_live_len_p (call $val_payload (local.get $thisv))))
+;; 1 if $thisv is a FIXED-length TypedArray view over a RESIZABLE buffer that has since shrunk so the
+;; view's byte range (offset + length*bpe) no longer fits — such a view is "out of bounds": its length
+;; and all element access read as 0/undefined and ValidateTypedArray throws. Length-tracking views and
+;; views over non-resizable buffers are never OOB.
+(func $ta_is_oob (param $thisv i64) (result i32) (effects)
+  (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (i32.const 0))))
+  (let $pl i32 (call $val_payload (local.get $thisv)))
+  (if (i32.eqz (call $scope_find_local (local.get $pl) (cstring "@@taelem"))) (then (return (i32.const 0))))
+  (if (call $scope_find_local (local.get $pl) (cstring "@@tatrack")) (then (return (i32.const 0))))  ;; tracking view never OOB
+  (let $obsl i32 (call $scope_find_local (local.get $pl) (cstring "@@tabufobj")))
+  (if (i32.eqz (local.get $obsl)) (then (return (i32.const 0))))
+  (let $obuf i64 (i64.load (local.get $obsl)))
+  (if (i32.eqz (call $is_object (local.get $obuf))) (then (return (i32.const 0))))
+  (let $obpl i32 (call $val_payload (local.get $obuf)))
+  (if (i32.eqz (call $scope_find_local (local.get $obpl) (cstring "@@abmax"))) (then (return (i32.const 0))))  ;; non-resizable backing
+  (let $oablsl i32 (call $scope_find_local (local.get $obpl) (cstring "@@ablen")))
+  (if (i32.eqz (local.get $oablsl)) (then (return (i32.const 0))))
+  (let $oabl i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $oablsl)))))
+  (let $ooff i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@taoffset"))))))
+  (let $olen i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@talen"))))))
+  (let $obpe i32 (call $ta_bpe (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@taelem")))))))
+  (i64.gt_s (i64.add (i64.extend_i32_s (local.get $ooff)) (i64.mul (i64.extend_i32_s (local.get $olen)) (i64.extend_i32_s (local.get $obpe)))) (i64.extend_i32_s (local.get $oabl))))
+
 (func $alike_len_f64 (param $thisv i64) (result f64) (effects)
   ;; a TypedArray's length is its internal [[ArrayLength]] (@@talen), not a (spoofable) own/
   ;; prototype "length" property; 0 when the backing buffer is detached.
@@ -1028,7 +1087,7 @@
       (if (local.get $taln)
         (then
           (if (call $ta_is_detached (local.get $thisv)) (then (return (f64.const 0))))
-          (return (call $tonum_raw (i64.load (local.get $taln))))))))
+          (return (f64.convert_i32_s (call $ta_live_len (local.get $thisv))))))))
   (let $l f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length")))))
   (if (f64.ne (local.get $l) (local.get $l)) (then (return (f64.const 0))))  ;; NaN
   (if (f64.le (local.get $l) (f64.const 0)) (then (return (f64.const 0))))
@@ -1059,7 +1118,7 @@
       (if (local.get $taln)
         (then
           (if (call $ta_is_detached (local.get $thisv)) (then (return (i32.const 0))))
-          (return (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $taln)))))))))
+          (return (call $ta_live_len (local.get $thisv)))))))
   (let $l i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "length"))))))
   (if i32 (i32.lt_s (local.get $l) (i32.const 0)) (then (i32.const 0)) (else (local.get $l))))
 
@@ -1450,7 +1509,10 @@
           (let $bo i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@tabufobj")))
           (if (local.get $bo)
             (then (if (call $is_detached_buf (i64.load (local.get $bo)))
-              (then (call $throw_type (cstring "TypeError") (cstring "TypedArray operation called on a detached ArrayBuffer")) (return (i32.const 1))))))))))
+              (then (call $throw_type (cstring "TypeError") (cstring "TypedArray operation called on a detached ArrayBuffer")) (return (i32.const 1))))))
+          ;; a fixed-length view whose resizable backing shrank out from under it is out of bounds
+          (if (call $ta_is_oob (local.get $thisv))
+            (then (call $throw_type (cstring "TypeError") (cstring "TypedArray is out of bounds")) (return (i32.const 1))))))))
   (i32.const 0))
 
 ;; full ValidateTypedArray(O) for the "not generic" %TypedArray%.prototype methods:
@@ -1637,6 +1699,42 @@
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@ablen")))
         (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on incompatible receiver")) (return (call $v_undef))))
       (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
+  ;; ArrayBuffer.prototype.maxByteLength(506) / resizable(507) getters + resize(505).
+  (if (i32.or (i32.eq (local.get $id) (i32.const 506)) (i32.eq (local.get $id) (i32.const 507)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer accessor called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@ablen")))
+        (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer accessor called on incompatible receiver")) (return (call $v_undef))))
+      (let $abmaxsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@abmax")))
+      (if (i32.eq (local.get $id) (i32.const 507))  ;; resizable
+        (then (return (call $mk_bool (i32.ne (local.get $abmaxsl) (i32.const 0))))))
+      (if (local.get $abmaxsl)  ;; maxByteLength: @@abmax if resizable, else byteLength
+        (then (return (i64.load (local.get $abmaxsl))))
+        (else (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))))
+  (if (i32.eq (local.get $id) (i32.const 505))  ;; ArrayBuffer.prototype.resize(newLength)
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer.prototype.resize called on incompatible receiver")) (return (call $v_undef))))
+      (let $rzsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@ablen")))
+      (if (i32.eqz (local.get $rzsl))
+        (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer.prototype.resize called on incompatible receiver")) (return (call $v_undef))))
+      (let $rzmaxsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@abmax")))
+      (let $rznew i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))  ;; ToIndex(newLength) first (observable)
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (local.get $rzmaxsl))
+        (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer is not resizable")) (return (call $v_undef))))
+      (if (call $is_detached_buf (local.get $thisv))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot resize a detached ArrayBuffer")) (return (call $v_undef))))
+      (if (i32.gt_s (local.get $rznew) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $rzmaxsl)))))
+        (then (call $throw_type (cstring "RangeError") (cstring "ArrayBuffer resize length exceeds maxByteLength")) (return (call $v_undef))))
+      ;; zero the newly-grown region, then set the new length (backing is pre-allocated at maxByteLength)
+      (let $rzold i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $rzsl)))))
+      (let $rzdata i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@abdata"))))))
+      (if (i32.gt_s (local.get $rznew) (local.get $rzold))
+        (then (call $ta_zero (i32.add (local.get $rzdata) (local.get $rzold)) (i32.sub (local.get $rznew) (local.get $rzold)))))
+      (i64.store (local.get $rzsl) (call $num (f64.convert_i32_s (local.get $rznew))))
+      (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 484))  ;; get ArrayBuffer.prototype.detached
     (then
       (if (i32.eqz (call $is_object (local.get $thisv)))
@@ -1730,7 +1828,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "accessor called on a non-TypedArray")) (return (call $v_undef))))
       (let $lbo i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@tabufobj")))
       (if (local.get $lbo) (then (if (call $is_detached_buf (i64.load (local.get $lbo))) (then (return (call $num (f64.const 0)))))))  ;; detached → 0
-      (let $llen i32 (call $to_int_idx (call $to_num (i64.load (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@talen"))))))
+      (if (call $ta_is_oob (local.get $thisv)) (then (return (call $num (f64.const 0)))))  ;; fixed view now out of bounds → 0
+      (let $llen i32 (call $ta_live_len (local.get $thisv)))  ;; live length (tracks a resizable buffer)
       (if (i32.eq (local.get $id) (i32.const 482))  ;; byteLength = length * bytes-per-element
         (then
           (let $lel i32 (call $to_int_idx (call $to_num (i64.load (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))))))
@@ -1973,6 +2072,7 @@
   (let $buf i32 (i32.const 0))
   (let $vboff i32 (i32.const -1))      ;; >=0 marks a view over an ArrayBuffer (its byteOffset)
   (let $vbufobj i64 (call $v_undef))   ;; the source ArrayBuffer object (for @@tabufobj / byteOffset)
+  (let $vtrack i32 (i32.const 0))      ;; 1 = length-tracking view (no explicit length over a resizable buffer)
   ;; a function argument is also an Object: GetMethod(O, @@iterator) — present-but-not-callable
   ;; throws, a callable iterator is drained (functions take the is_object path's iterable branch,
   ;; but is_object excludes functions in our type system, so handle them here via get_prop —
@@ -2055,7 +2155,9 @@
                 (else
                   (if (i32.ne (i32.rem_s (local.get $ablen) (local.get $bpe)) (i32.const 0))
                     (then (call $throw_type (cstring "RangeError") (cstring "buffer length minus the offset is not a multiple of the element size")) (return (call $v_undef))))
-                  (set! $len (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe)))))
+                  (set! $len (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe)))
+                  ;; no explicit length over a RESIZABLE buffer → length-tracking view (its length follows resize)
+                  (if (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@abmax")) (then (set! $vtrack (i32.const 1))))))
               (set! $buf (i32.add (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $absl)))) (local.get $boff)))
               (set! $vboff (local.get $boff))
               (set! $vbufobj (local.get $a0)))
@@ -2088,7 +2190,8 @@
   (if (i32.ge_s (local.get $vboff) (i32.const 0))
     (then
       (call $scope_define (local.get $to) (cstring "@@taoffset") (call $num (f64.convert_i32_s (local.get $vboff))))
-      (call $scope_define (local.get $to) (cstring "@@tabufobj") (local.get $vbufobj))))
+      (call $scope_define (local.get $to) (cstring "@@tabufobj") (local.get $vbufobj))
+      (if (local.get $vtrack) (then (call $scope_define (local.get $to) (cstring "@@tatrack") (call $num (f64.const 1)))))))  ;; length-tracking marker
   (call $mk_obj (local.get $to)))
 
 ;; TypedArraySpeciesCreate for map/filter/slice. $resarr is the plain Array of result
@@ -2398,7 +2501,7 @@
           (let $tabo i32 (call $scope_find_local (local.get $os) (cstring "@@tabufobj")))
           (if (i32.and (i32.ne (local.get $tabo) (i32.const 0)) (call $is_detached_buf (i64.load (local.get $tabo))))
             (then (call $def_reject (cstring "Cannot define an index on a detached TypedArray")) (return)))
-          (if (i32.ge_s (local.get $taidx) (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $os) (cstring "@@talen"))))))
+          (if (i32.ge_s (local.get $taidx) (call $ta_live_len_p (local.get $os)))  ;; live length (resizable-aware)
             (then (call $def_reject (cstring "Cannot define an out-of-bounds index on a TypedArray")) (return)))
           (if (local.get $isAcc) (then (call $def_reject (cstring "A TypedArray index cannot be an accessor")) (return)))
           (if (i32.and (local.get $en) (i32.eqz (local.get $wantEnum))) (then (call $def_reject (cstring "A TypedArray index must be enumerable")) (return)))
@@ -5143,7 +5246,8 @@
     (then (return (call $native_weakref_fr (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 393)))
               (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 396)) (i32.le_s (local.get $id) (i32.const 407)))
-                      (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 481)) (i32.le_s (local.get $id) (i32.const 482))) (i32.eq (local.get $id) (i32.const 484)))))  ;; DataView/SAB/ArrayBuffer.proto/TA methods + TA length/byteLength + AB detached getters
+                      (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 481)) (i32.le_s (local.get $id) (i32.const 482)))
+                              (i32.or (i32.eq (local.get $id) (i32.const 484)) (i32.and (i32.ge_s (local.get $id) (i32.const 505)) (i32.le_s (local.get $id) (i32.const 507)))))))  ;; DataView/SAB/ArrayBuffer.proto/TA methods + TA length/byteLength + AB detached + AB resize/maxByteLength/resizable
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
@@ -5710,9 +5814,13 @@
       (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "Array.prototype values/keys/entries called on null or undefined")) (return (call $v_undef))))
       (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))  ;; detached TA → TypeError
-      ;; TypedArray (or other array-like): materialize into a real array to iterate
+      ;; a TypedArray stays LIVE (@@arr = the TA), so a mid-iteration resize/detach is observed; any
+      ;; other array-like is materialized into a real array to iterate.
       (let $itsrc i64 (local.get $thisv))
-      (if (i32.eqz (call $is_array (local.get $thisv)))
+      (let $itisTA i32 (if i32 (call $is_object (local.get $thisv))
+        (then (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0)))
+        (else (i32.const 0))))
+      (if (i32.and (i32.eqz (call $is_array (local.get $thisv))) (i32.eqz (local.get $itisTA)))
         (then (if (call $is_object (local.get $thisv))
           (then (set! $itsrc (call $mk_arr (call $alike_arr (local.get $thisv))))))))
       (let $itobj i32 (call $obj_new (i32.const 8)))
@@ -5734,10 +5842,18 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Array Iterator.prototype.next called on a non-iterator")) (return (call $v_undef))))
       (let $itarrv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@arr"))))
       (let $itarr i32 (call $val_payload (local.get $itarrv)))
+      ;; a live TypedArray @@arr: read its length via ta_live_len (resize-aware; 0 if OOB) and its
+      ;; elements via [[Get]] each step, instead of a snapshot array's arr_len/arr_get.
+      ;; is @@arr a TypedArray? i32.and is NOT short-circuit, so scope_find_local must be gated
+      ;; behind is_object via `if i32` — a real-array @@arr is NOT is_object, and val_payload of it
+      ;; would be walked as a scope pointer → OOB (layout-sensitive trap).
+      (let $itIsTA i32 (if i32 (call $is_object (local.get $itarrv))
+        (then (i32.ne (call $scope_find_local (local.get $itarr) (cstring "@@taelem")) (i32.const 0)))
+        (else (i32.const 0))))
       (let $itix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
       (let $itkind i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@kind"))))))
       (let $itres i32 (call $obj_new (i32.const 2)))
-      (let $itlen i32 (call $arr_len (local.get $itarr)))  ;; LIVE array length — spec reads array.[[Length]] on each next() (so growth/shrink mid-iteration is observed)
+      (let $itlen i32 (if i32 (local.get $itIsTA) (then (call $ta_live_len (local.get $itarrv))) (else (call $arr_len (local.get $itarr)))))  ;; LIVE length each next()
       (if (i32.ge_s (local.get $itix) (local.get $itlen))
         (then
           (call $scope_define (local.get $itres) (cstring "value") (call $v_undef))
@@ -5745,12 +5861,12 @@
         (else
           (let $itval i64 (call $v_undef))
           (if (i32.eq (local.get $itkind) (i32.const 0)) (then (set! $itval (call $num (f64.convert_i32_s (local.get $itix))))))
-          (if (i32.eq (local.get $itkind) (i32.const 1)) (then (set! $itval (call $arr_get (local.get $itarr) (local.get $itix)))))
+          (if (i32.eq (local.get $itkind) (i32.const 1)) (then (set! $itval (if i64 (local.get $itIsTA) (then (call $get_prop (local.get $itarrv) (call $num (f64.convert_i32_s (local.get $itix))))) (else (call $arr_get (local.get $itarr) (local.get $itix)))))))
           (if (i32.eq (local.get $itkind) (i32.const 2))
             (then
               (let $itpair i32 (call $arr_new (i32.const 2)))
               (call $arr_push (local.get $itpair) (call $num (f64.convert_i32_s (local.get $itix))))
-              (call $arr_push (local.get $itpair) (call $arr_get (local.get $itarr) (local.get $itix)))
+              (call $arr_push (local.get $itpair) (if i64 (local.get $itIsTA) (then (call $get_prop (local.get $itarrv) (call $num (f64.convert_i32_s (local.get $itix))))) (else (call $arr_get (local.get $itarr) (local.get $itix)))))
               (set! $itval (call $mk_arr (local.get $itpair)))))
           (call $scope_define (local.get $itres) (cstring "value") (local.get $itval))
           (call $scope_define (local.get $itres) (cstring "done") (call $v_false))
@@ -6357,9 +6473,11 @@
       (if (call $err) (then (return (call $v_undef))))
       (let $abn i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
-      ;; GetArrayBufferMaxByteLengthOption(options): if options is an object with a defined maxByteLength,
-      ;; ToIndex it (RangeError for an excessive value) and require byteLength ≤ it — spec-required
-      ;; validation the ctor performs even though the resizable buffer itself isn't otherwise modelled.
+      ;; GetArrayBufferMaxByteLengthOption(options): a defined maxByteLength makes the buffer resizable —
+      ;; ToIndex it (RangeError for excessive), require byteLength ≤ it, and record @@abmax. $abmax = -1
+      ;; when non-resizable. Resizable backing is PRE-ALLOCATED at maxByteLength so resize never moves
+      ;; @@abdata (all views keep their base pointer; length tracking is dynamic via @@ablen/@@tatrack).
+      (let $abmax i32 (i32.const -1))
       (let $abopt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (i32.or (call $is_object (local.get $abopt)) (i32.or (call $is_array (local.get $abopt)) (call $is_function (local.get $abopt))))
         (then
@@ -6367,17 +6485,20 @@
           (if (call $err) (then (return (call $v_undef))))
           (if (i32.eqz (call $is_undefined (local.get $abmbl)))
             (then
-              (let $abmax i32 (call $to_index (local.get $abmbl)))
+              (set! $abmax (call $to_index (local.get $abmbl)))
               (if (call $err) (then (return (call $v_undef))))
+              (if (i32.ge_s (local.get $abmax) (i32.const 2147483640)) (then (call $throw_type (cstring "RangeError") (cstring "Invalid maxByteLength")) (return (call $v_undef))))
               (if (i32.gt_s (local.get $abn) (local.get $abmax))
                 (then (call $throw_type (cstring "RangeError") (cstring "ArrayBuffer byteLength exceeds maxByteLength")) (return (call $v_undef))))))))
-      (let $abd i32 (call $heap_alloc (i32.add (local.get $abn) (i32.const 8))))
-      (call $ta_zero (local.get $abd) (local.get $abn))
+      (let $abcap i32 (if i32 (i32.ge_s (local.get $abmax) (i32.const 0)) (then (local.get $abmax)) (else (local.get $abn))))  ;; pre-allocate max capacity
+      (let $abd i32 (call $heap_alloc (i32.add (local.get $abcap) (i32.const 8))))
+      (call $ta_zero (local.get $abd) (local.get $abcap))
       (let $abo i32 (call $obj_new (i32.const 4)))
       (if (i32.load (i32.const 524)) (then (i32.store (local.get $abo) (i32.load (i32.const 524)))))  ;; link ArrayBuffer.prototype
       (if (call $is_object (local.get $thisv)) (then (set! $abo (call $val_payload (local.get $thisv)))))  ;; super() from a subclass → init `this`
       (call $scope_define (local.get $abo) (cstring "@@abdata") (call $num (f64.convert_i32_s (local.get $abd))))
       (call $scope_define (local.get $abo) (cstring "@@ablen") (call $num (f64.convert_i32_s (local.get $abn))))
+      (if (i32.ge_s (local.get $abmax) (i32.const 0)) (then (call $scope_define (local.get $abo) (cstring "@@abmax") (call $num (f64.convert_i32_s (local.get $abmax))))))
       (return (if i64 (call $is_object (local.get $thisv)) (then (local.get $thisv)) (else (call $mk_obj (local.get $abo)))))))
   (if (i32.eq (local.get $id) (i32.const 209))  ;; new Proxy(target, handler)
     (then (return (call $make_proxy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
@@ -9874,6 +9995,7 @@
   ;; ArrayBuffer.prototype.slice(391)=2, ArrayBuffer.isView(392)=1 (byteLength getter 390=0)
   (if (i32.eq (local.get $id) (i32.const 391)) (then (return (i32.const 2))))
   (if (i32.eq (local.get $id) (i32.const 392)) (then (return (i32.const 1))))
+  (if (i32.eq (local.get $id) (i32.const 505)) (then (return (i32.const 1))))  ;; ArrayBuffer.prototype.resize length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395))) (then (return (i32.const 3))))  ;; BigInt64Array/BigUint64Array ctor length 3
   (if (i32.eq (local.get $id) (i32.const 478)) (then (return (i32.const 3))))  ;; Float16Array ctor length 3
   (if (i32.or (i32.eq (local.get $id) (i32.const 396)) (i32.eq (local.get $id) (i32.const 397))) (then (return (i32.const 1))))  ;; TA set/subarray length 1
@@ -10709,6 +10831,9 @@
   (let $abproto i32 (call $obj_new (i32.const 8)))
   (i32.store (i32.const 524) (local.get $abproto))
   (call $scope_define_accessor_attr (local.get $abproto) (cstring "byteLength") (call $mk_native (i32.const 390) (cstring "get byteLength")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $abproto) (cstring "maxByteLength") (call $mk_native (i32.const 506) (cstring "get maxByteLength")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $abproto) (cstring "resizable") (call $mk_native (i32.const 507) (cstring "get resizable")) (call $v_undef) (i32.const 5))
+  (call $scope_define_attr (local.get $abproto) (cstring "resize") (call $mk_native (i32.const 505) (cstring "resize")) (i32.const 6))
   (call $scope_define_accessor_attr (local.get $abproto) (cstring "detached") (call $mk_native (i32.const 484) (cstring "get detached")) (call $v_undef) (i32.const 5))
   (call $scope_define (local.get $abproto) (cstring "slice") (call $mk_native (i32.const 391) (cstring "slice")))
   (call $scope_define_attr (local.get $abproto) (cstring "@@toStringTag") (call $mk_str (cstring "ArrayBuffer")) (i32.const 4))
