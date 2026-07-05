@@ -1676,6 +1676,81 @@
     (br $l))))
 
 ;; compile a function body: cursor at '(' params ')' '{' body '}'. Emits the body
+;; Emit the default-parameter prologue with left-to-right TDZ initialization, shared by ordinary
+;; functions and arrows. When ANY parameter has a default, each simple parameter's argument is captured
+;; to a temp, the parameters are set to the TDZ sentinel, then assigned in order — so a default sees
+;; earlier params initialized but the current + later params still in TDZ (`function(x=x)` /
+;; `function(x=y,y)` → ReferenceError; `function(a,b=a)` reads a). A default-bearing list is non-simple
+;; (unmapped `arguments`), so rebinding is safe. A destructuring param's own default is applied (no TDZ,
+;; its names aren't in scope yet); rest + destructuring binding happen in their own later prologues.
+(func $vm_emit_default_params (param $code i32) (param $params i32) (param $pdef i32) (param $ppat i32) (param $np i32) (param $restidx i32) (effects)
+  (let $ptemp i32 (call $heap_alloc (i32.const 256)))
+  ;; $ppat is 0 for a single-ident arrow (no destructuring array) — use a zeroed array (all simple).
+  (if (i32.eqz (local.get $ppat))
+    (then
+      (set! $ppat (call $heap_alloc (i32.const 256)))
+      (let $zi i32 (i32.const 0))
+      (block $ze (loop $zl (br_if $ze (i32.ge_s (local.get $zi) (i32.const 64)))
+        (i32.store (i32.add (local.get $ppat) (i32.mul (local.get $zi) (i32.const 4))) (i32.const 0))
+        (set! $zi (i32.add (local.get $zi) (i32.const 1))) (br $zl)))))
+  (let $hasdef i32 (i32.const 0))
+  (let $hdi i32 (i32.const 0))
+  (block $hde (loop $hdl (br_if $hde (i32.ge_s (local.get $hdi) (local.get $np)))
+    (if (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $hdi) (i32.const 4)))) (then (set! $hasdef (i32.const 1))))
+    (set! $hdi (i32.add (local.get $hdi) (i32.const 1))) (br $hdl)))
+  (if (i32.eqz (local.get $hasdef)) (then (return)))
+  ;; phase A: temp = arg; param = TDZ  (simple params only)
+  (let $cai i32 (i32.const 0))
+  (block $cae (loop $cal (br_if $cae (i32.ge_s (local.get $cai) (local.get $np)))
+    (if (i32.and (i32.eqz (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $cai) (i32.const 4))))) (i32.ne (local.get $cai) (local.get $restidx)))
+      (then
+        (let $tn i32 (call $vm_tmpname))
+        (i32.store (i32.add (local.get $ptemp) (i32.mul (local.get $cai) (i32.const 4))) (local.get $tn))
+        (let $pnm i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $cai) (i32.const 4)))))
+        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pnm))
+        (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $tn))  ;; temp = arg
+        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_tdz))
+        (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pnm))))  ;; param = TDZ
+    (set! $cai (i32.add (local.get $cai) (i32.const 1))) (br $cal)))
+  ;; phase B: initialize left-to-right
+  (let $cbi i32 (i32.const 0))
+  (block $cbe (loop $cbl (br_if $cbe (i32.ge_s (local.get $cbi) (local.get $np)))
+    (if (i32.and (i32.eqz (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $cbi) (i32.const 4))))) (i32.ne (local.get $cbi) (local.get $restidx)))
+      (then
+        (let $pn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $cbi) (i32.const 4)))))
+        (let $tn2 i32 (i32.load (i32.add (local.get $ptemp) (i32.mul (local.get $cbi) (i32.const 4)))))
+        (let $dc i32 (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $cbi) (i32.const 4)))))
+        (if (local.get $dc)
+          (then
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tn2))
+            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+            (call $vm_emit_op (local.get $code) (i32.const 18))  ;; SEQ === undefined
+            (let $jsup i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → supplied
+            (call $cursor_restore (local.get $dc))
+            (call $vm_c_expr (local.get $code))  ;; default expr (current + later params still TDZ)
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pn))
+            (let $jd i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP done
+            (call $vm_patch (local.get $code) (local.get $jsup))
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tn2))
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pn))
+            (call $vm_patch (local.get $code) (local.get $jd)))
+          (else
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tn2))
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pn))))))
+    ;; a DESTRUCTURING param's own default (applied without TDZ; its names aren't in scope yet)
+    (if (i32.and (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $cbi) (i32.const 4)))) (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $cbi) (i32.const 4)))))
+      (then
+        (let $dpn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $cbi) (i32.const 4)))))
+        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $dpn))
+        (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+        (call $vm_emit_op (local.get $code) (i32.const 18))
+        (let $djsk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))
+        (call $cursor_restore (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $cbi) (i32.const 4)))))
+        (call $vm_c_expr (local.get $code))
+        (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $dpn))
+        (call $vm_patch (local.get $code) (local.get $djsk))))
+    (set! $cbi (i32.add (local.get $cbi) (i32.const 1))) (br $cbl))))
+
 ;; inline (JMP over it) and a PUSH of the VM-fn value. magic from regs 232 (async)
 ;; / 236 (generator), both cleared here.
 (func $vm_c_fnbody (param $code i32) (param $selfname i32) (effects)
@@ -1785,73 +1860,8 @@
           (br $sdl)))
         (set! $spi (i32.add (local.get $spi) (i32.const 1)))
         (br $spl)))))
-  ;; prologue: default-parameter initializers. When ANY parameter has a default, initialize the SIMPLE
-  ;; parameters strictly left-to-right with a Temporal Dead Zone: capture each arg to a temp, set the
-  ;; parameters to the TDZ sentinel, then assign in order. A default initializer therefore sees earlier
-  ;; params initialized but the current and LATER params still in TDZ — so `function(x = x)` and
-  ;; `function(x = y, y)` throw a ReferenceError. (A default-bearing param list is non-simple → unmapped
-  ;; `arguments`, so overwriting the param bindings can't disturb argument aliasing.) Destructuring/rest
-  ;; params keep their existing handling (below); functions with no default keep their arg bindings as-is.
-  (let $hasdef i32 (i32.const 0))
-  (let $hdi i32 (i32.const 0))
-  (block $hde (loop $hdl (br_if $hde (i32.ge_s (local.get $hdi) (local.get $np)))
-    (if (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $hdi) (i32.const 4)))) (then (set! $hasdef (i32.const 1))))
-    (set! $hdi (i32.add (local.get $hdi) (i32.const 1))) (br $hdl)))
-  (if (local.get $hasdef)
-    (then
-      ;; phase A: temp = arg; param = TDZ  (simple params only)
-      (let $cai i32 (i32.const 0))
-      (block $cae (loop $cal (br_if $cae (i32.ge_s (local.get $cai) (local.get $np)))
-        (if (i32.and (i32.eqz (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $cai) (i32.const 4))))) (i32.ne (local.get $cai) (local.get $restidx)))
-          (then
-            (let $tn i32 (call $vm_tmpname))
-            (i32.store (i32.add (local.get $ptemp) (i32.mul (local.get $cai) (i32.const 4))) (local.get $tn))
-            (let $pnm i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $cai) (i32.const 4)))))
-            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pnm))
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $tn))  ;; temp = arg
-            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_tdz))
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pnm))))  ;; param = TDZ
-        (set! $cai (i32.add (local.get $cai) (i32.const 1))) (br $cal)))
-      ;; phase B: initialize left-to-right
-      (let $cbi i32 (i32.const 0))
-      (block $cbe (loop $cbl (br_if $cbe (i32.ge_s (local.get $cbi) (local.get $np)))
-        (if (i32.and (i32.eqz (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $cbi) (i32.const 4))))) (i32.ne (local.get $cbi) (local.get $restidx)))
-          (then
-            (let $pn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $cbi) (i32.const 4)))))
-            (let $tn2 i32 (i32.load (i32.add (local.get $ptemp) (i32.mul (local.get $cbi) (i32.const 4)))))
-            (let $dc i32 (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $cbi) (i32.const 4)))))
-            (if (local.get $dc)
-              (then
-                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tn2))  ;; LOADVAR temp (arg)
-                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
-                (call $vm_emit_op (local.get $code) (i32.const 18))  ;; SEQ === undefined
-                (let $jsup i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → supplied
-                (call $cursor_restore (local.get $dc))
-                (call $vm_c_expr (local.get $code))  ;; default expr (current + later params still TDZ)
-                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pn))  ;; param = default
-                (let $jd i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP done
-                (call $vm_patch (local.get $code) (local.get $jsup))
-                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tn2))
-                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pn))  ;; param = temp
-                (call $vm_patch (local.get $code) (local.get $jd)))
-              (else
-                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $tn2))
-                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pn))))))  ;; param = temp (arg)
-        ;; a DESTRUCTURING param (bound later, from its arg-holding temp name) still needs its own
-        ;; default applied when the arg is undefined — the old way, without a TDZ (the pattern's names
-        ;; aren't in scope yet); the destructuring prologue then binds the pattern from this value.
-        (if (i32.and (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $cbi) (i32.const 4)))) (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $cbi) (i32.const 4)))))
-          (then
-            (let $dpn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $cbi) (i32.const 4)))))
-            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $dpn))
-            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
-            (call $vm_emit_op (local.get $code) (i32.const 18))  ;; SEQ === undefined
-            (let $djsk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → supplied
-            (call $cursor_restore (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $cbi) (i32.const 4)))))
-            (call $vm_c_expr (local.get $code))
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $dpn))
-            (call $vm_patch (local.get $code) (local.get $djsk))))
-        (set! $cbi (i32.add (local.get $cbi) (i32.const 1))) (br $cbl)))))
+  ;; default-parameter prologue: left-to-right TDZ initialization (see $vm_emit_default_params).
+  (call $vm_emit_default_params (local.get $code) (local.get $params) (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))
   ;; rest parameter: restName = arguments.slice(restidx)
   (if (i32.ge_s (local.get $restidx) (i32.const 0))
     (then
@@ -2540,25 +2550,9 @@
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
   (let $entry i32 (call $vm_emit_cursor))
   (let $bodycur i32 (call $cursor_save))
-  ;; default-parameter prologue
+  ;; default-parameter prologue: left-to-right TDZ initialization (see $vm_emit_default_params).
   (if (local.get $pdef)
-    (then
-      (let $dpi i32 (i32.const 0))
-      (block $dpe (loop $dpl
-        (br_if $dpe (i32.ge_s (local.get $dpi) (local.get $np)))
-        (if (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $dpi) (i32.const 4))))
-          (then
-            (let $pn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $dpi) (i32.const 4)))))
-            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pn))
-            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
-            (call $vm_emit_op (local.get $code) (i32.const 18))  ;; SEQ
-            (let $sk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF skip
-            (call $cursor_restore (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $dpi) (i32.const 4)))))
-            (call $vm_c_expr (local.get $code))
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pn))
-            (call $vm_patch (local.get $code) (local.get $sk))))
-        (set! $dpi (i32.add (local.get $dpi) (i32.const 1)))
-        (br $dpl)))))
+    (then (call $vm_emit_default_params (local.get $code) (local.get $params) (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))))
   ;; rest-parameter prologue
   (if (i32.ge_s (local.get $restidx) (i32.const 0))
     (then
