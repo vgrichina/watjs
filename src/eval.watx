@@ -9271,15 +9271,29 @@
       (if (i32.eq (local.get $id) (i32.const 275))  ;; with(index, value) → copy with one element replaced
         (then
           (let $wi i32 (call $to_int_idx (call $to_num (local.get $a0))))
-          (if (i32.lt_s (local.get $wi) (i32.const 0)) (then (set! $wi (i32.add (local.get $n) (local.get $wi)))))
-          (if (i32.or (i32.lt_s (local.get $wi) (i32.const 0)) (i32.ge_s (local.get $wi) (local.get $n)))
-            (then (call $throw_type (cstring "RangeError") (cstring "Invalid index")) (return (call $v_undef))))
+          (if (i32.lt_s (local.get $wi) (i32.const 0)) (then (set! $wi (i32.add (local.get $n) (local.get $wi)))))  ;; relative to the ORIGINAL length
+          (let $wval i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (let $wIsTA i32 (if i32 (call $is_object (local.get $thisv)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0))) (else (i32.const 0))))
+          (if (local.get $wIsTA)
+            (then
+              ;; a TypedArray coerces the value (ToNumber / ToBigInt) FIRST — which can resize the buffer —
+              ;; then does IsValidIntegerIndex against the LIVE length: RangeError if now out of bounds.
+              (let $wte i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))))))
+              (if (i32.or (i32.eq (local.get $wte) (i32.const 9)) (i32.eq (local.get $wte) (i32.const 10)))
+                (then (set! $wval (call $to_bigint (local.get $wval))))
+                (else (set! $wval (call $num (call $to_num (local.get $wval))))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.or (i32.lt_s (local.get $wi) (i32.const 0)) (i32.ge_s (local.get $wi) (call $ta_live_len (local.get $thisv))))
+                (then (call $throw_type (cstring "RangeError") (cstring "Invalid index")) (return (call $v_undef)))))
+            (else
+              (if (i32.or (i32.lt_s (local.get $wi) (i32.const 0)) (i32.ge_s (local.get $wi) (local.get $n)))
+                (then (call $throw_type (cstring "RangeError") (cstring "Invalid index")) (return (call $v_undef))))))
           (let $wr i32 (call $arr_new (i32.add (local.get $n) (i32.const 1))))
           (let $wj i32 (i32.const 0))
           (block $we (loop $wl
             (br_if $we (i32.ge_s (local.get $wj) (local.get $n)))
             (if (i32.eq (local.get $wj) (local.get $wi))
-              (then (call $arr_push (local.get $wr) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+              (then (call $arr_push (local.get $wr) (local.get $wval)))  ;; the (already-coerced, for a TA) replacement
               (else  ;; spec reads via [[Get]] ONCE so an absent index inherits Array.prototype[k]
                 (call $arr_push (local.get $wr) (call $copy_read (local.get $thisv) (local.get $arr) (local.get $wj)))
                 (if (call $err) (then (return (call $v_undef))))))
