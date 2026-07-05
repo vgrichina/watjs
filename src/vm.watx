@@ -217,7 +217,13 @@
     (if (i32.and (i32.eq (local.get $depth) (local.get $decldepth))
           (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function"))))
       (then
-        (if (call $vm_stmt_pos (local.get $prevk))
+        ;; ASI: a `function` on a new line after a token that COMPLETES an expression (number/string/
+        ;; identifier/`]`) starts a fresh statement → a hoistable declaration (e.g. `var x = 5\nfunction
+        ;; f(){}`). `)` is excluded — `if(x)\nfunction f` is an AnnexB clause, handled in the else branch.
+        (if (i32.or (call $vm_stmt_pos (local.get $prevk))
+              (i32.and (call $nl_before)
+                (i32.or (i32.eq (local.get $prevk) (i32.const 1)) (i32.or (i32.eq (local.get $prevk) (i32.const 2))
+                (i32.or (i32.eq (local.get $prevk) (i32.const 3)) (i32.eq (local.get $prevk) (i32.const 20)))))))
           (then  ;; genuine statement-position declaration → value-hoist
             (call $vm_hoist_record (call $pos))
             (let $fnm i32 (call $vm_c_function (local.get $code)))  ;; emits PUSH fn (consumes the whole decl)
@@ -3859,7 +3865,13 @@
       (then
         (if (call $tok_is_kw (cstring "function"))
           (then
-            (if (i32.and (i32.eqz (local.get $pd)) (call $vm_stmt_pos (local.get $prevk)))
+            ;; ASI: `function` on a new line after an expression-completing token (number/string/ident/`]`)
+            ;; begins a fresh statement → hoistable declaration (`var x = 5\nfunction f(){}`). `)` excluded
+            ;; so `if(x)\nfunction f` stays an AnnexB clause (handled in the else branch below).
+            (if (i32.and (i32.eqz (local.get $pd)) (i32.or (call $vm_stmt_pos (local.get $prevk))
+                  (i32.and (call $nl_before)
+                    (i32.or (i32.eq (local.get $prevk) (i32.const 1)) (i32.or (i32.eq (local.get $prevk) (i32.const 2))
+                    (i32.or (i32.eq (local.get $prevk) (i32.const 3)) (i32.eq (local.get $prevk) (i32.const 20))))))))
               (then  ;; declaration → compile + bind here (cursor ends at next statement)
                 (let $hfnm i32 (call $vm_c_function (local.get $code)))
                 (if (local.get $hfnm)
