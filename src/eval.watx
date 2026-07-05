@@ -1928,9 +1928,9 @@
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "set called on incompatible receiver")) (return (call $v_undef))))
       (let $stsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
       (if (i32.eqz (local.get $stsl)) (then (call $throw_type (cstring "TypeError") (cstring "set called on a non-TypedArray")) (return (call $v_undef))))
-      (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))  ;; detached target → TypeError
+      (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))  ;; detached/out-of-bounds target → TypeError
       (let $stelem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $stsl)))))
-      (let $stlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@talen"))))))
+      (let $stlen i32 (call $ta_live_len (local.get $thisv)))  ;; live target length (tracks a resizable buffer)
       (let $stbuf i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@tabuf"))))))
       (let $stoff i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
       (if (i32.lt_s (local.get $stoff) (i32.const 0)) (then (call $throw_type (cstring "RangeError") (cstring "TypedArray.set: offset is negative")) (return (call $v_undef))))
