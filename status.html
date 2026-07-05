@@ -231,10 +231,12 @@
   <tr><td>Object</td><td>named accessors, descriptors, for-in proto-chain enumeration</td></tr>
   <tr><td>Date</td><td>~580 passing (timeclip, toPrimitive hints, UTC/year offsets, setters)</td></tr>
   <tr><td>Collections</td><td>Set/Map proto, ES2024 set methods, WeakMap/WeakSet, groupBy, Symbol.species</td></tr>
-  <tr><td>TypedArrays <span class="pill done">new</span></td><td>%TypedArray% intrinsic, exotic numeric-index semantics, detached-buffer checks, species-create, Float16Array, Uint8Array base64/hex</td></tr>
+  <tr><td>TypedArrays</td><td>%TypedArray% intrinsic, exotic numeric-index semantics, detached checks, species-create, Float16Array, Uint8Array base64/hex, <b>resizable/length-tracking buffers</b></td></tr>
+  <tr><td>Classes / subclassing <span class="pill done">new</span></td><td>block-scoped class name, static &amp; instance fields, derived-ctor <code>super()</code> + return semantics, <b>subclassing native exotics</b> (Array/TypedArray/Map/Set/Promise/RegExp/Date/Boolean/Number/String)</td></tr>
+  <tr><td>Scoping <span class="pill done">new</span></td><td>real nested lexical envs — block scope, per-iteration for-let bindings, TDZ, multi-declarator for-init</td></tr>
   <tr><td>Async / Promises</td><td>microtask job queue, true <code>await</code> suspension, async generators (+<code>.return</code>/<code>.throw</code>), for-await-of, <code>Array.fromAsync</code></td></tr>
   <tr><td>Destructuring</td><td>cover-grammar bare <code>{pat}=RHS</code> (+133 assignment), for-of/for-in patterns</td></tr>
-  <tr><td>BigInt / Symbol</td><td>wrapper valueOf, @@toPrimitive</td></tr>
+  <tr><td>BigInt / Symbol</td><td>exact i64 compare, wrapper valueOf, @@toPrimitive</td></tr>
 </table>
 
 <h2>Stability</h2>
@@ -246,8 +248,16 @@
 
 <h2>Open issues &amp; known gaps</h2>
 
+<div class="note ok">
+  <span class="good">✓ Recently resolved</span> (verified 2026-07-05): real nested lexical
+  environments — <b>block scoping</b> + <b>per-iteration for-let bindings</b>;
+  <b>multi-declarator for-init</b>; <b>class inner-name binding</b> (named class exprs +
+  static self-ref); <b>subclassing native built-ins</b> (super() into Array/TypedArray/
+  Map/Set/Promise/RegExp/Date/…); <b>TypedArrays over resizable buffers</b> (length-tracking).
+</div>
+
 <div class="note danger">
-  <b>Silent SyntaxError false-pass.</b> The engine swallows compile-time SyntaxErrors
+  <b>Silent SyntaxError false-pass.</b> The engine still swallows compile-time SyntaxErrors
   (tag=0, no throw) → the harness false-passes any test/include that won't compile.
   Poisons A/B comparisons; e.g. <code>regExpUtils.js</code> → ~500 RegExp / property-escape
   tests false-pass. <span class="bad">Highest-priority correctness trap.</span>
@@ -255,25 +265,23 @@
 
 <table>
   <tr><th>issue</th><th>impact</th><th>state</th></tr>
-  <tr><td>Block-level lexical scope missing — <code>{let x}</code> clobbers outer; for-let closures capture final value</td><td>needs real nested envs (model on ENTERWITH)</td><td><span class="pill todo">open</span></td></tr>
-  <tr><td>Array/function can't be a [[Prototype]] (proto stored as scope-parent)</td><td>~12–20 tests; deep object-model fix</td><td><span class="pill todo">open</span></td></tr>
-  <tr><td>Multi-declarator for-init <code>for(var a,b; …)</code></td><td>fix written, reverted; reland bundled w/ Unicode regex escapes</td><td><span class="pill wip">staged</span></td></tr>
-  <tr><td>Class inner-name binding missing — named class exprs + static self-ref fail "C is not defined"</td><td>needs isolated class scope (block-scoping infra)</td><td><span class="pill todo">open</span></td></tr>
-  <tr><td>Reference Records</td><td>architectural</td><td><span class="pill todo">open</span></td></tr>
-  <tr><td>test262 breadth gaps — ReferenceError, prelude/includes plumbing</td><td>VM at 22/22 e2e parity but narrow</td><td><span class="pill wip">in progress</span></td></tr>
+  <tr><td>Array/function can't be a [[Prototype]] — <code>Object.create(arr)</code> doesn't inherit indices (proto stored as scope-parent)</td><td>~12–20 tests; deep object-model fix</td><td><span class="pill todo">open</span></td></tr>
+  <tr><td>Reference Records — direct-eval scope, member-prefix <code>++</code>/<code>--</code> eval order</td><td>architectural</td><td><span class="pill todo">open</span></td></tr>
+  <tr><td><code>Intl</code> unimplemented — <code>intl402</code> ~1%</td><td>large surface; deferred</td><td><span class="pill todo">deferred</span></td></tr>
+  <tr><td>Mark-sweep GC — still bump-allocator + <code>heap_reset()</code> per test</td><td>fine for test262; needed for long-running programs</td><td><span class="pill todo">deferred</span></td></tr>
 </table>
 
 <h2>Next up</h2>
 <ul>
-  <li>Fix silent-SyntaxError swallowing so the harness stops false-passing uncompilable files.</li>
-  <li>Real nested lexical environments → block scoping + per-iteration for-let bindings.</li>
+  <li>Fix silent-SyntaxError swallowing so the harness stops false-passing uncompilable files (highest-value correctness trap).</li>
   <li>Object-model fix so arrays/functions can serve as a [[Prototype]].</li>
-  <li>Reland multi-declarator for-init + Unicode regex escapes together.</li>
-  <li>Broaden test262 plumbing (ReferenceError surfacing, prelude includes).</li>
+  <li>Reference Records → direct-eval scoping + member-prefix increment eval order.</li>
+  <li>Broaden test262 plumbing (ReferenceError surfacing, prelude/includes).</li>
+  <li>Mark-sweep GC once a long-running workload demands it.</li>
 </ul>
 
 <footer>
-  Generated 2026-06-11 from repo state &amp; session memory. &nbsp;·&nbsp;
+  Generated 2026-07-05 from repo state &amp; session memory. &nbsp;·&nbsp;
   Two test layers: self-checking assertion JS (<code>test/</code>) + tc39 test262 (<code>test262/</code>).
   Chart drawn inline from per-day git activity + dev-session token usage — no external dependencies.
 </footer>
