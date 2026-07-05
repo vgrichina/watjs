@@ -7739,14 +7739,23 @@
       ;; undefined (or absent) pattern → empty source (NOT the string "undefined");
       ;; a RegExp argument copies its source.
       (let $pa0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; patternIsRegExp = IsRegExp(pattern): a real RegExp, or an object with a truthy @@match. A
+      ;; RegExp-like (non-RegExp) pattern reads its `source`/`flags` via [[Get]] (a throwing getter
+      ;; propagates); a real RegExp copies its internal source/flags directly.
+      (let $pislike i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (local.get $pa0)))) (then (call $is_regexp_spec (local.get $pa0))) (else (i32.const 0))))
+      (if (call $err) (then (return (call $v_undef))))
       (let $pat i32 (if i32 (i32.or (i32.lt_s (local.get $argc) (i32.const 1)) (call $is_undefined (local.get $pa0)))
         (then (cstring ""))
-        (else (if i32 (call $is_regexp (local.get $pa0)) (then (call $re_pat_of (local.get $pa0))) (else (call $to_str (local.get $pa0)))))))
-      ;; flags: explicit (non-undefined) → ToString; undefined/absent → the RegExp pattern's own flags
-      ;; (new RegExp(/x/gi) / new RegExp(/x/gi, undefined) → "gi"), or "" for a non-RegExp pattern.
+        (else (if i32 (call $is_regexp (local.get $pa0)) (then (call $re_pat_of (local.get $pa0)))
+          (else (if i32 (local.get $pislike) (then (call $to_str (call $get_prop (local.get $pa0) (call $mk_str (cstring "source"))))) (else (call $to_str (local.get $pa0)))))))))
+      (if (call $err) (then (return (call $v_undef))))  ;; a `source` getter (or ToString) threw
+      ;; flags: explicit (non-undefined) → ToString; undefined/absent → the pattern's own flags (a real
+      ;; RegExp's [[OriginalFlags]], a RegExp-like's Get(pattern,"flags")), or "" for a plain pattern.
       (let $flg i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
         (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-        (else (if i32 (call $is_regexp (local.get $pa0)) (then (call $re_flags_of (local.get $pa0))) (else (cstring ""))))))
+        (else (if i32 (call $is_regexp (local.get $pa0)) (then (call $re_flags_of (local.get $pa0)))
+          (else (if i32 (local.get $pislike) (then (call $to_str (call $get_prop (local.get $pa0) (call $mk_str (cstring "flags"))))) (else (cstring ""))))))))
+      (if (call $err) (then (return (call $v_undef))))  ;; a `flags` getter (or ToString) threw
       ;; validate flags: only g/i/m/s/u/y, no duplicates → SyntaxError
       (let $fl i32 (call $str_len (local.get $flg)))
       (let $fi i32 (i32.const 0))
