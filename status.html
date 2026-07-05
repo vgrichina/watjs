@@ -136,7 +136,7 @@
   <div class="card"><div class="n">23.4k</div><div class="l">lines of WATX · 11 modules</div></div>
   <div class="card"><div class="n">258 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
-  <div class="card"><div class="n">~13k</div><div class="l">test262 files swept</div></div>
+  <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
   <div class="card"><div class="n">54.6M</div><div class="l">output tokens spent building</div></div>
 </div>
 
@@ -196,7 +196,7 @@
   <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">160 / 164</td><td><span class="prate"><span style="width:96%"></span></span><span class="rate good">96%</span></td></tr>
 </table>
 
-<h2>Full vendored test262 tree <span class="em">~53k files · 2026-06-15</span></h2>
+<h2>Full vendored test262 tree <span class="em">~53k files · 2026-07-05</span></h2>
 <div class="note">
   Whole vendored tc39 tree (<code>/tmp/t262</code>), run with a <b>fresh wasm instance per test</b> and a
   <b>1&nbsp;s per-test timeout</b> (timeouts counted as fail). <code>skip</code> = module/async/raw-flagged tests not yet run;
@@ -204,13 +204,13 @@
 </div>
 <table>
   <tr><th>area</th><th>pass</th><th>fail</th><th>skip</th><th>timeout</th><th>pass rate</th></tr>
-  <tr><td><code>annexB</code></td><td class="mono">628</td><td class="mono">457</td><td class="mono">1</td><td class="mono">2</td><td><span class="prate warn"><span style="width:58%"></span></span><span class="rate warn">58%</span></td></tr>
-  <tr><td><code>built-ins</code></td><td class="mono">15203</td><td class="mono">7760</td><td class="mono">680</td><td class="mono">1505</td><td><span class="prate warn"><span style="width:66%"></span></span><span class="rate warn">66%</span></td></tr>
-  <tr><td><code>language</code></td><td class="mono">15832</td><td class="mono">2285</td><td class="mono">5594</td><td class="mono">9</td><td><span class="prate"><span style="width:87%"></span></span><span class="rate good">87%</span></td></tr>
-  <tr><td><code>harness</code></td><td class="mono">87</td><td class="mono">12</td><td class="mono">17</td><td class="mono">1</td><td><span class="prate"><span style="width:88%"></span></span><span class="rate good">88%</span></td></tr>
-  <tr><td><code>staging</code></td><td class="mono">708</td><td class="mono">735</td><td class="mono">39</td><td class="mono">22</td><td><span class="prate warn"><span style="width:49%"></span></span><span class="rate warn">49%</span></td></tr>
-  <tr><td><code>intl402</code> <span style="color:var(--faint)">(no Intl)</span></td><td class="mono">31</td><td class="mono">3310</td><td class="mono">0</td><td class="mono">1320</td><td><span class="prate warn"><span style="width:1%"></span></span><span class="rate bad">1%</span></td></tr>
-  <tr class="tot"><td>TOTAL</td><td class="mono">32489</td><td class="mono">14559</td><td class="mono">6331</td><td class="mono">2859</td><td><span class="prate warn"><span style="width:69%"></span></span><span class="rate warn">69%</span></td></tr>
+  <tr><td><code>annexB</code></td><td class="mono">727</td><td class="mono">358</td><td class="mono">1</td><td class="mono">2</td><td><span class="prate warn"><span style="width:67%"></span></span><span class="rate warn">67%</span></td></tr>
+  <tr><td><code>built-ins</code></td><td class="mono">15706</td><td class="mono">7267</td><td class="mono">695</td><td class="mono">22</td><td><span class="prate warn"><span style="width:68%"></span></span><span class="rate warn">68%</span></td></tr>
+  <tr><td><code>language</code></td><td class="mono">16631</td><td class="mono">1486</td><td class="mono">5594</td><td class="mono">7</td><td><span class="prate"><span style="width:92%"></span></span><span class="rate good">92%</span></td></tr>
+  <tr><td><code>harness</code></td><td class="mono">96</td><td class="mono">3</td><td class="mono">17</td><td class="mono">0</td><td><span class="prate"><span style="width:97%"></span></span><span class="rate good">97%</span></td></tr>
+  <tr><td><code>staging</code></td><td class="mono">795</td><td class="mono">648</td><td class="mono">39</td><td class="mono">26</td><td><span class="prate warn"><span style="width:55%"></span></span><span class="rate warn">55%</span></td></tr>
+  <tr><td><code>intl402</code> <span style="color:var(--faint)">(no Intl)</span></td><td class="mono">23</td><td class="mono">3318</td><td class="mono">0</td><td class="mono">0</td><td><span class="prate warn"><span style="width:1%"></span></span><span class="rate bad">1%</span></td></tr>
+  <tr class="tot"><td>TOTAL</td><td class="mono">33978</td><td class="mono">13080</td><td class="mono">6346</td><td class="mono">57</td><td><span class="prate warn"><span style="width:72%"></span></span><span class="rate warn">72%</span></td></tr>
 </table>
 
 <h2>Recently landed <span class="em">newest first</span></h2>
@@ -241,9 +241,9 @@
 
 <h2>Stability</h2>
 <div class="note ok">
-  <span class="good">✓ Crash/hang surface clean.</span> 2026-06-10 sweep: ~13k files, <b>0 traps / 0 hangs</b>.
-  Subsequent crash fixes (number-format scratch, combinator counter, iterator brand-checks) keep it green.
-  Remaining failures are correctness / architectural, not crashes.
+  <span class="good">✓ Crash/hang surface clean.</span> 2026-07-05 full sweep: <b>53,404 files, 0 traps / 0 hangs</b>,
+  and per-test timeouts collapsed <b>2,859 → 57</b> vs the June sweep — compute-heavy paths got much faster
+  (whole tree now runs in 73&nbsp;s). Remaining failures are correctness / architectural, not crashes.
 </div>
 
 <h2>Open issues &amp; known gaps</h2>
