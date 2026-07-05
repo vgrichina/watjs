@@ -1073,7 +1073,7 @@
   (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (i32.const 0))))
   (let $pl i32 (call $val_payload (local.get $thisv)))
   (if (i32.eqz (call $scope_find_local (local.get $pl) (cstring "@@taelem"))) (then (return (i32.const 0))))
-  (if (call $scope_find_local (local.get $pl) (cstring "@@tatrack")) (then (return (i32.const 0))))  ;; tracking view never OOB
+  (let $istrack i32 (if i32 (call $scope_find_local (local.get $pl) (cstring "@@tatrack")) (then (i32.const 1)) (else (i32.const 0))))
   (let $obsl i32 (call $scope_find_local (local.get $pl) (cstring "@@tabufobj")))
   (if (i32.eqz (local.get $obsl)) (then (return (i32.const 0))))
   (let $obuf i64 (i64.load (local.get $obsl)))
@@ -1084,6 +1084,10 @@
   (if (i32.eqz (local.get $oablsl)) (then (return (i32.const 0))))
   (let $oabl i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $oablsl)))))
   (let $ooff i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@taoffset"))))))
+  ;; a length-TRACKING view is out of bounds only if its byteOffset exceeds the (shrunk) buffer
+  ;; (offset == byteLength is still in bounds → a zero-length view); byteOffset/length then read 0.
+  (if (local.get $istrack) (then (return (i32.gt_s (local.get $ooff) (local.get $oabl)))))
+  ;; a FIXED view is out of bounds if offset + length*bpe exceeds the buffer.
   (let $olen i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@talen"))))))
   (let $obpe i32 (call $ta_bpe (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (local.get $pl) (cstring "@@taelem")))))))
   (i64.gt_s (i64.add (i64.extend_i32_s (local.get $ooff)) (i64.mul (i64.extend_i32_s (local.get $olen)) (i64.extend_i32_s (local.get $obpe)))) (i64.extend_i32_s (local.get $oabl))))
@@ -1812,9 +1816,10 @@
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "accessor called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
         (then (call $throw_type (cstring "TypeError") (cstring "accessor called on a non-TypedArray")) (return (call $v_undef))))
-      (if (i32.eq (local.get $id) (i32.const 407))  ;; byteOffset (→ +0 when the buffer is detached)
+      (if (i32.eq (local.get $id) (i32.const 407))  ;; byteOffset (→ +0 when the buffer is detached OR the view is out of bounds)
         (then
           (if (call $ta_is_detached (local.get $thisv)) (then (return (call $num (f64.const 0)))))
+          (if (call $ta_is_oob (local.get $thisv)) (then (return (call $num (f64.const 0)))))
           (let $tosl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taoffset")))
           (return (if i64 (local.get $tosl) (then (i64.load (local.get $tosl))) (else (call $num (f64.const 0)))))))
       ;; buffer: return @@tabufobj, lazily wrapping the raw byte buffer in an ArrayBuffer
