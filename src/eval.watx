@@ -2177,11 +2177,15 @@
                     (then (call $throw_type (cstring "RangeError") (cstring "length is outside the bounds of the buffer")) (return (call $v_undef))))
                   (set! $len (local.get $saexlen)))
                 (else
-                  (if (i32.ne (i32.rem_s (local.get $ablen) (local.get $bpe)) (i32.const 0))
-                    (then (call $throw_type (cstring "RangeError") (cstring "buffer length minus the offset is not a multiple of the element size")) (return (call $v_undef))))
+                  ;; no explicit length: a FIXED buffer requires (byteLength − offset) to be a whole number
+                  ;; of elements; a RESIZABLE buffer is length-tracking and FLOORS instead (its length follows
+                  ;; resize), so a non-multiple byteLength is allowed at construction.
+                  (let $sires i32 (if i32 (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@abmax")) (then (i32.const 1)) (else (i32.const 0))))
+                  (if (i32.eqz (local.get $sires))
+                    (then (if (i32.ne (i32.rem_s (local.get $ablen) (local.get $bpe)) (i32.const 0))
+                      (then (call $throw_type (cstring "RangeError") (cstring "buffer length minus the offset is not a multiple of the element size")) (return (call $v_undef))))))
                   (set! $len (i32.div_s (i32.sub (local.get $ablen) (local.get $boff)) (local.get $bpe)))
-                  ;; no explicit length over a RESIZABLE buffer → length-tracking view (its length follows resize)
-                  (if (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@abmax")) (then (set! $vtrack (i32.const 1))))))
+                  (if (local.get $sires) (then (set! $vtrack (i32.const 1))))))
               (set! $buf (i32.add (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $absl)))) (local.get $boff)))
               (set! $vboff (local.get $boff))
               (set! $vbufobj (local.get $a0)))
@@ -2281,7 +2285,10 @@
     (then (call $throw_type (cstring "TypeError") (cstring "species did not return an object")) (return (call $v_undef))))
   (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $A)) (cstring "@@taelem")))
     (then (call $throw_type (cstring "TypeError") (cstring "species result is not a TypedArray")) (return (call $v_undef))))
-  (let $alen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $A) (call $mk_str (cstring "@@talen"))))))
+  ;; TypedArrayCreate: if the result's LIVE [[ArrayLength]] (0 for a length-tracking view over a
+  ;; shrunk/detached buffer) is less than the requested count, throw — not the stored @@talen, which
+  ;; wouldn't reflect a resize between construction and here.
+  (let $alen i32 (call $ta_live_len (local.get $A)))
   (if (i32.lt_s (local.get $alen) (local.get $len))
     (then (call $throw_type (cstring "TypeError") (cstring "species result is too short")) (return (call $v_undef))))
   (let $rp i32 (call $val_payload (local.get $resarr)))
