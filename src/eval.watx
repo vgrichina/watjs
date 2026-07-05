@@ -7441,6 +7441,10 @@
           (i32.or (i32.eq (local.get $id) (i32.const 74)) (i32.or (i32.eq (local.get $id) (i32.const 75))
           (i32.or (i32.eq (local.get $id) (i32.const 76)) (i32.or (i32.eq (local.get $id) (i32.const 77)) (i32.eq (local.get $id) (i32.const 137))))))))))))))
     (then
+      ;; LengthOfArrayLike (spec step 2) is observed BEFORE the IsCallable(callbackfn) check (step 3):
+      ;; an array-like's `length` getter fires even though the call then throws. Elements are NOT read.
+      (if (i32.and (call $is_object (local.get $thisv)) (i32.eqz (call $is_array (local.get $thisv))))
+        (then (drop (call $alike_len (local.get $thisv))) (if (call $err) (then (return (call $v_undef))))))
       (call $throw_type (cstring "TypeError") (cstring "callback is not a function"))
       (return (call $v_undef))))
   ;; sort(78)/toSorted(274): comparator is optional, but if supplied it must be
