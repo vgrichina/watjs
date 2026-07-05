@@ -9486,9 +9486,13 @@
       (if (i32.eq (local.get $id) (i32.const 28))  ;; at(i) — supports negative index
         (then
           (let $atx i32 (call $to_int_idx (call $to_num (local.get $a0))))
+          ;; len for the index math + bounds is captured BEFORE the coercion (spec step 1); the element
+          ;; is then read via [[Get]], which for a TypedArray is LIVE — undefined if the ToNumber
+          ;; coercion resized the buffer so the (in-range-for-original-len) index is now out of bounds.
+          (let $atIsTA i32 (if i32 (call $is_object (local.get $thisv)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0))) (else (i32.const 0))))
           (if (i32.lt_s (local.get $atx) (i32.const 0)) (then (set! $atx (i32.add (local.get $atx) (local.get $n)))))
           (if (i32.or (i32.lt_s (local.get $atx) (i32.const 0)) (i32.ge_s (local.get $atx) (local.get $n))) (then (return (call $v_undef))))
-          (return (call $arr_get (local.get $arr) (local.get $atx)))))
+          (return (if i64 (local.get $atIsTA) (then (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $atx))))) (else (call $arr_get (local.get $arr) (local.get $atx)))))))
       (if (i32.eq (local.get $id) (i32.const 29))  ;; fill(v[, start[, end]])
         (then
           ;; TypedArray fill: coerce the value to Number/BigInt EXACTLY ONCE (spec step 3),
