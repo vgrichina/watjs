@@ -2218,6 +2218,33 @@
       (if (local.get $vtrack) (then (call $scope_define (local.get $to) (cstring "@@tatrack") (call $num (f64.const 1)))))))  ;; length-tracking marker
   (call $mk_obj (local.get $to)))
 
+;; Copy internal slot $name from the fresh TA payload $fp onto the derived-`this` payload $tp if present.
+(func $ta_copy_slot (param $fp i32) (param $tp i32) (param $name i32) (effects)
+  (let $s i32 (call $scope_find_local (local.get $fp) (local.get $name)))
+  (if (local.get $s) (then (call $scope_define (local.get $tp) (local.get $name) (i64.load (local.get $s))))))
+
+;; TypedArray constructor entry that honors subclassing. Runs ta_make to build a fresh TA; if invoked
+;; via super() from a subclass (a derived `this` object was passed whose [[Prototype]] is the subclass's
+;; and which is not itself already a TypedArray), transplant the internal slots onto that derived
+;; instance — keeping its subclass prototype — and return it. Direct `new Uint8Array()` returns fresh.
+(func $ta_make_ctor (param $elem i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
+  (let $fresh i64 (call $ta_make (local.get $elem) (local.get $argc) (local.get $argv)))
+  (if (call $err) (then (return (local.get $fresh))))
+  (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (local.get $fresh))))
+  (if (i32.eqz (call $is_object (local.get $fresh))) (then (return (local.get $fresh))))
+  (let $tp i32 (call $val_payload (local.get $thisv)))
+  (if (call $scope_find_local (local.get $tp) (cstring "@@taelem")) (then (return (local.get $fresh))))  ;; already a TA
+  (let $fp i32 (call $val_payload (local.get $fresh)))
+  (call $ta_copy_slot (local.get $fp) (local.get $tp) (cstring "@@taelem"))
+  (call $ta_copy_slot (local.get $fp) (local.get $tp) (cstring "@@tabuf"))
+  (call $ta_copy_slot (local.get $fp) (local.get $tp) (cstring "@@talen"))
+  (call $ta_copy_slot (local.get $fp) (local.get $tp) (cstring "@@taoffset"))
+  (call $ta_copy_slot (local.get $fp) (local.get $tp) (cstring "@@tabufobj"))
+  (call $ta_copy_slot (local.get $fp) (local.get $tp) (cstring "@@tatrack"))
+  (let $bs i32 (call $scope_find_local (local.get $fp) (cstring "BYTES_PER_ELEMENT")))
+  (if (local.get $bs) (then (call $scope_define_attr (local.get $tp) (cstring "BYTES_PER_ELEMENT") (i64.load (local.get $bs)) (i32.const 12))))
+  (local.get $thisv))
+
 ;; TypedArraySpeciesCreate for map/filter/slice. $resarr is the plain Array of result
 ;; values already computed; $elem is the receiver's default element type. With no
 ;; constructor[@@species] override → build the same-type TA (fast default). Otherwise
@@ -6485,10 +6512,10 @@
       (let $sdd i32 (call $sym_desc (local.get $thisv)))  ;; 0 → absent description
       (return (call $mk_str (call $str_concat (call $str_concat (cstring "Symbol(") (if i32 (local.get $sdd) (then (local.get $sdd)) (else (cstring "")))) (cstring ")"))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 210)) (i32.le_s (local.get $id) (i32.const 218)))  ;; TypedArray constructors
-    (then (return (call $ta_make (i32.sub (local.get $id) (i32.const 210)) (local.get $argc) (local.get $argv)))))
-  (if (i32.eq (local.get $id) (i32.const 478)) (then (return (call $ta_make (i32.const 11) (local.get $argc) (local.get $argv)))))  ;; Float16Array
-  (if (i32.eq (local.get $id) (i32.const 394)) (then (return (call $ta_make (i32.const 9) (local.get $argc) (local.get $argv)))))   ;; BigInt64Array
-  (if (i32.eq (local.get $id) (i32.const 395)) (then (return (call $ta_make (i32.const 10) (local.get $argc) (local.get $argv)))))  ;; BigUint64Array
+    (then (return (call $ta_make_ctor (i32.sub (local.get $id) (i32.const 210)) (local.get $argc) (local.get $argv) (local.get $thisv)))))
+  (if (i32.eq (local.get $id) (i32.const 478)) (then (return (call $ta_make_ctor (i32.const 11) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; Float16Array
+  (if (i32.eq (local.get $id) (i32.const 394)) (then (return (call $ta_make_ctor (i32.const 9) (local.get $argc) (local.get $argv) (local.get $thisv)))))   ;; BigInt64Array
+  (if (i32.eq (local.get $id) (i32.const 395)) (then (return (call $ta_make_ctor (i32.const 10) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; BigUint64Array
   (if (i32.eq (local.get $id) (i32.const 219))  ;; new ArrayBuffer(byteLength)
     (then
       ;; a byteLength too large to allocate (i32 backing) → RangeError, not an OOB trap
@@ -9457,6 +9484,15 @@
           (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.add (local.get $n) (local.get $fstart))) (if (i32.lt_s (local.get $fstart) (i32.const 0)) (then (set! $fstart (i32.const 0))))))
           (if (i32.lt_s (local.get $fend) (i32.const 0)) (then (set! $fend (i32.add (local.get $n) (local.get $fend)))))
           (if (i32.gt_s (local.get $fend) (local.get $n)) (then (set! $fend (local.get $n))))
+          ;; a TypedArray re-checks the buffer after coercing value/start/end (any ToNumber/ToInteger can
+          ;; resize or detach it): an out-of-bounds view throws TypeError, otherwise the range is clamped
+          ;; to the current length.
+          (if (call $is_object (local.get $thisv))
+            (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))
+              (then
+                (if (call $ta_is_oob (local.get $thisv)) (then (call $throw_type (cstring "TypeError") (cstring "TypedArray is out of bounds")) (return (call $v_undef))))
+                (let $flen i32 (call $ta_live_len (local.get $thisv)))
+                (if (i32.lt_s (local.get $flen) (local.get $fend)) (then (set! $fend (local.get $flen))))))))
           (let $fk i32 (local.get $fstart))
           (block $fe (loop $fl
             (br_if $fe (i32.ge_s (local.get $fk) (local.get $fend)))
