@@ -7777,6 +7777,35 @@
         (set! $fseen (i32.or (local.get $fseen) (local.get $fbit)))
         (set! $fi (i32.add (local.get $fi) (i32.const 1)))
         (br $fvl)))
+      ;; validate character-class ranges: a `lo-hi` range with code(lo) > code(hi) is a SyntaxError
+      ;; (Pattern early error). Conservative — only when BOTH endpoints are UNESCAPED single ASCII
+      ;; chars (escaped / multi-byte / class-escape endpoints are skipped, never false-flagged).
+      (let $pl i32 (call $str_len (local.get $pat)))
+      (let $pi i32 (i32.const 0))
+      (let $inclass i32 (i32.const 0))
+      (let $lastatom i32 (i32.const -1))  ;; last plain-ASCII atom inside the class, else -1
+      (block $pve (loop $pvl
+        (br_if $pve (i32.ge_s (local.get $pi) (local.get $pl)))
+        (let $pb i32 (call $str_byte (local.get $pat) (local.get $pi)))
+        (if (i32.eq (local.get $pb) (i32.const 92))  ;; '\' → skip the escaped char; not a plain range endpoint
+          (then (set! $pi (i32.add (local.get $pi) (i32.const 2))) (set! $lastatom (i32.const -1)) (br $pvl)))
+        (if (i32.eqz (local.get $inclass))
+          (then
+            (if (i32.eq (local.get $pb) (i32.const 91)) (then (set! $inclass (i32.const 1)) (set! $lastatom (i32.const -1))))
+            (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $pvl)))
+        (if (i32.eq (local.get $pb) (i32.const 93))  ;; ']' closes the class
+          (then (set! $inclass (i32.const 0)) (set! $lastatom (i32.const -1)) (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $pvl)))
+        (if (i32.and (i32.eq (local.get $pb) (i32.const 45)) (i32.ge_s (local.get $lastatom) (i32.const 0)))  ;; '-' after a plain atom
+          (then
+            (let $nb i32 (if i32 (i32.lt_s (i32.add (local.get $pi) (i32.const 1)) (local.get $pl)) (then (call $str_byte (local.get $pat) (i32.add (local.get $pi) (i32.const 1)))) (else (i32.const -1))))
+            (if (i32.and (i32.ge_s (local.get $nb) (i32.const 32)) (i32.and (i32.lt_s (local.get $nb) (i32.const 128)) (i32.and (i32.ne (local.get $nb) (i32.const 92)) (i32.ne (local.get $nb) (i32.const 93)))))  ;; hi is an unescaped ASCII char → a real range
+              (then
+                (if (i32.gt_s (local.get $lastatom) (local.get $nb))
+                  (then (call $throw_type (cstring "SyntaxError") (cstring "Range out of order in character class")) (return (call $v_undef))))
+                (set! $lastatom (i32.const -1)) (set! $pi (i32.add (local.get $pi) (i32.const 2))) (br $pvl)))  ;; hi consumed
+            (set! $lastatom (i32.const 45)) (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $pvl)))  ;; '-' is a literal
+        (set! $lastatom (if i32 (i32.lt_s (local.get $pb) (i32.const 128)) (then (local.get $pb)) (else (i32.const -1))))
+        (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $pvl)))
       (let $ro i32 (call $obj_new (i32.const 8)))
       (i32.store (local.get $ro) (i32.load (i32.const 324)))  ;; scope parent = RegExp.prototype (source/flags/… getters, test, exec)
       (if (call $is_object (local.get $thisv)) (then (set! $ro (call $val_payload (local.get $thisv)))))  ;; super() from a subclass → init `this`
