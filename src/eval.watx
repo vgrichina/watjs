@@ -8478,12 +8478,18 @@
       (let $splitter i64 (call $vm_construct (local.get $spC) (i32.const 2) (local.get $spCargs) (local.get $spC)))
       (if (call $err) (then (return (call $v_undef))))
       (let $spA i32 (call $arr_new (i32.const 4)))
-      ;; lim = limit undefined ? ~unlimited : ToUint32(limit)
+      ;; lim = limit undefined ? ~unlimited : ToUint32(limit). ToUint32 is UNSIGNED: a negative limit
+      ;; like -23 becomes 2^32-23 (huge → effectively unlimited), NOT ≤0. split_limit_u32 gives the low
+      ;; 32 bits; a resulting NEGATIVE i32 means the unsigned value is ≥2^31 (> any possible result), so
+      ;; treat it as unlimited. Only a genuine ToUint32==0 (0/NaN/±Inf) returns the empty array.
       (let $spLim i32 (i32.const 2147483647))
       (let $spLa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (i32.eqz (call $is_undefined (local.get $spLa)))
-        (then (set! $spLim (call $to_int_idx (call $to_num (local.get $spLa)))) (if (call $err) (then (return (call $v_undef))))))
-      (if (i32.le_s (local.get $spLim) (i32.const 0)) (then (return (call $mk_arr (local.get $spA)))))
+        (then
+          (let $spu i32 (call $split_limit_u32 (local.get $spLa)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.ge_s (local.get $spu) (i32.const 0)) (then (set! $spLim (local.get $spu))))))  ;; negative → unlimited (keep 2147483647)
+      (if (i32.eqz (local.get $spLim)) (then (return (call $mk_arr (local.get $spA)))))
       ;; empty S: one RegExpExec; if it matches → empty array, else [S]
       (if (i32.eqz (local.get $spSize))
         (then
