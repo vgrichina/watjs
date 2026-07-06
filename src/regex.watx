@@ -849,7 +849,9 @@
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
     (let $c i32 (call $str_byte (local.get $pat) (local.get $i)))
     (if (i32.eq (local.get $c) (i32.const 92))  ;; '\' escaped atom
-      (then (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+      (then
+        (if (i32.ge_s (i32.add (local.get $i) (i32.const 1)) (local.get $n)) (then (call $throw_type (cstring "SyntaxError") (cstring "\\ at end of pattern")) (return)))  ;; trailing backslash
+        (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
     (if (i32.eq (local.get $c) (i32.const 91))  ;; '[' char class → skip to ']', atom
       (then
         (set! $i (i32.add (local.get $i) (i32.const 1)))
@@ -887,18 +889,21 @@
     (if (i32.eq (local.get $c) (i32.const 123))  ;; '{' — a quantifier only if well-formed {n}/{n,}/{n,m}
       (then
         (let $j i32 (i32.add (local.get $i) (i32.const 1)))
-        (let $d0 i32 (i32.const 0))
-        (block $de (loop $dl (br_if $de (i32.ge_s (local.get $j) (local.get $n))) (let $dc i32 (call $str_byte (local.get $pat) (local.get $j))) (br_if $de (i32.or (i32.lt_s (local.get $dc) (i32.const 48)) (i32.gt_s (local.get $dc) (i32.const 57)))) (set! $d0 (i32.add (local.get $d0) (i32.const 1))) (set! $j (i32.add (local.get $j) (i32.const 1))) (br $dl)))
-        (let $ok i32 (i32.const 0))
-        (if (i32.gt_s (local.get $d0) (i32.const 0))
+        (let $minv i32 (i32.const 0)) (let $mind i32 (i32.const 0))
+        (block $de (loop $dl (br_if $de (i32.ge_s (local.get $j) (local.get $n))) (let $dc i32 (call $str_byte (local.get $pat) (local.get $j))) (br_if $de (i32.or (i32.lt_s (local.get $dc) (i32.const 48)) (i32.gt_s (local.get $dc) (i32.const 57)))) (if (i32.lt_s (local.get $minv) (i32.const 100000000)) (then (set! $minv (i32.add (i32.mul (local.get $minv) (i32.const 10)) (i32.sub (local.get $dc) (i32.const 48)))))) (set! $mind (i32.add (local.get $mind) (i32.const 1))) (set! $j (i32.add (local.get $j) (i32.const 1))) (br $dl)))
+        (let $ok i32 (i32.const 0)) (let $hasmax i32 (i32.const 0)) (let $maxv i32 (i32.const 0)) (let $maxd i32 (i32.const 0))
+        (if (i32.gt_s (local.get $mind) (i32.const 0))
           (then
             (if (i32.and (i32.lt_s (local.get $j) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (local.get $j)) (i32.const 44)))  ;; ','
-              (then (set! $j (i32.add (local.get $j) (i32.const 1))) (block $d2e (loop $d2l (br_if $d2e (i32.ge_s (local.get $j) (local.get $n))) (let $dc2 i32 (call $str_byte (local.get $pat) (local.get $j))) (br_if $d2e (i32.or (i32.lt_s (local.get $dc2) (i32.const 48)) (i32.gt_s (local.get $dc2) (i32.const 57)))) (set! $j (i32.add (local.get $j) (i32.const 1))) (br $d2l)))))
+              (then (set! $hasmax (i32.const 1)) (set! $j (i32.add (local.get $j) (i32.const 1))) (block $d2e (loop $d2l (br_if $d2e (i32.ge_s (local.get $j) (local.get $n))) (let $dc2 i32 (call $str_byte (local.get $pat) (local.get $j))) (br_if $d2e (i32.or (i32.lt_s (local.get $dc2) (i32.const 48)) (i32.gt_s (local.get $dc2) (i32.const 57)))) (if (i32.lt_s (local.get $maxv) (i32.const 100000000)) (then (set! $maxv (i32.add (i32.mul (local.get $maxv) (i32.const 10)) (i32.sub (local.get $dc2) (i32.const 48)))))) (set! $maxd (i32.add (local.get $maxd) (i32.const 1))) (set! $j (i32.add (local.get $j) (i32.const 1))) (br $d2l)))))
             (if (i32.and (i32.lt_s (local.get $j) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (local.get $j)) (i32.const 125)))  ;; '}'
               (then (set! $ok (i32.const 1)) (set! $j (i32.add (local.get $j) (i32.const 1)))))))
         (if (local.get $ok)
           (then
             (if (i32.ne (local.get $st) (i32.const 1)) (then (call $throw_type (cstring "SyntaxError") (cstring "Nothing to repeat")) (return)))
+            ;; {n,m} with an explicit finite max < min is a SyntaxError
+            (if (i32.and (local.get $hasmax) (i32.and (i32.gt_s (local.get $maxd) (i32.const 0)) (i32.gt_s (local.get $minv) (local.get $maxv))))
+              (then (call $throw_type (cstring "SyntaxError") (cstring "numbers out of order in {} quantifier")) (return)))
             (set! $st (i32.const 2)) (set! $i (local.get $j)) (br $l))
           (else (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))))
     (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
