@@ -6043,6 +6043,17 @@
           (let $hap2 i32 (i32.load (i32.add (local.get $hap) (i32.const 12))))
           (if (local.get $hap2) (then (if (call $scope_find_local (local.get $hap2) (local.get $ks)) (then (return (call $v_true))))))
           (return (call $v_false))))
+      ;; TypedArray: a canonical numeric index is an own property iff it's a valid in-bounds
+      ;; integer index; any other canonical numeric key is absent; non-numeric keys fall through.
+      (if (call $is_object (local.get $thisv))
+        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0))
+          (then
+            (let $hti i32 (call $str_array_index (local.get $ks)))
+            (if (i32.ge_s (local.get $hti) (i32.const 0))
+              (then
+                (let $htln i32 (if i32 (i32.or (call $ta_is_detached (local.get $thisv)) (call $ta_is_oob (local.get $thisv))) (then (i32.const 0)) (else (call $ta_live_len (local.get $thisv)))))
+                (return (call $mk_bool (i32.lt_s (local.get $hti) (local.get $htln))))))
+            (if (call $ta_is_canon_str (local.get $ks)) (then (return (call $v_false))))))))
       (if (call $is_object (local.get $thisv))
         (then (return (call $mk_bool (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (local.get $ks)) (i32.const 0))))))
       (return (call $v_false))))
@@ -8801,6 +8812,33 @@
       ;; descriptor must be an object; else TypeError
       (if (i32.eqz (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Property description must be an object")) (return (call $v_undef))))
+      ;; TypedArray IntegerIndexedDefineOwnProperty: a canonical numeric key must be a valid in-bounds
+      ;; integer index (else false → TypeError), and its descriptor must be a data descriptor that is
+      ;; configurable, enumerable, writable (none present-and-false, no accessor). Non-numeric keys fall
+      ;; through to the ordinary define below.
+      (if (call $is_object (local.get $ob))
+        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $ob)) (cstring "@@taelem")) (i32.const 0))
+          (then
+            (let $tdi i32 (call $str_array_index (local.get $okey)))
+            (if (i32.or (i32.ge_s (local.get $tdi) (i32.const 0)) (call $ta_is_canon_str (local.get $okey)))
+              (then
+                (let $tvlen i32 (if i32 (i32.or (call $ta_is_detached (local.get $ob)) (call $ta_is_oob (local.get $ob))) (then (i32.const 0)) (else (call $ta_live_len (local.get $ob)))))
+                (if (i32.eqz (i32.and (i32.ge_s (local.get $tdi) (i32.const 0)) (i32.lt_s (local.get $tdi) (local.get $tvlen))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "Invalid TypedArray index in defineProperty")) (return (call $v_undef))))
+                ;; valid index: reject accessor / configurable:false / enumerable:false / writable:false
+                (if (i32.or (call $truthy (call $js_in (call $mk_str (cstring "get")) (local.get $de))) (call $truthy (call $js_in (call $mk_str (cstring "set")) (local.get $de))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "Cannot define an accessor on a TypedArray index")) (return (call $v_undef))))
+                (if (i32.and (call $truthy (call $js_in (call $mk_str (cstring "configurable")) (local.get $de))) (i32.eqz (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "configurable"))))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "TypedArray index descriptor must be configurable")) (return (call $v_undef))))
+                (if (i32.and (call $truthy (call $js_in (call $mk_str (cstring "enumerable")) (local.get $de))) (i32.eqz (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "enumerable"))))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "TypedArray index descriptor must be enumerable")) (return (call $v_undef))))
+                (if (i32.and (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $de))) (i32.eqz (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "writable"))))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "TypedArray index descriptor must be writable")) (return (call $v_undef))))
+                ;; write the element if the descriptor carries a value (routes through the TA element set)
+                (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
+                  (then (call $set_prop (local.get $ob) (call $mk_str (local.get $okey)) (call $get_prop (local.get $de) (call $mk_str (cstring "value"))))
+                        (if (call $err) (then (return (call $v_undef))))))
+                (return (local.get $ob))))))))
       (if (call $is_object (local.get $ob))
         (then
           ;; mapped-arguments [[DefineOwnProperty]]: capture the pre-define param map state, then
@@ -9083,6 +9121,33 @@
             (then (let $asl i32 (call $scope_find_local (local.get $aps) (local.get $aks)))
               (if (local.get $asl) (then (return (call $make_descriptor (local.get $asl)))))))
           (return (call $v_undef))))
+      ;; TypedArray [[GetOwnProperty]]: a canonical numeric index → {value, W:true, E:true, C:true}
+      ;; if it is a valid in-bounds integer index, else undefined (a canonical numeric key never
+      ;; falls through to an ordinary own-prop lookup). Non-numeric string/symbol keys fall through.
+      (if (call $is_object (local.get $ob))
+        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $ob)) (cstring "@@taelem")) (i32.const 0))
+          (then
+            (let $gtidx i32 (if i32 (call $is_number (local.get $ky)) (then (i32.trunc_f64_s (call $tonum_raw (local.get $ky))))
+              (else (if i32 (call $is_string (local.get $ky)) (then (call $str_array_index (call $val_payload (local.get $ky)))) (else (i32.const -1))))))
+            ;; a Number key that isn't an integer → undefined
+            (if (i32.and (call $is_number (local.get $ky)) (f64.ne (call $tonum_raw (local.get $ky)) (f64.convert_i32_s (local.get $gtidx))))
+              (then (return (call $v_undef))))
+            (if (i32.ge_s (local.get $gtidx) (i32.const 0))
+              (then
+                (let $gtln i32 (if i32 (i32.or (call $ta_is_detached (local.get $ob)) (call $ta_is_oob (local.get $ob))) (then (i32.const 0)) (else (call $ta_live_len (local.get $ob)))))
+                (if (i32.lt_s (local.get $gtidx) (local.get $gtln))
+                  (then
+                    (let $gtd i32 (call $obj_new (i32.const 4)))
+                    (call $scope_define (local.get $gtd) (cstring "value") (call $get_prop (local.get $ob) (local.get $ky)))
+                    (call $scope_define (local.get $gtd) (cstring "writable") (call $v_true))
+                    (call $scope_define (local.get $gtd) (cstring "enumerable") (call $v_true))
+                    (call $scope_define (local.get $gtd) (cstring "configurable") (call $v_true))
+                    (return (call $mk_obj (local.get $gtd))))
+                  (else (return (call $v_undef))))))
+            ;; canonical numeric key that's invalid/out-of-bounds → undefined (no ordinary fallthrough)
+            (if (i32.or (call $is_number (local.get $ky))
+                        (i32.and (call $is_string (local.get $ky)) (call $ta_is_canon_str (call $val_payload (local.get $ky)))))
+              (then (return (call $v_undef))))))))
       ;; functions: length / name are non-enumerable, non-writable, configurable
       (if (call $is_function (local.get $ob))
         (then
