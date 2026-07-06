@@ -104,6 +104,7 @@
     (if (i64.ne (local.get $wo) (i64.const 0))
       (then
         (set! $slot (call $with_find_slot (local.get $wo) (local.get $name)))
+        (br_if $brk (call $err))  ;; proxy has-trap threw (revoked / invariant) → stop; the error propagates
         (if (local.get $slot) (then (i64.store (i32.const 492) (local.get $wo)) (br $brk)))))
     (set! $cur (call $scope_parent (local.get $cur)))
     (br $cont)))
