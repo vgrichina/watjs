@@ -9264,7 +9264,10 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
       (let $cro i32 (call $obj_new (i32.const 8)))
       (if (call $is_object (local.get $crp)) (then (i32.store (local.get $cro) (call $val_payload (local.get $crp))))
-        (else (if (call $is_null (local.get $crp)) (then (i32.store (local.get $cro) (i32.const 0))))))  ;; Object.create(null) → no [[Prototype]]
+        (else (if (call $is_null (local.get $crp)) (then (i32.store (local.get $cro) (i32.const 0)))  ;; Object.create(null) → no [[Prototype]]
+          (else  ;; array/function proto → keep the value in @@protoval, scope-parent 0 (see setproto_internal)
+            (i32.store (local.get $cro) (i32.const 0))
+            (call $scope_define (local.get $cro) (cstring "@@protoval") (local.get $crp))))))
       ;; optional 2nd arg: property descriptors (like defineProperties).
       ;; If Properties is supplied, ToObject(Properties) is applied — null throws.
       (let $crd i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))

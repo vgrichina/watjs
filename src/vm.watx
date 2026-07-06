@@ -4687,12 +4687,17 @@
         ;; Lazily create .prototype if absent (plain constructor functions), so
         ;; `this instanceof F` holds inside the body and methods added later resolve.
         (let $cproto i64 (i64.load (i32.add (local.get $cfn) (i32.const 16))))
-        (if (i32.eqz (call $is_object (local.get $cproto)))
+        ;; only a PRIMITIVE .prototype (number/etc.) is replaced with a default object; an array or
+        ;; function .prototype is a valid object prototype and must be kept (via @@protoval below)
+        (if (i32.eqz (i32.or (call $is_object (local.get $cproto)) (i32.or (call $is_array (local.get $cproto)) (call $is_function (local.get $cproto)))))
           (then
             (set! $cproto (call $mk_obj (call $obj_new (i32.const 8))))
             (i64.store (i32.add (local.get $cfn) (i32.const 16)) (local.get $cproto))
             (call $scope_define_attr (call $val_payload (local.get $cproto)) (cstring "constructor") (i64.load (i32.add (local.get $stack) (local.get $cbase))) (i32.const 12))))  ;; .prototype.constructor = ctor {W:true,E:false,C:true}
-        (i32.store (local.get $newo) (call $val_payload (local.get $cproto)))
+        ;; instance [[Prototype]] = F.prototype: an object → scope-parent; an array/function → @@protoval
+        (if (i32.or (call $is_array (local.get $cproto)) (call $is_function (local.get $cproto)))
+          (then (i32.store (local.get $newo) (i32.const 0)) (call $scope_define (local.get $newo) (cstring "@@protoval") (local.get $cproto)))
+          (else (i32.store (local.get $newo) (call $val_payload (local.get $cproto)))))
         (let $cnp i32 (i32.load (i32.add (local.get $cfn) (i32.const 8))))
         (let $cns i32 (call $scope_new (call $vm_fn_parent (local.get $cfn) (local.get $gscope)) (i32.add (local.get $cnp) (i32.const 4))))
         (let $pi i32 (i32.const 0))
