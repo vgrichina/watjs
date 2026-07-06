@@ -702,7 +702,7 @@
               (let $smn i32 (call $ident_name)) (call $next_token)
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))   ;; receiver
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
-              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@superproto"))
+              (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO: this.@@superproto (class) / getPrototypeOf(this) (object method)
               (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $smn))  ;; [this, method]
               (call $next_token)  ;; '('
               (let $smargc i32 (i32.const 0))
@@ -5451,6 +5451,16 @@
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $get_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (call $mk_str (local.get $nm))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 116))  ;; SUPERPROTO — [obj] → obj.@@superproto, else getPrototypeOf(obj)
+      (then
+        ;; class methods carry @@superproto on their prototype (may be null for a base class) → use it;
+        ;; object-literal methods have none (undefined) → the home object's dynamic [[Prototype]].
+        (let $spt i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $spo i64 (i64.load (i32.add (local.get $stack) (local.get $spt))))
+        (let $spv i64 (call $get_prop (local.get $spo) (call $mk_str (cstring "@@superproto"))))
+        (i64.store (i32.add (local.get $stack) (local.get $spt))
+          (if i64 (call $is_undefined (local.get $spv)) (then (call $js_get_prototype (local.get $spo))) (else (local.get $spv))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 31))  ;; GETIDX — pop key, pop obj
       (then
