@@ -6778,7 +6778,7 @@
       (let $rspp i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (i32.eqz (i32.or (call $is_object (local.get $rspt)) (i32.or (call $is_array (local.get $rspt)) (i32.or (call $is_function (local.get $rspt)) (call $is_proxy (local.get $rspt))))))
         (then (call $throw_type (cstring "TypeError") (cstring "Reflect.setPrototypeOf called on non-object")) (return (call $v_undef))))
-      (if (i32.eqz (i32.or (call $is_object (local.get $rspp)) (call $is_null (local.get $rspp))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $rspp)) (i32.or (call $is_null (local.get $rspp)) (i32.or (call $is_array (local.get $rspp)) (call $is_function (local.get $rspp))))))
         (then (call $throw_type (cstring "TypeError") (cstring "Reflect.setPrototypeOf: proto must be an object or null")) (return (call $v_undef))))
       (let $rspok i32 (call $setproto_internal (local.get $rspt) (local.get $rspp)))
       (if (call $err) (then (return (call $v_undef))))
