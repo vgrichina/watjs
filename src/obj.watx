@@ -665,6 +665,9 @@
             (then
               (let $get i64 (i64.load (call $val_payload (i64.load (local.get $slot)))))
               (if (call $is_function (local.get $get)) (then (return (call $call_fn0 (local.get $get) (local.get $cont)))))
+              ;; a private accessor with no getter (set-only #x) → reading it is a TypeError, not undefined
+              (if (call $is_private_key (call $to_prop_key (local.get $key)))
+                (then (call $throw_type (cstring "TypeError") (cstring "'#x' was defined without a getter")) (return (call $v_undef))))
               (return (call $v_undef))))
           (return (i64.load (local.get $slot)))))
       ;; not found on the object or its prototype chain. A normal object parents to
