@@ -7720,7 +7720,19 @@
   ;; --- static object/array/number/string methods (ids 80-87) ---
   (if (i32.eq (local.get $id) (i32.const 448))  ;; Function.prototype.toString()
     (then
-      (if (i32.eqz (i32.or (call $is_function (local.get $thisv)) (call $is_proxy (local.get $thisv))))
+      ;; the receiver must be callable: a plain function, or a Proxy whose (unwrapped) target is
+      ;; callable — a proxy of a non-callable object (or a revoked proxy) is not.
+      (let $ftcall i32 (call $is_function (local.get $thisv)))
+      (if (i32.and (i32.eqz (local.get $ftcall)) (call $is_proxy (local.get $thisv)))
+        (then
+          (let $ftt i64 (local.get $thisv))
+          (block $ftte (loop $fttl
+            (br_if $ftte (i32.eqz (call $is_proxy (local.get $ftt))))
+            (set! $ftt (call $proxy_target (local.get $ftt)))
+            (br_if $ftte (call $is_null (local.get $ftt)))  ;; revoked → stays non-callable
+            (br $fttl)))
+          (set! $ftcall (call $is_function (local.get $ftt)))))
+      (if (i32.eqz (local.get $ftcall))
         (then (call $throw_type (cstring "TypeError") (cstring "Function.prototype.toString called on non-callable")) (return (call $v_undef))))
       ;; VM function (magic 1448232526..528) with a retained source span → return the exact source text
       (if (call $is_function (local.get $thisv))
