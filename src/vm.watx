@@ -4130,12 +4130,14 @@
   ;; OrdinaryHasInstance: a non-object .prototype is a TypeError (not a false result)
   (if (i32.eqz (i32.or (call $is_object (local.get $proto)) (i32.or (call $is_array (local.get $proto)) (call $is_function (local.get $proto)))))
     (then (call $throw_type (cstring "TypeError") (cstring "Function has non-object prototype in instanceof check")) (return (call $v_false))))
-  (let $protoScope i32 (call $val_payload (local.get $proto)))
-  (let $p i32 (call $scope_parent (call $val_payload (local.get $x))))
+  ;; walk x's [[Prototype]] chain via js_get_prototype (honors @@protoval array/function prototypes,
+  ;; null-terminates) comparing each link to F.prototype as a VALUE (so a function/array proto matches).
+  (let $ohi_cur i64 (call $js_get_prototype (local.get $x)))
   (block $brk (loop $cont
-    (br_if $brk (i32.eqz (local.get $p)))
-    (if (i32.eq (local.get $p) (local.get $protoScope)) (then (return (call $v_true))))
-    (set! $p (call $scope_parent (local.get $p)))
+    (if (call $err) (then (return (call $v_false))))
+    (if (i32.or (call $is_null (local.get $ohi_cur)) (call $is_undefined (local.get $ohi_cur))) (then (br $brk)))
+    (if (call $strict_eq (local.get $ohi_cur) (local.get $proto)) (then (return (call $v_true))))
+    (set! $ohi_cur (call $js_get_prototype (local.get $ohi_cur)))
     (br $cont)))
   (call $v_false))
 

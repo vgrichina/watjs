@@ -736,7 +736,7 @@
               ;; arrows (bit1) and methods/accessors (bit6) are non-constructors → no .prototype
               (if (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 66))
                 (then (return (call $v_undef))))
-              (if (i32.eqz (call $is_object (local.get $vproto)))  ;; lazily create .prototype (constructor functions)
+              (if (i32.eqz (i32.or (call $is_object (local.get $vproto)) (i32.or (call $is_array (local.get $vproto)) (call $is_function (local.get $vproto)))))  ;; lazily create .prototype only if absent/primitive
                 (then
                   (set! $vproto (call $mk_obj (call $obj_new (i32.const 8))))
                   (let $gipp i32 (call $gen_inst_proto (local.get $fn)))  ;; generator → inherit %GeneratorPrototype%
@@ -996,7 +996,9 @@
   (if (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
     (then
       (let $vp i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
-      (if (call $is_object (local.get $vp)) (then (return (local.get $vp))))
+      ;; a valid .prototype VALUE (object, or an array/function set explicitly) is returned as-is;
+      ;; only an absent/primitive .prototype is lazily materialized as a fresh object.
+      (if (i32.or (call $is_object (local.get $vp)) (i32.or (call $is_array (local.get $vp)) (call $is_function (local.get $vp)))) (then (return (local.get $vp))))
       (let $vpo i32 (call $obj_new (i32.const 8)))
       (let $gipp i32 (call $gen_inst_proto (local.get $fn)))  ;; generator → inherit %GeneratorPrototype%
       (if (local.get $gipp) (then (i32.store (local.get $vpo) (local.get $gipp))))
@@ -1038,19 +1040,18 @@
           (let $xint i32 (i32.load (if i32 (local.get $xb7) (then (i32.const 804)) (else (i32.const 800)))))
           (if (local.get $xint) (then (if (call $strict_eq (local.get $fpv) (call $mk_obj (local.get $xint))) (then (return (call $v_true))))))))
       (return (call $v_false))))
-  (let $protoScope i32 (call $val_payload (call $fn_get_prototype (call $val_payload (local.get $f)))))
-  ;; start the prototype-chain walk: arrays begin at Array.prototype (reg 160),
-  ;; ordinary objects at their scope parent; anything else is not an instance.
-  (let $p i32 (i32.const 0))
-  (if (call $is_array (local.get $x))
-    (then (set! $p (i32.load (i32.const 160))))
-    (else (if (call $is_object (local.get $x))
-      (then (set! $p (call $scope_parent (call $val_payload (local.get $x)))))
-      (else (return (call $v_false))))))
+  ;; OrdinaryHasInstance: walk x's [[Prototype]] chain (via js_get_prototype, which honors an
+  ;; array/function-as-[[Prototype]] stored in @@protoval, proxy getPrototypeOf traps, and native
+  ;; overrides) comparing each link to F.prototype (a VALUE, so a function/array prototype matches).
+  (if (i32.eqz (i32.or (call $is_object (local.get $x)) (i32.or (call $is_array (local.get $x)) (call $is_function (local.get $x)))))
+    (then (return (call $v_false))))
+  (let $fproto i64 (call $fn_get_prototype (call $val_payload (local.get $f))))
+  (let $cur i64 (call $js_get_prototype (local.get $x)))
   (block $brk (loop $cont
-    (br_if $brk (i32.eqz (local.get $p)))
-    (if (i32.eq (local.get $p) (local.get $protoScope)) (then (return (call $v_true))))
-    (set! $p (call $scope_parent (local.get $p)))
+    (if (call $err) (then (return (call $v_false))))
+    (if (i32.or (call $is_null (local.get $cur)) (call $is_undefined (local.get $cur))) (then (br $brk)))
+    (if (call $strict_eq (local.get $cur) (local.get $fproto)) (then (return (call $v_true))))
+    (set! $cur (call $js_get_prototype (local.get $cur)))
     (br $cont)))
   (call $v_false))
 
