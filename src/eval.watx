@@ -801,7 +801,15 @@
 ;; For Array.of/Array.from with a custom constructor result. Sets $err on failure.
 (func $cdp_throw (param $target i64) (param $idx i32) (param $val i64) (effects)
   (if (call $is_array (local.get $target))
-    (then (call $arr_set (call $val_payload (local.get $target)) (local.get $idx) (local.get $val)) (return)))
+    (then
+      (let $cta i32 (call $val_payload (local.get $target)))
+      ;; CreateDataProperty of a NEW index on a non-extensible array (@@noext) fails → throw
+      (if (i32.eqz (call $arr_has (local.get $cta) (local.get $idx)))
+        (then (let $ctp i32 (i32.load (i32.add (local.get $cta) (i32.const 12))))
+          (if (local.get $ctp)
+            (then (if (call $scope_find_local (local.get $ctp) (cstring "@@noext"))
+              (then (call $throw_type (cstring "TypeError") (cstring "Cannot define property, object is not extensible")) (return)))))))
+      (call $arr_set (local.get $cta) (local.get $idx) (local.get $val)) (return)))
   ;; a Proxy target: [[DefineOwnProperty]] must invoke the defineProperty trap (and propagate its
   ;; throw) — route through Reflect.defineProperty (native 206), not the ordinary-object fast path.
   (if (call $is_proxy (local.get $target))
@@ -2833,6 +2841,14 @@
       ;; adding a new index at/after length is refused when length is non-writable
       (if (i32.and (i32.ge_s (local.get $dpidx) (call $arr_len (local.get $dpa))) (i32.eqz (call $arr_len_writable (local.get $dpa))))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot add property, length is not writable")) (return)))
+      ;; defining a NEW index (not already a dense element nor a deopted @12 entry) on a
+      ;; non-extensible array (@@noext) is refused — [[DefineOwnProperty]] on a new key needs extensibility
+      (let $dpp0 i32 (i32.load (i32.add (local.get $dpa) (i32.const 12))))
+      (if (i32.eqz (call $arr_has (local.get $dpa) (local.get $dpidx)))  ;; not a dense element (nested ifs: scope_find_local traps on a 0 scope)
+        (then (if (local.get $dpp0)
+          (then (if (i32.eqz (call $scope_find_local (local.get $dpp0) (local.get $dpk)))  ;; not a deopted @12 entry → a NEW index
+            (then (if (call $scope_find_local (local.get $dpp0) (cstring "@@noext"))
+              (then (call $throw_type (cstring "TypeError") (cstring "Cannot define property, object is not extensible")) (return)))))))))
       ;; if the index already lives in the @12 scope (previously deopted), redefine it there
       (let $dpp i32 (i32.load (i32.add (local.get $dpa) (i32.const 12))))
       (if (local.get $dpp)
@@ -9926,9 +9942,13 @@
           ;; A = ArraySpeciesCreate(O, 0) — validates the constructor (throws on a non-constructor)
           (let $fAv i64 (call $array_species_create (local.get $thisv) (i32.const 0)))
           (if (call $err) (then (return (call $v_undef))))
-          (let $fdest i32 (if i32 (call $is_array (local.get $fAv)) (then (call $val_payload (local.get $fAv))) (else (call $arr_new (i32.const 4)))))
-          (call $arr_flatten (local.get $fsrc) (local.get $fdest) (local.get $fdepth))
-          (return (if i64 (call $is_array (local.get $fAv)) (then (local.get $fAv)) (else (call $mk_arr (local.get $fdest)))))))
+          ;; FlattenIntoArray writes via CreateDataPropertyOrThrow onto the species result A, so a
+          ;; non-extensible / frozen A throws (idxptr = shared running write index cell)
+          (let $fidx i32 (call $heap_alloc (i32.const 4)))
+          (i32.store (local.get $fidx) (i32.const 0))
+          (call $arr_flatten (local.get $fsrc) (local.get $fAv) (local.get $fdepth) (local.get $fidx))
+          (if (call $err) (then (return (call $v_undef))))
+          (return (local.get $fAv))))
       (if (i32.or (i32.eq (local.get $id) (i32.const 33)) (i32.eq (local.get $id) (i32.const 34)))  ;; findLast / findLastIndex
         (then
           (let $fli i32 (i32.sub (local.get $n) (i32.const 1)))

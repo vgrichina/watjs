@@ -149,17 +149,24 @@
     (br $l)))
   (if (i32.gt_s (local.get $n) (i32.const 0)) (then (i32.store (local.get $a) (i32.sub (local.get $n) (i32.const 1))))))
 ;; append elements of $src to $dest, recursing into nested arrays while depth>0
-(func $arr_flatten (param $src i32) (param $dest i32) (param $depth i32) (effects)
+;; FlattenIntoArray: add each non-hole element of `src` to `target` via CreateDataPropertyOrThrow
+;; (so a non-extensible / frozen species-created target throws TypeError), recursing into nested
+;; arrays up to `depth`. `idxptr` is a heap cell holding the running write index (shared across the
+;; recursion so nested flattening keeps appending). Stops on the first abrupt CreateDataProperty.
+(func $arr_flatten (param $src i32) (param $target i64) (param $depth i32) (param $idxptr i32) (effects)
   (let $i i32 (i32.const 0))
   (let $n i32 (call $arr_len (local.get $src)))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (br_if $e (call $err))  ;; a prior CreateDataPropertyOrThrow threw → stop
     (if (call $arr_has (local.get $src) (local.get $i))  ;; flat skips holes (HasProperty)
       (then
         (let $el i64 (call $arr_get (local.get $src) (local.get $i)))
         (if (i32.and (i32.gt_s (local.get $depth) (i32.const 0)) (call $is_array (local.get $el)))
-          (then (call $arr_flatten (call $val_payload (local.get $el)) (local.get $dest) (i32.sub (local.get $depth) (i32.const 1))))
-          (else (call $arr_push (local.get $dest) (local.get $el))))))
+          (then (call $arr_flatten (call $val_payload (local.get $el)) (local.get $target) (i32.sub (local.get $depth) (i32.const 1)) (local.get $idxptr)))
+          (else
+            (call $cdp_throw (local.get $target) (i32.load (local.get $idxptr)) (local.get $el))
+            (i32.store (local.get $idxptr) (i32.add (i32.load (local.get $idxptr)) (i32.const 1)))))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $l))))
 
