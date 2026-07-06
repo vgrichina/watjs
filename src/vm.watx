@@ -3887,6 +3887,11 @@
               (drop (call $eat (i32.const 21)))
               (return))))
         (else (call $look_restore)))))
+  ;; empty statement `;` → no completion value, no code. Consume it and return. Without this,
+  ;; the ';' fell through to vm_c_commaexpr, whose primary parser pushed a phantom `undefined`
+  ;; without consuming the ';', and a following `(…)` (the `;(function(){})()` anti-ASI idiom)
+  ;; was then parsed as a CALL of that undefined → spurious "called value is not a function".
+  (if (i32.eq (call $tok_kind) (i32.const 21)) (then (call $next_token) (return)))
   ;; expression statement → store value to the completion register (op 71), so
   ;; eval()/JSON.parse can read the last expression value. Same stack effect as POP.
   (call $vm_c_commaexpr (local.get $code))
