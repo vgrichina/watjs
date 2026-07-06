@@ -5057,8 +5057,12 @@
                     (set! $dres (call $v_true)))
                   (else (if (call $err) (then (br $disp))) (set! $dres (call $v_false)))))
               (else
-                (let $dtg i64 (call $proxy_target (local.get $dobj)))
-                (if (call $is_object (local.get $dtg)) (then (drop (call $scope_delete (call $val_payload (local.get $dtg)) (call $to_prop_key (local.get $dkey))))))))
+                ;; no trap → [[Delete]] on the target via Reflect.deleteProperty (203), which
+                ;; re-dispatches when the target is itself a Proxy (fires its deleteProperty trap)
+                (let $dfb i32 (call $heap_alloc (i32.const 16)))
+                (i64.store (local.get $dfb) (call $proxy_target (local.get $dobj)))
+                (i64.store (i32.add (local.get $dfb) (i32.const 8)) (local.get $dkey))
+                (set! $dres (call $call_native (i32.const 203) (i32.const 2) (local.get $dfb) (call $v_undef)))))
             (if (call $err) (then (br $disp)))
             (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $dres))
             (set! $sp (i32.add (local.get $sp) (i32.const 8)))
