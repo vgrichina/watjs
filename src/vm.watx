@@ -5125,7 +5125,9 @@
             (if (local.get $dslot)
               (then
                 (if (call $entry_configurable (local.get $dslot))
-                  (then (drop (call $scope_delete (local.get $dsc) (local.get $dks))))
+                  (then (drop (call $scope_delete (local.get $dsc) (local.get $dks)))
+                        ;; mapped-arguments: a deleted index is permanently unmapped from [[ParameterMap]]
+                        (call $args_sever (local.get $dsc) (call $str_array_index (local.get $dks))))
                   (else (set! $dres (call $v_false))))))))
         ;; functions: delete a configurable own prop (e.g. name) from the native
         ;; @12 store or a VM fn's @(48+np*4) own-prop (static) scope.

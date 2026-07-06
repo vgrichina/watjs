@@ -421,6 +421,22 @@
 ;; as a WRITABLE data property. Severing (defineProperty writable:false / accessor) makes the
 ;; own prop non-writable/accessor, and delete removes it — both auto-unmap via this derivation
 ;; (no separate sever-set needed).
+;; Once an index is deleted (or sever-redefined) from the [[ParameterMap]] it is PERMANENTLY
+;; unmapped — even if a fresh writable own data property is later created at that index (which
+;; would otherwise re-satisfy the derivation below). A per-index sever bit (idx<31) records this.
+(func $args_severed (param $o i32) (param $idx i32) (result i32) (effects)
+  (if (i32.ge_s (local.get $idx) (i32.const 31)) (then (return (i32.const 0))))
+  (let $ml i32 (call $scope_find_local (local.get $o) (cstring "@@umask")))
+  (if (i32.eqz (local.get $ml)) (then (return (i32.const 0))))
+  (i32.and (i32.shr_u (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $ml)))) (local.get $idx)) (i32.const 1)))
+(func $args_sever (param $o i32) (param $idx i32) (effects)
+  (if (i32.lt_s (local.get $idx) (i32.const 0)) (then (return)))
+  (if (i32.ge_s (local.get $idx) (i32.const 31)) (then (return)))
+  (if (i32.eqz (call $scope_find_local (local.get $o) (cstring "@@as"))) (then (return)))  ;; only real mapped-args objects
+  (let $ml i32 (call $scope_find_local (local.get $o) (cstring "@@umask")))
+  (let $mv i32 (if i32 (local.get $ml) (then (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $ml))))) (else (i32.const 0))))
+  (call $scope_define (local.get $o) (cstring "@@umask") (call $num (f64.convert_i32_s (i32.or (local.get $mv) (i32.shl (i32.const 1) (local.get $idx)))))))
+
 (func $args_mapped (param $o i32) (param $idx i32) (result i32) (effects)
   (if (i32.lt_s (local.get $idx) (i32.const 0)) (then (return (i32.const 0))))
   (let $asl i32 (call $scope_find_local (local.get $o) (cstring "@@as")))
@@ -428,6 +444,7 @@
   (let $anpl i32 (call $scope_find_local (local.get $o) (cstring "@@anp")))
   (if (i32.eqz (local.get $anpl)) (then (return (i32.const 0))))
   (if (i32.ge_s (local.get $idx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $anpl))))) (then (return (i32.const 0))))
+  (if (call $args_severed (local.get $o) (local.get $idx)) (then (return (i32.const 0))))
   (let $ps i32 (call $scope_find_local (local.get $o) (call $num_to_str (f64.convert_i32_s (local.get $idx)))))
   (if (i32.eqz (local.get $ps)) (then (return (i32.const 0))))
   (if (call $entry_is_accessor (local.get $ps)) (then (return (i32.const 0))))

@@ -2719,10 +2719,19 @@
   (let $isAcc i32 (i32.or (call $truthy (call $js_in (call $mk_str (cstring "get")) (local.get $desc)))
                           (call $truthy (call $js_in (call $mk_str (cstring "set")) (local.get $desc)))))
   (let $ps i32 (call $scope_find_local (local.get $o) (call $num_to_str (f64.convert_i32_s (local.get $idx)))))
-  (if (call $args_mapped (local.get $o) (local.get $idx))  ;; still aliased
-    (then (if (local.get $hasVal) (then (call $args_set_param (local.get $o) (local.get $idx) (i64.load (local.get $ps))))))
-    (else (if (i32.and (i32.eqz (local.get $hasVal)) (i32.eqz (local.get $isAcc)))  ;; bare writable:false sever → freeze
-            (then (if (local.get $ps) (then (i64.store (local.get $ps) (local.get $liveParam)))))))))
+  ;; step 5.b.i: Desc has a value → propagate it to the parameter (the index WAS mapped when the
+  ;; define ran, so the value reaches the param even if the same define also severs via writable:false).
+  (if (i32.and (local.get $hasVal) (i32.ne (local.get $ps) (i32.const 0)))
+    (then (call $args_set_param (local.get $o) (local.get $idx) (i64.load (local.get $ps)))))
+  ;; step 5.b.ii: if the define severed the index (non-writable data / accessor), it is permanently
+  ;; unmapped; a bare writable:false sever (no value) freezes the own prop to the last aliased value.
+  (if (i32.eqz (call $args_mapped (local.get $o) (local.get $idx)))
+    (then
+      ;; freeze the own-prop value BEFORE args_sever (its scope_define of @@umask may rehash $o's
+      ;; scope and dangle $ps — do the store while $ps is still valid, then record the sever bit).
+      (if (i32.and (i32.eqz (local.get $hasVal)) (i32.eqz (local.get $isAcc)))
+        (then (if (local.get $ps) (then (i64.store (local.get $ps) (local.get $liveParam))))))
+      (call $args_sever (local.get $o) (local.get $idx)))))
 
 ;; build a property-descriptor object from a property slot.
 (func $make_descriptor (param $slot i32) (result i64) (effects)
