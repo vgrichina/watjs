@@ -1129,7 +1129,17 @@
           (if (i32.ge_s (local.get $tik) (i32.const 0))
             (then (return (call $mk_bool (i32.lt_s (local.get $tik) (call $ta_live_len_p (call $val_payload (local.get $obj))))))))))))
   (if (call $is_object (local.get $obj))
-    (then (return (call $mk_bool (i32.ne (call $scope_find (call $val_payload (local.get $obj)) (call $to_prop_key (local.get $key))) (i32.const 0))))))
+    (then
+      ;; own property?
+      (if (call $scope_find_local (call $val_payload (local.get $obj)) (call $to_prop_key (local.get $key)))
+        (then (return (call $v_true))))
+      ;; walk [[Prototype]] one level via js_get_prototype and recurse, so an exotic prototype
+      ;; (a Proxy — or an array/function) invokes its own [[HasProperty]] instead of being read as
+      ;; a flat scope (which never fires a Proxy's `has` trap for `key in Object.create(proxy)`).
+      (let $inpr i64 (call $js_get_prototype (local.get $obj)))
+      (if (i32.or (call $is_object (local.get $inpr)) (i32.or (call $is_array (local.get $inpr)) (call $is_function (local.get $inpr))))
+        (then (return (call $js_in (local.get $key) (local.get $inpr)))))
+      (return (call $v_false))))
   (if (call $is_array (local.get $obj))
     (then
       (if (call $key_is_length (local.get $key)) (then (return (call $v_true))))
