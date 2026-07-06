@@ -9296,7 +9296,7 @@
       (let $spp i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (i32.or (call $is_null (local.get $spo)) (call $is_undefined (local.get $spo)))
         (then (call $throw_type (cstring "TypeError") (cstring "Object.setPrototypeOf called on null or undefined")) (return (call $v_undef))))
-      (if (i32.eqz (i32.or (call $is_object (local.get $spp)) (call $is_null (local.get $spp))))
+      (if (i32.eqz (i32.or (call $is_object (local.get $spp)) (i32.or (call $is_null (local.get $spp)) (i32.or (call $is_array (local.get $spp)) (call $is_function (local.get $spp))))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
       (if (i32.or (call $is_proxy (local.get $spo)) (call $is_object (local.get $spo)))
         (then
