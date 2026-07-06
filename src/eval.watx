@@ -6874,7 +6874,13 @@
       (if (call $err) (then (return (call $v_undef))))  ;; a setter/proxy trap threw → propagate
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 202))  ;; Reflect.has(target, key)
-    (then (return (call $js_in (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+    (then
+      ;; a string key "#x" is a plain string, not a private-name reference (`#x in o` compiles to the
+      ;; `in` op directly, never Reflect.has) — private members are invisible to Reflect.has
+      (let $rhk i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (call $is_string (local.get $rhk))
+        (then (if (call $is_private_key (call $val_payload (local.get $rhk))) (then (return (call $v_false))))))
+      (return (call $js_in (local.get $rhk) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 203))  ;; Reflect.deleteProperty(target, key) → boolean
     (then
       (let $rdt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
