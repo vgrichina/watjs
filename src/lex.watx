@@ -652,7 +652,7 @@
   (if (i32.and (i32.eq (local.get $c) (i32.const 92)) (i32.eq (local.get $c1) (i32.const 117)))
     (then (call $lex_ident) (return)))  ;; \u… → identifier starting with a unicode escape
   (if (i32.or (call $is_alpha (local.get $c)) (i32.and (i32.ge_s (local.get $c) (i32.const 128)) (i32.eqz (call $uni_ws_len)))) (then (call $lex_ident) (return)))  ;; ASCII ident-start or a non-ASCII, non-whitespace UTF-8 byte
-  (if (i32.and (i32.eq (local.get $c) (i32.const 35)) (i32.or (call $is_alpha (local.get $c1)) (i32.ge_s (local.get $c1) (i32.const 128)))) (then (call $lex_ident) (return)))  ;; #privateName → a single NAME token "#x"
+  (if (i32.and (i32.eq (local.get $c) (i32.const 35)) (i32.or (call $is_alpha (local.get $c1)) (i32.or (i32.ge_s (local.get $c1) (i32.const 128)) (i32.eq (local.get $c1) (i32.const 92))))) (then (call $lex_ident) (return)))  ;; #privateName (incl. #\uHHHH escaped) → a single NAME token
   ;; `#` must begin a PrivateIdentifier; an ASCII non-identifier follower (not `\` escape, not a >127
   ;; unicode letter) is ALWAYS a SyntaxError (e.g. a non-byte-0 `#!`). Consume the `#` and emit EOF so a
   ;; re-entrant next_token can't spin, then surface the early error (reg 400 → thrown SyntaxError).
