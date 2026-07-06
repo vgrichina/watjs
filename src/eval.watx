@@ -5920,7 +5920,10 @@
         (br_if $pae (call $err))
         (br_if $pae (call $truthy (local.get $prdone)))
         (let $prval i64 (call $get_prop (local.get $pr) (call $mk_str (cstring "value"))))
-        (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))
+        ;; IteratorValue (accessing result.value) abrupt → set iteratorRecord.[[done]] = true, so the
+        ;; outer IfAbruptRejectPromise does NOT IteratorClose (spec PerformPromise* step "If nextValue
+        ;; is an abrupt completion, set [[done]] to true; ReturnIfAbrupt"). Propagate WITHOUT closing.
+        (br_if $pae (call $err))
         (i64.store (local.get $prbuf) (local.get $prval))
         (let $pe i64 (call $call_val (local.get $pcres) (i32.const 1) (local.get $prbuf) (local.get $pcons)))  ;; C.resolve(value)
         (if (call $err) (then (call $iter_close_throw (local.get $pit)) (br $pae)))
