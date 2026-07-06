@@ -6421,6 +6421,20 @@
           (if (i32.eqz (local.get $fpk))
             (then (call $throw_type (cstring "TypeError") (cstring "Object.freeze: [[PreventExtensions]] returned false")) (return (call $v_undef))))
           (return (local.get $fo))))
+      ;; TypedArray SetIntegrityLevel(frozen): [[PreventExtensions]] returns false for any view over a
+      ;; RESIZABLE buffer (→ TypeError), and a non-empty TA's indices reject defineProperty(configurable:
+      ;; false) (→ TypeError). Only a zero-length view over a non-resizable buffer can be frozen.
+      (if (call $is_object (local.get $fo))
+        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $fo)) (cstring "@@taelem")) (i32.const 0))
+          (then
+            (let $frresiz i32 (i32.const 0))
+            (let $frbo i32 (call $scope_find_local (call $val_payload (local.get $fo)) (cstring "@@tabufobj")))
+            (if (local.get $frbo)
+              (then (let $frbv i64 (i64.load (local.get $frbo)))
+                (if (call $is_object (local.get $frbv))
+                  (then (if (call $scope_find_local (call $val_payload (local.get $frbv)) (cstring "@@abmax")) (then (set! $frresiz (i32.const 1))))))))
+            (if (i32.or (local.get $frresiz) (i32.gt_s (call $ta_live_len (local.get $fo)) (i32.const 0)))
+              (then (call $throw_type (cstring "TypeError") (cstring "Cannot freeze a non-empty or resizable-backed TypedArray")) (return (call $v_undef))))))))
       (if (call $is_object (local.get $fo))
         (then
           (let $fsc i32 (call $val_payload (local.get $fo)))
