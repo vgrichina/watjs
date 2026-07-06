@@ -2441,9 +2441,8 @@
   (call $scope_define (local.get $sao) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $saelem))))
   (call $scope_define (local.get $sao) (cstring "@@tabuf") (call $num (f64.convert_i32_s (i32.add (local.get $sabuf) (i32.mul (local.get $sabeg) (local.get $sabpe))))))
   (call $scope_define (local.get $sao) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $sanew))))
-  (call $scope_define_attr (local.get $sao) (cstring "length") (call $num (f64.convert_i32_s (local.get $sanew))) (i32.const 12))
-  (call $scope_define_attr (local.get $sao) (cstring "byteLength") (call $num (f64.convert_i32_s (i32.mul (local.get $sanew) (local.get $sabpe)))) (i32.const 12))
-  (call $scope_define_attr (local.get $sao) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $sabpe))) (i32.const 12))
+  ;; length/byteLength/BYTES_PER_ELEMENT are inherited (prototype accessors / per-type proto data) — NOT
+  ;; own props on the view, else they leak into the instance's own-key list (getOwnPropertyNames/ownKeys).
   (call $mk_obj (local.get $sao)))
 
 ;; build a symbol value from an internal key string and a description string.
