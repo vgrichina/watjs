@@ -11803,6 +11803,9 @@
   ;; %ThrowTypeError% function (id 510); {enumerable:false, configurable:true}.
   (let $tte i64 (call $mk_native (i32.const 510) (cstring "")))
   (i64.store (i32.const 764) (local.get $tte))  ;; the single shared %ThrowTypeError% intrinsic — reused for strict arguments.callee so all uses are the SAME object
+  ;; %ThrowTypeError% is a frozen intrinsic: non-extensible + own props (length/name) non-configurable.
+  (call $scope_define (call $fn_def_scope (local.get $tte)) (cstring "@@noext") (call $v_true))
+  (call $scope_define (call $fn_def_scope (local.get $tte)) (cstring "@@sealed") (call $v_true))
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "caller") (local.get $tte) (local.get $tte) (i32.const 5))
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "arguments") (local.get $tte) (local.get $tte) (i32.const 5))
   ;; Function.prototype[Symbol.hasInstance] — default OrdinaryHasInstance; attrs {W:false,E:false,C:false}
