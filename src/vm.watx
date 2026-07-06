@@ -966,6 +966,45 @@
       (call $next_token))))
 
 ;; postfix: primary followed by  (args) | [index] | .member  (chainable)
+;; compile a call tail: cursor at '(' with the callee value already on the operand stack.
+;; Compiles the (spread-aware) argument list and emits CALL/CALLSPREAD. Shared by
+;; vm_c_postfix and the delete-operand compiler (so `delete foo()` actually calls foo).
+(func $vm_c_call_tail (param $code i32) (effects)
+  (call $next_token)  ;; '('
+  (let $spc i32 (call $cursor_save))
+  (let $sphas i32 (i32.const 0)) (let $spd i32 (i32.const 0))
+  (block $spe (loop $spl
+    (br_if $spe (i32.eq (call $tok_kind) (i32.const 0)))
+    (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $spd (i32.add (local.get $spd) (i32.const 1)))))
+    (if (i32.eq (call $tok_kind) (i32.const 16)) (then (br_if $spe (i32.eqz (local.get $spd))) (set! $spd (i32.sub (local.get $spd) (i32.const 1)))))
+    (if (i32.and (i32.eq (call $tok_kind) (i32.const 54)) (i32.eqz (local.get $spd))) (then (set! $sphas (i32.const 1))))
+    (call $next_token) (br $spl)))
+  (call $cursor_restore (local.get $spc))
+  (if (local.get $sphas)
+    (then  ;; build an args array, then CALLSPREAD
+      (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+      (if (i32.ne (call $tok_kind) (i32.const 16))
+        (then (block $se2 (loop $sl2
+          (br_if $se2 (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')' ends the args
+          (if (i32.eq (call $tok_kind) (i32.const 54))
+            (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
+            (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
+          (br_if $se2 (i32.eqz (call $eat (i32.const 22))))
+          (br $sl2)))))
+      (call $next_token)  ;; ')'
+      (call $vm_emit_op (local.get $code) (i32.const 54))  ;; CALLSPREAD
+      (return)))
+  (let $argc i32 (i32.const 0))
+  (if (i32.ne (call $tok_kind) (i32.const 16))
+    (then (block $ce (loop $cl
+      (br_if $ce (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')'
+      (call $vm_c_expr (local.get $code))
+      (set! $argc (i32.add (local.get $argc) (i32.const 1)))
+      (br_if $ce (i32.eqz (call $eat (i32.const 22))))
+      (br $cl)))))
+  (call $next_token)  ;; ')'
+  (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (local.get $argc)))  ;; CALL
+
 (func $vm_c_postfix (param $code i32) (effects)
   (call $vm_c_primary (local.get $code))
   (let $ocpat i32 (call $heap_alloc (i32.const 256)))  ;; optional-chaining (?.) short-circuit jumps
@@ -975,43 +1014,7 @@
     (if (i32.eq (local.get $k) (i32.const 53))  ;; tagged template: fn`...`
       (then (call $vm_c_tagged_template (local.get $code)) (br $l)))
     (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' call
-      (then
-        (call $next_token)
-        ;; lookahead: does any argument use ...spread?
-        (let $spc i32 (call $cursor_save))
-        (let $sphas i32 (i32.const 0)) (let $spd i32 (i32.const 0))
-        (block $spe (loop $spl
-          (br_if $spe (i32.eq (call $tok_kind) (i32.const 0)))
-          (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $spd (i32.add (local.get $spd) (i32.const 1)))))
-          (if (i32.eq (call $tok_kind) (i32.const 16)) (then (br_if $spe (i32.eqz (local.get $spd))) (set! $spd (i32.sub (local.get $spd) (i32.const 1)))))
-          (if (i32.and (i32.eq (call $tok_kind) (i32.const 54)) (i32.eqz (local.get $spd))) (then (set! $sphas (i32.const 1))))
-          (call $next_token) (br $spl)))
-        (call $cursor_restore (local.get $spc))
-        (if (local.get $sphas)
-          (then  ;; build an args array, then CALLSPREAD
-            (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
-            (if (i32.ne (call $tok_kind) (i32.const 16))
-              (then (block $se2 (loop $sl2
-                (br_if $se2 (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')' ends the args
-                (if (i32.eq (call $tok_kind) (i32.const 54))
-                  (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
-                  (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
-                (br_if $se2 (i32.eqz (call $eat (i32.const 22))))
-                (br $sl2)))))
-            (call $next_token)  ;; ')'
-            (call $vm_emit_op (local.get $code) (i32.const 54))  ;; CALLSPREAD
-            (br $l)))
-        (let $argc i32 (i32.const 0))
-        (if (i32.ne (call $tok_kind) (i32.const 16))
-          (then (block $ce (loop $cl
-            (br_if $ce (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')'
-            (call $vm_c_expr (local.get $code))
-            (set! $argc (i32.add (local.get $argc) (i32.const 1)))
-            (br_if $ce (i32.eqz (call $eat (i32.const 22))))
-            (br $cl)))))
-        (call $next_token)  ;; ')'
-        (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (local.get $argc))  ;; CALL
-        (br $l)))
+      (then (call $vm_c_call_tail (local.get $code)) (br $l)))
     (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
       (then
         (call $next_token)
@@ -1369,9 +1372,13 @@
     (then
       (call $look_save)
       (let $din i32 (call $ident_name)) (call $next_token)
-      (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))))  ;; not '.'/'[' → bare identifier delete
+      ;; not '.'/'['/'('/tagged-template → a bare identifier reference → DELETEVAR. A following
+      ;; '(' (call) or '`' (tagged template) means it's NOT a plain reference (`delete foo()` must
+      ;; call foo and yield true) → fall through to the postfix path below.
+      (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.or (i32.eq (call $tok_kind) (i32.const 19))
+            (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.eq (call $tok_kind) (i32.const 53))))))
         (then (call $vm_emit_op (local.get $code) (i32.const 95)) (call $vm_emit_op (local.get $code) (local.get $din)) (return)))
-      (call $look_restore)))  ;; member access follows → fall through to the reference path
+      (call $look_restore)))  ;; member access / call follows → fall through to the reference path
   (call $vm_c_primary (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
@@ -1380,8 +1387,8 @@
         (call $next_token)
         (let $key i32 (call $ident_name)) (call $next_token)
         (let $nk i32 (call $tok_kind))
-        (if (i32.or (i32.eq (local.get $nk) (i32.const 23)) (i32.eq (local.get $nk) (i32.const 19)))
-          (then (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key)) (br $l))  ;; GETPROP
+        (if (i32.or (i32.eq (local.get $nk) (i32.const 23)) (i32.or (i32.eq (local.get $nk) (i32.const 19)) (i32.eq (local.get $nk) (i32.const 15))))
+          (then (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key)) (br $l))  ;; GETPROP (member/call follows)
           (else
             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $key)))
             (call $vm_emit_op (local.get $code) (i32.const 70))  ;; DELETE
@@ -1393,11 +1400,13 @@
         (call $vm_c_expr (local.get $code))
         (call $next_token)  ;; ']'
         (let $nk2 i32 (call $tok_kind))
-        (if (i32.or (i32.eq (local.get $nk2) (i32.const 23)) (i32.eq (local.get $nk2) (i32.const 19)))
-          (then (call $vm_emit_op (local.get $code) (i32.const 31)) (br $l))  ;; GETIDX
+        (if (i32.or (i32.eq (local.get $nk2) (i32.const 23)) (i32.or (i32.eq (local.get $nk2) (i32.const 19)) (i32.eq (local.get $nk2) (i32.const 15))))
+          (then (call $vm_emit_op (local.get $code) (i32.const 31)) (br $l))  ;; GETIDX (member/call follows)
           (else (call $vm_emit_op (local.get $code) (i32.const 70))
                 (if (i32.load (i32.const 388)) (then (call $vm_emit_op (local.get $code) (i32.const 84))))  ;; strict: non-config delete → TypeError
                 (br $e)))))  ;; DELETE
+    (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' call → evaluate the call; its result is a value, not a reference
+      (then (call $vm_c_call_tail (local.get $code)) (br $l)))
     ;; not a member access → bare delete: discard value, result is true
     (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
     (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1)))
