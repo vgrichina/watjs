@@ -5557,7 +5557,18 @@
       ;; otherwise NewPromiseCapability(C) requires IsConstructor(C)
       (if (i32.eqz (call $is_constructor (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "Promise.resolve called on a non-constructor")) (return (call $v_undef))))
-      (return (call $vm_promise_resolve (local.get $prv)))))
+      ;; default %Promise% → fast internal resolve; a custom C → NewPromiseCapability(C) (constructs C
+      ;; with the capabilities executor, validating resolve/reject are callable), then cap.[[Resolve]](x)
+      (if (call $strict_eq (local.get $thisv) (i64.load (i32.const 844)))
+        (then (return (call $vm_promise_resolve (local.get $prv)))))
+      (let $rcap i64 (call $promise_with_resolvers (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $rcapr i64 (call $get_prop (local.get $rcap) (call $mk_str (cstring "resolve"))))
+      (let $rcapb i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $rcapb) (local.get $prv))
+      (drop (call $call_val (local.get $rcapr) (i32.const 1) (local.get $rcapb) (call $v_undef)))
+      (if (call $err) (then (return (call $v_undef))))
+      (return (call $get_prop (local.get $rcap) (call $mk_str (cstring "promise"))))))
   (if (i32.eq (local.get $id) (i32.const 152))  ;; promise.then(onFulfilled, onRejected)
     (then
       (if (i32.eqz (call $vm_is_promise (local.get $thisv)))
@@ -5634,7 +5645,17 @@
     (then
       (if (i32.eqz (call $is_constructor (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "Promise.reject called on a non-constructor")) (return (call $v_undef))))
-      (return (call $mk_promise (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+      ;; default %Promise% → fast internal reject; a custom C → NewPromiseCapability(C) then cap.[[Reject]](r)
+      (if (call $strict_eq (local.get $thisv) (i64.load (i32.const 844)))
+        (then (return (call $mk_promise (i32.const 2) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+      (let $jcap i64 (call $promise_with_resolvers (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $jcapr i64 (call $get_prop (local.get $jcap) (call $mk_str (cstring "reject"))))
+      (let $jcapb i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $jcapb) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (drop (call $call_val (local.get $jcapr) (i32.const 1) (local.get $jcapb) (call $v_undef)))
+      (if (call $err) (then (return (call $v_undef))))
+      (return (call $get_prop (local.get $jcap) (call $mk_str (cstring "promise"))))))
   (if (i32.eq (local.get $id) (i32.const 452))  ;; async continuation: awaited promise fulfilled → resume with its value
     (then
       (let $acx i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@actx"))))))
