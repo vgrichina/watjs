@@ -5,7 +5,9 @@ if (keys(/x/) !== "") throw "regex for-in leaks: "+keys(/x/);
 if (Object.getOwnPropertyDescriptor(RegExp.prototype,"exec").enumerable !== false) throw "exec enumerable";
 function* g(){ yield 1; }
 if (keys(g()) !== "") throw "generator for-in leaks: "+keys(g());
-if (keys(new Int8Array(2)) !== "") throw "typedarray for-in leaks: "+keys(new Int8Array(2));
+// TypedArray integer indices ARE enumerable own properties (spec) — for-in must yield exactly
+// the indices "0,1" and NOT leak the internal @@taelem/@@tabuf/@@talen markers.
+if (keys(new Int8Array(2)) !== "0,1") throw "typedarray for-in wrong: "+keys(new Int8Array(2));
 if (keys([1,2].entries()) !== "") throw "array-iterator for-in leaks";
 if (keys(new Map([[1,2]]).keys()) !== "") throw "map-iterator for-in leaks";
 if (keys("ab"[Symbol.iterator]()) !== "") throw "string-iterator for-in leaks";

@@ -674,7 +674,20 @@
       (if (local.get $allNames) (then (call $arr_push (local.get $out) (call $mk_str (cstring "length")))))
       (return (local.get $out))))
   (if (call $is_object (local.get $a))
-    (then (call $push_scope_keys (local.get $out) (call $val_payload (local.get $a)) (local.get $allNames))))
+    (then
+      ;; TypedArray exotic [[OwnPropertyKeys]]: the canonical integer indices [0, length) in ascending
+      ;; order FIRST (they live in the byte buffer, not the scope), then the scope's string/symbol keys.
+      ;; (nested if — NOT i32.and — since scope_find_local would deref a non-object payload otherwise.)
+      (if (i32.ne (call $scope_find_local (call $val_payload (local.get $a)) (cstring "@@taelem")) (i32.const 0))
+        (then
+          ;; a detached or out-of-bounds view has no in-bounds elements → no integer-index keys
+          (let $talen i32 (if i32 (i32.or (call $ta_is_detached (local.get $a)) (call $ta_is_oob (local.get $a))) (then (i32.const 0)) (else (call $ta_live_len (local.get $a)))))
+          (let $tai i32 (i32.const 0))
+          (block $tae (loop $tal
+            (br_if $tae (i32.ge_s (local.get $tai) (local.get $talen)))
+            (call $arr_push (local.get $out) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $tai)))))
+            (set! $tai (i32.add (local.get $tai) (i32.const 1))) (br $tal)))))
+      (call $push_scope_keys (local.get $out) (call $val_payload (local.get $a)) (local.get $allNames))))
   ;; functions can carry own enumerable props (fn.a=1, defineProperty): VM functions
   ;; keep them in the @(48+np*4) own-prop scope, natives in @12 fn_props.
   (if (call $is_function (local.get $a))
@@ -2311,8 +2324,8 @@
   (call $scope_define (local.get $to) (cstring "@@taelem") (call $num (f64.convert_i32_s (local.get $elem))))
   (call $scope_define (local.get $to) (cstring "@@tabuf") (call $num (f64.convert_i32_s (local.get $buf))))
   (call $scope_define (local.get $to) (cstring "@@talen") (call $num (f64.convert_i32_s (local.get $len))))
-  ;; length/byteLength are %TypedArray.prototype% accessors (not own data props) — spec-correct + reflect detach
-  (call $scope_define_attr (local.get $to) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (local.get $bpe))) (i32.const 12))
+  ;; length/byteLength/BYTES_PER_ELEMENT are inherited from the per-type prototype / %TypedArray.prototype%
+  ;; (NOT own data props on the instance) — spec-correct + keeps them out of the instance's own-key list.
   ;; a view over an explicit ArrayBuffer records its byteOffset and the source buffer object,
   ;; so byteOffset reflects the offset, `buffer` returns the original (identity), and detach
   ;; checks see the original buffer's @@detached.
