@@ -679,6 +679,40 @@
   (i32.store (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $gidx) (i32.const 1)) (i32.const 8))) (local.get $start))
   (i32.store (i32.add (i32.load (i32.const 280)) (i32.add (i32.mul (i32.sub (local.get $gidx) (i32.const 1)) (i32.const 8)) (i32.const 4))) (local.get $end)))
 
+;; save / restore the whole capture array (128 i32 slots at reg 280) to/from a scratch
+;; buffer — used to roll back a failed extra quantifier iteration so it can't corrupt
+;; the captures the continuation sees.
+(func $re_caps_save (param $dst i32) (effects)
+  (let $src i32 (i32.load (i32.const 280)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l (br_if $e (i32.ge_s (local.get $i) (i32.const 128)))
+    (i32.store (i32.add (local.get $dst) (i32.mul (local.get $i) (i32.const 4))) (i32.load (i32.add (local.get $src) (i32.mul (local.get $i) (i32.const 4)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
+(func $re_caps_restore (param $src i32) (effects)
+  (let $dst i32 (i32.load (i32.const 280)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l (br_if $e (i32.ge_s (local.get $i) (i32.const 128)))
+    (i32.store (i32.add (local.get $dst) (i32.mul (local.get $i) (i32.const 4))) (i32.load (i32.add (local.get $src) (i32.mul (local.get $i) (i32.const 4)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
+
+;; clear the captures of every capturing group whose '(' lies in [gstart,gend) — the
+;; body of a quantified group. Per spec RepeatMatcher, each iteration starts with the
+;; body's inner captures reset to undefined, so a group that matched in an earlier
+;; iteration but not the final one ends up undefined (not stale).
+(func $re_clear_caps_in (param $p i32) (param $gstart i32) (param $gend i32) (effects)
+  (let $i i32 (local.get $gstart))
+  (let $incls i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $gend)))
+    (let $c i32 (i32.load8_u (i32.add (local.get $p) (local.get $i))))
+    (if (i32.eq (local.get $c) (i32.const 92)) (then (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))  ;; skip escaped
+    (if (i32.eq (local.get $c) (i32.const 91)) (then (set! $incls (i32.const 1))))
+    (if (i32.eq (local.get $c) (i32.const 93)) (then (set! $incls (i32.const 0))))
+    (if (i32.and (i32.eqz (local.get $incls)) (i32.and (i32.eq (local.get $c) (i32.const 40)) (call $re_is_cap_group (local.get $p) (local.get $i))))
+      (then (call $re_set_cap (call $re_group_idx (local.get $p) (local.get $i)) (i32.const -1) (i32.const -1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  )
+
 ;; match a backreference to capture group `gidx` at `spos`; returns the end
 ;; position (>= spos), or -1 on mismatch. An unset group matches the empty string.
 (func $re_match_backref (param $gidx i32) (param $s i32) (param $slen i32) (param $spos i32) (result i32) (effects)
@@ -790,10 +824,13 @@
   (i32.store (local.get $positions) (local.get $spos))
   (let $count i32 (i32.const 0))
   (let $cp i32 (local.get $spos))
+  (let $capsnap i32 (call $heap_alloc (i32.const 512)))
   (block $ce (loop $cl
     (br_if $ce (i32.ge_s (local.get $count) (local.get $max)))
+    (call $re_caps_save (local.get $capsnap))  ;; snapshot before the attempt
+    (call $re_clear_caps_in (local.get $p) (local.get $gstart) (local.get $gend))  ;; reset inner captures per iteration
     (let $e i32 (call $re_match_alt (local.get $p) (local.get $gstart) (local.get $gend) (local.get $s) (local.get $slen) (local.get $cp)))
-    (br_if $ce (i32.lt_s (local.get $e) (i32.const 0)))  ;; body failed → stop
+    (if (i32.lt_s (local.get $e) (i32.const 0)) (then (call $re_caps_restore (local.get $capsnap)) (br $ce)))  ;; body failed → roll back, stop
     (set! $count (i32.add (local.get $count) (i32.const 1)))
     (i32.store (i32.add (local.get $positions) (i32.mul (local.get $count) (i32.const 4))) (local.get $e))
     ;; a zero-progress (empty) match is counted ONCE (so it can satisfy min) but then we
