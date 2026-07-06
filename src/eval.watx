@@ -9374,7 +9374,16 @@
       (if (i32.eq (local.get $id) (i32.const 231))  ;; cbrt
         (then (return (call $num (call $m_cbrt (local.get $mx))))))
       (if (i32.eq (local.get $id) (i32.const 232)) (then (return (call $num (f64.div (call $m_log (local.get $mx)) (f64.const 0.6931471805599453))))))  ;; log2
-      (if (i32.eq (local.get $id) (i32.const 233)) (then (return (call $num (f64.div (call $m_log (local.get $mx)) (f64.const 2.302585092994046))))))   ;; log10
+      (if (i32.eq (local.get $id) (i32.const 233))  ;; log10
+        (then
+          (let $l10 f64 (f64.div (call $m_log (local.get $mx)) (f64.const 2.302585092994046)))
+          ;; ln(x)/ln(10) is ~1 ULP low on exact powers of 10 (log10(1000)=2.9999999999999996);
+          ;; snap to the integer exponent only when 10^round(l10) reproduces x exactly. Non-powers,
+          ;; NaN, ±0 (→ ±Inf) and negatives fall through unchanged (the pow test fails for them).
+          (let $l10r f64 (f64.nearest (local.get $l10)))
+          (if (f64.eq (call $f64_pow (f64.const 10) (local.get $l10r)) (local.get $mx))
+            (then (return (call $num (local.get $l10r)))))
+          (return (call $num (local.get $l10)))))
       (if (i32.eq (local.get $id) (i32.const 234)) (then (return (call $num (f64.sub (call $m_exp (local.get $mx)) (f64.const 1))))))  ;; expm1
       (if (i32.eq (local.get $id) (i32.const 235)) (then (return (call $num (call $m_log (f64.add (local.get $mx) (f64.const 1)))))))  ;; log1p
       (if (i32.eq (local.get $id) (i32.const 236)) (then (return (call $num (f64.mul (f64.sub (call $m_exp (local.get $mx)) (call $m_exp (f64.neg (local.get $mx)))) (f64.const 0.5))))))  ;; sinh
