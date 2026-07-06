@@ -2022,10 +2022,11 @@
           (let $bibv i64 (call $to_bigint (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
           (if (call $err) (then (return (call $v_undef))))
           (set! $bival (call $bigint_val (local.get $bibv)))))
-      (let $bivlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
       (let $bivoff i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
       (let $biabptr i32 (call $to_int_idx (call $to_num (call $get_prop (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))) (call $mk_str (cstring "@@abdata"))))))
       (if (call $is_detached_buf (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab")))) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
+      (let $bivlen i32 (call $dv_cur_len (local.get $thisv)))  ;; live length; throws if the (resizable) buffer shrank out of bounds
+      (if (call $err) (then (return (call $v_undef))))
       (if (i32.gt_s (local.get $biboff) (i32.sub (local.get $bivlen) (i32.const 8)))
         (then (call $throw_type (cstring "RangeError") (cstring "DataView BigInt: out of bounds")) (return (call $v_undef))))
       (let $bidst i32 (i32.add (i32.add (local.get $biabptr) (local.get $bivoff)) (local.get $biboff)))
@@ -2084,6 +2085,9 @@
           (let $dvbl i32 (call $dv_cur_len (local.get $thisv)))
           (if (call $err) (then (return (call $v_undef))))
           (return (call $num (f64.convert_i32_s (local.get $dvbl))))))
+      ;; byteOffset (382): also throws TypeError if the view is out of bounds
+      (drop (call $dv_cur_len (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
       (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
   ;; get/set
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 364)) (i32.le_s (local.get $id) (i32.const 379)))
