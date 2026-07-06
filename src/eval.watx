@@ -4836,12 +4836,19 @@
       (if (i32.eq (local.get $id) (i32.const 308)) (then (return (call $mk_str (call $uri_encode (local.get $uris) (i32.const 1))))))
       (if (i32.eq (local.get $id) (i32.const 307)) (then (return (call $mk_str (call $uri_decode (local.get $uris) (i32.const 0))))))
       (return (call $mk_str (call $uri_decode (local.get $uris) (i32.const 1))))))  ;; 309 decodeURI (keep reserved encoded)
-  ;; Object.prototype.__proto__ getter (303) — returns this's [[Prototype]]
+  ;; Object.prototype.__proto__ getter (303) — RequireObjectCoercible(this), then
+  ;; ToObject(this).[[GetPrototypeOf]] (so a primitive receiver sees its wrapper's prototype)
   (if (i32.eq (local.get $id) (i32.const 303))
-    (then (return (call $js_get_prototype (local.get $thisv)))))
-  ;; Object.prototype.__proto__ setter (304) — SetPrototypeOf if value is Object/Null, else no-op
+    (then
+      (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Object.prototype.__proto__ getter called on null or undefined")) (return (call $v_undef))))
+      (return (call $js_get_prototype (call $to_object (local.get $thisv))))))
+  ;; Object.prototype.__proto__ setter (304) — RequireObjectCoercible(this), then
+  ;; SetPrototypeOf if value is Object/Null and this is an Object, else no-op
   (if (i32.eq (local.get $id) (i32.const 304))
     (then
+      (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Object.prototype.__proto__ setter called on null or undefined")) (return (call $v_undef))))
       (let $ppv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.and (i32.or (call $is_object (local.get $ppv)) (call $is_null (local.get $ppv))) (call $is_object (local.get $thisv)))
         (then
