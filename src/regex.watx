@@ -428,17 +428,28 @@
             (else (return (i32.const -1))))))
       (if (i32.and (i32.ge_s (local.get $bnc) (i32.const 49)) (i32.le_s (local.get $bnc) (i32.const 57)))  ;; '1'..'9'
         (then
-          (let $br i32 (call $re_match_backref (i32.sub (local.get $bnc) (i32.const 48)) (local.get $s) (local.get $slen) (local.get $spos)))
-          (if (i32.lt_s (local.get $br) (i32.const 0)) (then (return (i32.const -1))))
-          (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2)) (local.get $s) (local.get $slen) (local.get $br)))))
+          (let $brqp i32 (i32.add (local.get $ppos) (i32.const 2)))  ;; position after \N
+          (let $brq i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $brqp)))
+          (let $brmin i32 (i32.const 1)) (let $brmax i32 (i32.const 1)) (let $brqend i32 (local.get $brqp))
+          (if (i32.eq (local.get $brq) (i32.const 42)) (then (set! $brmin (i32.const 0)) (set! $brmax (i32.add (local.get $slen) (i32.const 1))) (set! $brqend (i32.add (local.get $brqp) (i32.const 1)))))  ;; *
+          (if (i32.eq (local.get $brq) (i32.const 43)) (then (set! $brmin (i32.const 1)) (set! $brmax (i32.add (local.get $slen) (i32.const 1))) (set! $brqend (i32.add (local.get $brqp) (i32.const 1)))))  ;; +
+          (if (i32.eq (local.get $brq) (i32.const 63)) (then (set! $brmin (i32.const 0)) (set! $brmax (i32.const 1)) (set! $brqend (i32.add (local.get $brqp) (i32.const 1)))))  ;; ?
+          (if (i32.eq (local.get $brq) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $brqp)) (set! $brmin (i32.load (i32.const 172))) (set! $brmax (i32.load (i32.const 176))) (set! $brqend (i32.load (i32.const 180)))))  ;; {n,m}
+          (return (call $re_backref_rep (local.get $p) (local.get $plen) (i32.sub (local.get $bnc) (i32.const 48)) (local.get $brqend) (local.get $brmin) (local.get $brmax) (local.get $s) (local.get $slen) (local.get $spos)))))
       (if (i32.and (i32.eq (local.get $bnc) (i32.const 107)) (i32.eq (call $re_pb (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2))) (i32.const 60)))  ;; \k<
         (then
           (let $kns i32 (i32.add (local.get $ppos) (i32.const 3)))
           (let $kne i32 (local.get $kns))
           (block $kne2 (loop $knl (br_if $kne2 (i32.or (i32.ge_s (local.get $kne) (local.get $plen)) (i32.eq (i32.load8_u (i32.add (local.get $p) (local.get $kne))) (i32.const 62)))) (set! $kne (i32.add (local.get $kne) (i32.const 1))) (br $knl)))
-          (let $kr i32 (call $re_match_backref (call $re_name_to_gidx (local.get $p) (local.get $kns) (local.get $kne)) (local.get $s) (local.get $slen) (local.get $spos)))
-          (if (i32.lt_s (local.get $kr) (i32.const 0)) (then (return (i32.const -1))))
-          (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $kne) (i32.const 1)) (local.get $s) (local.get $slen) (local.get $kr)))))))
+          (let $kgidx i32 (call $re_name_to_gidx (local.get $p) (local.get $kns) (local.get $kne)))
+          (let $kqp i32 (i32.add (local.get $kne) (i32.const 1)))  ;; position after \k<name>
+          (let $kq i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $kqp)))
+          (let $kmin i32 (i32.const 1)) (let $kmax i32 (i32.const 1)) (let $kqend i32 (local.get $kqp))
+          (if (i32.eq (local.get $kq) (i32.const 42)) (then (set! $kmin (i32.const 0)) (set! $kmax (i32.add (local.get $slen) (i32.const 1))) (set! $kqend (i32.add (local.get $kqp) (i32.const 1)))))  ;; *
+          (if (i32.eq (local.get $kq) (i32.const 43)) (then (set! $kmin (i32.const 1)) (set! $kmax (i32.add (local.get $slen) (i32.const 1))) (set! $kqend (i32.add (local.get $kqp) (i32.const 1)))))  ;; +
+          (if (i32.eq (local.get $kq) (i32.const 63)) (then (set! $kmin (i32.const 0)) (set! $kmax (i32.const 1)) (set! $kqend (i32.add (local.get $kqp) (i32.const 1)))))  ;; ?
+          (if (i32.eq (local.get $kq) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $kqp)) (set! $kmin (i32.load (i32.const 172))) (set! $kmax (i32.load (i32.const 176))) (set! $kqend (i32.load (i32.const 180)))))  ;; {n,m}
+          (return (call $re_backref_rep (local.get $p) (local.get $plen) (local.get $kgidx) (local.get $kqend) (local.get $kmin) (local.get $kmax) (local.get $s) (local.get $slen) (local.get $spos)))))))
   (if (i32.eq (local.get $c) (i32.const 40))  ;; '(' group (capturing, (?:non-capturing), or (?=/(?! lookahead)
     (then
       (let $gend i32 (call $re_group_end (local.get $p) (local.get $plen) (local.get $ppos)))  ;; ')' position
@@ -795,6 +806,33 @@
     (let $bp i32 (i32.load (i32.add (local.get $positions) (i32.mul (local.get $count) (i32.const 4)))))
     (if (i32.gt_s (local.get $count) (i32.const 0))
       (then (call $re_set_cap (local.get $gidx) (i32.load (i32.add (local.get $positions) (i32.mul (i32.sub (local.get $count) (i32.const 1)) (i32.const 4)))) (local.get $bp))))
+    (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (local.get $bp)))
+    (if (i32.ge_s (local.get $r) (i32.const 0)) (then (return (local.get $r))))
+    (set! $count (i32.sub (local.get $count) (i32.const 1)))
+    (br $bl)))
+  (i32.const -1))
+
+;; quantified backreference: match group `gidx` [min,max] times (greedy, count-based
+;; backtracking), then the continuation from qend. min=max=1 → a single plain backref.
+;; A zero-progress (empty backref) match is counted once then stops (empty-match guard),
+;; matching re_group_rep's semantics.
+(func $re_backref_rep (param $p i32) (param $plen i32) (param $gidx i32) (param $qend i32) (param $min i32) (param $max i32) (param $s i32) (param $slen i32) (param $spos i32) (result i32) (effects)
+  (let $positions i32 (call $heap_alloc (i32.const 1024)))
+  (i32.store (local.get $positions) (local.get $spos))
+  (let $count i32 (i32.const 0))
+  (let $cp i32 (local.get $spos))
+  (block $ce (loop $cl
+    (br_if $ce (i32.ge_s (local.get $count) (local.get $max)))
+    (let $e i32 (call $re_match_backref (local.get $gidx) (local.get $s) (local.get $slen) (local.get $cp)))
+    (br_if $ce (i32.lt_s (local.get $e) (i32.const 0)))  ;; backref failed → stop
+    (set! $count (i32.add (local.get $count) (i32.const 1)))
+    (i32.store (i32.add (local.get $positions) (i32.mul (local.get $count) (i32.const 4))) (local.get $e))
+    (br_if $ce (i32.le_s (local.get $e) (local.get $cp)))  ;; empty match: count once, stop
+    (set! $cp (local.get $e))
+    (br $cl)))
+  (block $be (loop $bl
+    (br_if $be (i32.lt_s (local.get $count) (local.get $min)))
+    (let $bp i32 (i32.load (i32.add (local.get $positions) (i32.mul (local.get $count) (i32.const 4)))))
     (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (local.get $bp)))
     (if (i32.ge_s (local.get $r) (i32.const 0)) (then (return (local.get $r))))
     (set! $count (i32.sub (local.get $count) (i32.const 1)))
