@@ -8064,6 +8064,10 @@
       (if (call $err) (then (return (call $v_undef))))
       (let $maMM i64 (call $get_prop (local.get $maRx) (call $mk_str (cstring "@@matchAll"))))
       (if (call $err) (then (return (call $v_undef))))
+      ;; Invoke(rx, @@matchAll, «S»): the method must be callable — a deleted RegExp.prototype
+      ;; [@@matchAll] leaves it undefined → TypeError (call_val doesn't throw on a non-function).
+      (if (i32.eqz (call $is_function (local.get $maMM)))
+        (then (call $throw_type (cstring "TypeError") (cstring "matchAll: @@matchAll is not a function")) (return (call $v_undef))))
       (let $maArgs2 i32 (call $heap_alloc (i32.const 8)))
       (i64.store (local.get $maArgs2) (local.get $maS))
       (return (call $call_val (local.get $maMM) (i32.const 1) (local.get $maArgs2) (local.get $maRx)))))
