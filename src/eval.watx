@@ -563,6 +563,12 @@
         (if (i32.eq (local.get $spwc) (local.get $spsc)) (then (return (i32.const 0))))  ;; cyclic → soft false
         (set! $spwc (call $scope_parent (local.get $spwc)))
         (br $spcycl)))
+      ;; an array/function [[Prototype]] can't be a scope-parent (its payload isn't a scope) — keep the
+      ;; VALUE in @@protoval (scope_parent stays 0) and let js_get_prototype/get_prop consult + re-dispatch
+      ;; on it. An ordinary-object or null proto clears @@protoval and uses scope_parent as usual.
+      (if (i32.or (call $is_array (local.get $proto)) (call $is_function (local.get $proto)))
+        (then (call $scope_define (local.get $spsc) (cstring "@@protoval") (local.get $proto)))
+        (else (drop (call $scope_delete (local.get $spsc) (cstring "@@protoval")))))
       (i32.store (local.get $spsc) (local.get $spnewp))
       (return (i32.const 1))))
   (i32.const 1))
@@ -3035,6 +3041,9 @@
       (return (i64.load (i32.const 336)))))
   (if (call $is_object (local.get $ov))
     (then
+      ;; an array/function [[Prototype]] set via setPrototypeOf is stored as the value @@protoval
+      (let $pvsl i32 (call $scope_find_local (call $val_payload (local.get $ov)) (cstring "@@protoval")))
+      (if (local.get $pvsl) (then (return (i64.load (local.get $pvsl)))))
       (let $par i32 (call $scope_parent (call $val_payload (local.get $ov))))
       (if (local.get $par) (then (return (call $mk_obj (local.get $par)))))))
   (call $v_null))

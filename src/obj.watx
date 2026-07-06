@@ -670,6 +670,10 @@
                 (then (call $throw_type (cstring "TypeError") (cstring "'#x' was defined without a getter")) (return (call $v_undef))))
               (return (call $v_undef))))
           (return (i64.load (local.get $slot)))))
+      ;; array/function [[Prototype]] (set via setPrototypeOf) is stored as @@protoval — inherit from it
+      ;; (its payload isn't a scope, so scope_find above couldn't walk it; re-dispatch get_prop on the value)
+      (let $pvslot i32 (call $scope_find_local (local.get $o) (cstring "@@protoval")))
+      (if (local.get $pvslot) (then (return (call $get_prop (i64.load (local.get $pvslot)) (local.get $key)))))
       ;; not found on the object or its prototype chain. A normal object parents to
       ;; Object.prototype (obj_new → scope_new(reg 328)), so hasOwnProperty/toString/…
       ;; are found by the scope_find above. The GLOBAL object (mem 204) inherits
