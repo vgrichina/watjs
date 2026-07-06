@@ -5483,6 +5483,11 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $key i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        ;; a computed `o["#x"]` never reaches a private member (private access is always GETPROP via
+        ;; `.#x` syntax) — a '#'-string key is a plain string, so hide the private value → undefined
+        (if (call $is_string (local.get $key))  ;; nested: is_private_key derefs the payload, invalid for a non-string
+          (then (if (call $is_private_key (call $val_payload (local.get $key)))
+            (then (i64.store (i32.add (local.get $stack) (local.get $t)) (call $v_undef)) (br $disp)))))
         (i64.store (i32.add (local.get $stack) (local.get $t))
                    (call $get_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (local.get $key)))
         (br $disp)))
