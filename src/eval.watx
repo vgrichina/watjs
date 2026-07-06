@@ -8439,6 +8439,29 @@
           (let $msym i64 (call $get_prop (local.get $mrx) (call $mk_str (if i32 (i32.eq (local.get $id) (i32.const 102)) (then (cstring "@@match")) (else (cstring "@@search"))))))
           (if (call $err) (then (return (call $v_undef))))
           (return (call $call_val (local.get $msym) (i32.const 1) (call $argv1 (call $mk_str (local.get $sub))) (local.get $mrx)))))
+      ;; replace(103) with a searchValue that has no @@replace (reached here): spec 22.1.3.19
+      ;; string branch — searchString = ToString(searchValue) (undefined → "undefined"), found
+      ;; LITERALLY (no regex metachars), replacing only the FIRST occurrence. re_repl_of handles a
+      ;; function replacer (match, position, string) and $&/$`/$'/$n patterns (no captures here).
+      (if (i32.eq (local.get $id) (i32.const 103))
+        (then
+          (let $rsearch i32 (call $to_str (local.get $a0)))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $rrepl i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (let $risfn i32 (call $is_function (local.get $rrepl)))
+          (let $rreplstr i32 (if i32 (local.get $risfn) (then (i32.const 0)) (else (call $to_str (local.get $rrepl)))))
+          (if (call $err) (then (return (call $v_undef))))
+          (i32.store (i32.const 284) (i32.const 0)) (i32.store (i32.const 604) (i32.const 0))  ;; literal search → no capture / named groups
+          (let $rsl i32 (call $str_len (local.get $sub)))
+          (let $rsvl i32 (call $str_len (local.get $rsearch)))
+          (let $ridx i32 (call $str_find (local.get $sub) (local.get $rsearch) (i32.const 0)))
+          (if (i32.lt_s (local.get $ridx) (i32.const 0)) (then (return (call $mk_str (local.get $sub)))))  ;; not found → unchanged
+          (let $rme i32 (i32.add (local.get $ridx) (local.get $rsvl)))
+          (let $rout i32 (call $substr (local.get $sub) (i32.const 0) (local.get $ridx)))
+          (set! $rout (call $str_concat (local.get $rout) (call $re_repl_of (local.get $rrepl) (local.get $risfn) (local.get $rreplstr) (local.get $sub) (local.get $ridx) (local.get $rme))))
+          (if (call $err) (then (return (call $v_undef))))
+          (set! $rout (call $str_concat (local.get $rout) (call $substr (local.get $sub) (local.get $rme) (i32.sub (local.get $rsl) (local.get $rme)))))
+          (return (call $mk_str (local.get $rout)))))
       (call $re_apply_flags (local.get $a0))
       ;; replace with undefined → RegExp(undefined) = empty pattern (NOT "undefined")
       (let $pat i32 (if i32 (call $is_undefined (local.get $a0)) (then (cstring "")) (else (call $re_pat_of (local.get $a0)))))
