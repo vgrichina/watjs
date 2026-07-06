@@ -1517,6 +1517,28 @@
   (i32.store8 (i32.add (local.get $dst) (if i32 (local.get $little) (then (i32.const 0)) (else (i32.const 1)))) (i32.and (local.get $h) (i32.const 255)))
   (i32.store8 (i32.add (local.get $dst) (if i32 (local.get $little) (then (i32.const 1)) (else (i32.const 0)))) (i32.and (i32.shr_u (local.get $h) (i32.const 8)) (i32.const 255))))
 
+;; GetViewByteLength + IsViewOutOfBounds for a DataView: the effective byteLength against the CURRENT
+;; buffer length (@@ablen, updated on resize). Throws TypeError (sets err, returns 0) if out of bounds:
+;; a length-tracking view when its offset exceeds the buffer, a fixed view when offset+length does.
+;; For a non-resizable buffer this always returns @@dvlen (offset+length was validated at construction).
+(func $dv_cur_len (param $thisv i64) (result i32) (effects)
+  (let $ab i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
+  (let $off i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
+  (let $len i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
+  (let $tracksl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvtrack")))
+  (let $track i32 (if i32 (local.get $tracksl) (then (call $truthy (i64.load (local.get $tracksl)))) (else (i32.const 0))))
+  (let $buflen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $ab) (call $mk_str (cstring "@@ablen"))))))
+  (if (local.get $track)
+    (then
+      (if (i32.gt_s (local.get $off) (local.get $buflen))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView is out of bounds")) (return (i32.const 0))))
+      (return (i32.sub (local.get $buflen) (local.get $off))))
+    (else
+      (if (i32.gt_s (i32.add (local.get $off) (local.get $len)) (local.get $buflen))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView is out of bounds")) (return (i32.const 0))))
+      (return (local.get $len))))
+  (i32.const 0))
+
 ;; DataView getFloat16(476)/setFloat16(477) — separate from the 364-379 elem-typed methods
 (func $dv_float16 (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   (if (i32.eqz (call $is_object (local.get $thisv)))
@@ -1526,12 +1548,13 @@
   (let $boff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
   (if (call $err) (then (return (call $v_undef))))
   (let $dvab i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
-  (let $vlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
   (let $voff i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
   (let $abptr i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $dvab) (call $mk_str (cstring "@@abdata"))))))
   (if (i32.eq (local.get $id) (i32.const 476))
     (then  ;; getFloat16(byteOffset, littleEndian)
       (if (call $is_detached_buf (local.get $dvab)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
+      (let $vlen i32 (call $dv_cur_len (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
       (if (i32.gt_s (local.get $boff) (i32.sub (local.get $vlen) (i32.const 2)))
         (then (call $throw_type (cstring "RangeError") (cstring "DataView get: out of bounds")) (return (call $v_undef))))
       (return (call $num (call $dv_read_f16 (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
@@ -1539,6 +1562,8 @@
       (let $sval f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
       (if (call $err) (then (return (call $v_undef))))
       (if (call $is_detached_buf (local.get $dvab)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
+      (let $vlen i32 (call $dv_cur_len (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
       (if (i32.gt_s (local.get $boff) (i32.sub (local.get $vlen) (i32.const 2)))
         (then (call $throw_type (cstring "RangeError") (cstring "DataView set: out of bounds")) (return (call $v_undef))))
       (call $dv_write_f16 (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (call $truthy (call $argn (local.get $argv) (local.get $argc) (i32.const 2))) (local.get $sval))
@@ -2032,9 +2057,14 @@
       (let $dvo i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 508)) (then (i32.store (local.get $dvo) (i32.load (i32.const 508)))))
       (if (call $is_object (local.get $thisv)) (then (set! $dvo (call $val_payload (local.get $thisv)))))  ;; super() from a subclass → init `this`
+      ;; length-tracking DataView: no explicit byteLength AND the buffer is resizable (@@abmax) —
+      ;; its byteLength follows the buffer on resize (recomputed live in dv_cur_len)
+      (let $dvtrack i32 (i32.and (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+                                 (i32.ne (call $scope_find_local (call $val_payload (local.get $dvb)) (cstring "@@abmax")) (i32.const 0))))
       (call $scope_define (local.get $dvo) (cstring "@@dvab") (local.get $dvb))
       (call $scope_define (local.get $dvo) (cstring "@@dvoff") (call $num (f64.convert_i32_s (local.get $dvoff))))
       (call $scope_define (local.get $dvo) (cstring "@@dvlen") (call $num (f64.convert_i32_s (local.get $dvlen))))
+      (call $scope_define (local.get $dvo) (cstring "@@dvtrack") (call $mk_bool (local.get $dvtrack)))
       (return (if i64 (call $is_object (local.get $thisv)) (then (local.get $thisv)) (else (call $mk_obj (local.get $dvo)))))))
   ;; accessors (brand-checked)
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 380)) (i32.le_s (local.get $id) (i32.const 382)))
@@ -2049,7 +2079,11 @@
         (then (if (i32.ne (local.get $id) (i32.const 380))
           (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))))
       (if (i32.eq (local.get $id) (i32.const 380)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))))
-      (if (i32.eq (local.get $id) (i32.const 381)) (then (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
+      (if (i32.eq (local.get $id) (i32.const 381))  ;; byteLength — live length; throws if out of bounds
+        (then
+          (let $dvbl i32 (call $dv_cur_len (local.get $thisv)))
+          (if (call $err) (then (return (call $v_undef))))
+          (return (call $num (f64.convert_i32_s (local.get $dvbl))))))
       (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
   ;; get/set
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 364)) (i32.le_s (local.get $id) (i32.const 379)))
@@ -2064,12 +2098,13 @@
       (let $boff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
       (let $dvab i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
-      (let $vlen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvlen"))))))
       (let $voff i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvoff"))))))
       (let $abptr i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $dvab) (call $mk_str (cstring "@@abdata"))))))
       (if (local.get $isget)
         (then  ;; getX(byteOffset, littleEndian)
           (if (call $is_detached_buf (local.get $dvab)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
+          (let $vlen i32 (call $dv_cur_len (local.get $thisv)))  ;; live length; throws if the (resizable) buffer shrank out of bounds
+          (if (call $err) (then (return (call $v_undef))))
           (if (i32.gt_s (local.get $boff) (i32.sub (local.get $vlen) (local.get $bpe)))
             (then (call $throw_type (cstring "RangeError") (cstring "DataView get: out of bounds")) (return (call $v_undef))))
           (return (call $num (call $dv_read (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (local.get $elem)
@@ -2078,6 +2113,8 @@
           (let $sval f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_detached_buf (local.get $dvab)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform DataView operation on a detached ArrayBuffer")) (return (call $v_undef))))
+          (let $vlen i32 (call $dv_cur_len (local.get $thisv)))  ;; live length; throws if the (resizable) buffer shrank out of bounds
+          (if (call $err) (then (return (call $v_undef))))
           (if (i32.gt_s (local.get $boff) (i32.sub (local.get $vlen) (local.get $bpe)))
             (then (call $throw_type (cstring "RangeError") (cstring "DataView set: out of bounds")) (return (call $v_undef))))
           (call $dv_write (i32.add (i32.add (local.get $abptr) (local.get $voff)) (local.get $boff)) (local.get $elem)
