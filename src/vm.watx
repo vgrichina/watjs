@@ -2390,11 +2390,16 @@
           (then
             (call $next_token)
             (let $restnm i32 (call $ident_name)) (call $next_token)
+            ;; a member target (...a.b / ...a[i]) — computing the rest object emits no tokens, so the
+            ;; current token still marks the member navigation for vm_c_dstr_assign_member
+            (let $restmem i32 (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))))
             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_native (i32.const 301) (cstring "")))  ;; PUSH objRest
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $srcTmp))  ;; LOADVAR src
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $exclT))  ;; LOADVAR exclT (runtime exclusion list)
             (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (i32.const 2))  ;; CALL 2
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $restnm))  ;; STOREVAR rest
+            (if (local.get $restmem)
+              (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval")) (call $vm_c_dstr_assign_member (local.get $code) (local.get $restnm)))  ;; ...a.b / ...a[i]
+              (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $restnm))))  ;; STOREVAR rest (identifier)
             (br $oe)))
         ;; computed key:  { [keyExpr]: target [= default] }
         (if (i32.eq (call $tok_kind) (i32.const 19))  ;; '['
