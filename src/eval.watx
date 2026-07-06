@@ -7179,10 +7179,16 @@
       (let $sri i32 (i32.const 0))
       (block $sre (loop $srl
         (br_if $sre (i32.ge_s (local.get $sri) (local.get $srn)))
-        (set! $srout (call $str_concat (local.get $srout) (call $to_str (call $get_prop (local.get $srraw) (call $num (f64.convert_i32_s (local.get $sri)))))))
-        ;; interleave substitution args (one fewer than raw segments)
+        ;; ToString(nextSeg) — a Symbol raw segment throws TypeError (to_str would stringify it)
+        (let $srseg i64 (call $get_prop (local.get $srraw) (call $num (f64.convert_i32_s (local.get $sri)))))
+        (if (call $is_symbol (local.get $srseg)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
+        (set! $srout (call $str_concat (local.get $srout) (call $to_str (local.get $srseg))))
+        ;; interleave substitution args (one fewer than raw segments) — ToString(nextSub); Symbol throws
         (if (i32.and (i32.lt_s (local.get $sri) (i32.sub (local.get $srn) (i32.const 1))) (i32.lt_s (i32.add (local.get $sri) (i32.const 1)) (local.get $argc)))
-          (then (set! $srout (call $str_concat (local.get $srout) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $sri) (i32.const 1))))))))
+          (then
+            (let $srsub i64 (call $argn (local.get $argv) (local.get $argc) (i32.add (local.get $sri) (i32.const 1))))
+            (if (call $is_symbol (local.get $srsub)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
+            (set! $srout (call $str_concat (local.get $srout) (call $to_str (local.get $srsub))))))
         (set! $sri (i32.add (local.get $sri) (i32.const 1))) (br $srl)))
       (return (call $mk_str (local.get $srout)))))
   (if (i32.eq (local.get $id) (i32.const 259))  ;; Date.UTC(y,mo[,d,h,mi,s,ms]) → ms number
