@@ -4,3 +4,6 @@ node_modules/
 *.wasm
 !tools/**/*.wasm
 .DS_Store
+
+# local scratch for test probes (shared-/tmp corruption workaround)
+.tmptest/
