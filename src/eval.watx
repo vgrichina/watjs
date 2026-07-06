@@ -10014,7 +10014,14 @@
           (let $a0nan i32 (i32.and (call $is_number (local.get $a0)) (f64.ne (call $tonum_raw (local.get $a0)) (call $tonum_raw (local.get $a0)))))
           (block $ie (loop $il
             (br_if $ie (i32.ge_s (local.get $i) (local.get $n)))
-            (let $iel i64 (call $dense_get (local.get $thisv) (local.get $arr) (local.get $i)))  ;; includes visits every index; a real-array hole inherits Array.prototype[i]
+            ;; includes [[Get]]s EVERY index 0..len-1 (never HasProperty-skips). A generic array-like
+            ;; OBJECT (incl. a Proxy) must be read live via get_prop so its get trap/getters fire on each
+            ;; index; a real array or TypedArray uses dense_get (snapshot / live-element).
+            (let $iel i64 (if i64 (call $is_object (local.get $thisv))
+              (then (if i64 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))
+                (then (call $dense_get (local.get $thisv) (local.get $arr) (local.get $i)))
+                (else (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))))
+              (else (call $dense_get (local.get $thisv) (local.get $arr) (local.get $i)))))
             (if (i32.or (call $strict_eq (local.get $iel) (local.get $a0))
                         (i32.and (local.get $a0nan) (i32.and (call $is_number (local.get $iel)) (f64.ne (call $tonum_raw (local.get $iel)) (call $tonum_raw (local.get $iel))))))
               (then (return (call $v_true))))
