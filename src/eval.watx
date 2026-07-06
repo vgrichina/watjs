@@ -7819,6 +7819,9 @@
             (set! $lastatom (i32.const 45)) (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $pvl)))  ;; '-' is a literal
         (set! $lastatom (if i32 (i32.lt_s (local.get $pb) (i32.const 128)) (then (local.get $pb)) (else (i32.const -1))))
         (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $pvl)))
+      ;; validate quantifier placement (a**, ++a, x{1}{1,} → SyntaxError)
+      (call $re_check_quant (local.get $pat))
+      (if (call $err) (then (return (call $v_undef))))
       (let $ro i32 (call $obj_new (i32.const 8)))
       (i32.store (local.get $ro) (i32.load (i32.const 324)))  ;; scope parent = RegExp.prototype (source/flags/… getters, test, exec)
       (if (call $is_object (local.get $thisv)) (then (set! $ro (call $val_payload (local.get $thisv)))))  ;; super() from a subclass → init `this`
