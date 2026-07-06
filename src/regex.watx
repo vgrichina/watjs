@@ -428,14 +428,27 @@
             (else (return (i32.const -1))))))
       (if (i32.and (i32.ge_s (local.get $bnc) (i32.const 49)) (i32.le_s (local.get $bnc) (i32.const 57)))  ;; '1'..'9'
         (then
-          (let $brqp i32 (i32.add (local.get $ppos) (i32.const 2)))  ;; position after \N
+          ;; read the maximal decimal backref number ≤ ngroups (so \10 with ≥10 groups is one
+          ;; backref, not \1 then '0'; when it would exceed ngroups keep the shorter number and
+          ;; leave the extra digit as a literal, matching the legacy single-digit behavior).
+          (let $bnum i32 (i32.sub (local.get $bnc) (i32.const 48)))
+          (let $bdig i32 (i32.const 1))  ;; digits consumed after '\'
+          (block $de (loop $dl
+            (let $nd i32 (call $re_pb (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.add (local.get $bdig) (i32.const 1)))))
+            (br_if $de (i32.or (i32.lt_s (local.get $nd) (i32.const 48)) (i32.gt_s (local.get $nd) (i32.const 57))))
+            (let $bt i32 (i32.add (i32.mul (local.get $bnum) (i32.const 10)) (i32.sub (local.get $nd) (i32.const 48))))
+            (br_if $de (i32.gt_s (local.get $bt) (i32.load (i32.const 284))))  ;; would exceed ngroups → stop
+            (set! $bnum (local.get $bt))
+            (set! $bdig (i32.add (local.get $bdig) (i32.const 1)))
+            (br $dl)))
+          (let $brqp i32 (i32.add (local.get $ppos) (i32.add (local.get $bdig) (i32.const 1))))  ;; position after \NN
           (let $brq i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $brqp)))
           (let $brmin i32 (i32.const 1)) (let $brmax i32 (i32.const 1)) (let $brqend i32 (local.get $brqp))
           (if (i32.eq (local.get $brq) (i32.const 42)) (then (set! $brmin (i32.const 0)) (set! $brmax (i32.add (local.get $slen) (i32.const 1))) (set! $brqend (i32.add (local.get $brqp) (i32.const 1)))))  ;; *
           (if (i32.eq (local.get $brq) (i32.const 43)) (then (set! $brmin (i32.const 1)) (set! $brmax (i32.add (local.get $slen) (i32.const 1))) (set! $brqend (i32.add (local.get $brqp) (i32.const 1)))))  ;; +
           (if (i32.eq (local.get $brq) (i32.const 63)) (then (set! $brmin (i32.const 0)) (set! $brmax (i32.const 1)) (set! $brqend (i32.add (local.get $brqp) (i32.const 1)))))  ;; ?
           (if (i32.eq (local.get $brq) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $brqp)) (set! $brmin (i32.load (i32.const 172))) (set! $brmax (i32.load (i32.const 176))) (set! $brqend (i32.load (i32.const 180)))))  ;; {n,m}
-          (return (call $re_backref_rep (local.get $p) (local.get $plen) (i32.sub (local.get $bnc) (i32.const 48)) (local.get $brqend) (local.get $brmin) (local.get $brmax) (local.get $s) (local.get $slen) (local.get $spos)))))
+          (return (call $re_backref_rep (local.get $p) (local.get $plen) (local.get $bnum) (local.get $brqend) (local.get $brmin) (local.get $brmax) (local.get $s) (local.get $slen) (local.get $spos)))))
       (if (i32.and (i32.eq (local.get $bnc) (i32.const 107)) (i32.eq (call $re_pb (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2))) (i32.const 60)))  ;; \k<
         (then
           (let $kns i32 (i32.add (local.get $ppos) (i32.const 3)))
