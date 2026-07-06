@@ -845,6 +845,7 @@
   (let $n i32 (call $str_len (local.get $pat)))
   (let $i i32 (i32.const 0))
   (let $st i32 (i32.const 0))
+  (let $depth i32 (i32.const 0))  ;; open '(' groups
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
     (let $c i32 (call $str_byte (local.get $pat) (local.get $i)))
@@ -855,12 +856,14 @@
     (if (i32.eq (local.get $c) (i32.const 91))  ;; '[' char class → skip to ']', atom
       (then
         (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (let $closed i32 (i32.const 0))
         (block $ce (loop $cl
           (br_if $ce (i32.ge_s (local.get $i) (local.get $n)))
           (let $cc i32 (call $str_byte (local.get $pat) (local.get $i)))
           (if (i32.eq (local.get $cc) (i32.const 92)) (then (set! $i (i32.add (local.get $i) (i32.const 2))) (br $cl)))
-          (if (i32.eq (local.get $cc) (i32.const 93)) (then (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ce)))
+          (if (i32.eq (local.get $cc) (i32.const 93)) (then (set! $closed (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ce)))
           (set! $i (i32.add (local.get $i) (i32.const 1))) (br $cl)))
+        (if (i32.eqz (local.get $closed)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unterminated character class")) (return)))
         (set! $st (i32.const 1)) (br $l)))
     (if (i32.eq (local.get $c) (i32.const 40))  ;; '(' open group (skip (?: (?= (?! (?<= (?<! (?<name>)
       (then
@@ -874,9 +877,12 @@
                 (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.eqz (i32.or (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 61)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 33)))))
                   (then (block $ne (loop $nl (br_if $ne (i32.ge_s (local.get $i) (local.get $n))) (if (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 62)) (then (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ne))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $nl))))))
               (else (set! $i (i32.add (local.get $i) (i32.const 1)))))))
-        (set! $st (i32.const 0)) (br $l)))
+        (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $st (i32.const 0)) (br $l)))
     (if (i32.eq (local.get $c) (i32.const 124)) (then (set! $st (i32.const 0)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))  ;; '|'
-    (if (i32.eq (local.get $c) (i32.const 41)) (then (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))  ;; ')'
+    (if (i32.eq (local.get $c) (i32.const 41))  ;; ')'
+      (then
+        (if (i32.le_s (local.get $depth) (i32.const 0)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unmatched ')'")) (return)))
+        (set! $depth (i32.sub (local.get $depth) (i32.const 1))) (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
     (if (i32.or (i32.eq (local.get $c) (i32.const 42)) (i32.eq (local.get $c) (i32.const 43)))  ;; '*' '+'
       (then
         (if (i32.ne (local.get $st) (i32.const 1)) (then (call $throw_type (cstring "SyntaxError") (cstring "Nothing to repeat")) (return)))
@@ -906,7 +912,8 @@
               (then (call $throw_type (cstring "SyntaxError") (cstring "numbers out of order in {} quantifier")) (return)))
             (set! $st (i32.const 2)) (set! $i (local.get $j)) (br $l))
           (else (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))))
-    (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
+    (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (if (i32.gt_s (local.get $depth) (i32.const 0)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unmatched '('")) (return))))
 
 ;; the [[OriginalFlags]] string ptr of a RegExp (empty string if absent) — used when the RegExp
 ;; constructor is given undefined flags for a RegExp pattern (new RegExp(/x/gi) → flags "gi").
