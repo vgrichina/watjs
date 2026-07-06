@@ -1148,9 +1148,18 @@
   (if (i32.eqz (call $is_object (local.get $thisv)))
     (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return)))
   (let $sl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "length")))
+  ;; Set(O,"length",v,Throw=true): an accessor is settable only if it has a setter (then set_prop
+  ;; invokes it); a setterless accessor OR a non-writable data property is read-only → throw
+  ;; (unconditionally, unlike a plain sloppy `o.length=v` which set_prop would silently ignore).
   (if (local.get $sl)
-    (then (if (i32.eqz (call $entry_writable (local.get $sl)))
-      (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return)))))
+    (then
+      (if (call $entry_is_accessor (local.get $sl))
+        (then
+          (if (i32.eqz (call $is_function (i64.load (i32.add (call $val_payload (i64.load (local.get $sl))) (i32.const 8)))))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return))))
+        (else
+          (if (i32.eqz (call $entry_writable (local.get $sl)))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return)))))))
   (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (local.get $valf))))
 
 ;; ToLength of an array-like's `length` (0 if absent/negative), clamped to i32.
