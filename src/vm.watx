@@ -4730,7 +4730,10 @@
         ;; A DERIVED constructor (its home prototype carries @@super) leaves `this` UNINITIALIZED
         ;; (TDZ) until super() binds it; a base constructor gets `this` = the fresh object now.
         ;; The object is stashed in @@newo so super() can install it.
-        (let $nwderived i32 (i32.ne (call $scope_find_local (call $val_payload (local.get $cproto)) (cstring "@@super")) (i32.const 0)))
+        ;; @@super (derived-ctor marker) only lives on an ordinary-object prototype. An array/function
+        ;; .prototype (kept via @@protoval) is never a class home-proto — guard the scope_find_local,
+        ;; which would otherwise deref a non-scope (function/array) payload → OOB trap.
+        (let $nwderived i32 (if i32 (call $is_object (local.get $cproto)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $cproto)) (cstring "@@super")) (i32.const 0))) (else (i32.const 0))))
         (call $scope_define (local.get $cns) (cstring "this") (if i64 (local.get $nwderived) (then (call $v_tdz)) (else (call $mk_obj (local.get $newo)))))
         (if (local.get $nwderived) (then (call $scope_define (local.get $cns) (cstring "@@newo") (call $mk_obj (local.get $newo)))))
         (call $scope_define (local.get $cns) (cstring "@@homeproto") (local.get $cproto))  ;; home prototype (carries @@super) for lexical super()
