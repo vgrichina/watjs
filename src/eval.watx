@@ -5913,6 +5913,13 @@
       (let $pnbuf i32 (call $heap_alloc (i32.const 8)))
       (let $prbuf i32 (call $heap_alloc (i32.const 8)))
       (let $pidx i32 (i32.const 0))
+      ;; Shared capability resolve/reject functions (spec identity): race passes BOTH to every
+      ;; element's .then; all shares the reject; any shares the resolve. For a custom C these are the
+      ;; capability's own functions (observable — Promise.all with a custom ctor must pass the SAME
+      ;; capability.[[Reject]] to each thenable). For the default %Promise% they're bound settlers on
+      ;; the internal pres (behavior-identical to the old per-element settlers, just shared identity).
+      (let $shres i64 (if i64 (local.get $pcustom) (then (call $get_prop (local.get $pcapv) (call $mk_str (cstring "resolve")))) (else (call $promise_bound_settler (i32.const 415) (local.get $pres)))))
+      (let $shrej i64 (if i64 (local.get $pcustom) (then (call $get_prop (local.get $pcapv) (call $mk_str (cstring "reject")))) (else (call $promise_bound_settler (i32.const 416) (local.get $pres)))))
       (block $pae (loop $pal
         (let $pr i64 (call $call_val (local.get $pnf) (i32.const 0) (local.get $pnbuf) (local.get $pit)))  ;; iter.next()
         (br_if $pae (call $err))
@@ -5933,15 +5940,17 @@
           (then (call $throw_type (cstring "TypeError") (cstring "then is not a function")) (call $iter_close_throw (local.get $pit)) (br $pae)))
         (call $arr_push (local.get $pacc) (call $v_undef))  ;; reserve slot [idx]
         (let $onF i64 (call $v_undef)) (let $onR i64 (call $v_undef))
-        (if (i32.eq (local.get $id) (i32.const 411))  ;; race → resolve/reject the result directly (first settle wins)
-          (then (set! $onF (call $promise_bound_settler (i32.const 415) (local.get $pres))) (set! $onR (call $promise_bound_settler (i32.const 416) (local.get $pres))))
-          (else  ;; all/any/allSettled → element resolve/reject carrying index + shared state
+        (if (i32.eq (local.get $id) (i32.const 411))  ;; race → both shared (first settle wins)
+          (then (set! $onF (local.get $shres)) (set! $onR (local.get $shrej)))
+          (else  ;; all/any/allSettled — element resolve/reject carrying index + shared state
             (let $es i32 (call $obj_new (i32.const 4)))
             (call $scope_define (local.get $es) (cstring "@@cs") (local.get $csv))
             (call $scope_define (local.get $es) (cstring "@@i") (call $num (f64.convert_i32_s (local.get $pidx))))
             (let $esv i64 (call $mk_obj (local.get $es)))
-            (set! $onF (call $promise_bound_settler (i32.const 454) (local.get $esv)))
-            (set! $onR (call $promise_bound_settler (i32.const 455) (local.get $esv)))))
+            ;; all(410): resolveElement_i + SHARED reject. any(413): SHARED resolve + rejectElement_i.
+            ;; allSettled(412): both per-element (resolveElement_i / rejectElement_i).
+            (set! $onF (if i64 (i32.eq (local.get $id) (i32.const 413)) (then (local.get $shres)) (else (call $promise_bound_settler (i32.const 454) (local.get $esv)))))
+            (set! $onR (if i64 (i32.eq (local.get $id) (i32.const 410)) (then (local.get $shrej)) (else (call $promise_bound_settler (i32.const 455) (local.get $esv)))))))
         (let $tb i32 (call $heap_alloc (i32.const 16)))
         (i64.store (local.get $tb) (local.get $onF))
         (i64.store (i32.add (local.get $tb) (i32.const 8)) (local.get $onR))
