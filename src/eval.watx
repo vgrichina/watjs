@@ -11307,7 +11307,7 @@
   (call $scope_define_accessor_attr (local.get $abproto) (cstring "byteLength") (call $mk_native (i32.const 390) (cstring "get byteLength")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $abproto) (cstring "maxByteLength") (call $mk_native (i32.const 506) (cstring "get maxByteLength")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $abproto) (cstring "resizable") (call $mk_native (i32.const 507) (cstring "get resizable")) (call $v_undef) (i32.const 5))
-  (call $scope_define_attr (local.get $abproto) (cstring "resize") (call $mk_native (i32.const 505) (cstring "resize")) (i32.const 6))
+  (call $scope_define_attr (local.get $abproto) (cstring "resize") (call $mk_native (i32.const 505) (cstring "resize")) (i32.const 12))  ;; writable(8)+configurable(4), non-enumerable — standard built-in method attrs
   (call $scope_define_accessor_attr (local.get $abproto) (cstring "detached") (call $mk_native (i32.const 484) (cstring "get detached")) (call $v_undef) (i32.const 5))
   (call $scope_define (local.get $abproto) (cstring "slice") (call $mk_native (i32.const 391) (cstring "slice")))
   (call $scope_define_attr (local.get $abproto) (cstring "@@toStringTag") (call $mk_str (cstring "ArrayBuffer")) (i32.const 4))
