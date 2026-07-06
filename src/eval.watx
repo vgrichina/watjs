@@ -7739,6 +7739,14 @@
       ;; undefined (or absent) pattern → empty source (NOT the string "undefined");
       ;; a RegExp argument copies its source.
       (let $pa0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; RegExp(pattern) called as a FUNCTION (reg640=0, no `new`) with a RegExp pattern and undefined
+      ;; flags returns the SAME object when pattern.constructor is the RegExp constructor (22.2.3.1 2.b).
+      (if (i32.and (i32.eqz (i32.load (i32.const 640)))
+            (i32.and (call $is_regexp (local.get $pa0))
+                     (i32.or (i32.lt_s (local.get $argc) (i32.const 2)) (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
+        (then (if (i64.eq (call $get_prop (local.get $pa0) (call $mk_str (cstring "constructor")))
+                          (call $get_prop (call $mk_obj (i32.load (i32.const 324))) (call $mk_str (cstring "constructor"))))
+          (then (return (local.get $pa0))))))
       ;; patternIsRegExp = IsRegExp(pattern): a real RegExp, or an object with a truthy @@match. A
       ;; RegExp-like (non-RegExp) pattern reads its `source`/`flags` via [[Get]] (a throwing getter
       ;; propagates); a real RegExp copies its internal source/flags directly.
