@@ -7488,21 +7488,49 @@
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eq (local.get $id) (i32.const 78))  ;; sort([cmp]) — insertion sort, in place
+      (if (i32.eq (local.get $id) (i32.const 78))  ;; sort([cmp])
         (then
-          ;; a TypedArray sorts NUMERICALLY by default and must be written back (its
-          ;; elements live in a byte buffer; $arr is a materialized copy here)
+          ;; a TypedArray sorts NUMERICALLY by default, in place, over its byte buffer
+          ;; ($arr is a materialized copy here) — no holes, no [[Get]]/[[Set]] observation.
           (let $tasort i32 (if i32 (call $is_object (local.get $thisv)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0))) (else (i32.const 0))))
-          (let $tanum i32 (i32.and (local.get $tasort) (i32.eqz (call $is_function (local.get $a0)))))  ;; numeric default
-          (call $merge_sort (local.get $arr) (local.get $n) (local.get $a0) (local.get $tanum))  ;; stable O(n log n)
-          (if (call $err) (then (return (call $v_undef))))
-          ;; write the sorted values back to a TypedArray receiver
           (if (local.get $tasort)
             (then
+              (let $tanum i32 (i32.eqz (call $is_function (local.get $a0))))  ;; numeric default
+              (call $merge_sort (local.get $arr) (local.get $n) (local.get $a0) (local.get $tanum))  ;; stable O(n log n)
+              (if (call $err) (then (return (call $v_undef))))
               (let $wbi i32 (i32.const 0))
               (block $wbe (loop $wbl (br_if $wbe (i32.ge_s (local.get $wbi) (local.get $n)))
                 (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $wbi))) (call $arr_get (local.get $arr) (local.get $wbi)))
-                (set! $wbi (i32.add (local.get $wbi) (i32.const 1))) (br $wbl)))))
+                (set! $wbi (i32.add (local.get $wbi) (i32.const 1))) (br $wbl)))
+              (return (local.get $thisv))))
+          ;; generic SortIndexedProperties (spec 23.1.3.30.1): collect the present elements
+          ;; via [[HasProperty]]/[[Get]] (observing inherited getters), sort them, write back
+          ;; via [[Set]] (observing setters), then delete the trailing indices so holes stay
+          ;; holes. Works uniformly for real arrays (incl. accessor/deopted indices) and
+          ;; array-like objects; a comparefn that throws propagates with NO writeback.
+          (let $items i32 (call $arr_new (i32.add (local.get $n) (i32.const 1))))
+          (let $sk i32 (i32.const 0))
+          (block $scle (loop $scll
+            (br_if $scle (i32.ge_s (local.get $sk) (local.get $n)))
+            (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $sk))) (local.get $thisv)))
+              (then
+                (let $sv i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $sk)))))
+                (if (call $err) (then (return (call $v_undef))))
+                (call $arr_push (local.get $items) (local.get $sv))))
+            (br_if $scle (call $err))
+            (set! $sk (i32.add (local.get $sk) (i32.const 1))) (br $scll)))
+          (let $sic i32 (call $arr_len (local.get $items)))
+          (call $merge_sort (local.get $items) (local.get $sic) (local.get $a0) (i32.const 0))  ;; stable O(n log n)
+          (if (call $err) (then (return (call $v_undef))))  ;; comparefn threw → no writeback
+          (let $sj i32 (i32.const 0))
+          (block $swe (loop $swl (br_if $swe (i32.ge_s (local.get $sj) (local.get $sic)))
+            (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $sj))) (call $arr_get (local.get $items) (local.get $sj)))
+            (if (call $err) (then (return (call $v_undef))))
+            (set! $sj (i32.add (local.get $sj) (i32.const 1))) (br $swl)))
+          (block $sde (loop $sdl (br_if $sde (i32.ge_s (local.get $sj) (local.get $n)))
+            (call $cw_delete (local.get $thisv) (local.get $arr) (local.get $sj))
+            (if (call $err) (then (return (call $v_undef))))
+            (set! $sj (i32.add (local.get $sj) (i32.const 1))) (br $sdl)))
           (return (local.get $thisv))))
       ;; find/findIndex/some/every — callback (elem,i,arr)
       (let $i i32 (i32.const 0))
