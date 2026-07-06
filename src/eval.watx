@@ -4895,6 +4895,21 @@
       (if (call $err) (then (return (call $v_undef))))
       (if (call $is_string (local.get $ttv))
         (then (return (call $mk_str (call $str_concat (call $str_concat (cstring "[object ") (call $val_payload (local.get $ttv))) (cstring "]"))))))
+      ;; a Proxy has no internal brand of its own, but its builtinTag follows the TARGET: IsArray(O)
+      ;; sees through the proxy chain (throwing on a revoked proxy) → "Array"; a proxy whose target is
+      ;; callable has [[Call]] → "Function"; otherwise "Object" (no [[ParameterMap]]/[[ErrorData]]/etc.).
+      (if (call $is_proxy (local.get $thisv))
+        (then
+          (let $ptgt i64 (local.get $thisv))
+          (block $pte (loop $ptl
+            (br_if $pte (i32.eqz (call $is_proxy (local.get $ptgt))))
+            (set! $ptgt (call $proxy_target (local.get $ptgt)))
+            (if (call $is_null (local.get $ptgt))
+              (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform 'IsArray' on a proxy that has been revoked")) (return (call $v_undef))))
+            (br $ptl)))
+          (if (call $is_array (local.get $ptgt)) (then (return (call $mk_str (cstring "[object Array]")))))
+          (if (call $is_function (local.get $ptgt)) (then (return (call $mk_str (cstring "[object Function]")))))
+          (return (call $mk_str (cstring "[object Object]")))))
       ;; builtin tags by type (the @@toStringTag override above takes precedence)
       (if (call $is_number (local.get $thisv)) (then (return (call $mk_str (cstring "[object Number]")))))
       (if (call $is_string (local.get $thisv)) (then (return (call $mk_str (cstring "[object String]")))))
