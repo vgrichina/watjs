@@ -5458,8 +5458,15 @@
         (let $nm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (let $gpo i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
+        ;; `obj.#x` private access (a '#'-key only ever comes from `.#name` syntax — internal GETPROPs
+        ;; and `obj["#x"]`/#errkind use non-'#' keys / GETIDX): brand-check the receiver. Accessing a
+        ;; private member on an object whose class did not declare it is a TypeError, not undefined.
+        (if (call $is_private_key (local.get $nm))
+          (then (if (i32.eqz (call $truthy (call $js_in (call $mk_str (local.get $nm)) (local.get $gpo))))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot read private member from an object whose class did not declare it")) (br $disp)))))
         (i64.store (i32.add (local.get $stack) (local.get $t))
-                   (call $get_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (call $mk_str (local.get $nm))))
+                   (call $get_prop (local.get $gpo) (call $mk_str (local.get $nm))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 116))  ;; SUPERPROTO — [obj] → obj.@@superproto, else getPrototypeOf(obj)
       (then
