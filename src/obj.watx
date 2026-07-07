@@ -1047,6 +1047,22 @@
       (return (call $v_undef))))
   (i64.load (local.get $sgslot)))
 
+;; super-property [[Set]]: `super.key = val` — if the super chain holds an accessor, invoke its SETTER
+;; with this=$recv (the instance); otherwise the assignment lands on the RECEIVER (own data property).
+(func $set_super_prop (param $proto i64) (param $key i64) (param $val i64) (param $recv i64) (effects)
+  (if (call $is_object (local.get $proto))
+    (then
+      (let $ssslot i32 (call $scope_find (call $val_payload (local.get $proto)) (call $to_prop_key (local.get $key))))
+      (if (i32.and (i32.ne (local.get $ssslot) (i32.const 0)) (if i32 (local.get $ssslot) (then (call $entry_is_accessor (local.get $ssslot))) (else (i32.const 0))))
+        (then
+          (let $ssset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $ssslot))) (i32.const 8))))
+          (if (call $is_function (local.get $ssset))
+            (then (let $ssav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $ssav) (local.get $val)) (drop (call $call_val (local.get $ssset) (i32.const 1) (local.get $ssav) (local.get $recv))))
+            (else (call $throw_type (cstring "TypeError") (cstring "Cannot set super property with no setter"))))
+          (return)))))
+  ;; data property (or absent) → OrdinarySet lands on the receiver as its own property
+  (call $set_prop (local.get $recv) (local.get $key) (local.get $val)))
+
 ;; x instanceof F : walk x's prototype chain looking for F.prototype
 (func $js_instanceof (param $x i64) (param $f i64) (result i64) (effects)
   (if (i32.eqz (call $is_function (local.get $f)))

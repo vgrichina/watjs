@@ -715,16 +715,18 @@
                     (then (block $sme (loop $sml (call $vm_c_expr (local.get $code)) (set! $smargc (i32.add (local.get $smargc) (i32.const 1))) (br_if $sme (i32.eqz (call $eat (i32.const 22)))) (br $sml)))))
                   (call $next_token)  ;; ')'
                   (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $smargc)))  ;; CALLM
-                (else  ;; super.name as a VALUE — legal only where a [[HomeObject]] is lexically in scope (reg 868)
+                (else  ;; super.name — VALUE or assignment target; legal only where a [[HomeObject]] is in scope
                   (if (i32.eqz (i32.load (i32.const 868)))
                     (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'super' keyword unexpected here")) (return)))
                   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
                   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
                   (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO → [recv, superproto]
-                  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $smn)))  ;; PUSH key
-                  (call $vm_emit_op (local.get $code) (i32.const 117))))  ;; SUPERGET → [value]
+                  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $smn)))  ;; PUSH key → [recv, superproto, key]
+                  (if (i32.eq (call $tok_kind) (i32.const 24))  ;; `super.name = RHS`
+                    (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 119)))  ;; RHS → SUPERSET → [value]
+                    (else (call $vm_emit_op (local.get $code) (i32.const 117))))))  ;; SUPERGET → [value]
               (return)))
-          (if (i32.eq (call $tok_kind) (i32.const 19))  ;; super[expr] — computed member value
+          (if (i32.eq (call $tok_kind) (i32.const 19))  ;; super[expr] — computed member value or assignment target
             (then
               (if (i32.eqz (i32.load (i32.const 868)))
                 (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'super' keyword unexpected here")) (return)))
@@ -734,7 +736,9 @@
               (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO → [recv, superproto]
               (call $vm_c_expr (local.get $code))  ;; → [recv, superproto, key]
               (call $next_token)  ;; ']'
-              (call $vm_emit_op (local.get $code) (i32.const 117))  ;; SUPERGET → [value]
+              (if (i32.eq (call $tok_kind) (i32.const 24))  ;; `super[expr] = RHS`
+                (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 119)))  ;; SUPERSET
+                (else (call $vm_emit_op (local.get $code) (i32.const 117))))  ;; SUPERGET
               (return)))
           (return)))
       (if (call $tok_is_kw (cstring "new"))  ;; new F(args)  /  new a.b.C(args)  /  new.target
@@ -5595,6 +5599,23 @@
           (then (call $throw_type (cstring "TypeError") (cstring "Cannot read super property of a null prototype")) (br $disp)))
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $get_super_prop (local.get $sgp) (local.get $sgk) (local.get $sgrv)))
         (if (call $err) (then (br $disp)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 119))  ;; SUPERSET — [receiver, superproto, key, value] → super[key]=value; leaves value
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $ssv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $ssk i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $ssp i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $ssr i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (if (i32.or (call $is_null (local.get $ssp)) (call $is_undefined (local.get $ssp)))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot set super property of a null prototype")) (br $disp)))
+        (call $set_super_prop (local.get $ssp) (local.get $ssk) (local.get $ssv) (local.get $ssr))
+        (if (call $err) (then (br $disp)))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $ssv))  ;; assignment yields the value
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 118))  ;; DIRECTEVALMARK (operand: 1=direct-no-super, 2=direct-super) — set reg 880 for the imminent eval() call
