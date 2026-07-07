@@ -721,10 +721,15 @@
           (if (call $str_eq (local.get $ks) (cstring "call")) (then (return (call $mk_native (i32.const 194) (cstring "call")))))
           (if (call $str_eq (local.get $ks) (cstring "apply")) (then (return (call $mk_native (i32.const 195) (cstring "apply")))))
           (return (call $mk_native (i32.const 153) (cstring "bind")))))
-      ;; Function.prototype 'caller'/'arguments' are %ThrowTypeError% accessors — reading
-      ;; them on any function throws (own override is rare and not exercised here).
+      ;; Function.prototype 'caller'/'arguments' are %ThrowTypeError% accessors — reading them on a
+      ;; function throws, UNLESS the function has an OWN 'caller'/'arguments' property (e.g. a class
+      ;; `static get arguments(){}`) that shadows the inherited accessor — then fall through to resolve it.
       (if (i32.or (call $str_eq (local.get $ks) (cstring "caller")) (call $str_eq (local.get $ks) (cstring "arguments")))
-        (then (call $throw_type (cstring "TypeError") (cstring "'caller'/'arguments' are restricted function properties")) (return (call $v_undef))))
+        (then
+          (let $carsc i32 (if i32 (i32.and (i32.ge_s (i32.load (local.get $fn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $fn)) (i32.const 1448232528)))
+            (then (call $fn_ownsc_peek (local.get $fn))) (else (i32.load (i32.add (local.get $fn) (i32.const 12))))))
+          (if (i32.eqz (i32.and (i32.ne (local.get $carsc) (i32.const 0)) (if i32 (local.get $carsc) (then (i32.ne (call $scope_find_local (local.get $carsc) (local.get $ks)) (i32.const 0))) (else (i32.const 0)))))
+            (then (call $throw_type (cstring "TypeError") (cstring "'caller'/'arguments' are restricted function properties")) (return (call $v_undef))))))
       ;; VM functions (magic 1448232526..528) store .prototype at @16; static
       ;; methods and other own props live in that prototype scope (see note in
       ;; the class compiler — static is not yet isolated from instance members).
