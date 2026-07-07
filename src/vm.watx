@@ -3516,6 +3516,19 @@
             (then (set! $ofvar (call $ident_name))
               (if (local.get $ofdecl) (then (if (call $vm_strict_lhs_check (local.get $ofvar)) (then (return)))))  ;; strict: `for (var eval|arguments ...)` → SyntaxError
               (call $next_token)))
+          ;; member-expression assignment target as the loop head: `for (o.p in E)` / `for (a[i] of E)`.
+          ;; Capture the base name + the cursor at the '.'/'[' navigation, skip to `in`/`of`; the per-
+          ;; iteration value is assigned to the member via vm_c_dstr_assign_member (from @@dval).
+          (let $ofmembase i32 (i32.const 0))
+          (let $ofmemcur i32 (i32.const 0))
+          (if (i32.and (i32.eqz (local.get $ofdecl)) (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))))
+            (then
+              (set! $ofmembase (local.get $ofvar))
+              (set! $ofmemcur (call $cursor_save))
+              (block $mse (loop $msl
+                (if (i32.eq (call $tok_kind) (i32.const 23)) (then (call $next_token) (call $next_token) (br $msl)))  ;; '.' ident
+                (if (i32.eq (call $tok_kind) (i32.const 19)) (then (call $vm_skip_balanced) (br $msl)))))            ;; '[' … ']'
+              (set! $ofvar (i32.const 0))))
           ;; destructuring pattern as the loop variable: for (var [a,b] of E) / for (var {x} of E).
           ;; Capture the pattern cursor; bind via vm_c_destructure_param (iterator protocol for
           ;; arrays incl. inner-close, property access for objects, member targets, defaults).
@@ -3552,8 +3565,8 @@
                             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "for-in loop head declaration may not have an initializer")) (return)))))))))
                 (call $next_token) (br $hil)))
               (call $cursor_restore (local.get $hidet))))  ;; restore to '=' so the regular-for init parser runs
-          (let $isof i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of")))))
-          (let $isin i32 (i32.and (i32.ne (local.get $ofvar) (i32.const 0)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "in")))))
+          (let $isof i32 (i32.and (i32.or (i32.ne (local.get $ofvar) (i32.const 0)) (i32.ne (local.get $ofmembase) (i32.const 0))) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of")))))
+          (let $isin i32 (i32.and (i32.or (i32.ne (local.get $ofvar) (i32.const 0)) (i32.ne (local.get $ofmembase) (i32.const 0))) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "in")))))
           (if (i32.or (local.get $isof) (local.get $isin))
             (then
               (call $next_token)  ;; 'of' / 'in'
@@ -3607,7 +3620,14 @@
                   (i32.store (i32.const 360) (i32.load (i32.const 320)))  ;; plain break/continue base above the kind-2
                   (if (i32.load (i32.const 248)) (then (i32.store (i32.add (i32.load (i32.const 248)) (i32.const 20)) (i32.load (i32.const 320)))))))  ;; labeled base too
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@ofval"))  ;; LOADVAR @@ofval → [val]
-              (if (local.get $ofpatcur)
+              (if (local.get $ofmembase)
+                (then  ;; member-expression head: assign the per-iteration value to o.p / a[i]
+                  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval"))  ;; STOREVAR @@dval (the val)
+                  (let $ofbody3 i32 (call $cursor_save))
+                  (call $cursor_restore (local.get $ofmemcur))
+                  (call $vm_c_dstr_assign_member (local.get $code) (local.get $ofmembase))
+                  (call $cursor_restore (local.get $ofbody3)))
+                (else (if (local.get $ofpatcur)
                 (then  ;; destructuring pattern: bind via vm_c_destructure_param
                   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@ofdt"))  ;; STOREVAR temp
                   (let $ofbody i32 (call $cursor_save))
@@ -3619,7 +3639,7 @@
                   (call $cursor_restore (local.get $ofbody)))
                 (else (if (local.get $ofdecl)
                         (then (call $vm_emit_op (local.get $code) (if i32 (local.get $ofperiter) (then (i32.const 114)) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; per-iter let/const → LEXDEFINIT (fresh scope); var → DEFINIT (var scope)
-                        (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))))  ;; STOREVAR x: assignment-target head (`for (x of E)`)
+                        (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))))))  ;; STOREVAR x: assignment-target head (`for (x of E)`)
               (call $vm_c_stmt (local.get $code))  ;; body
               (if (local.get $ofperiter) (then (call $vm_finally_pop)))  ;; the per-iter kind-2 was for the body only
               ;; normal + continue converge here: pop the per-iteration scope, POPHANDLER, then loop
