@@ -498,7 +498,14 @@
     (br $l)))
   (call $arr_push (local.get $cooked) (call $mk_str (call $tmpl_cook (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $tlen) (local.get $tseg)))))  ;; trailing part
   (call $arr_push (local.get $raw) (call $mk_str (call $tmpl_norm (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $tlen) (local.get $tseg)))))
-  (call $scope_define (call $arr_props (local.get $cooked)) (cstring "raw") (call $mk_arr (local.get $raw)))
+  ;; the raw array is frozen (indices non-writable/non-configurable via @@frozen, length locked)
+  (call $scope_define_attr (call $arr_props (local.get $raw)) (cstring "@@frozen") (call $v_true) (i32.const 0))
+  (call $scope_define_attr (call $arr_props (local.get $raw)) (cstring "@@noext") (call $v_true) (i32.const 0))
+  ;; template object's `raw` prop: non-enumerable, non-writable, non-configurable
+  (call $scope_define_attr (call $arr_props (local.get $cooked)) (cstring "raw") (call $mk_arr (local.get $raw)) (i32.const 0))
+  ;; the template (cooked) object is frozen too (indices enumerable but non-writable/non-configurable)
+  (call $scope_define_attr (call $arr_props (local.get $cooked)) (cstring "@@frozen") (call $v_true) (i32.const 0))
+  (call $scope_define_attr (call $arr_props (local.get $cooked)) (cstring "@@noext") (call $v_true) (i32.const 0))
   ;; tag fn is on the stack; push the strings array (arg0) then each substitution
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_arr (local.get $cooked)))
   (let $si i32 (i32.const 0))
