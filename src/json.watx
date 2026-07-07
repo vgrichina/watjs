@@ -596,14 +596,21 @@
   (i32.const 0))
 
 ;; build the PropertyList from a replacer array → arr of unique String keys.
+;; Build the PropertyList from an array replacer. Reads `length` and each index via [[Get]]
+;; on the ORIGINAL replacer (which may be a Proxy wrapping an array) so throwing length/index
+;; traps propagate (returns 0 with err set on an abrupt completion).
 (func $jstr_plist (param $rep i64) (result i32) (effects)
-  (let $ra i32 (call $val_payload (local.get $rep)))
-  (let $n i32 (call $arr_len (local.get $ra)))
+  (let $lenv i64 (call $get_prop (local.get $rep) (call $mk_str (cstring "length"))))
+  (if (call $err) (then (return (i32.const 0))))
+  (let $n i32 (call $to_int_idx (call $to_num (local.get $lenv))))  ;; ToLength (valueOf may throw)
+  (if (call $err) (then (return (i32.const 0))))
+  (if (i32.lt_s (local.get $n) (i32.const 0)) (then (set! $n (i32.const 0))))
   (let $out i32 (call $arr_new (i32.const 8)))
   (let $i i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
-    (let $el i64 (call $arr_get (local.get $ra) (local.get $i)))
+    (let $el i64 (call $get_prop (local.get $rep) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $i))))))
+    (if (call $err) (then (return (i32.const 0))))
     (let $key i32 (i32.const 0))
     (if (call $is_string (local.get $el)) (then (set! $key (call $val_payload (local.get $el)))))
     (if (call $is_number (local.get $el)) (then (set! $key (call $num_to_str (call $tonum_raw (local.get $el))))))
@@ -645,7 +652,9 @@
         (set! $jrep (call $proxy_target (local.get $jrep)))
         (if (call $is_null (local.get $jrep)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform 'IsArray' on a proxy that has been revoked")) (return (i32.const 0))))
         (br $jpl)))
-      (if (call $is_array (local.get $jrep)) (then (i32.store (i32.const 432) (call $jstr_plist (local.get $jrep)))))))
+      (if (call $is_array (local.get $jrep))
+        (then (i32.store (i32.const 432) (call $jstr_plist (local.get $rep)))  ;; read through the ORIGINAL replacer (Proxy traps fire)
+              (if (call $err) (then (return (i32.const 0))))))))
   (i32.store (i32.const 416) (call $jstr_gap (local.get $sp)))
   (i32.store (i32.const 436) (call $heap_alloc (i32.const 4096)))
   (i32.store (i32.const 440) (i32.const 0))
