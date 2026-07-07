@@ -1360,6 +1360,21 @@
       (let $pop i32 (if i32 (i32.eq (local.get $k) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
       (call $next_token)
       (let $pvn i32 (call $ident_name)) (call $next_token)
+      ;; prefix `++super.name` / `++super[expr]` (result = new value). super target → SUPERGET/SUPERSET.
+      (if (call $str_eq (local.get $pvn) (cstring "super"))
+        (then
+          (if (i32.eqz (i32.load (i32.const 868)))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'super' keyword unexpected here")) (return)))
+          (let $psk i32 (call $vm_tmpname)) (let $psn i32 (call $vm_tmpname))
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 116))  ;; [recv, superproto]
+          (if (i32.eq (call $tok_kind) (i32.const 23))
+            (then (call $next_token) (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $ident_name))) (call $next_token))  ;; '.' name → PUSH key, consume name
+            (else (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)))  ;; '[' expr ']' → key on stack
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $psk))  ;; STOREVAR @@key → [recv, superproto]
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $psk))  ;; LOADVAR @@key → [recv, superproto, key]
+          (call $vm_emit_op (local.get $code) (i32.const 117)) (call $vm_emit_op (local.get $code) (i32.const 97)) (call $vm_emit_op (local.get $code) (local.get $pop)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $psn))  ;; SUPERGET,TONUMERIC,INC/DEC,STOREVAR @@new
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 116)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $psk)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $psn)) (call $vm_emit_op (local.get $code) (i32.const 119))  ;; re-emit [recv,superproto], LOADVAR key, LOADVAR new, SUPERSET → [new] (prefix yields new)
+          (return)))
       ;; member/index target: `++obj.key` / `++obj[i]` / `++a.b.c` (rooted at the identifier).
       ;; Emit the object, walk the access chain, and do read-modify-write on the LAST access.
       (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; '.' / '['
