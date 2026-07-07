@@ -10839,6 +10839,11 @@
     (br $wl))))
 
 (func $sort_cmp (param $fn i64) (param $a i64) (param $b i64) (result i32) (effects)
+  ;; SortCompare: undefined sorts to the END unconditionally — the comparefn is never
+  ;; called with an undefined argument (both undefined → 0; a undefined → after; b undefined → before).
+  (if (call $is_undefined (local.get $a))
+    (then (return (if i32 (call $is_undefined (local.get $b)) (then (i32.const 0)) (else (i32.const 1))))))
+  (if (call $is_undefined (local.get $b)) (then (return (i32.const -1))))
   (if i32 (call $is_function (local.get $fn))
     (then
       (let $av i32 (call $heap_alloc (i32.const 16)))
