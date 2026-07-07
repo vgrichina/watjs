@@ -696,20 +696,42 @@
               (call $vm_emit_op (local.get $code) (i32.const 86)) (call $vm_emit_op (local.get $code) (local.get $sargc))  ;; SUPERCALL (CALLM, exempt from class-ctor-without-new check)
               (call $vm_emit_op (local.get $code) (i32.const 112))  ;; RUNFIELDS: bind this + fields after super()
               (return)))
-          (if (i32.eq (call $tok_kind) (i32.const 23))  ;; super.method(...)
+          (if (i32.eq (call $tok_kind) (i32.const 23))  ;; super.name — method call `super.name(...)` OR value `super.name`
             (then
               (call $next_token)
               (let $smn i32 (call $ident_name)) (call $next_token)
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))   ;; receiver
+              (if (i32.eq (call $tok_kind) (i32.const 15))  ;; '(' → super method call with this = receiver
+                (then
+                  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))   ;; receiver
+                  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
+                  (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO
+                  (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $smn))  ;; [this, method]
+                  (call $next_token)  ;; '('
+                  (let $smargc i32 (i32.const 0))
+                  (if (i32.ne (call $tok_kind) (i32.const 16))
+                    (then (block $sme (loop $sml (call $vm_c_expr (local.get $code)) (set! $smargc (i32.add (local.get $smargc) (i32.const 1))) (br_if $sme (i32.eqz (call $eat (i32.const 22)))) (br $sml)))))
+                  (call $next_token)  ;; ')'
+                  (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $smargc)))  ;; CALLM
+                (else  ;; super.name as a VALUE — legal only where a [[HomeObject]] is lexically in scope (reg 868)
+                  (if (i32.eqz (i32.load (i32.const 868)))
+                    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'super' keyword unexpected here")) (return)))
+                  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
+                  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
+                  (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO → [recv, superproto]
+                  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $smn)))  ;; PUSH key
+                  (call $vm_emit_op (local.get $code) (i32.const 117))))  ;; SUPERGET → [value]
+              (return)))
+          (if (i32.eq (call $tok_kind) (i32.const 19))  ;; super[expr] — computed member value
+            (then
+              (if (i32.eqz (i32.load (i32.const 868)))
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'super' keyword unexpected here")) (return)))
+              (call $next_token)  ;; '['
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
-              (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO: this.@@superproto (class) / getPrototypeOf(this) (object method)
-              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $smn))  ;; [this, method]
-              (call $next_token)  ;; '('
-              (let $smargc i32 (i32.const 0))
-              (if (i32.ne (call $tok_kind) (i32.const 16))
-                (then (block $sme (loop $sml (call $vm_c_expr (local.get $code)) (set! $smargc (i32.add (local.get $smargc) (i32.const 1))) (br_if $sme (i32.eqz (call $eat (i32.const 22)))) (br $sml)))))
-              (call $next_token)  ;; ')'
-              (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $smargc))  ;; CALLM
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
+              (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO → [recv, superproto]
+              (call $vm_c_expr (local.get $code))  ;; → [recv, superproto, key]
+              (call $next_token)  ;; ']'
+              (call $vm_emit_op (local.get $code) (i32.const 117))  ;; SUPERGET → [value]
               (return)))
           (return)))
       (if (call $tok_is_kw (cstring "new"))  ;; new F(args)  /  new a.b.C(args)  /  new.target
@@ -853,6 +875,11 @@
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $vn))) (return)))
       (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 240)) (then (i32.const 62)) (else (i32.const 8))))  ;; LOADVAR_SOFT inside typeof, else LOADVAR
       (call $vm_emit_op (local.get $code) (local.get $vn))
+      ;; DIRECT eval detection: the callee is the BARE identifier `eval` immediately followed by `(`.
+      ;; reg 876 (compile flag) tells the enclosing vm_c_call_tail to emit DIRECTEVALMARK so the eval'd
+      ;; code inherits this call site's super-context; an aliased/indirect `(0,eval)()` never sets it.
+      (if (i32.and (call $str_eq (local.get $vn) (cstring "eval")) (i32.eq (call $tok_kind) (i32.const 15)))
+        (then (i32.store (i32.const 876) (i32.const 1))))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 19))  ;; array literal [ ... ]  (supports ...spread)
     (then
@@ -970,6 +997,11 @@
 ;; Compiles the (spread-aware) argument list and emits CALL/CALLSPREAD. Shared by
 ;; vm_c_postfix and the delete-operand compiler (so `delete foo()` actually calls foo).
 (func $vm_c_call_tail (param $code i32) (effects)
+  ;; capture (and consume) the "callee is bare `eval`" compile flag + this call site's super-context
+  ;; BEFORE the arguments (which may contain nested eval calls that reset reg 876).
+  (let $isdeval i32 (i32.load (i32.const 876)))
+  (i32.store (i32.const 876) (i32.const 0))
+  (let $devmark i32 (if i32 (local.get $isdeval) (then (if i32 (i32.load (i32.const 868)) (then (i32.const 2)) (else (i32.const 1)))) (else (i32.const 0))))
   (call $next_token)  ;; '('
   (let $spc i32 (call $cursor_save))
   (let $sphas i32 (i32.const 0)) (let $spd i32 (i32.const 0))
@@ -992,6 +1024,7 @@
           (br_if $se2 (i32.eqz (call $eat (i32.const 22))))
           (br $sl2)))))
       (call $next_token)  ;; ')'
+      (if (local.get $devmark) (then (call $vm_emit_op (local.get $code) (i32.const 118)) (call $vm_emit_op (local.get $code) (local.get $devmark))))  ;; DIRECTEVALMARK
       (call $vm_emit_op (local.get $code) (i32.const 54))  ;; CALLSPREAD
       (return)))
   (let $argc i32 (i32.const 0))
@@ -1003,6 +1036,7 @@
       (br_if $ce (i32.eqz (call $eat (i32.const 22))))
       (br $cl)))))
   (call $next_token)  ;; ')'
+  (if (local.get $devmark) (then (call $vm_emit_op (local.get $code) (i32.const 118)) (call $vm_emit_op (local.get $code) (local.get $devmark))))  ;; DIRECTEVALMARK (direct eval → thread super-context)
   (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (local.get $argc)))  ;; CALL
 
 (func $vm_c_postfix (param $code i32) (effects)
@@ -1774,6 +1808,11 @@
   (i32.store (i32.const 320) (i32.const 0))
   (let $savederctor i32 (i32.load (i32.const 852)))  ;; reg852: compiling a DERIVED ctor body? (return-stmt → DERIVEDRETCHECK)
   (i32.store (i32.const 852) (i32.eq (local.get $classf) (i32.const 2)))
+  ;; reg 868: is `super` property access lexically allowed here? True in a method/accessor (reg692) or a
+  ;; class constructor (reg404); a plain function RESETS it; nested arrows inherit (vm_c_arrow compiles
+  ;; inline, not via this fn). save/restore so a nested regular fn doesn't clobber the enclosing value.
+  (let $savesuperhome i32 (i32.load (i32.const 868)))
+  (i32.store (i32.const 868) (i32.or (i32.ne (local.get $classf) (i32.const 0)) (i32.ne (local.get $noproto) (i32.const 0))))
   (let $savehc i32 (i32.load (i32.const 372)))  ;; nested fn: its own hoist list
   (let $savehb i32 (i32.load (i32.const 376)))
   (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))
@@ -1909,6 +1948,7 @@
   (i32.store (i32.const 788) (local.get $saveagen))  ;; restore enclosing async-generator-context
   (i32.store (i32.const 672) (local.get $savegen))  ;; restore enclosing generator-context
   (i32.store (i32.const 852) (local.get $savederctor))  ;; restore enclosing derived-ctor compile flag
+  (i32.store (i32.const 868) (local.get $savesuperhome))  ;; restore enclosing super-property-allowed flag
   (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
   (i32.store (i32.const 372) (local.get $savehc)) (i32.store (i32.const 376) (local.get $savehb))  ;; restore enclosing hoist list
   (i32.store (i32.const 388) (local.get $savestrict))  ;; restore enclosing strictness
@@ -2036,7 +2076,10 @@
 (func $vm_emit_block_thunk (param $code i32) (effects)
   (let $bpj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
   (let $bentry i32 (call $vm_emit_cursor))
+  (let $btsuperhome i32 (i32.load (i32.const 868)))  ;; a static-init block has a [[HomeObject]] → super property access allowed
+  (i32.store (i32.const 868) (i32.const 1))
   (call $vm_c_stmt (local.get $code))  ;; the `{ ... }` block
+  (i32.store (i32.const 868) (local.get $btsuperhome))
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; PUSH undefined (no value)
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET
   (call $vm_patch (local.get $code) (local.get $bpj))
@@ -2055,7 +2098,10 @@
 (func $vm_emit_field_thunk (param $code i32) (effects)
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
   (let $entry i32 (call $vm_emit_cursor))
+  (let $ftsuperhome i32 (i32.load (i32.const 868)))  ;; a class field initializer has a [[HomeObject]] → super property access allowed
+  (i32.store (i32.const 868) (i32.const 1))
   (call $vm_c_expr (local.get $code))  ;; compile init expr → value
+  (i32.store (i32.const 868) (local.get $ftsuperhome))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET (returns TOS)
   (call $vm_patch (local.get $code) (local.get $pj))
   (let $fn i32 (call $heap_alloc (i32.const 52)))  ;; +own-prop scope @48 (statics)
@@ -3991,6 +4037,7 @@
     (br $scan))))
 
 (func $vm_compile_prog (param $ptr i32) (param $len i32) (param $prelude i32) (result i32) (effects)
+  (i32.store (i32.const 868) (i32.load (i32.const 872))) (i32.store (i32.const 872) (i32.const 0))  ;; super-property allowed for this compile = reg872 (set by a DIRECT eval whose caller has a [[HomeObject]]); default 0
   (i32.store (i32.const 208) (i32.const 0)) (i32.store (i32.const 216) (i32.const 0))  ;; no enclosing loop
   (i32.store (i32.const 224) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; temp counter, async flag
   (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
@@ -5524,6 +5571,25 @@
         (i64.store (i32.add (local.get $stack) (local.get $spt))
           (if i64 (call $is_undefined (local.get $spv)) (then (call $js_get_prototype (local.get $spo))) (else (local.get $spv))))
         (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 117))  ;; SUPERGET — [receiver, superproto, key] → super property value
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $sgk i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $sgp i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $sgrv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (if (i32.or (call $is_null (local.get $sgp)) (call $is_undefined (local.get $sgp)))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot read super property of a null prototype")) (br $disp)))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $get_super_prop (local.get $sgp) (local.get $sgk) (local.get $sgrv)))
+        (if (call $err) (then (br $disp)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 118))  ;; DIRECTEVALMARK (operand: 1=direct-no-super, 2=direct-super) — set reg 880 for the imminent eval() call
+      (then
+        (i32.store (i32.const 880) (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 31))  ;; GETIDX — pop key, pop obj
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
@@ -6718,6 +6784,10 @@
 (func $vm_eval_str (param $s i32) (result i64) (effects)
   (let $scope i32 (call $cur_scope))
   (i64.store (i32.const 288) (call $v_undef))  ;; reset completion register
+  ;; reg 880 (set by DIRECTEVALMARK just before this call): 0=indirect eval, 1=direct/no-super-context,
+  ;; 2=direct with a [[HomeObject]] in scope → the eval'd code may use `super` property access.
+  (i32.store (i32.const 872) (if i32 (i32.eq (i32.load (i32.const 880)) (i32.const 2)) (then (i32.const 1)) (else (i32.const 0))))
+  (i32.store (i32.const 880) (i32.const 0))
   (let $code i32 (call $vm_compile_prog (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)) (i32.const 0)))  ;; nested eval: reuse the caller's existing prelude bindings
   (if (call $err) (then (return (call $v_undef))))  ;; SyntaxError → propagates
   (let $ctx i32 (call $heap_alloc (i32.const 48)))

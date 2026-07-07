@@ -1034,6 +1034,19 @@
       (call $scope_define_attr (local.get $po) (cstring "constructor") (call $mk_fn (local.get $fn)) (i32.const 12))
       (local.get $pv))))
 
+;; super-property [[Get]]: read $key from $proto's chain, calling any accessor getter with this=$recv
+;; (the instance) per SuperProperty semantics. $proto = GetPrototypeOf(homeObject).
+(func $get_super_prop (param $proto i64) (param $key i64) (param $recv i64) (result i64) (effects)
+  (if (i32.eqz (call $is_object (local.get $proto))) (then (return (call $get_prop (local.get $proto) (local.get $key)))))
+  (let $sgslot i32 (call $scope_find (call $val_payload (local.get $proto)) (call $to_prop_key (local.get $key))))
+  (if (i32.eqz (local.get $sgslot)) (then (return (call $get_prop (local.get $proto) (local.get $key)))))
+  (if (call $entry_is_accessor (local.get $sgslot))
+    (then
+      (let $sgget i64 (i64.load (call $val_payload (i64.load (local.get $sgslot)))))
+      (if (call $is_function (local.get $sgget)) (then (return (call $call_fn0 (local.get $sgget) (local.get $recv)))))
+      (return (call $v_undef))))
+  (i64.load (local.get $sgslot)))
+
 ;; x instanceof F : walk x's prototype chain looking for F.prototype
 (func $js_instanceof (param $x i64) (param $f i64) (result i64) (effects)
   (if (i32.eqz (call $is_function (local.get $f)))
