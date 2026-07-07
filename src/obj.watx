@@ -1159,7 +1159,11 @@
         (then
           (let $tik i32 (call $str_array_index (call $to_prop_key (local.get $key))))
           (if (i32.ge_s (local.get $tik) (i32.const 0))
-            (then (return (call $mk_bool (i32.lt_s (local.get $tik) (call $ta_live_len_p (call $val_payload (local.get $obj))))))))))))
+            (then (return (call $mk_bool (i32.lt_s (local.get $tik) (call $ta_live_len_p (call $val_payload (local.get $obj))))))))
+          ;; a canonical numeric key that isn't a valid in-bounds index (-1, 1.1, -0, NaN, huge) is
+          ;; definitively ABSENT on a TypedArray — [[HasProperty]] returns false WITHOUT a prototype walk.
+          (if (i32.or (call $is_number (local.get $key)) (i32.and (call $is_string (local.get $key)) (call $ta_is_canon_str (call $to_prop_key (local.get $key)))))
+            (then (return (call $v_false))))))))
   (if (call $is_object (local.get $obj))
     (then
       ;; own property?
