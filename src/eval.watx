@@ -7852,6 +7852,49 @@
       (if (i32.eq (local.get $id) (i32.const 76)) (then (return (call $v_false))))
       (return (call $v_true))))  ;; every (none failed)
   ;; --- array2 methods (this = array): 70 concat, 71 reverse, 72 filter, 73 reduce ---
+  ;; reduce on an array-like OBJECT (not a real array, not a TA-native delegation): live ASCENDING
+  ;; iteration via HasProperty+[[Get]] so a callback that mutates a not-yet-visited index is observed
+  ;; (alike_arr snapshots the whole thing upfront). Real arrays / TAs fall through to the shared block.
+  (if (i32.and (i32.eq (local.get $id) (i32.const 73))
+        (i32.and (i32.eqz (call $is_array (local.get $thisv)))
+          (i32.and (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))
+            (i32.and (i32.eqz (i32.load (i32.const 860)))
+              (if i32 (call $is_object (local.get $thisv)) (then (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))) (else (i32.const 1)))))))
+    (then
+      (let $rgn i32 (call $alike_len (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $rgfn i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $rgacc i64 (call $v_undef))
+      (let $rgi i32 (i32.const 0))
+      (if (i32.ge_s (local.get $argc) (i32.const 2))
+        (then (set! $rgacc (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+        (else
+          (let $rgf i32 (i32.const 0))
+          (block $rgfnd (loop $rgfl
+            (br_if $rgfnd (i32.ge_s (local.get $rgi) (local.get $rgn)))
+            (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $rgi))) (local.get $thisv)))
+              (then
+                (set! $rgacc (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $rgi)))))
+                (if (call $err) (then (return (call $v_undef))))
+                (set! $rgi (i32.add (local.get $rgi) (i32.const 1))) (set! $rgf (i32.const 1)) (br $rgfnd)))
+            (if (call $err) (then (return (call $v_undef))))
+            (set! $rgi (i32.add (local.get $rgi) (i32.const 1))) (br $rgfl)))
+          (if (i32.eqz (local.get $rgf)) (then (call $throw_type (cstring "TypeError") (cstring "Reduce of empty array with no initial value")) (return (call $v_undef))))))
+      (let $rgcargv i32 (call $heap_alloc (i32.const 32)))
+      (block $rgde (loop $rgdl (br_if $rgde (i32.ge_s (local.get $rgi) (local.get $rgn)))
+        (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $rgi))) (local.get $thisv)))
+          (then
+            (let $rgv i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $rgi)))))
+            (if (call $err) (then (return (call $v_undef))))
+            (i64.store (local.get $rgcargv) (local.get $rgacc))
+            (i64.store (i32.add (local.get $rgcargv) (i32.const 8)) (local.get $rgv))
+            (i64.store (i32.add (local.get $rgcargv) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $rgi))))
+            (i64.store (i32.add (local.get $rgcargv) (i32.const 24)) (local.get $thisv))
+            (set! $rgacc (call $call_val (local.get $rgfn) (i32.const 4) (local.get $rgcargv) (call $v_undef)))
+            (br_if $rgde (call $err))))
+        (if (call $err) (then (return (call $v_undef))))
+        (set! $rgi (i32.add (local.get $rgi) (i32.const 1))) (br $rgdl)))
+      (return (local.get $rgacc))))
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 70)) (i32.le_s (local.get $id) (i32.const 73)))
         (i32.or (call $is_array (local.get $thisv)) (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))))  ;; generic on array-likes
     (then
@@ -7937,6 +7980,49 @@
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl)))
           (return (local.get $racc))))
       (return (call $v_undef))))
+  ;; reduceRight on an array-like OBJECT (not a real array, not a TA-native delegation): iterate live
+  ;; descending via HasProperty+[[Get]] each step, so a getter that deletes/adds a not-yet-visited index
+  ;; is observed (alike_arr would snapshot every index ascending upfront). Real arrays / TAs fall through.
+  (if (i32.and (i32.eq (local.get $id) (i32.const 137))
+        (i32.and (i32.eqz (call $is_array (local.get $thisv)))
+          (i32.and (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))
+            (i32.and (i32.eqz (i32.load (i32.const 860)))
+              (if i32 (call $is_object (local.get $thisv)) (then (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))) (else (i32.const 1)))))))
+    (then
+      (let $rrn i32 (call $alike_len (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $rrfn i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $rracc i64 (call $v_undef))
+      (let $rrj i32 (i32.sub (local.get $rrn) (i32.const 1)))
+      (if (i32.ge_s (local.get $argc) (i32.const 2))
+        (then (set! $rracc (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+        (else
+          (let $rrf2 i32 (i32.const 0))
+          (block $rrfnd (loop $rrfl
+            (br_if $rrfnd (i32.lt_s (local.get $rrj) (i32.const 0)))
+            (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $rrj))) (local.get $thisv)))
+              (then
+                (set! $rracc (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $rrj)))))
+                (if (call $err) (then (return (call $v_undef))))
+                (set! $rrj (i32.sub (local.get $rrj) (i32.const 1))) (set! $rrf2 (i32.const 1)) (br $rrfnd)))
+            (if (call $err) (then (return (call $v_undef))))
+            (set! $rrj (i32.sub (local.get $rrj) (i32.const 1))) (br $rrfl)))
+          (if (i32.eqz (local.get $rrf2)) (then (call $throw_type (cstring "TypeError") (cstring "Reduce of empty array with no initial value")) (return (call $v_undef))))))
+      (let $rrcargv i32 (call $heap_alloc (i32.const 32)))
+      (block $rrde (loop $rrdl (br_if $rrde (i32.lt_s (local.get $rrj) (i32.const 0)))
+        (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $rrj))) (local.get $thisv)))
+          (then
+            (let $rrv i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $rrj)))))
+            (if (call $err) (then (return (call $v_undef))))
+            (i64.store (local.get $rrcargv) (local.get $rracc))
+            (i64.store (i32.add (local.get $rrcargv) (i32.const 8)) (local.get $rrv))
+            (i64.store (i32.add (local.get $rrcargv) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $rrj))))
+            (i64.store (i32.add (local.get $rrcargv) (i32.const 24)) (local.get $thisv))
+            (set! $rracc (call $call_val (local.get $rrfn) (i32.const 4) (local.get $rrcargv) (call $v_undef)))
+            (br_if $rrde (call $err))))
+        (if (call $err) (then (return (call $v_undef))))
+        (set! $rrj (i32.sub (local.get $rrj) (i32.const 1))) (br $rrdl)))
+      (return (local.get $rracc))))
   (if (i32.and (i32.eq (local.get $id) (i32.const 137)) (i32.or (call $is_array (local.get $thisv)) (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))))  ;; reduceRight(fn[, init]) — generic
     (then
       (let $rarr i32 (call $alike_arr (local.get $thisv)))
