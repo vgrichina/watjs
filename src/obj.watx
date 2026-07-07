@@ -821,9 +821,18 @@
           (return (call $v_undef))))
       (if (call $str_eq (local.get $ks) (cstring "prototype"))
         (then
-          ;; explicitly-installed .prototype (well-known proto reg) wins
+          ;; an explicitly-installed .prototype own property wins — honoring an ACCESSOR (a
+          ;; defineProperty'd getter, e.g. on a bound function) by invoking its getter, not returning
+          ;; the raw accessor cell.
           (let $pslot i32 (call $scope_find_local (call $fn_props (local.get $fn)) (cstring "prototype")))
-          (if (local.get $pslot) (then (return (i64.load (local.get $pslot)))))
+          (if (local.get $pslot)
+            (then
+              (if (call $entry_is_accessor (local.get $pslot))
+                (then
+                  (let $pget i64 (i64.load (call $val_payload (i64.load (local.get $pslot)))))
+                  (if (call $is_function (local.get $pget)) (then (return (call $call_fn0 (local.get $pget) (local.get $cont)))))
+                  (return (call $v_undef))))
+              (return (i64.load (local.get $pslot)))))
           ;; only constructors expose (and lazily get) a .prototype; parseInt,
           ;; Math.*, String.prototype.*, bound fns, etc. have none → undefined
           (if (call $native_is_ctor (i32.load (local.get $fn))) (then (return (call $fn_get_prototype (local.get $fn)))))
