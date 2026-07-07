@@ -1554,6 +1554,21 @@
                     (then (let $sav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $sav) (local.get $val)) (drop (call $call_val (local.get $sset) (i32.const 1) (local.get $sav) (local.get $cont)))))
                   (return)))
               (if (i32.eqz (call $entry_writable (local.get $svs))) (then (return)))))  ;; non-writable own → ignore
+          ;; no own prop: an INHERITED accessor from Function.prototype fires its setter (receiver = fn);
+          ;; getter-only or inherited non-writable data refuses. Only reached when svs is absent.
+          (if (i32.eqz (local.get $svs))
+            (then
+              (let $svinh i32 (call $fn_inherited_slot (local.get $svk)))
+              (if (local.get $svinh)
+                (then
+                  (if (call $entry_is_accessor (local.get $svinh))
+                    (then
+                      (let $svset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $svinh))) (i32.const 8))))
+                      (if (call $is_function (local.get $svset))
+                        (then (let $svav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $svav) (local.get $val)) (drop (call $call_val (local.get $svset) (i32.const 1) (local.get $svav) (local.get $cont))))
+                        (else (call $set_fail)))
+                      (return)))
+                  (if (i32.eqz (call $entry_writable (local.get $svinh))) (then (call $set_fail) (return)))))))
           (call $scope_define (local.get $sosc) (local.get $svk) (local.get $val))
           (return)))
       (let $sfk i32 (call $to_prop_key (local.get $key)))
@@ -1564,7 +1579,20 @@
         (then (if (i32.eqz (call $entry_writable (local.get $sfs))) (then (call $set_fail) (return))))
         (else  ;; not an explicit @12 entry: name/length are non-writable computed defaults
           (if (i32.or (call $str_eq (local.get $sfk) (cstring "length")) (call $str_eq (local.get $sfk) (cstring "name")))
-            (then (call $set_fail) (return)))))
+            (then (call $set_fail) (return)))
+          ;; no own prop: an INHERITED accessor from Function.prototype fires its setter (receiver = this
+          ;; fn); a getter-only accessor or an inherited non-writable data property refuses the write.
+          (let $sfinh i32 (call $fn_inherited_slot (local.get $sfk)))
+          (if (local.get $sfinh)
+            (then
+              (if (call $entry_is_accessor (local.get $sfinh))
+                (then
+                  (let $sfset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $sfinh))) (i32.const 8))))
+                  (if (call $is_function (local.get $sfset))
+                    (then (let $sfav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $sfav) (local.get $val)) (drop (call $call_val (local.get $sfset) (i32.const 1) (local.get $sfav) (local.get $cont))))
+                    (else (call $set_fail)))
+                  (return)))
+              (if (i32.eqz (call $entry_writable (local.get $sfinh))) (then (call $set_fail) (return)))))))
       (call $scope_define (call $fn_props (local.get $sfn)) (local.get $sfk) (local.get $val))
       (return)))
   ;; primitive base: null/undefined → always TypeError; a number/string/boolean/symbol/bigint
