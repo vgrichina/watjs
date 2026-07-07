@@ -522,12 +522,17 @@
               (if (call $entry_is_accessor (local.get $apslot))  ;; a named accessor (defineProperty get/set on an array) → invoke getter
                 (then (let $apg i64 (i64.load (call $val_payload (i64.load (local.get $apslot))))) (if (call $is_function (local.get $apg)) (then (return (call $call_fn0 (local.get $apg) (local.get $cont))))) (return (call $v_undef))))
               (return (i64.load (local.get $apslot)))))))
-      ;; methods from Array.prototype (reg 160)
+      ;; methods from Array.prototype (reg 160) — invoke a getter if the slot is an accessor
+      ;; (e.g. a defineProperty(Array.prototype, k, {get}) inherited by the array)
       (let $ap i32 (i32.load (i32.const 160)))
       (if (local.get $ap)
         (then
           (let $slot i32 (call $scope_find_local (local.get $ap) (local.get $akey)))
-          (if (local.get $slot) (then (return (i64.load (local.get $slot)))))))
+          (if (local.get $slot)
+            (then
+              (if (call $entry_is_accessor (local.get $slot))
+                (then (let $apg2 i64 (i64.load (call $val_payload (i64.load (local.get $slot))))) (if (call $is_function (local.get $apg2)) (then (return (call $call_fn0 (local.get $apg2) (local.get $cont))))) (return (call $v_undef))))
+              (return (i64.load (local.get $slot)))))))
       ;; Object.prototype fallback (arrays inherit these) — return the STORED slot
       ;; so identity is stable (e.g. [].hasOwnProperty === Object.prototype.hasOwnProperty,
       ;; [].valueOf is defined). Invoke a getter if the slot is an accessor (e.g. __proto__).
@@ -1391,6 +1396,26 @@
       ;; named property on an array (a.foo, a[2**32-1], …) → @12 scope. An existing
       ;; accessor fires its setter; an existing data prop respects [[Writable]].
       (if (local.get $ap12) (then (if (call $arr_deopt_set (local.get $a) (local.get $askey) (local.get $val) (local.get $cont)) (then (return)))))
+      ;; no OWN named property: an INHERITED accessor (Array.prototype → Object.prototype, reg 160)
+      ;; fires its setter with receiver = the array; a getter-only accessor or an inherited non-writable
+      ;; data property refuses the write (strict: throw). Otherwise fall through to create an own prop.
+      (let $ainhp i32 (i32.load (i32.const 160)))
+      (if (local.get $ainhp)
+        (then
+          (let $ainhs i32 (call $scope_find (local.get $ainhp) (local.get $askey)))
+          (if (local.get $ainhs)
+            (then
+              (if (call $entry_is_accessor (local.get $ainhs))
+                (then
+                  (let $aiset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $ainhs))) (i32.const 8))))
+                  (if (call $is_function (local.get $aiset))
+                    (then
+                      (let $aiav i32 (call $heap_alloc (i32.const 8)))
+                      (i64.store (local.get $aiav) (local.get $val))
+                      (drop (call $call_val (local.get $aiset) (i32.const 1) (local.get $aiav) (local.get $cont))))
+                    (else (call $set_fail)))  ;; getter-only → strict throws
+                  (return)))
+              (if (i32.eqz (call $entry_writable (local.get $ainhs))) (then (call $set_fail) (return)))))))
       ;; Non-extensible refuses adding a NOT-already-present named property.
       (if (i32.and (local.get $anoext) (i32.eqz (i32.ne (call $scope_find_local (call $arr_props (local.get $a)) (local.get $askey)) (i32.const 0))))
         (then (call $set_fail) (return)))
