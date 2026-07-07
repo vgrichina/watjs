@@ -844,6 +844,18 @@
           (if (local.get $ctp)
             (then (if (call $scope_find_local (local.get $ctp) (cstring "@@noext"))
               (then (call $throw_type (cstring "TypeError") (cstring "Cannot define property, object is not extensible")) (return)))))))
+      ;; a defineProperty'd (deopted) index in @12 is a full property, not a plain dense slot: an arr_set
+      ;; would be shadowed by it. CreateDataProperty REDEFINES a configurable one to {W,E,C:true} (drop the
+      ;; deopt entry → plain dense element); a non-configurable one can't be redefined → throw.
+      (let $ctdp i32 (i32.load (i32.add (local.get $cta) (i32.const 12))))
+      (if (local.get $ctdp)
+        (then
+          (let $ctds i32 (call $scope_find_local (local.get $ctdp) (call $num_to_str (f64.convert_i32_s (local.get $idx)))))
+          (if (local.get $ctds)
+            (then
+              (if (i32.eqz (call $entry_configurable (local.get $ctds)))
+                (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable array index")) (return)))
+              (drop (call $scope_delete (local.get $ctdp) (call $num_to_str (f64.convert_i32_s (local.get $idx)))))))))
       (call $arr_set (local.get $cta) (local.get $idx) (local.get $val)) (return)))
   ;; a Proxy target: [[DefineOwnProperty]] must invoke the defineProperty trap (and propagate its
   ;; throw) — route through Reflect.defineProperty (native 206), not the ordinary-object fast path.
