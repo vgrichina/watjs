@@ -8440,8 +8440,11 @@
       (let $rpFunc i32 (call $is_function (local.get $rpRepl)))  ;; functionalReplace
       (let $rpReplStr i32 (if i32 (local.get $rpFunc) (then (cstring "")) (else (call $to_str (local.get $rpRepl)))))
       (if (call $err) (then (return (call $v_undef))))
-      (let $rpGlob i32 (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "global")))))
+      ;; spec: flags = ToString(Get(rx,"flags")); global = flags contains "g" (a single `flags` read —
+      ;; the individual `global` accessor is NOT consulted).
+      (let $rpFlagsS i32 (call $to_str (call $get_prop (local.get $thisv) (call $mk_str (cstring "flags")))))
       (if (call $err) (then (return (call $v_undef))))
+      (let $rpGlob i32 (call $str_has_char (local.get $rpFlagsS) (i32.const 103)))  ;; 'g'
       (if (local.get $rpGlob) (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.const 0))) (if (call $err) (then (return (call $v_undef))))))
       ;; collect every RegExpExec result (one if non-global), advancing lastIndex on empty matches
       (let $rpResults i32 (call $arr_new (i32.const 4)))
@@ -8612,12 +8615,14 @@
         (then (call $throw_type (cstring "TypeError") (cstring "RegExp.prototype[@@match] called on non-object")) (return (call $v_undef))))
       (let $mS i64 (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))  ;; S = ToString(string)
       (if (call $err) (then (return (call $v_undef))))
-      (let $mglob i32 (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "global")))))  ;; ToBoolean(Get(rx,"global"))
+      ;; spec: flags = ToString(Get(rx,"flags")); global = flags contains "g" (single `flags` read)
+      (let $mflagsS i32 (call $to_str (call $get_prop (local.get $thisv) (call $mk_str (cstring "flags")))))
       (if (call $err) (then (return (call $v_undef))))
+      (let $mglob i32 (call $str_has_char (local.get $mflagsS) (i32.const 103)))  ;; 'g'
       (if (i32.eqz (local.get $mglob))
         (then (return (call $regexp_exec (local.get $thisv) (local.get $mS)))))  ;; non-global → RegExpExec
-      ;; global: reset lastIndex, loop RegExpExec accumulating Get(result,"0")
-      (let $muni i32 (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "unicode")))))
+      ;; global: reset lastIndex, loop RegExpExec accumulating Get(result,"0"); fullUnicode = flags has 'u'/'v'
+      (let $muni i32 (i32.or (call $str_has_char (local.get $mflagsS) (i32.const 117)) (call $str_has_char (local.get $mflagsS) (i32.const 118))))
       (if (call $err) (then (return (call $v_undef))))
       (call $re_set_lastindex (local.get $thisv) (call $num (f64.const 0)))
       (if (call $err) (then (return (call $v_undef))))
