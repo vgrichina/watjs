@@ -3429,6 +3429,7 @@
       (call $scope_define (local.get $cco) (cstring "@@cidx") (call $num (f64.const 0)))
       (call $scope_define (local.get $cco) (cstring "@@cinner") (call $v_undef))
       (call $scope_define (local.get $cco) (cstring "@@cdone") (call $v_false))
+      (call $scope_define (local.get $cco) (cstring "@@crunning") (call $v_false))
       (call $scope_define_attr (local.get $cco) (cstring "next") (call $mk_native (i32.const 351) (cstring "next")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $cco)))))
   ;; Iterator.concat helper .next() (351)
@@ -3437,6 +3438,10 @@
       (let $cnr i32 (call $obj_new (i32.const 2)))
       (let $cnself i32 (call $val_payload (local.get $thisv)))
       (let $cnbuf i32 (call $heap_alloc (i32.const 8)))
+      ;; re-entrancy guard (this iterator is a generator): calling next() while a prior next() is still
+      ;; running its inner-iterator step → TypeError ("generator already running"), NOT infinite recursion.
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@crunning"))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.concat: next() called on an already-running iterator")) (return (call $v_undef))))
       (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cdone"))))
         (then (call $scope_define (local.get $cnr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $cnr) (cstring "done") (call $v_true)) (return (call $mk_obj (local.get $cnr)))))
       (block $cne (loop $cnl
@@ -3444,7 +3449,9 @@
         (if (call $is_object (local.get $cninner))
           (then
             (let $cnnext i64 (call $get_prop (local.get $cninner) (call $mk_str (cstring "next"))))
+            (call $scope_define (local.get $cnself) (cstring "@@crunning") (call $v_true))
             (let $cnir i64 (call $call_val (local.get $cnnext) (i32.const 0) (local.get $cnbuf) (local.get $cninner)))
+            (call $scope_define (local.get $cnself) (cstring "@@crunning") (call $v_false))
             (if (call $err) (then (return (call $v_undef))))
             (if (i32.eqz (call $is_object (local.get $cnir)))
               (then (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (return (call $v_undef))))
@@ -3464,7 +3471,9 @@
             (let $cnmeth i32 (call $coll_arr (local.get $thisv) (cstring "@@cmeth")))
             (let $cnitem i64 (call $arr_get (local.get $cnitems) (local.get $cnidx)))
             (let $cnm i64 (call $arr_get (local.get $cnmeth) (local.get $cnidx)))
+            (call $scope_define (local.get $cnself) (cstring "@@crunning") (call $v_true))
             (let $cnnewi i64 (call $call_val (local.get $cnm) (i32.const 0) (local.get $cnbuf) (local.get $cnitem)))
+            (call $scope_define (local.get $cnself) (cstring "@@crunning") (call $v_false))
             (if (call $err) (then (return (call $v_undef))))
             (if (i32.eqz (call $is_object (local.get $cnnewi)))
               (then (call $throw_type (cstring "TypeError") (cstring "[Symbol.iterator] did not return an object")) (return (call $v_undef))))
