@@ -4945,6 +4945,28 @@
             (set! $ali (i32.add (local.get $ali) (i32.const 1)))
             (br $all)))
           (return (call $mk_str (local.get $alr)))))
+      ;; %TypedArray%.prototype.toLocaleString: each element's own toLocaleString(), joined with ",".
+      ;; Elements are read via [[Get]] (numbers, never null/undefined for valid indices); OOB/detached → 0 len.
+      (if (call $is_object (local.get $thisv))
+        (then (if (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0))
+          (then
+            (let $tln i32 (if i32 (i32.or (call $ta_is_detached (local.get $thisv)) (call $ta_is_oob (local.get $thisv))) (then (i32.const 0)) (else (call $ta_live_len (local.get $thisv)))))
+            (let $tlr i32 (cstring ""))
+            (let $tli i32 (i32.const 0))
+            (block $tle (loop $tll
+              (br_if $tle (i32.ge_s (local.get $tli) (local.get $tln)))
+              (if (i32.gt_s (local.get $tli) (i32.const 0)) (then (set! $tlr (call $str_concat (local.get $tlr) (cstring ",")))))
+              (let $tel i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $tli)))))
+              (if (call $err) (then (return (call $v_undef))))
+              (let $tem i64 (call $get_prop (local.get $tel) (call $mk_str (cstring "toLocaleString"))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.eqz (call $is_function (local.get $tem)))
+                (then (call $throw_type (cstring "TypeError") (cstring "element toLocaleString is not a function")) (return (call $v_undef))))
+              (let $tev i64 (call $call_fn0 (local.get $tem) (local.get $tel)))
+              (if (call $err) (then (return (call $v_undef))))
+              (set! $tlr (call $str_concat (local.get $tlr) (call $to_str (local.get $tev))))
+              (set! $tli (i32.add (local.get $tli) (i32.const 1))) (br $tll)))
+            (return (call $mk_str (local.get $tlr)))))))
       (let $tls i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "toString"))))
       (if (call $is_function (local.get $tls)) (then (return (call $call_fn0 (local.get $tls) (local.get $thisv)))))
       (return (call $mk_str (call $to_str (local.get $thisv))))))
