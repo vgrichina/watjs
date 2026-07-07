@@ -2229,11 +2229,16 @@
           (let $fitbuf i32 (call $heap_alloc (i32.const 8)))
           (i64.store (local.get $fitbuf) (call $mk_arr (local.get $fitarr)))
           (return (call $ta_make (local.get $elem) (i32.const 1) (local.get $fitbuf)))))))
-  (if (call $is_number (local.get $a0))
+  ;; a NON-object first arg is the "length" overload: length = ToIndex(arg). Covers number, string
+  ;; ("1"→1), boolean, null/undefined (→0), and throws for Symbol/BigInt (ToNumber throws). Objects
+  ;; (arrays/functions/buffers/iterables/array-likes) take the paths below.
+  (if (i32.eqz (i32.or (call $is_object (local.get $a0)) (i32.or (call $is_array (local.get $a0)) (call $is_function (local.get $a0)))))
     (then
-      ;; a byte size too large to allocate (i32-backed) → RangeError, not an OOB trap
+      ;; a byte size too large to allocate (i32-backed) → RangeError, not an OOB trap. to_num here also
+      ;; throws for a Symbol/BigInt arg; the err check below propagates it.
       (if (f64.ge (f64.mul (call $to_num (local.get $a0)) (f64.convert_i32_s (local.get $bpe))) (f64.const 2147483640.0))
         (then (call $throw_type (cstring "RangeError") (cstring "Invalid typed array length")) (return (call $v_undef))))
+      (if (call $err) (then (return (call $v_undef))))
       (set! $len (call $to_index (local.get $a0)))  ;; ToIndex: RangeError on negative/Infinity/>2^53 (no trap)
       (if (call $err) (then (return (call $v_undef))))
       (set! $buf (call $heap_alloc (i32.add (i32.mul (local.get $len) (local.get $bpe)) (i32.const 8))))
