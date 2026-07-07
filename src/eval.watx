@@ -9364,6 +9364,33 @@
             (if (i32.eqz (local.get $rex))
               (then (call $set_prop (call $mk_obj (local.get $robj)) (local.get $rk) (call $get_prop (local.get $rsrc) (local.get $rk)))))
             (set! $ri (i32.add (local.get $ri) (i32.const 1))) (br $rkl)))))
+      ;; CopyDataProperties also copies own ENUMERABLE symbol-keyed properties (after string keys),
+      ;; honoring the same exclusion list — object rest `{...rest}` must include Symbol keys.
+      (if (call $is_object (local.get $rsrc))
+        (then
+          (let $rss i32 (call $val_payload (local.get $rsrc)))
+          (let $rsc i32 (call $scope_count (local.get $rss)))
+          (let $rsxa i32 (call $val_payload (local.get $rexcl)))
+          (let $rsxn i32 (call $arr_len (local.get $rsxa)))
+          (let $rsyi i32 (i32.const 0))
+          (block $rsyse (loop $rsysl
+            (br_if $rsyse (i32.ge_s (local.get $rsyi) (local.get $rsc)))
+            (let $rsyent i32 (call $scope_entry (local.get $rss) (local.get $rsyi)))
+            (let $rsysk i32 (i32.load (local.get $rsyent)))
+            (if (i32.or (i32.eq (call $str_indexof (local.get $rsysk) (cstring "@@sym:")) (i32.const 0)) (i32.eq (call $str_indexof (local.get $rsysk) (cstring "@@symfor:")) (i32.const 0)))
+              (then (if (call $entry_enumerable (i32.add (local.get $rsyent) (i32.const 8)))
+                (then
+                  (let $rsex i32 (i32.const 0))
+                  (let $rsxj i32 (i32.const 0))
+                  (block $rsexe (loop $rsexl
+                    (br_if $rsexe (i32.ge_s (local.get $rsxj) (local.get $rsxn)))
+                    (if (call $str_eq (local.get $rsysk) (call $to_prop_key (call $arr_get (local.get $rsxa) (local.get $rsxj)))) (then (set! $rsex (i32.const 1)) (br $rsexe)))
+                    (set! $rsxj (i32.add (local.get $rsxj) (i32.const 1))) (br $rsexl)))
+                  (if (i32.eqz (local.get $rsex))
+                    (then
+                      (let $rsymval i64 (call $make_symbol (local.get $rsysk) (local.get $rsysk)))
+                      (call $set_prop (call $mk_obj (local.get $robj)) (local.get $rsymval) (call $get_prop (local.get $rsrc) (local.get $rsymval)))))))))
+            (set! $rsyi (i32.add (local.get $rsyi) (i32.const 1))) (br $rsysl)))))
       (return (call $mk_obj (local.get $robj)))))
   (if (i32.eq (local.get $id) (i32.const 80))  ;; Object.assign(target, ...sources)
     (then
