@@ -660,6 +660,9 @@
           (call $next_token)
           (if (i32.eq (call $tok_kind) (i32.const 15))  ;; super(...) → call parent ctor with this
             (then
+              ;; `super()` is legal only inside a DERIVED class constructor (reg 884) — else SyntaxError
+              (if (i32.eqz (i32.load (i32.const 884)))
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'super' call unexpected here")) (return)))
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@newo"))   ;; receiver = the (uninitialized) object; `this` is still TDZ here
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@homeproto"))  ;; this ctor's home prototype (lexical level)
               (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "@@super"))  ;; parent ctor (home.@@super, not this.@@super)
@@ -1001,7 +1004,8 @@
   ;; BEFORE the arguments (which may contain nested eval calls that reset reg 876).
   (let $isdeval i32 (i32.load (i32.const 876)))
   (i32.store (i32.const 876) (i32.const 0))
-  (let $devmark i32 (if i32 (local.get $isdeval) (then (if i32 (i32.load (i32.const 868)) (then (i32.const 2)) (else (i32.const 1)))) (else (i32.const 0))))
+  ;; direct-eval marker bitfield: bit0=is-direct-eval, bit1=super-property-allowed(reg868), bit2=super()-allowed(reg884)
+  (let $devmark i32 (if i32 (local.get $isdeval) (then (i32.or (i32.const 1) (i32.or (if i32 (i32.load (i32.const 868)) (then (i32.const 2)) (else (i32.const 0))) (if i32 (i32.load (i32.const 884)) (then (i32.const 4)) (else (i32.const 0)))))) (else (i32.const 0))))
   (call $next_token)  ;; '('
   (let $spc i32 (call $cursor_save))
   (let $sphas i32 (i32.const 0)) (let $spd i32 (i32.const 0))
@@ -1813,6 +1817,10 @@
   ;; inline, not via this fn). save/restore so a nested regular fn doesn't clobber the enclosing value.
   (let $savesuperhome i32 (i32.load (i32.const 868)))
   (i32.store (i32.const 868) (i32.or (i32.ne (local.get $classf) (i32.const 0)) (i32.ne (local.get $noproto) (i32.const 0))))
+  ;; reg 884: is `super()` CALL allowed? Only inside a DERIVED class constructor (reg404==2). Same
+  ;; lexical rules as reg 868 (arrows inherit; plain fn/field-init reset). Saved/restored per body.
+  (let $savesupercall i32 (i32.load (i32.const 884)))
+  (i32.store (i32.const 884) (i32.eq (local.get $classf) (i32.const 2)))
   (let $savehc i32 (i32.load (i32.const 372)))  ;; nested fn: its own hoist list
   (let $savehb i32 (i32.load (i32.const 376)))
   (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))
@@ -1949,6 +1957,7 @@
   (i32.store (i32.const 672) (local.get $savegen))  ;; restore enclosing generator-context
   (i32.store (i32.const 852) (local.get $savederctor))  ;; restore enclosing derived-ctor compile flag
   (i32.store (i32.const 868) (local.get $savesuperhome))  ;; restore enclosing super-property-allowed flag
+  (i32.store (i32.const 884) (local.get $savesupercall))  ;; restore enclosing super()-call-allowed flag
   (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
   (i32.store (i32.const 372) (local.get $savehc)) (i32.store (i32.const 376) (local.get $savehb))  ;; restore enclosing hoist list
   (i32.store (i32.const 388) (local.get $savestrict))  ;; restore enclosing strictness
@@ -2076,10 +2085,11 @@
 (func $vm_emit_block_thunk (param $code i32) (effects)
   (let $bpj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
   (let $bentry i32 (call $vm_emit_cursor))
-  (let $btsuperhome i32 (i32.load (i32.const 868)))  ;; a static-init block has a [[HomeObject]] → super property access allowed
-  (i32.store (i32.const 868) (i32.const 1))
+  (let $btsuperhome i32 (i32.load (i32.const 868)))  ;; a static-init block has a [[HomeObject]] → super property access allowed, but super() is NOT
+  (let $btsupercall i32 (i32.load (i32.const 884)))
+  (i32.store (i32.const 868) (i32.const 1)) (i32.store (i32.const 884) (i32.const 0))
   (call $vm_c_stmt (local.get $code))  ;; the `{ ... }` block
-  (i32.store (i32.const 868) (local.get $btsuperhome))
+  (i32.store (i32.const 868) (local.get $btsuperhome)) (i32.store (i32.const 884) (local.get $btsupercall))
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; PUSH undefined (no value)
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET
   (call $vm_patch (local.get $code) (local.get $bpj))
@@ -2098,10 +2108,11 @@
 (func $vm_emit_field_thunk (param $code i32) (effects)
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
   (let $entry i32 (call $vm_emit_cursor))
-  (let $ftsuperhome i32 (i32.load (i32.const 868)))  ;; a class field initializer has a [[HomeObject]] → super property access allowed
-  (i32.store (i32.const 868) (i32.const 1))
+  (let $ftsuperhome i32 (i32.load (i32.const 868)))  ;; a class field initializer has a [[HomeObject]] → super property access allowed, but super() is NOT
+  (let $ftsupercall i32 (i32.load (i32.const 884)))
+  (i32.store (i32.const 868) (i32.const 1)) (i32.store (i32.const 884) (i32.const 0))
   (call $vm_c_expr (local.get $code))  ;; compile init expr → value
-  (i32.store (i32.const 868) (local.get $ftsuperhome))
+  (i32.store (i32.const 868) (local.get $ftsuperhome)) (i32.store (i32.const 884) (local.get $ftsupercall))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET (returns TOS)
   (call $vm_patch (local.get $code) (local.get $pj))
   (let $fn i32 (call $heap_alloc (i32.const 52)))  ;; +own-prop scope @48 (statics)
@@ -4038,6 +4049,7 @@
 
 (func $vm_compile_prog (param $ptr i32) (param $len i32) (param $prelude i32) (result i32) (effects)
   (i32.store (i32.const 868) (i32.load (i32.const 872))) (i32.store (i32.const 872) (i32.const 0))  ;; super-property allowed for this compile = reg872 (set by a DIRECT eval whose caller has a [[HomeObject]]); default 0
+  (i32.store (i32.const 884) (i32.load (i32.const 888))) (i32.store (i32.const 888) (i32.const 0))  ;; super() call allowed for this compile = reg888 (direct eval inside a derived ctor); default 0
   (i32.store (i32.const 208) (i32.const 0)) (i32.store (i32.const 216) (i32.const 0))  ;; no enclosing loop
   (i32.store (i32.const 224) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; temp counter, async flag
   (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
@@ -6784,9 +6796,10 @@
 (func $vm_eval_str (param $s i32) (result i64) (effects)
   (let $scope i32 (call $cur_scope))
   (i64.store (i32.const 288) (call $v_undef))  ;; reset completion register
-  ;; reg 880 (set by DIRECTEVALMARK just before this call): 0=indirect eval, 1=direct/no-super-context,
-  ;; 2=direct with a [[HomeObject]] in scope → the eval'd code may use `super` property access.
-  (i32.store (i32.const 872) (if i32 (i32.eq (i32.load (i32.const 880)) (i32.const 2)) (then (i32.const 1)) (else (i32.const 0))))
+  ;; reg 880 (set by DIRECTEVALMARK just before this call) — bitfield: bit0=direct eval, bit1=caller's
+  ;; super-property allowed, bit2=caller's super() allowed. A direct eval inherits the caller's context.
+  (i32.store (i32.const 872) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 2)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 868 (super property)
+  (i32.store (i32.const 888) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 4)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 884 (super call)
   (i32.store (i32.const 880) (i32.const 0))
   (let $code i32 (call $vm_compile_prog (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)) (i32.const 0)))  ;; nested eval: reuse the caller's existing prelude bindings
   (if (call $err) (then (return (call $v_undef))))  ;; SyntaxError → propagates
