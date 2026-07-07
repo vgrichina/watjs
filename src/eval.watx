@@ -8443,7 +8443,21 @@
             (set! $rpReplc (call $to_str (call $call_val (local.get $rpRepl) (local.get $rpNargs) (local.get $rpAv) (call $v_undef))))
             (if (call $err) (then (return (call $v_undef)))))
           (else
-            (set! $rpReplc (call $get_substitution (local.get $rpMatched) (local.get $rpSstr) (local.get $rpPos) (local.get $rpRes2) (local.get $rpNcap) (local.get $rpNamed) (local.get $rpReplStr)))
+            ;; spec RegExpReplace step 14.h: ToString EVERY capture once (observable — a capture whose
+            ;; toString throws must propagate even when the replacement string doesn't reference it).
+            ;; Build a coerced captures object so get_substitution reads plain strings (no double toString).
+            (let $rpCoer i32 (call $obj_new (i32.const 4)))
+            (let $rpCj i32 (i32.const 1))
+            (block $rpCE (loop $rpCL2
+              (br_if $rpCE (i32.gt_s (local.get $rpCj) (local.get $rpNcap)))
+              (let $rpCcv i64 (call $get_prop (local.get $rpRes2) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $rpCj))))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (i32.eqz (call $is_undefined (local.get $rpCcv)))
+                (then (call $scope_define (local.get $rpCoer) (call $num_to_str (f64.convert_i32_s (local.get $rpCj))) (call $mk_str (call $to_str (local.get $rpCcv))))
+                      (if (call $err) (then (return (call $v_undef))))))
+              (set! $rpCj (i32.add (local.get $rpCj) (i32.const 1)))
+              (br $rpCL2)))
+            (set! $rpReplc (call $get_substitution (local.get $rpMatched) (local.get $rpSstr) (local.get $rpPos) (call $mk_obj (local.get $rpCoer)) (local.get $rpNcap) (local.get $rpNamed) (local.get $rpReplStr)))
             (if (call $err) (then (return (call $v_undef))))))
         (if (i32.ge_s (local.get $rpPos) (local.get $rpNext))
           (then
