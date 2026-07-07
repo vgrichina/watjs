@@ -9319,6 +9319,10 @@
       ;; ToObject(O): null/undefined → TypeError
       (if (i32.or (call $is_null (local.get $ob)) (call $is_undefined (local.get $ob)))
         (then (call $throw_type (cstring "TypeError") (cstring "Object.getOwnPropertyDescriptor called on null or undefined")) (return (call $v_undef))))
+      ;; ToObject a primitive receiver: a string boxes to a String exotic object (index/length
+      ;; descriptors); number/boolean/symbol/bigint box to wrappers with no own index props.
+      (if (i32.eqz (i32.or (call $is_object (local.get $ob)) (i32.or (call $is_array (local.get $ob)) (i32.or (call $is_function (local.get $ob)) (call $is_proxy (local.get $ob))))))
+        (then (set! $ob (call $to_object (local.get $ob))) (if (call $err) (then (return (call $v_undef))))))
       ;; Proxy: getOwnPropertyDescriptor trap (else forward to target)
       (if (call $is_proxy (local.get $ob))
         (then
