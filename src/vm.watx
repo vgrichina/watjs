@@ -717,6 +717,29 @@
                   (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO
                   (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $smn))  ;; [this, method]
                   (call $next_token)  ;; '('
+                  ;; lookahead for a ...spread anywhere in the arg list (paren-balanced)
+                  (let $smspc i32 (call $cursor_save)) (let $smhas i32 (i32.const 0)) (let $smd i32 (i32.const 0))
+                  (block $smspe (loop $smspl
+                    (br_if $smspe (i32.eq (call $tok_kind) (i32.const 0)))
+                    (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $smd (i32.add (local.get $smd) (i32.const 1)))))
+                    (if (i32.eq (call $tok_kind) (i32.const 16)) (then (br_if $smspe (i32.eqz (local.get $smd))) (set! $smd (i32.sub (local.get $smd) (i32.const 1)))))
+                    (if (i32.and (i32.eq (call $tok_kind) (i32.const 54)) (i32.eqz (local.get $smd))) (then (set! $smhas (i32.const 1))))
+                    (call $next_token) (br $smspl)))
+                  (call $cursor_restore (local.get $smspc))
+                  (if (local.get $smhas)
+                    (then  ;; super.name(...spread) → build args array → CALLMSPREAD
+                      (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+                      (if (i32.ne (call $tok_kind) (i32.const 16))
+                        (then (block $sms2 (loop $sml2
+                          (br_if $sms2 (i32.eq (call $tok_kind) (i32.const 16)))
+                          (if (i32.eq (call $tok_kind) (i32.const 54))
+                            (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
+                            (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
+                          (br_if $sms2 (i32.eqz (call $eat (i32.const 22))))
+                          (br $sml2)))))
+                      (call $next_token)  ;; ')'
+                      (call $vm_emit_op (local.get $code) (i32.const 55))  ;; CALLMSPREAD
+                      (return)))
                   (let $smargc i32 (i32.const 0))
                   (if (i32.ne (call $tok_kind) (i32.const 16))
                     (then (block $sme (loop $sml (call $vm_c_expr (local.get $code)) (set! $smargc (i32.add (local.get $smargc) (i32.const 1))) (br_if $sme (i32.eqz (call $eat (i32.const 22)))) (br $sml)))))
@@ -769,6 +792,38 @@
               (let $sek i32 (call $vm_tmpname))
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sek))  ;; STOREVAR @@key → [recv, superproto]
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sek))  ;; LOADVAR @@key → [recv, superproto, key]
+              (if (i32.eq (call $tok_kind) (i32.const 15))  ;; `super[expr](args)` → method call, this = receiver
+                (then
+                  (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [recv, method] (superproto[key])
+                  (call $next_token)  ;; '('
+                  (let $sxspc i32 (call $cursor_save)) (let $sxhas i32 (i32.const 0)) (let $sxd i32 (i32.const 0))
+                  (block $sxspe (loop $sxspl
+                    (br_if $sxspe (i32.eq (call $tok_kind) (i32.const 0)))
+                    (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $sxd (i32.add (local.get $sxd) (i32.const 1)))))
+                    (if (i32.eq (call $tok_kind) (i32.const 16)) (then (br_if $sxspe (i32.eqz (local.get $sxd))) (set! $sxd (i32.sub (local.get $sxd) (i32.const 1)))))
+                    (if (i32.and (i32.eq (call $tok_kind) (i32.const 54)) (i32.eqz (local.get $sxd))) (then (set! $sxhas (i32.const 1))))
+                    (call $next_token) (br $sxspl)))
+                  (call $cursor_restore (local.get $sxspc))
+                  (if (local.get $sxhas)
+                    (then  ;; super[expr](...spread) → args array → CALLMSPREAD
+                      (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+                      (if (i32.ne (call $tok_kind) (i32.const 16))
+                        (then (block $sxs2 (loop $sxl2
+                          (br_if $sxs2 (i32.eq (call $tok_kind) (i32.const 16)))
+                          (if (i32.eq (call $tok_kind) (i32.const 54))
+                            (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))
+                            (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))
+                          (br_if $sxs2 (i32.eqz (call $eat (i32.const 22))))
+                          (br $sxl2)))))
+                      (call $next_token)  ;; ')'
+                      (call $vm_emit_op (local.get $code) (i32.const 55))  ;; CALLMSPREAD
+                      (return)))
+                  (let $sxargc i32 (i32.const 0))
+                  (if (i32.ne (call $tok_kind) (i32.const 16))
+                    (then (block $sxe (loop $sxl (call $vm_c_expr (local.get $code)) (set! $sxargc (i32.add (local.get $sxargc) (i32.const 1))) (br_if $sxe (i32.eqz (call $eat (i32.const 22)))) (br $sxl)))))
+                  (call $next_token)  ;; ')'
+                  (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $sxargc))  ;; CALLM
+                  (return)))
               (if (i32.eq (call $tok_kind) (i32.const 24))  ;; `super[expr] = RHS`
                 (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 119)))  ;; SUPERSET
                 (else (if (call $is_compound_assign (call $tok_kind))  ;; `super[expr] op= RHS`
@@ -2907,6 +2962,7 @@
                 (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND fn
                 (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP smethT
               (else
+                (i32.store (i32.const 692) (i32.const 1))  ;; instance computed method → no .prototype + super-property allowed (reg 868)
                 (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; → [proto, key, fn]
                 (call $vm_emit_op (local.get $code) (i32.const 87)))))  ;; DEFMETH_KEY (pops all three)
           (else  ;; computed field [k] = v (stack: [proto, key]) → append [key, thunk] to static/instance array
