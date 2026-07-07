@@ -9858,6 +9858,56 @@
             (if (call $err) (then (return (call $v_undef))))
             (set! $gsi (i32.add (local.get $gsi) (i32.const 1))) (br $gs2l)))
           (return (call $mk_arr (local.get $gsout)))))
+      ;; indexOf(22)/lastIndexOf(30) on an array-like OBJECT: read length, coerce fromIndex, THEN
+      ;; iterate live via HasProperty+[[Get]] (ascending for indexOf, descending for lastIndexOf) so
+      ;; observable getters / fromIndex-valueOf mutations are seen. alike_arr would snapshot ascending
+      ;; BEFORE fromIndex. Real arrays fall through to the dense path.
+      (if (i32.and (i32.or (i32.eq (local.get $id) (i32.const 22)) (i32.eq (local.get $id) (i32.const 30)))
+                   (i32.and (i32.eqz (call $is_array (local.get $thisv))) (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))))
+        (then
+          (let $ion i32 (call $alike_len (local.get $thisv)))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $iox i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (if (i32.eqz (local.get $ion)) (then (return (call $num (f64.const -1)))))  ;; len 0 → -1 before coercing fromIndex
+          (if (i32.eq (local.get $id) (i32.const 22))
+            (then  ;; indexOf — ascending
+              (let $ioi i32 (i32.const 0))
+              (if (i32.ge_s (local.get $argc) (i32.const 2))
+                (then
+                  (set! $ioi (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+                  (if (call $err) (then (return (call $v_undef))))
+                  (if (i32.lt_s (local.get $ioi) (i32.const 0)) (then (set! $ioi (i32.add (local.get $ion) (local.get $ioi)))))
+                  (if (i32.lt_s (local.get $ioi) (i32.const 0)) (then (set! $ioi (i32.const 0))))))
+              (block $ioe (loop $iol
+                (br_if $ioe (i32.ge_s (local.get $ioi) (local.get $ion)))
+                (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $ioi))) (local.get $thisv)))
+                  (then
+                    (let $iov i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $ioi)))))
+                    (if (call $err) (then (return (call $v_undef))))
+                    (if (call $strict_eq (local.get $iov) (local.get $iox)) (then (return (call $num (f64.convert_i32_s (local.get $ioi))))))))
+                (if (call $err) (then (return (call $v_undef))))
+                (set! $ioi (i32.add (local.get $ioi) (i32.const 1)))
+                (br $iol)))
+              (return (call $num (f64.const -1))))
+            (else  ;; lastIndexOf — descending
+              (let $ioj i32 (i32.sub (local.get $ion) (i32.const 1)))
+              (if (i32.ge_s (local.get $argc) (i32.const 2))
+                (then
+                  (let $iof i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+                  (if (call $err) (then (return (call $v_undef))))
+                  (if (i32.lt_s (local.get $iof) (i32.const 0)) (then (set! $iof (i32.add (local.get $ion) (local.get $iof)))))
+                  (if (i32.lt_s (local.get $iof) (local.get $ioj)) (then (set! $ioj (local.get $iof))))))
+              (block $ioje (loop $iojl
+                (br_if $ioje (i32.lt_s (local.get $ioj) (i32.const 0)))
+                (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $ioj))) (local.get $thisv)))
+                  (then
+                    (let $iov2 i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $ioj)))))
+                    (if (call $err) (then (return (call $v_undef))))
+                    (if (call $strict_eq (local.get $iov2) (local.get $iox)) (then (return (call $num (f64.convert_i32_s (local.get $ioj))))))))
+                (if (call $err) (then (return (call $v_undef))))
+                (set! $ioj (i32.sub (local.get $ioj) (i32.const 1)))
+                (br $iojl)))
+              (return (call $num (f64.const -1)))))))
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
