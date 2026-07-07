@@ -7764,6 +7764,45 @@
           (i32.and (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
                    (i32.eqz (call $is_function (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
     (then (call $throw_type (cstring "TypeError") (cstring "comparator is not a function")) (return (call $v_undef))))
+  ;; find/findIndex/some/every on an array-like OBJECT (not a real array, not a TA delegation): live
+  ;; ASCENDING iteration via [[Get]] (find/findIndex Get every index; some/every HasProperty-skip) so a
+  ;; callback that mutates a not-yet-visited index is observed. alike_arr snapshots upfront.
+  (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 74)) (i32.le_s (local.get $id) (i32.const 77)))
+        (i32.and (i32.eqz (call $is_array (local.get $thisv)))
+          (i32.and (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))
+            (i32.and (i32.eqz (i32.load (i32.const 860)))
+              (if i32 (call $is_object (local.get $thisv)) (then (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))) (else (i32.const 1)))))))
+    (then
+      (let $fgn i32 (call $alike_len (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $fgcb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $fgthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.eqz (call $is_function (local.get $fgcb))) (then (call $throw_type (cstring "TypeError") (cstring "callback is not a function")) (return (call $v_undef))))
+      (let $fgi i32 (i32.const 0))
+      (let $fgcargv i32 (call $heap_alloc (i32.const 24)))
+      (block $fge (loop $fgl
+        (br_if $fge (i32.ge_s (local.get $fgi) (local.get $fgn)))
+        (let $fgvis i32 (if i32 (i32.lt_s (local.get $id) (i32.const 76)) (then (i32.const 1)) (else (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $fgi))) (local.get $thisv))))))  ;; find/findIndex visit all; some/every HasProperty
+        (if (call $err) (then (return (call $v_undef))))
+        (if (local.get $fgvis)
+          (then
+            (let $fgel i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $fgi)))))
+            (if (call $err) (then (return (call $v_undef))))
+            (i64.store (local.get $fgcargv) (local.get $fgel))
+            (i64.store (i32.add (local.get $fgcargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $fgi))))
+            (i64.store (i32.add (local.get $fgcargv) (i32.const 16)) (local.get $thisv))
+            (let $fgr i64 (call $call_val (local.get $fgcb) (i32.const 3) (local.get $fgcargv) (local.get $fgthis)))
+            (if (call $err) (then (return (call $v_undef))))
+            (let $fgt i32 (call $truthy (local.get $fgr)))
+            (if (i32.eq (local.get $id) (i32.const 74)) (then (if (local.get $fgt) (then (return (local.get $fgel))))))            ;; find
+            (if (i32.eq (local.get $id) (i32.const 75)) (then (if (local.get $fgt) (then (return (call $num (f64.convert_i32_s (local.get $fgi))))))))  ;; findIndex
+            (if (i32.eq (local.get $id) (i32.const 76)) (then (if (local.get $fgt) (then (return (call $v_true))))))             ;; some
+            (if (i32.eq (local.get $id) (i32.const 77)) (then (if (i32.eqz (local.get $fgt)) (then (return (call $v_false))))))))  ;; every
+        (set! $fgi (i32.add (local.get $fgi) (i32.const 1))) (br $fgl)))
+      (if (i32.eq (local.get $id) (i32.const 74)) (then (return (call $v_undef))))
+      (if (i32.eq (local.get $id) (i32.const 75)) (then (return (call $num (f64.const -1)))))
+      (if (i32.eq (local.get $id) (i32.const 76)) (then (return (call $v_false))))
+      (return (call $v_true))))  ;; every (none failed)
   ;; --- array3 methods (this = array): 74 find, 75 findIndex, 76 some, 77 every, 78 sort ---
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 74)) (i32.le_s (local.get $id) (i32.const 78)))
         (i32.or (call $is_array (local.get $thisv)) (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))))  ;; generic on array-likes
@@ -7895,6 +7934,42 @@
         (if (call $err) (then (return (call $v_undef))))
         (set! $rgi (i32.add (local.get $rgi) (i32.const 1))) (br $rgdl)))
       (return (local.get $rgacc))))
+  ;; filter on an array-like OBJECT: live ASCENDING HasProperty+[[Get]] (callback mutations of a
+  ;; not-yet-visited index observed). alike_arr snapshots upfront. Real arrays / TAs fall through.
+  (if (i32.and (i32.eq (local.get $id) (i32.const 72))
+        (i32.and (i32.eqz (call $is_array (local.get $thisv)))
+          (i32.and (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))
+            (i32.and (i32.eqz (i32.load (i32.const 860)))
+              (if i32 (call $is_object (local.get $thisv)) (then (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))) (else (i32.const 1)))))))
+    (then
+      (if (f64.gt (call $alike_len_f64 (local.get $thisv)) (f64.const 4294967295))
+        (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
+      (let $flgn i32 (call $alike_len (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $flgcb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.eqz (call $is_function (local.get $flgcb))) (then (call $throw_type (cstring "TypeError") (cstring "callback is not a function")) (return (call $v_undef))))
+      (let $flgA i64 (call $array_species_create (local.get $thisv) (i32.const 0)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $flgthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (let $flgto i32 (i32.const 0))
+      (let $flgi i32 (i32.const 0))
+      (let $flgcargv i32 (call $heap_alloc (i32.const 24)))
+      (block $flge (loop $flgl
+        (br_if $flge (i32.ge_s (local.get $flgi) (local.get $flgn)))
+        (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $flgi))) (local.get $thisv)))
+          (then
+            (let $flgel i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $flgi)))))
+            (if (call $err) (then (return (call $v_undef))))
+            (i64.store (local.get $flgcargv) (local.get $flgel))
+            (i64.store (i32.add (local.get $flgcargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $flgi))))
+            (i64.store (i32.add (local.get $flgcargv) (i32.const 16)) (local.get $thisv))
+            (let $flgr i64 (call $call_val (local.get $flgcb) (i32.const 3) (local.get $flgcargv) (local.get $flgthis)))
+            (if (call $err) (then (return (call $v_undef))))
+            (if (call $truthy (local.get $flgr))
+              (then (call $cdp_throw (local.get $flgA) (local.get $flgto) (local.get $flgel)) (if (call $err) (then (return (call $v_undef)))) (set! $flgto (i32.add (local.get $flgto) (i32.const 1)))))))
+        (if (call $err) (then (return (call $v_undef))))
+        (set! $flgi (i32.add (local.get $flgi) (i32.const 1))) (br $flgl)))
+      (return (local.get $flgA))))
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 70)) (i32.le_s (local.get $id) (i32.const 73)))
         (i32.or (call $is_array (local.get $thisv)) (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))))  ;; generic on array-likes
     (then
@@ -9994,6 +10069,43 @@
                 (set! $ioj (i32.sub (local.get $ioj) (i32.const 1)))
                 (br $iojl)))
               (return (call $num (f64.const -1)))))))
+      ;; forEach(25)/map(26) on an array-like OBJECT: live ASCENDING HasProperty+[[Get]] so a callback
+      ;; that mutates a not-yet-visited index is observed. alike_arr snapshots upfront. Real arrays / TA
+      ;; delegations fall through.
+      (if (i32.and (i32.or (i32.eq (local.get $id) (i32.const 25)) (i32.eq (local.get $id) (i32.const 26)))
+            (i32.and (i32.eqz (call $is_array (local.get $thisv)))
+              (i32.and (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))
+                (i32.and (i32.eqz (i32.load (i32.const 860)))
+                  (if i32 (call $is_object (local.get $thisv)) (then (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))) (else (i32.const 1)))))))
+        (then
+          (if (i32.and (i32.eq (local.get $id) (i32.const 26)) (f64.gt (call $alike_len_f64 (local.get $thisv)) (f64.const 4294967295)))
+            (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
+          (let $fmgn i32 (call $alike_len (local.get $thisv)))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $fmgcb i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (if (i32.eqz (call $is_function (local.get $fmgcb))) (then (call $throw_type (cstring "TypeError") (cstring "callback is not a function")) (return (call $v_undef))))
+          (let $fmgA i64 (if i64 (i32.eq (local.get $id) (i32.const 26)) (then (call $array_species_create (local.get $thisv) (local.get $fmgn))) (else (call $v_undef))))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $fmgthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+          (let $fmgi i32 (i32.const 0))
+          (let $fmgcargv i32 (call $heap_alloc (i32.const 24)))
+          (block $fmge (loop $fmgl
+            (br_if $fmge (i32.ge_s (local.get $fmgi) (local.get $fmgn)))
+            (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $fmgi))) (local.get $thisv)))
+              (then
+                (let $fmgel i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $fmgi)))))
+                (if (call $err) (then (return (call $v_undef))))
+                (i64.store (local.get $fmgcargv) (local.get $fmgel))
+                (i64.store (i32.add (local.get $fmgcargv) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $fmgi))))
+                (i64.store (i32.add (local.get $fmgcargv) (i32.const 16)) (local.get $thisv))
+                (let $fmgr i64 (call $call_val (local.get $fmgcb) (i32.const 3) (local.get $fmgcargv) (local.get $fmgthis)))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (i32.eq (local.get $id) (i32.const 26))
+                  (then (call $cdp_throw (local.get $fmgA) (local.get $fmgi) (local.get $fmgr)) (if (call $err) (then (return (call $v_undef))))))))
+            (if (call $err) (then (return (call $v_undef))))
+            (set! $fmgi (i32.add (local.get $fmgi) (i32.const 1))) (br $fmgl)))
+          (if (i32.eq (local.get $id) (i32.const 26)) (then (return (local.get $fmgA))))
+          (return (call $v_undef))))
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
