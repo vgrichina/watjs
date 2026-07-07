@@ -1757,8 +1757,8 @@
   (call $scope_define (local.get $tap) (cstring "includes") (call $mk_native (i32.const 485) (cstring "includes")))
   (call $scope_define (local.get $tap) (cstring "find") (call $mk_native (i32.const 495) (cstring "find")))
   (call $scope_define (local.get $tap) (cstring "findIndex") (call $mk_native (i32.const 496) (cstring "findIndex")))
-  (call $scope_define (local.get $tap) (cstring "findLast") (call $mk_native (i32.const 33) (cstring "findLast")))
-  (call $scope_define (local.get $tap) (cstring "findLastIndex") (call $mk_native (i32.const 34) (cstring "findLastIndex")))
+  (call $scope_define (local.get $tap) (cstring "findLast") (call $mk_native (i32.const 524) (cstring "findLast")))  ;; ValidateTypedArray wrappers → Array 33/34
+  (call $scope_define (local.get $tap) (cstring "findLastIndex") (call $mk_native (i32.const 525) (cstring "findLastIndex")))
   (call $scope_define (local.get $tap) (cstring "some") (call $mk_native (i32.const 493) (cstring "some")))
   (call $scope_define (local.get $tap) (cstring "every") (call $mk_native (i32.const 494) (cstring "every")))
   (call $scope_define (local.get $tap) (cstring "at") (call $mk_native (i32.const 502) (cstring "at")))
@@ -2369,6 +2369,9 @@
 ;; [[Construct]] the species with the result length, validate it's a long-enough
 ;; TypedArray, and copy the values in (set_prop does element conversion + bounds).
 (func $ta_species_result (param $thisv i64) (param $tmaid i32) (param $argc i32) (param $argv i32) (param $elem i32) (param $id i32) (result i64) (effects)
+  ;; %TypedArray%.prototype.map/filter/slice ValidateTypedArray(this) first (only these TA methods
+  ;; reach here — the generic Array.prototype.map/filter/slice never do). Throws on detached/OOB.
+  (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))
   ;; map (400) resolves the species constructor BEFORE the callback loop (TypedArraySpeciesCreate
   ;; with len runs first). filter (401) iterates first to learn the kept count, so its callbacks
   ;; fire BEFORE species; slice (402) has no callback so either order is observably the same.
@@ -4726,10 +4729,14 @@
       (if (i32.eq (local.get $id) (i32.const 498)) (then (return (call $call_native (i32.const 97)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; values
       (if (i32.eq (local.get $id) (i32.const 499)) (then (return (call $call_native (i32.const 95)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; entries
       (if (i32.eq (local.get $id) (i32.const 500)) (then (return (call $call_native (i32.const 305) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; toLocaleString
-      (if (i32.eq (local.get $id) (i32.const 501)) (then (return (call $call_native (i32.const 29)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; fill
+      (if (i32.eq (local.get $id) (i32.const 501)) (then (return (call $call_native (i32.const 29)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; fill (already ValidateTypedArray'd at 4709)
       (if (i32.eq (local.get $id) (i32.const 502)) (then (return (call $call_native (i32.const 28)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; at
       (if (i32.eq (local.get $id) (i32.const 503)) (then (return (call $call_native (i32.const 168) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; copyWithin
       (if (i32.eq (local.get $id) (i32.const 504)) (then (i32.store (i32.const 860) (i32.const 1)) (return (call $call_native (i32.const 25)  (local.get $argc) (local.get $argv) (local.get $thisv)))))))  ;; forEach
+  ;; %TypedArray%.prototype.findLast/findLastIndex — ValidateTypedArray then delegate to the generic
+  ;; Array natives 33/34 (separate ids so the GENERIC Array.prototype.findLast.call(oobTA) doesn't validate).
+  (if (i32.eq (local.get $id) (i32.const 524)) (then (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef)))) (i32.store (i32.const 860) (i32.const 1)) (return (call $call_native (i32.const 33) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; findLast
+  (if (i32.eq (local.get $id) (i32.const 525)) (then (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef)))) (i32.store (i32.const 860) (i32.const 1)) (return (call $call_native (i32.const 34) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; findLastIndex
   ;; Annex B.2.2 String.prototype HTML methods (460-472) + %ThrowTypeError% (510, when actually CALLED,
   ;; e.g. invoking a strict arguments.callee / fn.caller accessor's getter)
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 460)) (i32.le_s (local.get $id) (i32.const 472))) (i32.eq (local.get $id) (i32.const 510)))
@@ -7678,11 +7685,10 @@
               (i32.or (i32.eq (local.get $id) (i32.const 224)) (i32.or (i32.eq (local.get $id) (i32.const 225))
                 (i32.and (i32.ge_s (local.get $id) (i32.const 273)) (i32.le_s (local.get $id) (i32.const 276))))))))))
     (then (set! $thisv (call $to_object (local.get $thisv)))))
-  ;; ValidateTypedArray: a detached-buffer TypedArray receiver throws before any further work
-  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 20)) (i32.le_s (local.get $id) (i32.const 36)))
-        (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 70)) (i32.le_s (local.get $id) (i32.const 78)))
-          (i32.or (i32.eq (local.get $id) (i32.const 137)) (i32.eq (local.get $id) (i32.const 168)))))
-    (then (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))))
+  ;; NOTE: Array.prototype methods are GENERIC — they must NOT ValidateTypedArray a TypedArray receiver
+  ;; (Array.prototype.fill.call(oobTA) reads length 0 and no-ops, it does not throw). The %TypedArray%.
+  ;; prototype methods (native ids 485-504) do ValidateTypedArray at their own dispatch (ta_validate_brand,
+  ;; ~4709) before delegating here, so the detached/OOB throw happens for `ta.fill()` but not the generic call.
   ;; callback-taking array methods require a callable first argument
   (if (i32.and
         (i32.eqz (call $is_function (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -10016,11 +10022,13 @@
           ;; a TypedArray re-checks the buffer after coercing value/start/end (any ToNumber/ToInteger can
           ;; resize or detach it): an out-of-bounds view throws TypeError, otherwise the range is clamped
           ;; to the current length.
+          ;; a TypedArray receiver (generic Array.prototype.fill.call OR %TypedArray%.prototype.fill which
+          ;; already ValidateTypedArray'd at native 501): clamp the fill range to the CURRENT live length
+          ;; (0 for an out-of-bounds view → no fill). Generic fill must NOT throw on an OOB view.
           (if (call $is_object (local.get $thisv))
             (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))
               (then
-                (if (call $ta_is_oob (local.get $thisv)) (then (call $throw_type (cstring "TypeError") (cstring "TypedArray is out of bounds")) (return (call $v_undef))))
-                (let $flen i32 (call $ta_live_len (local.get $thisv)))
+                (let $flen i32 (if i32 (call $ta_is_oob (local.get $thisv)) (then (i32.const 0)) (else (call $ta_live_len (local.get $thisv)))))
                 (if (i32.lt_s (local.get $flen) (local.get $fend)) (then (set! $fend (local.get $flen))))))))
           (let $fk i32 (local.get $fstart))
           (block $fe (loop $fl
@@ -10548,7 +10556,7 @@
   ;; findIndex/some/every/sort/reduceRight)
   (if (i32.or (i32.eq (local.get $id) (i32.const 20)) (i32.or (i32.eq (local.get $id) (i32.const 22)) (i32.or (i32.eq (local.get $id) (i32.const 23)) (i32.or (i32.eq (local.get $id) (i32.const 25)) (i32.or (i32.eq (local.get $id) (i32.const 26)) (i32.or (i32.eq (local.get $id) (i32.const 27)) (i32.eq (local.get $id) (i32.const 28))))))))
     (then (return (i32.const 1))))
-  (if (i32.or (i32.eq (local.get $id) (i32.const 29)) (i32.or (i32.eq (local.get $id) (i32.const 30)) (i32.or (i32.eq (local.get $id) (i32.const 32)) (i32.or (i32.eq (local.get $id) (i32.const 33)) (i32.or (i32.eq (local.get $id) (i32.const 34)) (i32.eq (local.get $id) (i32.const 70)))))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 29)) (i32.or (i32.eq (local.get $id) (i32.const 30)) (i32.or (i32.eq (local.get $id) (i32.const 32)) (i32.or (i32.eq (local.get $id) (i32.const 33)) (i32.or (i32.eq (local.get $id) (i32.const 34)) (i32.or (i32.eq (local.get $id) (i32.const 70)) (i32.or (i32.eq (local.get $id) (i32.const 524)) (i32.eq (local.get $id) (i32.const 525)))))))))  ;; …524/525 = TA findLast/findLastIndex wrappers
     (then (return (i32.const 1))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 72)) (i32.or (i32.eq (local.get $id) (i32.const 73)) (i32.or (i32.eq (local.get $id) (i32.const 74)) (i32.or (i32.eq (local.get $id) (i32.const 75)) (i32.or (i32.eq (local.get $id) (i32.const 76)) (i32.or (i32.eq (local.get $id) (i32.const 77)) (i32.or (i32.eq (local.get $id) (i32.const 78)) (i32.eq (local.get $id) (i32.const 137)))))))))
     (then (return (i32.const 1))))
