@@ -10538,14 +10538,21 @@
               (let $ci i32 (i32.const 0))
               (block $cre (loop $crl
                 (br_if $cre (i32.ge_s (local.get $ci) (local.get $ccnt)))
-                ;; a missing source slot (HasProperty false, for arrays AND array-likes) → carry a
-                ;; hole so the target is DELETED (DeletePropertyOrThrow), not set to undefined
+                ;; a missing source slot (HasProperty false) → carry a hole so the target is DELETED
+                ;; (DeletePropertyOrThrow), not set to undefined. HasProperty/[[Get]] are proto-aware:
+                ;; a real-array receiver reads an inherited index (dense_visit/dense_get), an array-like
+                ;; object goes through js_in/get_prop.
+                (let $csrci i32 (i32.add (local.get $cs) (local.get $ci)))
+                (let $cspres i32 (if i32 (call $is_array (local.get $thisv))
+                  (then (call $dense_visit (local.get $thisv) (local.get $arr) (local.get $csrci)))
+                  (else (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $csrci))) (local.get $thisv))))))
+                (if (call $err) (then (return (call $v_undef))))
                 (i64.store (i32.add (local.get $cbuf) (i32.mul (local.get $ci) (i32.const 8)))
-                  (if i64 (if i32 (call $is_array (local.get $thisv))
-                              (then (i32.eqz (call $arr_has (local.get $arr) (i32.add (local.get $cs) (local.get $ci)))))
-                              (else (i32.eqz (call $truthy (call $js_in (call $num (f64.convert_i32_s (i32.add (local.get $cs) (local.get $ci)))) (local.get $thisv))))))
+                  (if i64 (i32.eqz (local.get $cspres))
                     (then (call $v_hole))
-                    (else (call $amut_get (local.get $thisv) (local.get $arr) (i32.add (local.get $cs) (local.get $ci))))))
+                    (else (if i64 (call $is_array (local.get $thisv))
+                      (then (call $dense_get (local.get $thisv) (local.get $arr) (local.get $csrci)))
+                      (else (call $amut_get (local.get $thisv) (local.get $arr) (local.get $csrci)))))))
                 (if (call $err) (then (return (call $v_undef))))
                 (set! $ci (i32.add (local.get $ci) (i32.const 1))) (br $crl)))
               (set! $ci (i32.const 0))
