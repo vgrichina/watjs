@@ -5405,6 +5405,76 @@
       (if (i32.and (i32.gt_s (local.get $argc) (i32.const 1)) (i32.and (i32.eqz (call $is_undefined (local.get $frm))) (i32.eqz (call $is_function (local.get $frm)))))
         (then (call $throw_type (cstring "TypeError") (cstring "Array.from: mapping function is not callable")) (return (call $v_undef))))
       (let $frthis i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))  ;; mapfn thisArg
+      ;; CUSTOM CONSTRUCTOR path (this !== %Array% and IsConstructor): spec order requires A =
+      ;; Construct(C) BEFORE GetIterator (so a throwing C surfaces first), and each element written via
+      ;; CreateDataPropertyOrThrow AS iterating (a define-failure closes the iterator). The plain-Array
+      ;; path below (collect → return) is left untouched.
+      (let $cfArrSlot i32 (call $scope_find_local (i32.load (i32.const 152)) (cstring "Array")))
+      (if (i32.and (call $is_constructor (local.get $thisv))
+            (i32.eqz (i32.and (i32.ne (local.get $cfArrSlot) (i32.const 0)) (call $strict_eq (local.get $thisv) (i64.load (local.get $cfArrSlot))))))
+        (then
+          (let $cfmap i32 (call $is_function (local.get $frm)))
+          (let $cfitfn i64 (call $get_prop (local.get $frs) (call $mk_str (cstring "@@iterator"))))
+          (if (call $err) (then (return (call $v_undef))))
+          ;; GetMethod: a present-but-non-callable @@iterator → TypeError
+          (if (i32.and (i32.eqz (i32.or (call $is_undefined (local.get $cfitfn)) (call $is_null (local.get $cfitfn)))) (i32.eqz (call $is_function (local.get $cfitfn))))
+            (then (call $throw_type (cstring "TypeError") (cstring "@@iterator is not a function")) (return (call $v_undef))))
+          (if (call $is_function (local.get $cfitfn))
+            (then  ;; ITERABLE: A = Construct(C) [no args], then iterate + CreateDataPropertyOrThrow
+              (let $cfA i64 (call $vm_construct (local.get $thisv) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $thisv)))
+              (if (call $err) (then (return (call $v_undef))))
+              (let $cfiter i64 (call $call_fn0 (local.get $cfitfn) (local.get $frs)))
+              (if (call $err) (then (return (call $v_undef))))
+              (let $cfnext i64 (call $get_prop (local.get $cfiter) (call $mk_str (cstring "next"))))
+              (if (call $err) (then (return (call $v_undef))))
+              (let $cfk i32 (i32.const 0))
+              (block $cfe (loop $cfl
+                (let $cfr i64 (call $call_fn0 (local.get $cfnext) (local.get $cfiter)))
+                (br_if $cfe (call $err))  ;; next() threw → propagate, no close
+                (br_if $cfe (call $truthy (call $get_prop (local.get $cfr) (call $mk_str (cstring "done")))))
+                (let $cfval i64 (call $get_prop (local.get $cfr) (call $mk_str (cstring "value"))))
+                (if (call $err) (then (call $iter_close_throw (local.get $cfiter)) (return (call $v_undef))))
+                (if (local.get $cfmap)
+                  (then
+                    (let $cfav i32 (call $heap_alloc (i32.const 16)))
+                    (i64.store (local.get $cfav) (local.get $cfval))
+                    (i64.store (i32.add (local.get $cfav) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $cfk))))
+                    (set! $cfval (call $call_val (local.get $frm) (i32.const 2) (local.get $cfav) (local.get $frthis)))
+                    (if (call $err) (then (call $iter_close_throw (local.get $cfiter)) (return (call $v_undef))))))
+                (call $cdp_throw (local.get $cfA) (local.get $cfk) (local.get $cfval))
+                (if (call $err) (then (call $iter_close_throw (local.get $cfiter)) (return (call $v_undef))))  ;; define failed → close
+                (set! $cfk (i32.add (local.get $cfk) (i32.const 1)))
+                (br $cfl)))
+              (call $set_prop (local.get $cfA) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (local.get $cfk))))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (local.get $cfA)))
+            (else  ;; ARRAY-LIKE: len = LengthOfArrayLike, A = Construct(C, [len]), then define each
+              (let $cflnf f64 (call $to_num (call $get_prop (local.get $frs) (call $mk_str (cstring "length")))))
+              (if (call $err) (then (return (call $v_undef))))
+              (let $cflen i32 (if i32 (i32.and (f64.eq (local.get $cflnf) (local.get $cflnf)) (i32.and (f64.ge (local.get $cflnf) (f64.const 0)) (f64.lt (local.get $cflnf) (f64.const 2147483647)))) (then (i32.trunc_f64_s (local.get $cflnf))) (else (i32.const 0))))
+              (let $cfcb i32 (call $heap_alloc (i32.const 8)))
+              (i64.store (local.get $cfcb) (call $num (f64.convert_i32_s (local.get $cflen))))
+              (let $cfA2 i64 (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $cfcb) (local.get $thisv)))
+              (if (call $err) (then (return (call $v_undef))))
+              (let $cfk2 i32 (i32.const 0))
+              (block $cfe2 (loop $cfl2
+                (br_if $cfe2 (i32.ge_s (local.get $cfk2) (local.get $cflen)))
+                (let $cfval2 i64 (call $get_prop (local.get $frs) (call $num (f64.convert_i32_s (local.get $cfk2)))))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (local.get $cfmap)
+                  (then
+                    (let $cfav2 i32 (call $heap_alloc (i32.const 16)))
+                    (i64.store (local.get $cfav2) (local.get $cfval2))
+                    (i64.store (i32.add (local.get $cfav2) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $cfk2))))
+                    (set! $cfval2 (call $call_val (local.get $frm) (i32.const 2) (local.get $cfav2) (local.get $frthis)))
+                    (if (call $err) (then (return (call $v_undef))))))
+                (call $cdp_throw (local.get $cfA2) (local.get $cfk2) (local.get $cfval2))
+                (if (call $err) (then (return (call $v_undef))))
+                (set! $cfk2 (i32.add (local.get $cfk2) (i32.const 1)))
+                (br $cfl2)))
+              (call $set_prop (local.get $cfA2) (call $mk_str (cstring "length")) (call $num (f64.convert_i32_s (local.get $cflen))))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (local.get $cfA2))))))
       (let $frmapped i32 (i32.const 0))  ;; iterator branch applies mapfn inline (to close on throw)
       (let $fra i32 (call $arr_new (i32.const 4)))
       ;; a real array is ITERABLE (Array.prototype[@@iterator]); Array.from must use the iterator
