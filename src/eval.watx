@@ -6250,6 +6250,14 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Array Iterator.prototype.next called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@arr")))
         (then (call $throw_type (cstring "TypeError") (cstring "Array Iterator.prototype.next called on a non-iterator")) (return (call $v_undef))))
+      ;; sticky done: once the iterator has run past the end it stays done — a later push/grow must NOT
+      ;; resurrect it (spec sets [[IteratedArrayLike]] to undefined at completion).
+      (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@done"))
+        (then
+          (let $itd i32 (call $obj_new (i32.const 2)))
+          (call $scope_define (local.get $itd) (cstring "value") (call $v_undef))
+          (call $scope_define (local.get $itd) (cstring "done") (call $v_true))
+          (return (call $mk_obj (local.get $itd)))))
       (let $itarrv i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@arr"))))
       (let $itarr i32 (call $val_payload (local.get $itarrv)))
       ;; a live TypedArray @@arr: read its length via ta_live_len (resize-aware; 0 if OOB) and its
@@ -6271,7 +6279,8 @@
       (if (i32.ge_s (local.get $itix) (local.get $itlen))
         (then
           (call $scope_define (local.get $itres) (cstring "value") (call $v_undef))
-          (call $scope_define (local.get $itres) (cstring "done") (call $v_true)))
+          (call $scope_define (local.get $itres) (cstring "done") (call $v_true))
+          (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@done") (call $v_true)))  ;; latch: stay done even if the array grows later
         (else
           (let $itval i64 (call $v_undef))
           (if (i32.eq (local.get $itkind) (i32.const 0)) (then (set! $itval (call $num (f64.convert_i32_s (local.get $itix))))))
@@ -8081,12 +8090,29 @@
           (return (local.get $rA))))
       (if (i32.eq (local.get $id) (i32.const 71))  ;; reverse() in place
         (then
+          ;; spec: for each pair (lower, upper) HasProperty each side; swap present values, and MOVE+DELETE
+          ;; when only one side is present (a hole must stay a hole, incl. one inherited from the proto).
           (let $i i32 (i32.const 0))
           (let $j i32 (i32.sub (local.get $n) (i32.const 1)))
           (block $re (loop $rl (br_if $re (i32.ge_s (local.get $i) (local.get $j)))
-            (let $t i64 (call $amut_get (local.get $thisv) (local.get $arr) (local.get $i)))
-            (call $amut_set (local.get $thisv) (local.get $arr) (local.get $i) (call $amut_get (local.get $thisv) (local.get $arr) (local.get $j)))
-            (call $amut_set (local.get $thisv) (local.get $arr) (local.get $j) (local.get $t))
+            ;; spec order: HasProperty(lower), Get(lower) [a getter may shrink the array], THEN
+            ;; HasProperty(upper), Get(upper) — the upper HasProperty is observed AFTER the lower get.
+            (let $lex i32 (call $dense_visit (local.get $thisv) (local.get $arr) (local.get $i)))  ;; HasProperty(lower)
+            (let $lv i64 (if i64 (local.get $lex) (then (call $dense_get (local.get $thisv) (local.get $arr) (local.get $i))) (else (call $v_undef))))
+            (if (call $err) (then (return (call $v_undef))))
+            (let $uex i32 (call $dense_visit (local.get $thisv) (local.get $arr) (local.get $j)))  ;; HasProperty(upper) — after lower's get
+            (let $uv i64 (if i64 (local.get $uex) (then (call $dense_get (local.get $thisv) (local.get $arr) (local.get $j))) (else (call $v_undef))))
+            (if (call $err) (then (return (call $v_undef))))
+            (if (i32.and (local.get $lex) (local.get $uex))
+              (then (call $amut_set (local.get $thisv) (local.get $arr) (local.get $i) (local.get $uv)) (if (call $err) (then (return (call $v_undef))))
+                    (call $amut_set (local.get $thisv) (local.get $arr) (local.get $j) (local.get $lv)) (if (call $err) (then (return (call $v_undef)))))
+              (else (if (i32.and (i32.eqz (local.get $lex)) (local.get $uex))
+                (then (call $amut_set (local.get $thisv) (local.get $arr) (local.get $i) (local.get $uv)) (if (call $err) (then (return (call $v_undef))))
+                      (call $cw_delete (local.get $thisv) (local.get $arr) (local.get $j)) (if (call $err) (then (return (call $v_undef)))))
+                (else (if (i32.and (local.get $lex) (i32.eqz (local.get $uex)))
+                  (then (call $cw_delete (local.get $thisv) (local.get $arr) (local.get $i)) (if (call $err) (then (return (call $v_undef))))
+                        (call $amut_set (local.get $thisv) (local.get $arr) (local.get $j) (local.get $lv)) (if (call $err) (then (return (call $v_undef)))))
+                  (else))))))  ;; neither present → nothing
             (set! $i (i32.add (local.get $i) (i32.const 1))) (set! $j (i32.sub (local.get $j) (i32.const 1))) (br $rl)))
           (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 72))  ;; filter(fn)
