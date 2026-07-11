@@ -5871,8 +5871,12 @@
         (let $v i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (let $mo i64 (i64.load (i32.add (local.get $stack) (local.get $t))))
+        ;; a PRIVATE method (#name) is non-writable AND non-configurable (attr 0): so `this.#m = v` finds
+        ;; an inherited non-writable data prop → PutValue throws (private methods are read-only, spec).
+        ;; A public method is {W,C} non-enumerable (attr 12).
         (if (call $is_object (local.get $mo))
-          (then (call $scope_define_attr (call $val_payload (local.get $mo)) (local.get $nm) (local.get $v) (i32.const 12))))  ;; W|C, non-enumerable
+          (then (call $scope_define_attr (call $val_payload (local.get $mo)) (local.get $nm) (local.get $v)
+                  (if i32 (i32.eq (call $str_byte (local.get $nm) (i32.const 0)) (i32.const 35)) (then (i32.const 0)) (else (i32.const 12))))))
         (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 87))  ;; DEFMETH_KEY — [obj, key, fn] → non-enum {W,C} method, infer name from key
