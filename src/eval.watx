@@ -4678,6 +4678,9 @@
     (set! $fseen (i32.or (local.get $fseen) (local.get $fbit)))
     (set! $fi (i32.add (local.get $fi) (i32.const 1)))
     (br $fvl)))
+  ;; 'u' (16) and 'v' (128) are mutually exclusive → SyntaxError
+  (if (i32.eq (i32.and (local.get $fseen) (i32.const 144)) (i32.const 144))
+    (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression flags: u and v cannot be combined")) (return (call $v_undef))))
   ;; re-initialize the regex object in place + reset lastIndex
   (let $rs i32 (call $val_payload (local.get $thisv)))
   (call $scope_define_attr (local.get $rs) (cstring "__re_src__") (call $mk_str (local.get $pat)) (i32.const 0))
@@ -8411,6 +8414,9 @@
         (set! $fseen (i32.or (local.get $fseen) (local.get $fbit)))
         (set! $fi (i32.add (local.get $fi) (i32.const 1)))
         (br $fvl)))
+      ;; 'u' (16) and 'v' (128) are mutually exclusive → SyntaxError
+      (if (i32.eq (i32.and (local.get $fseen) (i32.const 144)) (i32.const 144))
+        (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression flags: u and v cannot be combined")) (return (call $v_undef))))
       ;; validate character-class ranges: a `lo-hi` range with code(lo) > code(hi) is a SyntaxError
       ;; (Pattern early error). Conservative — only when BOTH endpoints are UNESCAPED single ASCII
       ;; chars (escaped / multi-byte / class-escape endpoints are skipped, never false-flagged).
