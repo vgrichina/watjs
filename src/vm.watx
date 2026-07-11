@@ -1044,7 +1044,7 @@
               (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']' → [obj, key]
               (call $vm_emit_op (local.get $code) (i32.const 102))  ;; ToPropertyKey(key) NOW — before the value expr (spec order)
               (if (i32.eq (call $tok_kind) (i32.const 15))  ;; computed method
-                (then (i32.store (i32.const 236) (local.get $ogen)) (i32.store (i32.const 232) (local.get $oasync)) (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1))) (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; → [obj, key, fn]
+                (then (i32.store (i32.const 236) (local.get $ogen)) (i32.store (i32.const 232) (local.get $oasync)) (i32.store (i32.const 692) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1))) (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; computed method → no .prototype / non-constructable (reg 692); → [obj, key, fn]
                 (else (call $next_token) (call $vm_c_expr (local.get $code))))  ;; ': value'
               (call $vm_emit_op (local.get $code) (i32.const 101)))  ;; DEFDATA_OWN — computed key never triggers the __proto__ proto-setter
             (else (if (i32.eq (call $tok_kind) (i32.const 2))  ;; "string": value
