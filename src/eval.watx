@@ -9582,6 +9582,14 @@
           (if (i32.and (i32.or (call $str_eq (local.get $fks) (cstring "length")) (call $str_eq (local.get $fks) (cstring "name")))
                        (call $fn_own (call $val_payload (local.get $ob)) (local.get $fks)))
             (then
+              ;; defineProperty may have materialized name/length into the fn's own-prop scope with
+              ;; non-default attrs (e.g. enumerable:true) — that entry is authoritative over the synthetic.
+              (let $fmsc i32 (if i32 (i32.and (i32.ge_s (i32.load (call $val_payload (local.get $ob))) (i32.const 1448232526)) (i32.le_s (i32.load (call $val_payload (local.get $ob))) (i32.const 1448232528)))
+                (then (call $fn_ownsc_peek (call $val_payload (local.get $ob))))
+                (else (i32.load (i32.add (call $val_payload (local.get $ob)) (i32.const 12))))))
+              (if (local.get $fmsc)
+                (then (let $fmsl i32 (call $scope_find_local (local.get $fmsc) (local.get $fks)))
+                  (if (local.get $fmsl) (then (return (call $make_descriptor (local.get $fmsl)))))))
               (let $fdr i32 (call $obj_new (i32.const 4)))
               (call $scope_define (local.get $fdr) (cstring "value") (call $get_prop (local.get $ob) (call $mk_str (local.get $fks))))
               (call $scope_define (local.get $fdr) (cstring "writable") (call $v_false))
