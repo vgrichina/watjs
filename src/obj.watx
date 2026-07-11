@@ -812,6 +812,9 @@
           (if (call $is_object (local.get $vproto))
             (then
               (let $vsup i32 (call $scope_find_local (call $val_payload (local.get $vproto)) (cstring "@@super")))
+              ;; an Object.setPrototypeOf'd function [[Prototype]] (@@fnproto) inherits the parent ctor's
+              ;; statics too (e.g. NativeError ctors → Error's static members)
+              (if (i32.eqz (local.get $vsup)) (then (set! $vsup (call $scope_find_local (call $val_payload (local.get $vproto)) (cstring "@@fnproto")))))
               (if (local.get $vsup)
                 (then (if (call $is_function (i64.load (local.get $vsup)))
                   (then
