@@ -1165,7 +1165,7 @@
   (let $isdeval i32 (i32.load (i32.const 876)))
   (i32.store (i32.const 876) (i32.const 0))
   ;; direct-eval marker bitfield: bit0=is-direct-eval, bit1=super-property-allowed(reg868), bit2=super()-allowed(reg884)
-  (let $devmark i32 (if i32 (local.get $isdeval) (then (i32.or (i32.const 1) (i32.or (if i32 (i32.load (i32.const 868)) (then (i32.const 2)) (else (i32.const 0))) (if i32 (i32.load (i32.const 884)) (then (i32.const 4)) (else (i32.const 0)))))) (else (i32.const 0))))
+  (let $devmark i32 (if i32 (local.get $isdeval) (then (i32.or (i32.const 1) (i32.or (if i32 (i32.load (i32.const 868)) (then (i32.const 2)) (else (i32.const 0))) (i32.or (if i32 (i32.load (i32.const 884)) (then (i32.const 4)) (else (i32.const 0))) (if i32 (i32.load (i32.const 388)) (then (i32.const 8)) (else (i32.const 0))))))) (else (i32.const 0))))  ;; bit3 = caller strict (direct eval inherits strictness)
   (call $next_token)  ;; '('
   (let $spc i32 (call $cursor_save))
   (let $sphas i32 (i32.const 0)) (let $spd i32 (i32.const 0))
@@ -4255,7 +4255,7 @@
   (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 772) (call $heap_alloc (i32.const 512)))  ;; finally stack base (moved 340→772: 340 overlapped the i64 Function.prototype @336-343, so nested eval/Function-ctor corrupted Function.prototype)
   (i32.store (i32.const 360) (i32.const 0))  ;; innermost loop's finally-base
   (i32.store (i32.const 372) (i32.const 0)) (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))  ;; fn-hoist position list
-  (i32.store (i32.const 388) (i32.const 0))  ;; compile-time strict-mode flag (lexically inherited)
+  (i32.store (i32.const 388) (i32.load (i32.const 892))) (i32.store (i32.const 892) (i32.const 0))  ;; compile-time strict flag: seeded from reg 892 (a DIRECT eval inherits its caller's strictness); 0 for a fresh program
   ;; Size the code buffer to the source: bytecode is bounded by a small multiple
   ;; of source length (densest real case ~5 bytes/char; 16 is a safe ceiling),
   ;; plus a fixed 128 KB base that covers the always-compiled Error prelude. A
@@ -7014,6 +7014,7 @@
   ;; super-property allowed, bit2=caller's super() allowed. A direct eval inherits the caller's context.
   (i32.store (i32.const 872) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 2)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 868 (super property)
   (i32.store (i32.const 888) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 4)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 884 (super call)
+  (i32.store (i32.const 892) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 8)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 388 seed (direct eval inherits caller strict); consumed by vm_compile_prog
   (i32.store (i32.const 880) (i32.const 0))
   (let $code i32 (call $vm_compile_prog (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)) (i32.const 0)))  ;; nested eval: reuse the caller's existing prelude bindings
   (if (call $err) (then (return (call $v_undef))))  ;; SyntaxError → propagates
