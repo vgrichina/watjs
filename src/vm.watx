@@ -1539,6 +1539,27 @@
             (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.eq (call $tok_kind) (i32.const 53))))))
         (then (call $vm_emit_op (local.get $code) (i32.const 95)) (call $vm_emit_op (local.get $code) (local.get $din)) (return)))
       (call $look_restore)))  ;; member access / call follows → fall through to the reference path
+  ;; `delete super.name` / `delete super[expr]` — deleting a SuperReference is a runtime ReferenceError
+  ;; (spec 13.5.1.2 step 5.a). The expr IS evaluated (GetValue) but NOT ToPropertyKey'd, so a throwing
+  ;; toString on the key does NOT run. super property is lexically gated by reg 868 (SyntaxError else).
+  (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "super")))
+    (then
+      (if (i32.eqz (i32.load (i32.const 868)))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'super' keyword unexpected here")) (return)))
+      (call $next_token)  ;; consume 'super'
+      ;; GetThisBinding first (spec MakeSuperPropertyReference step 2) — reading `this` throws a
+      ;; ReferenceError when it is still uninitialized (derived ctor before super()), BEFORE the key expr.
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 11))  ;; LOADVAR this; POP
+      (if (i32.eq (call $tok_kind) (i32.const 23))  ;; .name
+        (then (call $next_token) (drop (call $ident_name)) (call $next_token))
+        (else (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [expr] — evaluate the key for its side effects, then discard
+          (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11)) (call $next_token))
+          (else (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'super' keyword unexpected here")) (return)))))
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "ReferenceError"))
+      (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (cstring "Cannot delete a super property")))
+      (call $vm_emit_op (local.get $code) (i32.const 46)) (call $vm_emit_op (local.get $code) (i32.const 1))  ;; NEW ReferenceError(msg)
+      (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW
+      (return)))
   (call $vm_c_primary (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
