@@ -423,7 +423,9 @@
 
 ;; push every own key string of a property scope into $out (enumerable only,
 ;; unless $allNames); skips @@ internal/symbol keys.
-(func $push_scope_keys (param $out i32) (param $sc i32) (param $allNames i32) (effects)
+;; $skipfnmeta: when 1 (a function's own-prop scope), omit length/name/prototype here — the caller emits
+;; them first in their canonical creation-order position (they exist since function creation).
+(func $push_scope_keys (param $out i32) (param $sc i32) (param $allNames i32) (param $skipfnmeta i32) (effects)
   (if (i32.eqz (local.get $sc)) (then (return)))
   (let $cnt i32 (call $scope_count (local.get $sc)))
   ;; spec OwnPropertyKeys order: integer-index keys ascending, THEN string keys in
@@ -457,7 +459,8 @@
     (let $kp2 i32 (i32.load (local.get $e2)))
     (if (i32.and (f64.lt (call $str_canon_index (local.get $kp2)) (f64.const 0))
           (i32.and (i32.eqz (call $is_internal_key (local.get $kp2)))
-            (i32.or (local.get $allNames) (i32.ne (call $entry_enumerable (i32.add (local.get $e2) (i32.const 8))) (i32.const 0)))))
+            (i32.and (i32.or (local.get $allNames) (i32.ne (call $entry_enumerable (i32.add (local.get $e2) (i32.const 8))) (i32.const 0)))
+              (i32.eqz (i32.and (local.get $skipfnmeta) (i32.or (call $str_eq (local.get $kp2) (cstring "length")) (i32.or (call $str_eq (local.get $kp2) (cstring "name")) (call $str_eq (local.get $kp2) (cstring "prototype")))))))))
       (then (call $arr_push (local.get $out) (call $mk_str (local.get $kp2)))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $kl))))
 
@@ -681,7 +684,7 @@
       ;; `length` is a non-enumerable own prop — getOwnPropertyNames includes it
       ;; (after the indices), Object.keys/for-in (allNames=0) don't.
       (if (local.get $allNames) (then (call $arr_push (local.get $out) (call $mk_str (cstring "length")))))
-      (call $push_scope_keys (local.get $out) (i32.load (i32.add (local.get $aa) (i32.const 12))) (local.get $allNames))
+      (call $push_scope_keys (local.get $out) (i32.load (i32.add (local.get $aa) (i32.const 12))) (local.get $allNames) (i32.const 0))
       (return (local.get $out))))
   (if (call $is_string (local.get $a))  ;; string: index chars (enumerable) then length (allNames only)
     (then
@@ -708,7 +711,7 @@
             (br_if $tae (i32.ge_s (local.get $tai) (local.get $talen)))
             (call $arr_push (local.get $out) (call $mk_str (call $num_to_str (f64.convert_i32_s (local.get $tai)))))
             (set! $tai (i32.add (local.get $tai) (i32.const 1))) (br $tal)))))
-      (call $push_scope_keys (local.get $out) (call $val_payload (local.get $a)) (local.get $allNames))))
+      (call $push_scope_keys (local.get $out) (call $val_payload (local.get $a)) (local.get $allNames) (i32.const 0))))
   ;; functions can carry own enumerable props (fn.a=1, defineProperty): VM functions
   ;; keep them in the @(48+np*4) own-prop scope, natives in @12 fn_props.
   (if (call $is_function (local.get $a))
@@ -720,16 +723,28 @@
       ;; getOwnPropertyNames includes the non-enumerable synthetic own keys length, name, prototype
       ;; (spec order: length, name, then own props, with prototype after name). Only in allNames mode,
       ;; and only when not already present as a defineProperty'd entry in the scope (avoid duplicates).
-      (if (local.get $allNames)
-        (then
-          (if (i32.and (call $fn_own (local.get $fp) (cstring "length")) (i32.eqz (if i32 (local.get $fsc) (then (call $scope_find_local (local.get $fsc) (cstring "length"))) (else (i32.const 0)))))
-            (then (call $arr_push (local.get $out) (call $mk_str (cstring "length")))))
-          (if (i32.and (call $fn_own (local.get $fp) (cstring "name")) (i32.eqz (if i32 (local.get $fsc) (then (call $scope_find_local (local.get $fsc) (cstring "name"))) (else (i32.const 0)))))
-            (then (call $arr_push (local.get $out) (call $mk_str (cstring "name")))))
-          (if (i32.and (call $fn_own (local.get $fp) (cstring "prototype")) (i32.eqz (if i32 (local.get $fsc) (then (call $scope_find_local (local.get $fsc) (cstring "prototype"))) (else (i32.const 0)))))
-            (then (call $arr_push (local.get $out) (call $mk_str (cstring "prototype")))))))
-      (if (local.get $fsc) (then (call $push_scope_keys (local.get $out) (local.get $fsc) (local.get $allNames))))))
+      ;; length, name, prototype are created at function creation → they enumerate FIRST in creation
+      ;; order (length, name, prototype), BEFORE user props, even after defineProperty materializes them
+      ;; into the scope. push_scope_keys then SKIPS these three (skipfnmeta=1) to avoid re-emitting them at
+      ;; their scope-insertion position.
+      (call $push_fnmeta_key (local.get $out) (local.get $fp) (local.get $fsc) (cstring "length") (local.get $allNames))
+      (call $push_fnmeta_key (local.get $out) (local.get $fp) (local.get $fsc) (cstring "name") (local.get $allNames))
+      (call $push_fnmeta_key (local.get $out) (local.get $fp) (local.get $fsc) (cstring "prototype") (local.get $allNames))
+      (if (local.get $fsc) (then (call $push_scope_keys (local.get $out) (local.get $fsc) (local.get $allNames) (i32.const 1))))))
   (local.get $out))
+
+;; emit a function's synthetic meta key (length/name/prototype) in canonical position iff it's an own
+;; prop AND (allNames OR — when materialized via defineProperty — its own entry is enumerable). An
+;; un-materialized default is non-enumerable, so it only shows under allNames (getOwnPropertyNames).
+(func $push_fnmeta_key (param $out i32) (param $fp i32) (param $fsc i32) (param $key i32) (param $allNames i32) (effects)
+  (if (i32.eqz (call $fn_own (local.get $fp) (local.get $key))) (then (return)))
+  (let $mat i32 (if i32 (local.get $fsc) (then (call $scope_find_local (local.get $fsc) (local.get $key))) (else (i32.const 0))))
+  (let $emit i32 (local.get $allNames))
+  ;; nested ifs (i32.and isn't short-circuit → entry_enumerable would deref a 0 slot)
+  (if (i32.eqz (local.get $emit))
+    (then (if (i32.ne (local.get $mat) (i32.const 0))
+      (then (if (i32.ne (call $entry_enumerable (local.get $mat)) (i32.const 0)) (then (set! $emit (i32.const 1))))))))
+  (if (local.get $emit) (then (call $arr_push (local.get $out) (call $mk_str (local.get $key))))))
 
 ;; for-in enumeration (EnumerateObjectProperties): own + INHERITED enumerable
 ;; string keys, walking the [[Prototype]] chain. A key already visited at a lower
