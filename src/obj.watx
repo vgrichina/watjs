@@ -33,6 +33,24 @@
 ;; Canonical array index encoded in a string ("0".."2147483647", no leading
 ;; zeros, no sign/dot) → that index, else -1. (Indices >= 2^31 exceed our i32
 ;; element addressing and are treated as named properties.)
+;; canonical array-index classification for OwnPropertyKeys ordering: a String that is the ToString of
+;; an integer in [0, 2^32-1) is an "array index" (returns it as f64); else -1.0. Unlike str_array_index
+;; (which caps at 2^31 for i32 element storage), this covers the full spec index range up to 2^32-2.
+(func $str_canon_index (param $ks i32) (result f64) (effects)
+  (let $n i32 (call $str_len (local.get $ks)))
+  (if (i32.eqz (local.get $n)) (then (return (f64.const -1))))
+  (if (i32.and (i32.gt_s (local.get $n) (i32.const 1)) (i32.eq (call $str_byte (local.get $ks) (i32.const 0)) (i32.const 48))) (then (return (f64.const -1))))  ;; leading zero
+  (let $i i32 (i32.const 0))
+  (block $b (loop $l
+    (br_if $b (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $ks) (local.get $i)))
+    (if (i32.or (i32.lt_s (local.get $c) (i32.const 48)) (i32.gt_s (local.get $c) (i32.const 57))) (then (return (f64.const -1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (if (i32.gt_s (local.get $n) (i32.const 10)) (then (return (f64.const -1))))  ;; > 10 digits exceeds 2^32-1
+  (let $v f64 (call $str_to_num (local.get $ks)))
+  (if (f64.ge (local.get $v) (f64.const 4294967295)) (then (return (f64.const -1))))  ;; >= 2^32-1 is a string key, not an index
+  (local.get $v))
+
 (func $str_array_index (param $ks i32) (result i32) (effects)
   (let $n i32 (call $str_len (local.get $ks)))
   (if (i32.eqz (local.get $n)) (then (return (i32.const -1))))
