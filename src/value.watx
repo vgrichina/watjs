@@ -20,10 +20,14 @@
 
 ;; --- box / unbox primitives ---
 
-;; reinterpret an f64 as a JSValue (number)
+;; reinterpret an f64 as a JSValue (number). A NaN is canonicalized to the POSITIVE quiet NaN
+;; (0x7FF8…): a negative NaN (0xFFF8…, e.g. from `-NaN`) would otherwise collide with the boxed
+;; (sign-bit-1) tag space — is_number would read it as a boxed value and `-NaN === -NaN` would be true.
 (func $num (param $d f64) (result i64)
   (effects)
-  (i64.reinterpret_f64 (local.get $d)))
+  (if i64 (f64.ne (local.get $d) (local.get $d))
+    (then (i64.const 0x7FF8000000000000))
+    (else (i64.reinterpret_f64 (local.get $d)))))
 
 ;; reinterpret a JSValue as f64 (caller must know it's a number)
 (func $tonum_raw (param $v i64) (result f64)
