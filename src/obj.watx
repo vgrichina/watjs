@@ -1559,7 +1559,7 @@
                   (if (call $is_function (local.get $sset))
                     (then (let $sav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $sav) (local.get $val)) (drop (call $call_val (local.get $sset) (i32.const 1) (local.get $sav) (local.get $cont)))))
                   (return)))
-              (if (i32.eqz (call $entry_writable (local.get $svs))) (then (return)))))  ;; non-writable own → ignore
+              (if (i32.eqz (call $entry_writable (local.get $svs))) (then (call $set_fail) (return)))))  ;; non-writable own → strict throws (e.g. a private static method)
           ;; no own prop: an INHERITED accessor from Function.prototype fires its setter (receiver = fn);
           ;; getter-only or inherited non-writable data refuses. Only reached when svs is absent.
           (if (i32.eqz (local.get $svs))

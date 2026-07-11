@@ -4500,9 +4500,10 @@
     (if (call $str_eq (local.get $pk) (cstring "prototype"))
       (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine the 'prototype' property of a class constructor")) (return)))
     (if (i32.eqz (local.get $kind))
-      (then  ;; method: infer name from key (computed), define non-enumerable {W,C}
+      (then  ;; method: infer name from key (computed); public → {W,C} non-enum, PRIVATE (#name) → read-only (attr 0)
         (call $vm_infer_name (local.get $fn) (local.get $key) (i32.const 0))
-        (call $scope_define_attr (local.get $sc) (local.get $pk) (local.get $fn) (i32.const 12)))
+        (call $scope_define_attr (local.get $sc) (local.get $pk) (local.get $fn)
+          (if i32 (i32.eq (call $str_byte (local.get $pk) (i32.const 0)) (i32.const 35)) (then (i32.const 0)) (else (i32.const 12)))))
       (else  ;; accessor: infer "get "/"set " name, install getter (kind 1) / setter (kind 2)
         (call $vm_infer_name (local.get $fn) (local.get $key) (if i32 (i32.eq (local.get $kind) (i32.const 1)) (then (cstring "get ")) (else (cstring "set "))))
         (call $scope_set_accessor (local.get $sc) (local.get $pk) (i32.eq (local.get $kind) (i32.const 1)) (local.get $fn))
