@@ -597,9 +597,13 @@
       (if (i32.ge_s (i32.load (local.get $spff)) (i32.const 1448232526))  ;; VM fn
         (then
           (let $spfvmp i64 (i64.load (i32.add (local.get $spff) (i32.const 16))))  ;; its .prototype object
+          ;; a lazy .prototype sentinel isn't an object yet — force it via [[Get]] so @@fnproto has a home
+          ;; (a regular function has a lazy .prototype; an arrow/method has none → get_prop is undefined).
+          (if (i32.eqz (call $is_object (local.get $spfvmp)))
+            (then (drop (call $get_prop (local.get $o) (call $mk_str (cstring "prototype")))) (set! $spfvmp (i64.load (i32.add (local.get $spff) (i32.const 16))))))
           (if (call $is_object (local.get $spfvmp))
-            (then (call $scope_define (call $val_payload (local.get $spfvmp)) (cstring "@@fnproto") (local.get $proto)))
-            (else (return (i32.const 0)))))  ;; no .prototype object to hang the marker on → soft-fail
+            (then (call $scope_define (call $val_payload (local.get $spfvmp)) (cstring "@@fnproto") (local.get $proto)))))
+            ;; else (arrow/method, no .prototype): succeed as a no-op — pre-existing behavior (getPrototypeOf → default)
         (else  ;; native fn → @12 props
           (let $spfnp i32 (i32.load (i32.add (local.get $spff) (i32.const 12))))
           (if (local.get $spfnp) (then (call $scope_define (local.get $spfnp) (cstring "@@fnproto") (local.get $proto))))))
