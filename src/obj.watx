@@ -1521,11 +1521,14 @@
       (return)))
   (if (call $is_function (local.get $cont))
     (then
-      ;; 'caller'/'arguments' are the restricted %ThrowTypeError% accessors inherited from
-      ;; Function.prototype — assigning them invokes the throwing setter (no own override here).
-      (if (i32.or (call $str_eq (call $to_prop_key (local.get $key)) (cstring "caller")) (call $str_eq (call $to_prop_key (local.get $key)) (cstring "arguments")))
-        (then (call $throw_type (cstring "TypeError") (cstring "'caller' and 'arguments' are restricted function properties")) (return)))
       (let $sfn i32 (call $val_payload (local.get $cont)))
+      ;; 'caller'/'arguments' assignment invokes the inherited restricted %ThrowTypeError% setter — UNLESS
+      ;; the function has its OWN caller/arguments property (e.g. a class `static set arguments`), which
+      ;; shadows the inherited accessor; then fall through to the normal own-property set below.
+      (let $sfk0 i32 (call $to_prop_key (local.get $key)))
+      (if (i32.or (call $str_eq (local.get $sfk0) (cstring "caller")) (call $str_eq (local.get $sfk0) (cstring "arguments")))
+        (then (if (i32.eqz (call $fn_own (local.get $sfn) (local.get $sfk0)))
+          (then (call $throw_type (cstring "TypeError") (cstring "'caller' and 'arguments' are restricted function properties")) (return)))))
       ;; VM function: own/static props go into its @16 prototype scope (allocate one if absent)
       (if (i32.and (i32.ge_s (i32.load (local.get $sfn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $sfn)) (i32.const 1448232528)))
         (then
@@ -1579,7 +1582,16 @@
       ;; set_fail makes a strict [[Set]] throw instead of silently ignoring it.
       (let $sfs i32 (call $scope_find_local (call $fn_props (local.get $sfn)) (local.get $sfk)))
       (if (local.get $sfs)
-        (then (if (i32.eqz (call $entry_writable (local.get $sfs))) (then (call $set_fail) (return))))
+        (then
+          ;; an own ACCESSOR (e.g. Function.prototype's %ThrowTypeError% caller/arguments) fires its setter
+          (if (call $entry_is_accessor (local.get $sfs))
+            (then
+              (let $sfsset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $sfs))) (i32.const 8))))
+              (if (call $is_function (local.get $sfsset))
+                (then (let $sfsav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $sfsav) (local.get $val)) (drop (call $call_val (local.get $sfsset) (i32.const 1) (local.get $sfsav) (local.get $cont))))
+                (else (call $set_fail)))  ;; getter-only → strict throws
+              (return)))
+          (if (i32.eqz (call $entry_writable (local.get $sfs))) (then (call $set_fail) (return))))
         (else  ;; not an explicit @12 entry: name/length are non-writable computed defaults
           (if (i32.or (call $str_eq (local.get $sfk) (cstring "length")) (call $str_eq (local.get $sfk) (cstring "name")))
             (then (call $set_fail) (return)))
