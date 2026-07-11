@@ -12342,6 +12342,7 @@
   (if (i32.load (i32.const 636)) (then (i32.store (i32.load (i32.const 636)) (local.get $objproto))))  ;; Symbol.prototype
   (if (i32.load (i32.const 500)) (then (i32.store (i32.load (i32.const 500)) (local.get $objproto))))  ;; WeakRef.prototype
   (if (i32.load (i32.const 504)) (then (i32.store (i32.load (i32.const 504)) (local.get $objproto))))  ;; FinalizationRegistry.prototype
+  (if (i32.load (i32.const 152)) (then (i32.store (i32.load (i32.const 152)) (local.get $objproto))))  ;; the global object's [[Prototype]] === Object.prototype (Object.getPrototypeOf(globalThis))
   (i32.store (local.get $mo) (local.get $objproto))  ;; Math object: [[Prototype]] === Object.prototype (it's built before objproto exists)
   (i32.store (local.get $refo) (local.get $objproto))  ;; Reflect: same — built before objproto
   (i32.store (local.get $jo) (local.get $objproto))  ;; JSON: same
