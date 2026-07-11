@@ -8489,7 +8489,7 @@
       (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "sticky")))) (then (set! $fres (call $str_concat (local.get $fres) (cstring "y")))))
       (if (call $err) (then (return (call $v_undef))))
       (return (call $mk_str (local.get $fres)))))
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 292)) (i32.le_s (local.get $id) (i32.const 298)))
+  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 292)) (i32.le_s (local.get $id) (i32.const 298))) (i32.eq (local.get $id) (i32.const 526)))
     (then
       (if (i32.eqz (call $is_object (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "get flag called on non-object")) (return (call $v_undef))))
@@ -8509,6 +8509,7 @@
       (if (i32.eq (local.get $id) (i32.const 295)) (then (set! $bch (i32.const 121))))  ;; sticky y
       (if (i32.eq (local.get $id) (i32.const 296)) (then (set! $bch (i32.const 117))))  ;; unicode u
       (if (i32.eq (local.get $id) (i32.const 297)) (then (set! $bch (i32.const 115))))  ;; dotAll s
+      (if (i32.eq (local.get $id) (i32.const 526)) (then (set! $bch (i32.const 118))))  ;; unicodeSets v
       (return (if i64 (i32.eqz (local.get $rbf)) (then (call $mk_bool (i32.const 0)))
         (else (call $mk_bool (call $str_has_char (local.get $rbf) (local.get $bch))))))))
   (if (i32.eq (local.get $id) (i32.const 101))  ;; regex.test(str)  (this = regex obj)
@@ -11734,6 +11735,7 @@
   (call $scope_define_accessor_attr (local.get $reproto) (cstring "unicode") (call $mk_native (i32.const 296) (cstring "get unicode")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $reproto) (cstring "dotAll") (call $mk_native (i32.const 297) (cstring "get dotAll")) (call $v_undef) (i32.const 5))
   (call $scope_define_accessor_attr (local.get $reproto) (cstring "hasIndices") (call $mk_native (i32.const 298) (cstring "get hasIndices")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $reproto) (cstring "unicodeSets") (call $mk_native (i32.const 526) (cstring "get unicodeSets")) (call $v_undef) (i32.const 5))
   (call $scope_define (local.get $reproto) (cstring "test") (call $mk_native (i32.const 101) (cstring "test")))
   (call $scope_define (local.get $reproto) (cstring "exec") (call $mk_native (i32.const 167) (cstring "exec")))
   (call $scope_define (local.get $reproto) (cstring "compile") (call $mk_native (i32.const 480) (cstring "compile")))  ;; Annex B
