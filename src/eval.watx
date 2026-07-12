@@ -635,6 +635,92 @@
     (then (call $throw_type (cstring "TypeError") (cstring "proxy preventExtensions: trap returned true but the target is still extensible")) (return (i32.const 0))))
   (i32.const 1))
 
+;; SetIntegrityLevel(px, level) steps 3-4/5 for a Proxy (step 1-2 [[PreventExtensions]] is done by the
+;; caller): keys = [[OwnPropertyKeys]] (ownKeys trap), then per key DefinePropertyOrThrow with
+;; {configurable:false} (seal), or for freeze first [[GetOwnProperty]] and add writable:false for a data
+;; property (accessors get only configurable:false). Each define fires the Proxy defineProperty trap.
+;; A Proxy's [[OwnPropertyKeys]] as a fresh array (strings + symbols), firing the ownKeys trap ONCE if
+;; present, else the target's full key list. own_enum_keys(px,1) alone drops the target's symbols in the
+;; trap-less forward case, so append getOwnPropertySymbols(target) there (the target is not a proxy).
+(func $proxy_ownkeys_all (param $px i64) (result i32) (effects)
+  (let $trap i64 (call $proxy_trap (local.get $px) (cstring "ownKeys")))
+  (if (call $err) (then (return (call $arr_new (i32.const 1)))))
+  (if (call $is_function (local.get $trap))
+    (then (return (call $proxy_own_keys (local.get $px) (local.get $trap)))))
+  (let $keys i32 (call $own_enum_keys (call $proxy_target (local.get $px)) (i32.const 1)))  ;; target string names
+  (let $sv i64 (call $call_native (i32.const 248) (i32.const 1) (call $argv1 (call $proxy_target (local.get $px))) (call $v_undef)))  ;; target own symbols
+  (if (call $err) (then (return (local.get $keys))))
+  (let $sa i32 (call $val_payload (local.get $sv)))
+  (let $sj i32 (i32.const 0))
+  (block $se (loop $sl
+    (br_if $se (i32.ge_s (local.get $sj) (call $arr_len (local.get $sa))))
+    (call $arr_push (local.get $keys) (call $arr_get (local.get $sa) (local.get $sj)))
+    (set! $sj (i32.add (local.get $sj) (i32.const 1))) (br $sl)))
+  (local.get $keys))
+
+;; TestIntegrityLevel(px, level) for a Proxy → 1 if sealed(freeze=0)/frozen(freeze=1): IsExtensible must
+;; be false, then per [[OwnPropertyKeys]] the [[GetOwnProperty]] must report non-configurable (and, for
+;; frozen, every data property non-writable). Fires isExtensible, ownKeys, and per-key gOPD traps.
+(func $proxy_test_integrity (param $px i64) (param $freeze i32) (result i32) (effects)
+  (let $ext i32 (call $truthy (call $call_native (i32.const 163) (i32.const 1) (call $argv1 (local.get $px)) (call $v_undef))))  ;; IsExtensible
+  (if (call $err) (then (return (i32.const 0))))
+  (if (local.get $ext) (then (return (i32.const 0))))
+  (let $keys i32 (call $proxy_ownkeys_all (local.get $px)))
+  (if (call $err) (then (return (i32.const 0))))
+  (let $ti i32 (i32.const 0))
+  (block $te (loop $tl
+    (br_if $te (i32.ge_s (local.get $ti) (call $arr_len (local.get $keys))))
+    (let $tk i64 (call $arr_get (local.get $keys) (local.get $ti)))
+    (let $tdb i32 (call $heap_alloc (i32.const 16)))
+    (i64.store (local.get $tdb) (local.get $px))
+    (i64.store (i32.add (local.get $tdb) (i32.const 8)) (local.get $tk))
+    (let $td i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $tdb) (call $v_undef)))  ;; [[GetOwnProperty]]
+    (if (call $err) (then (return (i32.const 0))))
+    (if (i32.eqz (call $is_undefined (local.get $td)))
+      (then
+        (if (call $truthy (call $get_prop (local.get $td) (call $mk_str (cstring "configurable")))) (then (return (i32.const 0))))
+        (if (local.get $freeze)
+          (then (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $td)))  ;; data descriptor
+            (then (if (call $truthy (call $get_prop (local.get $td) (call $mk_str (cstring "writable")))) (then (return (i32.const 0))))))))))
+    (set! $ti (i32.add (local.get $ti) (i32.const 1))) (br $tl)))
+  (i32.const 1))
+
+(func $proxy_set_integrity (param $px i64) (param $freeze i32) (effects)
+  (let $keys i32 (call $proxy_ownkeys_all (local.get $px)))  ;; [[OwnPropertyKeys]] (strings + symbols), trap once
+  (if (call $err) (then (return)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (call $arr_len (local.get $keys))))
+    (let $k i64 (call $arr_get (local.get $keys) (local.get $i)))
+    (let $nd i32 (call $obj_new (i32.const 4)))
+    (call $scope_define (local.get $nd) (cstring "configurable") (call $v_false))
+    (let $skip i32 (i32.const 0))
+    (if (local.get $freeze)
+      (then
+        (let $db2 i32 (call $heap_alloc (i32.const 16)))
+        (i64.store (local.get $db2) (local.get $px))
+        (i64.store (i32.add (local.get $db2) (i32.const 8)) (local.get $k))
+        (let $cur i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $db2) (call $v_undef)))  ;; [[GetOwnProperty]]
+        (if (call $err) (then (return)))
+        (if (call $is_undefined (local.get $cur))
+          (then (set! $skip (i32.const 1)))  ;; no such own prop → define nothing
+          (else
+            ;; data descriptor (no "get"/"set") → also lock writable
+            (if (i32.eqz (call $truthy (call $js_in (call $mk_str (cstring "get")) (local.get $cur))))
+              (then (if (i32.eqz (call $truthy (call $js_in (call $mk_str (cstring "set")) (local.get $cur))))
+                (then (call $scope_define (local.get $nd) (cstring "writable") (call $v_false))))))))))
+    (if (i32.eqz (local.get $skip))
+      (then
+        (let $db3 i32 (call $heap_alloc (i32.const 24)))
+        (i64.store (local.get $db3) (local.get $px))
+        (i64.store (i32.add (local.get $db3) (i32.const 8)) (local.get $k))
+        (i64.store (i32.add (local.get $db3) (i32.const 16)) (call $mk_obj (local.get $nd)))
+        (let $ok i64 (call $call_native (i32.const 206) (i32.const 3) (local.get $db3) (call $v_undef)))  ;; Reflect.defineProperty (trap)
+        (if (call $err) (then (return)))
+        (if (i32.eqz (call $truthy (local.get $ok)))
+          (then (call $throw_type (cstring "TypeError") (cstring "SetIntegrityLevel: defineProperty failed")) (return)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l))))
+
 ;; own enumerable (or all, if $allNames) key strings of any value → fresh array.
 ;; Arrays yield "0".."len-1" then their @12 named-property keys.
 (func $own_enum_keys (param $a i64) (param $allNames i32) (result i32) (effects)
@@ -6606,6 +6692,8 @@
           (if (call $err) (then (return (call $v_undef))))
           (if (i32.eqz (local.get $fpk))
             (then (call $throw_type (cstring "TypeError") (cstring "Object.freeze: [[PreventExtensions]] returned false")) (return (call $v_undef))))
+          (call $proxy_set_integrity (local.get $fo) (i32.const 1))  ;; SetIntegrityLevel(frozen) steps 3-5
+          (if (call $err) (then (return (call $v_undef))))
           (return (local.get $fo))))
       ;; TypedArray SetIntegrityLevel(frozen): [[PreventExtensions]] returns false for any view over a
       ;; RESIZABLE buffer (→ TypeError), and a non-empty TA's indices reject defineProperty(configurable:
@@ -6676,6 +6764,9 @@
           (if (call $err) (then (return (call $v_undef))))
           (if (i32.eqz (local.get $xok))
             (then (call $throw_type (cstring "TypeError") (cstring "[[PreventExtensions]] returned false")) (return (call $v_undef))))
+          (if (i32.eq (local.get $id) (i32.const 164))  ;; seal → SetIntegrityLevel(sealed) steps 3-4 (preventExtensions stops here)
+            (then (call $proxy_set_integrity (local.get $xo) (i32.const 0))
+              (if (call $err) (then (return (call $v_undef))))))
           (return (local.get $xo))))
       (if (call $is_object (local.get $xo))
         (then
@@ -6754,6 +6845,10 @@
   (if (i32.eq (local.get $id) (i32.const 165))
     (then
       (let $xo i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_proxy (local.get $xo))  ;; TestIntegrityLevel(sealed) via traps
+        (then (let $xspr i32 (call $proxy_test_integrity (local.get $xo) (i32.const 0)))
+          (if (call $err) (then (return (call $v_undef))))
+          (return (call $mk_bool (local.get $xspr)))))
       (if (call $is_array (local.get $xo))  ;; array isSealed: @@sealed marker (and length≥0 always); empty arrays w/ @@sealed
         (then (let $xap i32 (i32.load (i32.add (call $val_payload (local.get $xo)) (i32.const 12)))) (return (call $mk_bool (i32.and (i32.ne (local.get $xap) (i32.const 0)) (if i32 (local.get $xap) (then (i32.ne (call $scope_find_local (local.get $xap) (cstring "@@sealed")) (i32.const 0))) (else (i32.const 0))))))))
       (if (call $is_function (local.get $xo))
@@ -6776,6 +6871,10 @@
   (if (i32.eq (local.get $id) (i32.const 140))  ;; Object.isFrozen(o)
     (then
       (let $io i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (call $is_proxy (local.get $io))  ;; TestIntegrityLevel(frozen) via traps
+        (then (let $ipr i32 (call $proxy_test_integrity (local.get $io) (i32.const 1)))
+          (if (call $err) (then (return (call $v_undef))))
+          (return (call $mk_bool (local.get $ipr)))))
       (if (call $is_array (local.get $io))  ;; array isFrozen: @@frozen marker present
         (then (let $iap i32 (i32.load (i32.add (call $val_payload (local.get $io)) (i32.const 12)))) (return (call $mk_bool (if i32 (local.get $iap) (then (i32.ne (call $scope_find_local (local.get $iap) (cstring "@@frozen")) (i32.const 0))) (else (i32.const 0)))))))
       ;; functions: extensible by default → not frozen unless preventExtensions'd;
