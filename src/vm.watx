@@ -2924,7 +2924,11 @@
                 (call $vm_patch (local.get $code) (local.get $sk))))
             (call $vm_emit_dstr_store (local.get $code) (local.get $nm))))))  ;; store array-element target (binding/assignment)
         (set! $i (i32.add (local.get $i) (i32.const 1)))
-        (if (local.get $isrest) (then (br $ae)))  ;; rest is last
+        ;; a BindingRestElement must be the LAST element: `[...x, y]` / `[...x,]` are SyntaxErrors.
+        (if (local.get $isrest)
+          (then
+            (if (i32.eq (call $tok_kind) (i32.const 20)) (then (br $ae)))  ;; ']' → well-formed, rest is last
+            (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element must be last in a destructuring pattern")) (return)))
         (br_if $ae (i32.eqz (call $eat (i32.const 22))))
         (br $al)))
       (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER (normal completion)
