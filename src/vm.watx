@@ -4238,11 +4238,16 @@
                   (i32.and (call $nl_before)
                     (i32.or (i32.eq (local.get $prevk) (i32.const 1)) (i32.or (i32.eq (local.get $prevk) (i32.const 2))
                     (i32.or (i32.eq (local.get $prevk) (i32.const 3)) (i32.eq (local.get $prevk) (i32.const 20))))))))
-              (then  ;; declaration → compile + bind here (cursor ends at next statement)
-                (let $hfnm i32 (call $vm_c_function (local.get $code)))
-                (if (local.get $hfnm)
-                  (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $hfnm)))
-                  (else (call $vm_emit_op (local.get $code) (i32.const 11))))
+              (then  ;; statement-position function declaration
+                (if (i32.eqz (local.get $bd))
+                  (then  ;; TRUE top level → value-hoist (function bound to its value at program entry)
+                    (let $hfnm i32 (call $vm_c_function (local.get $code)))
+                    (if (local.get $hfnm)
+                      (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $hfnm)))
+                      (else (call $vm_emit_op (local.get $code) (i32.const 11)))))
+                  (else  ;; block-nested (AnnexB B.3.3): var-scoped binding = undefined at program entry; the
+                    ;; block's own execution assigns the function value (Get f before the block sees undefined)
+                    (call $vm_hoist_clause_fn (local.get $code)) (call $next_token)))
                 (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0)))
               (else
                 (if (i32.and (i32.eqz (local.get $bd)) (i32.and (i32.eqz (local.get $pd)) (i32.or (i32.eq (local.get $prevk) (i32.const 16)) (local.get $prevelse))))
