@@ -3253,6 +3253,11 @@
   (let $pstatic i32 (i32.const 0))
   (let $pget i32 (i32.const 0))
   (let $pset i32 (i32.const 0))
+  (let $pgen i32 (i32.const 0))
+  (let $pasync i32 (i32.const 0))
+  (let $ctorcnt i32 (i32.const 0))
+  (let $atkey i32 (i32.const 1))  ;; at a position where a ClassElement key is expected (element start / after a prefix)
+  (let $infield i32 (i32.const 0))  ;; inside a field initializer expression ('=' seen, ';'/ASI not yet)
   (let $prev i32 (i32.const 0))
   (block $done (loop $lp
     (let $k i32 (call $tok_kind))
@@ -3262,26 +3267,50 @@
       (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
     (if (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.eq (local.get $k) (i32.const 20))))
       (then (set! $depth (i32.sub (local.get $depth) (i32.const 1)))
-        (if (i32.eqz (local.get $depth)) (then (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0))))
+        ;; a method body / static-block '}' closing to depth 0 ends the element — but NOT a '}' that closes
+        ;; an object/block literal inside a field initializer (still mid-expression until ';'/ASI).
+        (if (i32.and (i32.eqz (local.get $depth)) (i32.and (i32.eq (local.get $k) (i32.const 18)) (i32.eqz (local.get $infield))))
+          (then (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0)) (set! $pgen (i32.const 0)) (set! $pasync (i32.const 0)) (set! $atkey (i32.const 1))))
         (set! $prev (local.get $k)) (call $next_token) (br $lp)))
     (if (i32.gt_s (local.get $depth) (i32.const 0)) (then (set! $prev (local.get $k)) (call $next_token) (br $lp)))
-    (if (i32.eq (local.get $k) (i32.const 21)) (then (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))  ;; ';'
+    ;; ASI: a newline in a field initializer, before an identifier that could begin a new element, ends it.
+    (if (i32.and (local.get $infield) (i32.and (call $nl_before) (i32.eq (local.get $k) (i32.const 3))))
+      (then (set! $infield (i32.const 0)) (set! $atkey (i32.const 1))))
+    (if (i32.eq (local.get $k) (i32.const 21)) (then (set! $infield (i32.const 0)) (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0)) (set! $pgen (i32.const 0)) (set! $pasync (i32.const 0)) (set! $atkey (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))  ;; ';'
+    (if (i32.eq (local.get $k) (i32.const 24)) (then (set! $atkey (i32.const 0)) (set! $infield (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))  ;; field '=' initializer (a default-param '=' is at depth>0)
+    (if (i32.eq (local.get $k) (i32.const 12)) (then (if (local.get $atkey) (then (set! $pgen (i32.const 1)))) (set! $prev (local.get $k)) (call $next_token) (br $lp)))  ;; '*' generator method
     (if (i32.eq (local.get $k) (i32.const 3))
       (then
-        ;; a private element key (kind-3 token starting with '#', not a '.'-prefixed member access)
-        (if (i32.and (i32.ne (local.get $prev) (i32.const 23)) (i32.eq (call $str_byte (call $ident_name) (i32.const 0)) (i32.const 35)))
+        (if (local.get $atkey)
           (then
-            (let $kind i32 (if i32 (local.get $pget) (then (i32.const 2)) (else (if i32 (local.get $pset) (then (i32.const 3)) (else (i32.const 1))))))
-            (let $r i32 (call $priv_dup_add (local.get $names) (local.get $encs) (local.get $n) (call $ident_name) (local.get $kind) (local.get $pstatic)))
-            (if (i32.lt_s (local.get $r) (i32.const 0)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate private name")) (br $done)))
-            (set! $n (local.get $r))
-            (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0))
-            (set! $prev (local.get $k)) (call $next_token) (br $lp)))
-        (if (call $tok_is_kw (cstring "static")) (then (set! $pstatic (i32.const 1))))
-        (if (call $tok_is_kw (cstring "get")) (then (set! $pget (i32.const 1))))
-        (if (call $tok_is_kw (cstring "set")) (then (set! $pset (i32.const 1))))
+            ;; a private element key (kind-3 token starting with '#')
+            (if (i32.eq (call $str_byte (call $ident_name) (i32.const 0)) (i32.const 35))
+              (then
+                (if (call $str_eq (call $ident_name) (cstring "#constructor"))
+                  (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Classes may not have a private field named #constructor")) (br $done)))
+                (let $kind i32 (if i32 (local.get $pget) (then (i32.const 2)) (else (if i32 (local.get $pset) (then (i32.const 3)) (else (i32.const 1))))))
+                (let $r i32 (call $priv_dup_add (local.get $names) (local.get $encs) (local.get $n) (call $ident_name) (local.get $kind) (local.get $pstatic)))
+                (if (i32.lt_s (local.get $r) (i32.const 0)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate private name")) (br $done)))
+                (set! $n (local.get $r))
+                (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0)) (set! $pgen (i32.const 0)) (set! $pasync (i32.const 0)) (set! $atkey (i32.const 0))
+                (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+            ;; prefix modifiers keep the key-expected position
+            (if (call $tok_is_kw (cstring "static")) (then (set! $pstatic (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+            (if (call $tok_is_kw (cstring "get")) (then (set! $pget (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+            (if (call $tok_is_kw (cstring "set")) (then (set! $pset (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+            (if (call $tok_is_kw (cstring "async")) (then (set! $pasync (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+            ;; a public plain-method `constructor` (no static/get/set/*/async) may occur at most once
+            (if (i32.and (call $str_eq (call $ident_name) (cstring "constructor"))
+                  (i32.eqz (i32.or (local.get $pstatic) (i32.or (local.get $pget) (i32.or (local.get $pset) (i32.or (local.get $pgen) (local.get $pasync)))))))
+              (then
+                (call $look_save) (call $next_token) (let $nk i32 (call $tok_kind)) (call $look_restore)
+                (if (i32.eq (local.get $nk) (i32.const 15))  ;; followed by '(' → a constructor method
+                  (then (set! $ctorcnt (i32.add (local.get $ctorcnt) (i32.const 1)))
+                    (if (i32.ge_s (local.get $ctorcnt) (i32.const 2)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A class may only have one constructor")) (br $done)))))))
+            ;; any other identifier is a (public) key → consume the key-expected position
+            (set! $atkey (i32.const 0)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
         (set! $prev (local.get $k)) (call $next_token) (br $lp)))
-    (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+    (set! $atkey (i32.const 0)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
   (call $cursor_restore (local.get $save)))
 
 (func $vm_c_class (param $code i32) (param $isExpr i32) (effects)
