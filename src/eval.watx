@@ -1957,6 +1957,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@ablen")))
         (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on incompatible receiver")) (return (call $v_undef))))
+      (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@shared"))  ;; ArrayBuffer.prototype getter rejects a SharedArrayBuffer
+        (then (call $throw_type (cstring "TypeError") (cstring "get byteLength called on a SharedArrayBuffer")) (return (call $v_undef))))
       (return (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
   ;; ArrayBuffer.prototype.maxByteLength(506) / resizable(507) getters + resize(505).
   (if (i32.or (i32.eq (local.get $id) (i32.const 506)) (i32.eq (local.get $id) (i32.const 507)))
@@ -1965,6 +1967,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer accessor called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@ablen")))
         (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer accessor called on incompatible receiver")) (return (call $v_undef))))
+      (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@shared"))  ;; resizable/maxByteLength reject a SharedArrayBuffer
+        (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer accessor called on a SharedArrayBuffer")) (return (call $v_undef))))
       (let $abmaxsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@abmax")))
       (if (i32.eq (local.get $id) (i32.const 507))  ;; resizable
         (then (return (call $mk_bool (i32.ne (local.get $abmaxsl) (i32.const 0))))))
@@ -2000,6 +2004,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "get detached called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@abdata")))
         (then (call $throw_type (cstring "TypeError") (cstring "get detached called on incompatible receiver")) (return (call $v_undef))))
+      (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@shared"))  ;; detached getter rejects a SharedArrayBuffer
+        (then (call $throw_type (cstring "TypeError") (cstring "get detached called on a SharedArrayBuffer")) (return (call $v_undef))))
       (return (call $mk_bool (call $is_detached_buf (local.get $thisv))))))
   (if (i32.eq (local.get $id) (i32.const 391))  ;; ArrayBuffer.prototype.slice([begin[, end]])
     (then
@@ -2007,6 +2013,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "slice called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@abdata")))
         (then (call $throw_type (cstring "TypeError") (cstring "slice called on a non-ArrayBuffer")) (return (call $v_undef))))
+      (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@shared"))  ;; ArrayBuffer.prototype.slice rejects a SharedArrayBuffer
+        (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer.prototype.slice called on a SharedArrayBuffer")) (return (call $v_undef))))
       (let $slen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
       (let $sbeg i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.lt_s (local.get $sbeg) (i32.const 0)) (then (set! $sbeg (i32.add (local.get $slen) (local.get $sbeg)))))
