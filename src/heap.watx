@@ -77,6 +77,9 @@
 ;; "__prim__" wrapper slot — excluded from Object.keys / for-in / JSON enumeration.
 (func $is_internal_key (param $ptr i32) (result i32) (effects)
   (if (call $str_eq (local.get $ptr) (cstring "__prim__")) (then (return (i32.const 1))))
+  ;; RegExp internal [[OriginalSource]]/[[OriginalFlags]] slots — hidden from reflection (like __prim__)
+  (if (call $str_eq (local.get $ptr) (cstring "__re_src__")) (then (return (i32.const 1))))
+  (if (call $str_eq (local.get $ptr) (cstring "__re_flags__")) (then (return (i32.const 1))))
   (if (i32.and (i32.ge_s (call $str_len (local.get $ptr)) (i32.const 1)) (i32.eq (call $str_byte (local.get $ptr) (i32.const 0)) (i32.const 35))) (then (return (i32.const 1))))  ;; #privateName → not an own/enumerable property
   (i32.and (i32.ge_s (call $str_len (local.get $ptr)) (i32.const 2))
     (i32.and (i32.eq (call $str_byte (local.get $ptr) (i32.const 0)) (i32.const 64))
