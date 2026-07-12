@@ -4927,8 +4927,14 @@
     (then (return (call $regexp_compile (local.get $thisv) (local.get $argc) (local.get $argv)))))
   (if (i32.eq (local.get $id) (i32.const 483))  ;; %TypedArray% — abstract, not directly callable/constructable
     (then (call $throw_type (cstring "TypeError") (cstring "Abstract class TypedArray not directly constructable")) (return (call $v_undef))))
-  (if (i32.eq (local.get $id) (i32.const 475))  ;; capabilities executor (this = cap obj): capture resolve, reject
+  (if (i32.eq (local.get $id) (i32.const 475))  ;; GetCapabilitiesExecutor (this = cap obj): capture resolve, reject
     (then
+      ;; spec 27.2.1.5.1: if [[Resolve]] or [[Reject]] is already NOT undefined, throw TypeError (a second
+      ;; executor call with a real function is rejected; re-calling with undefined args stays undefined → ok).
+      (if (i32.eqz (call $is_undefined (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@resolve")))))
+        (then (call $throw_type (cstring "TypeError") (cstring "promise capability executor already invoked with resolve")) (return (call $v_undef))))
+      (if (i32.eqz (call $is_undefined (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@reject")))))
+        (then (call $throw_type (cstring "TypeError") (cstring "promise capability executor already invoked with reject")) (return (call $v_undef))))
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@resolve")) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@reject")) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (return (call $v_undef))))
