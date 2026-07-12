@@ -9493,6 +9493,34 @@
       ;; descriptor objects, so ToPropertyDescriptor throws).
       (if (i32.or (call $is_null (local.get $de)) (call $is_undefined (local.get $de)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      ;; a Proxy Properties: spec ObjectDefineProperties over [[OwnPropertyKeys]] (ownKeys trap) then per
+      ;; key [[GetOwnProperty]] (gOPD trap) — enumerable keys get Get(props,key)→ToPropertyDescriptor and
+      ;; DefinePropertyOrThrow onto the target. Walking the scope directly (below) would fire no traps.
+      (if (call $is_proxy (local.get $de))
+        (then
+          (let $pk i32 (call $proxy_ownkeys_all (local.get $de)))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $pi i32 (i32.const 0))
+          (let $gdb i32 (call $heap_alloc (i32.const 24)))
+          (block $ppe (loop $ppl
+            (br_if $ppe (i32.ge_s (local.get $pi) (call $arr_len (local.get $pk))))
+            (let $pkey i64 (call $arr_get (local.get $pk) (local.get $pi)))
+            (i64.store (local.get $gdb) (local.get $de))
+            (i64.store (i32.add (local.get $gdb) (i32.const 8)) (local.get $pkey))
+            (let $pd i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $gdb) (call $v_undef)))  ;; [[GetOwnProperty]]
+            (if (call $err) (then (return (call $v_undef))))
+            (if (i32.eqz (call $is_undefined (local.get $pd)))
+              (then (if (call $truthy (call $get_prop (local.get $pd) (call $mk_str (cstring "enumerable"))))
+                (then
+                  (let $descobj i64 (call $get_prop (local.get $de) (local.get $pkey)))  ;; Get(props, key)
+                  (if (call $err) (then (return (call $v_undef))))
+                  (i64.store (local.get $gdb) (local.get $ob))
+                  (i64.store (i32.add (local.get $gdb) (i32.const 8)) (local.get $pkey))
+                  (i64.store (i32.add (local.get $gdb) (i32.const 16)) (local.get $descobj))
+                  (drop (call $call_native (i32.const 90) (i32.const 3) (local.get $gdb) (call $v_undef)))  ;; DefinePropertyOrThrow
+                  (if (call $err) (then (return (call $v_undef))))))))
+            (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $ppl)))
+          (return (local.get $ob))))
       (if (i32.eqz (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
         (then (set! $de (call $to_object (local.get $de)))))
       (if (i32.and (call $is_object (local.get $ob)) (i32.or (call $is_object (local.get $de)) (i32.or (call $is_function (local.get $de)) (call $is_array (local.get $de)))))
