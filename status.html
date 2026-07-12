@@ -124,20 +124,20 @@
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
   <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
   <div class="meta">
-    <span class="chip">status as of <b>2026-07-05</b></span>
+    <span class="chip">status as of <b>2026-07-11</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>94cb6aa</b></span>
-    <span class="chip"><b>1147</b> commits</span>
+    <span class="chip">@ <b>acd8c8b</b></span>
+    <span class="chip"><b>1288</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">23.4k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">258 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">25.5k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">279 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
-  <div class="card"><div class="n">54.6M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">61.2M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -183,17 +183,17 @@
   <tr><td>4</td><td>threaded-code VM + GC + test262 breadth</td><td><span class="pill wip">in progress</span></td></tr>
 </table>
 
-<h2>Test suites <span class="em">live run · 2026-07-05</span></h2>
+<h2>Test suites <span class="em">live run · 2026-07-11</span></h2>
 <table>
   <tr><th>suite</th><th>files</th><th>pass rate</th></tr>
   <tr><td>self-check <code>test/</code></td><td class="mono">486 / 486</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/batch</code></td><td class="mono">39 / 39</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/broad</code></td><td class="mono">35 / 36</td><td><span class="prate"><span style="width:97%"></span></span><span class="rate good">97%</span></td></tr>
   <tr><td><code>test262/broad2</code></td><td class="mono">30 / 30</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
-  <tr><td><code>test262/broad3</code></td><td class="mono">21 / 24</td><td><span class="prate warn"><span style="width:88%"></span></span><span class="rate warn">88%</span></td></tr>
+  <tr><td><code>test262/broad3</code></td><td class="mono">22 / 24</td><td><span class="prate warn"><span style="width:92%"></span></span><span class="rate warn">92%</span></td></tr>
   <tr><td><code>test262/cases</code></td><td class="mono">4 / 4</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/harness</code></td><td class="mono">31 / 31</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
-  <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">160 / 164</td><td><span class="prate"><span style="width:96%"></span></span><span class="rate good">96%</span></td></tr>
+  <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">161 / 164</td><td><span class="prate"><span style="width:96%"></span></span><span class="rate good">96%</span></td></tr>
 </table>
 
 <h2>Full vendored test262 tree <span class="em">~53k files · 2026-07-05</span></h2>
@@ -216,12 +216,12 @@
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
-  <tr><td class="mono">94cb6aa</td><td>default parameters: a parameter is in TDZ during its own initializer</td></tr>
-  <tr><td class="mono">70ff869</td><td>parser: postfix <code>++</code>/<code>--</code> is a restricted production (no LineTerminator before)</td></tr>
-  <tr><td class="mono">1cead13</td><td>Array callback methods observe <code>length</code> before the <code>IsCallable(callbackfn)</code> check</td></tr>
-  <tr><td class="mono">ebd9e1c</td><td>TypedArray over a <b>resizable</b> buffer: length-tracking floor + species live-length check</td></tr>
-  <tr><td class="mono">934c2b1</td><td>subclass TypedArrays: <code>super()</code> into the native ctor initializes the derived instance</td></tr>
-  <tr><td class="mono">f1410a8</td><td><code>TypedArray.prototype.at</code>: live <code>[[Get]]</code> when the buffer resizes/detaches during coercion</td></tr>
+  <tr><td class="mono">dc04f53</td><td><code>await</code> is a plain identifier outside an async context</td></tr>
+  <tr><td class="mono">c6758cf</td><td>Promise combinators with a custom constructor settle the capability synchronously</td></tr>
+  <tr><td class="mono">68267d3</td><td><code>NewPromiseCapability</code>: executor throws if <code>resolve</code>/<code>reject</code> already set</td></tr>
+  <tr><td class="mono">acd8c8b</td><td>RegExp <code>@@search</code>/<code>@@replace</code>/<code>@@match</code>: <code>ToString(string)</code> throws on a Symbol</td></tr>
+  <tr><td class="mono">9075fe3</td><td><code>Object.seal</code>/<code>freeze</code>/<code>isSealed</code>/<code>isFrozen</code> on a Proxy: full SetIntegrityLevel via traps</td></tr>
+  <tr><td class="mono">38dfbb3</td><td>fire inherited accessors on primitive-wrapper prototypes; ES2025 primitive <code>@@</code> guards</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -302,7 +302,9 @@ const DAILY = [
   ["Jun 20", 22, 1.15], ["Jun 21", 22, 2.81], ["Jun 22", 1, 0.07], ["Jun 23", 4, 0],
   ["Jun 24", 0, 0.25], ["Jun 25", 0, 0], ["Jun 26", 0, 0], ["Jun 27", 0, 0],
   ["Jun 28", 3, 0], ["Jun 29", 16, 0.64], ["Jun 30", 3, 0.56], ["Jul 1", 0, 0],
-  ["Jul 2", 18, 0], ["Jul 3", 45, 2.77], ["Jul 4", 13, 2.13], ["Jul 5", 17, 1.16],
+  ["Jul 2", 18, 0], ["Jul 3", 45, 2.77], ["Jul 4", 13, 2.13], ["Jul 5", 45, 1.90],
+  ["Jul 6", 59, 2.76], ["Jul 7", 18, 1.44], ["Jul 8", 0, 0], ["Jul 9", 0, 0],
+  ["Jul 10", 9, 0.17], ["Jul 11", 27, 1.51],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -317,7 +319,9 @@ const GROWTH = [
   ["Jun 20", 21240, 238], ["Jun 21", 21784, 242], ["Jun 22", 21812, 243], ["Jun 23", 21888, 243],
   ["Jun 24", 21888, 243], ["Jun 25", 21888, 243], ["Jun 26", 21888, 243], ["Jun 27", 21888, 243],
   ["Jun 28", 21933, 244], ["Jun 29", 22066, 246], ["Jun 30", 22158, 247], ["Jul 1", 22158, 247],
-  ["Jul 2", 22398, 249], ["Jul 3", 23045, 254], ["Jul 4", 23155, 256], ["Jul 5", 23421, 258],
+  ["Jul 2", 22398, 249], ["Jul 3", 23045, 254], ["Jul 4", 23155, 256], ["Jul 5", 23816, 262],
+  ["Jul 6", 24575, 269], ["Jul 7", 25029, 274], ["Jul 8", 25029, 274], ["Jul 9", 25029, 274],
+  ["Jul 10", 25163, 276], ["Jul 11", 25523, 279],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
@@ -335,7 +339,8 @@ const HUMAN = {
   "Jun 21": { i:["change approach — go for the bold architectural changes needed to unblock the rest"], n:20 },
   "Jun 22": { n:1 }, "Jun 24": { n:3 }, "Jun 29": { n:8 }, "Jun 30": { n:5 },
   "Jul 2": { i:["make sure to at least push the latest changes"], n:0 },
-  "Jul 3": { n:23 }, "Jul 4": { n:14 }, "Jul 5": { n:9 },
+  "Jul 3": { n:23 }, "Jul 4": { n:14 }, "Jul 5": { n:18 }, "Jul 6": { n:24 }, "Jul 7": { n:11 },
+  "Jul 8": { n:1 }, "Jul 10": { n:1 }, "Jul 11": { n:14 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
