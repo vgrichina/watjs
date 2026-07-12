@@ -647,6 +647,10 @@
   (if (call $err) (then (return (call $arr_new (i32.const 1)))))
   (if (call $is_function (local.get $trap))
     (then (return (call $proxy_own_keys (local.get $px) (local.get $trap)))))
+  ;; no own ownKeys trap → forward to the target's [[OwnPropertyKeys]]. A proxy target recurses (so a
+  ;; nested trap's exact key order + symbols are preserved and not double-counted with the symbols append).
+  (if (call $is_proxy (call $proxy_target (local.get $px)))
+    (then (return (call $proxy_ownkeys_all (call $proxy_target (local.get $px))))))
   (let $keys i32 (call $own_enum_keys (call $proxy_target (local.get $px)) (i32.const 1)))  ;; target string names
   (let $sv i64 (call $call_native (i32.const 248) (i32.const 1) (call $argv1 (call $proxy_target (local.get $px))) (call $v_undef)))  ;; target own symbols
   (if (call $err) (then (return (local.get $keys))))
@@ -7304,6 +7308,10 @@
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 204))  ;; Reflect.ownKeys(target) → own string keys ++ own symbol keys
     (then
+      ;; a Proxy's [[OwnPropertyKeys]] must be returned in its EXACT order (trap order, symbols interleaved),
+      ;; not split into names-then-symbols — go straight through proxy_ownkeys_all (fires the trap once).
+      (if (call $is_proxy (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+        (then (return (call $mk_arr (call $proxy_ownkeys_all (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
       (let $oknames i64 (call $call_native (i32.const 112) (local.get $argc) (local.get $argv) (call $v_undef)))  ;; getOwnPropertyNames (indices, then strings)
       (if (call $err) (then (return (call $v_undef))))
       (let $oksyms i64 (call $call_native (i32.const 248) (local.get $argc) (local.get $argv) (call $v_undef)))  ;; getOwnPropertySymbols
