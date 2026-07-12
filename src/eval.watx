@@ -5050,6 +5050,16 @@
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_undefined (local.get $ped)) (then (return (call $v_false))))
           (return (call $get_prop (local.get $ped) (call $mk_str (cstring "enumerable"))))))
+      ;; Proxy: [[GetOwnProperty]] (native 156 fires the gOPD trap / forwards to target) then read enumerable
+      (if (call $is_proxy (local.get $thisv))
+        (then
+          (let $pxeb i32 (call $heap_alloc (i32.const 16)))
+          (i64.store (local.get $pxeb) (local.get $thisv))
+          (i64.store (i32.add (local.get $pxeb) (i32.const 8)) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (let $pxed i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $pxeb) (call $v_undef)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (call $is_undefined (local.get $pxed)) (then (return (call $v_false))))
+          (return (call $get_prop (local.get $pxed) (call $mk_str (cstring "enumerable"))))))
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (return (call $v_false))))
       (let $pslot i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (local.get $pk)))
       (if (i32.eqz (local.get $pslot)) (then (return (call $v_false))))
