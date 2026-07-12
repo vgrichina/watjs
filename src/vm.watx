@@ -1665,9 +1665,73 @@
     (then (call $next_token) (call $vm_c_delete_operand (local.get $code)) (return)))
   (call $vm_c_pow (local.get $code)))
 
+;; Early Error (parse phase): `delete` applied to a MemberExpression.PrivateName /
+;; CallExpression.PrivateName — including the case where the operand is wholly wrapped
+;; in cover-parens ("delete ((this.#x))"). Token pre-scan from the current cursor:
+;; skip N leading '(' , walk one member/call chain tracking whether its LAST access is a
+;; '.#private', then require exactly N trailing ')' and no continuation (a following
+;; '.'/'['/'('/'`' means the private access wasn't the outermost op → legal). Returns 1
+;; iff the operand is such a private-final reference. Cursor is fully restored.
+(func $vm_delete_priv_check (result i32) (effects)
+  (let $save i32 (call $cursor_save))
+  (let $nlp i32 (i32.const 0))
+  (block $pd (loop $pl
+    (br_if $pd (i32.ne (call $tok_kind) (i32.const 15)))  ;; '('
+    (set! $nlp (i32.add (local.get $nlp) (i32.const 1))) (call $next_token) (br $pl)))
+  (let $ok i32 (i32.const 0))
+  (let $lastpriv i32 (i32.const 0))
+  (if (i32.eq (call $tok_kind) (i32.const 3))  ;; a primary reference must begin with an identifier / this
+    (then
+      (call $next_token)
+      (block $ce (loop $cl
+        (let $k i32 (call $tok_kind))
+        (if (i32.eq (local.get $k) (i32.const 23))  ;; '.'
+          (then
+            (call $next_token)
+            (if (i32.eq (call $tok_kind) (i32.const 3))
+              (then
+                (set! $lastpriv (i32.and (i32.ge_s (call $str_len (call $ident_name)) (i32.const 1))
+                                         (i32.eq (call $str_byte (call $ident_name) (i32.const 0)) (i32.const 35))))
+                (call $next_token) (br $cl))
+              (else (br $ce)))))  ;; '.' not followed by an identifier → bail out of the chain
+        (if (i32.or (i32.eq (local.get $k) (i32.const 19)) (i32.eq (local.get $k) (i32.const 15)))  ;; '[' index or '(' call
+          (then
+            (set! $lastpriv (i32.const 0))
+            (let $depth i32 (i32.const 0))
+            (block $sb (loop $sl
+              (let $t i32 (call $tok_kind))
+              (br_if $sb (i32.eqz (local.get $t)))  ;; EOF
+              (if (i32.or (i32.eq (local.get $t) (i32.const 15)) (i32.or (i32.eq (local.get $t) (i32.const 19)) (i32.eq (local.get $t) (i32.const 17))))
+                (then (set! $depth (i32.add (local.get $depth) (i32.const 1)))))
+              (if (i32.or (i32.eq (local.get $t) (i32.const 16)) (i32.or (i32.eq (local.get $t) (i32.const 20)) (i32.eq (local.get $t) (i32.const 18))))
+                (then (set! $depth (i32.sub (local.get $depth) (i32.const 1)))
+                      (if (i32.eqz (local.get $depth)) (then (call $next_token) (br $sb)))))
+              (call $next_token) (br $sl)))
+            (br $cl)))
+        (br $ce)))  ;; anything else ends the chain
+      ;; consume the N trailing cover-parens
+      (let $i i32 (i32.const 0))
+      (block $tb (loop $tl
+        (br_if $tb (i32.ge_s (local.get $i) (local.get $nlp)))
+        (br_if $tb (i32.ne (call $tok_kind) (i32.const 16)))
+        (call $next_token) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $tl)))
+      ;; all cover-parens matched, the private access is the outermost op, and nothing continues it
+      (if (i32.and (i32.eq (local.get $i) (local.get $nlp)) (local.get $lastpriv))
+        (then
+          (let $nx i32 (call $tok_kind))
+          (if (i32.eqz (i32.or (i32.eq (local.get $nx) (i32.const 23)) (i32.or (i32.eq (local.get $nx) (i32.const 19))
+                (i32.or (i32.eq (local.get $nx) (i32.const 15)) (i32.eq (local.get $nx) (i32.const 53))))))
+            (then (set! $ok (i32.const 1))))))))
+  (call $cursor_restore (local.get $save))
+  (local.get $ok))
+
 ;; compile a `delete` operand: evaluate the base, and turn the FINAL member
 ;; access into a DELETE (op 70). Non-final accesses compile as normal GETs.
 (func $vm_c_delete_operand (param $code i32) (effects)
+  ;; `delete <PrivateName-final reference>` (possibly cover-parenthesised) is a SyntaxError.
+  (if (call $vm_delete_priv_check)
+    (then (i32.store (i32.const 400) (i32.const 1))
+          (call $throw_type (cstring "SyntaxError") (cstring "private member cannot be deleted")) (return)))
   ;; delete of a non-reference unary expression (void/typeof/delete/!/~/+/-/++/--) →
   ;; evaluate, discard the value, and return true (it is not a Reference).
   (if (i32.or (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.or (call $tok_is_kw (cstring "void")) (i32.or (call $tok_is_kw (cstring "typeof")) (call $tok_is_kw (cstring "delete")))))
@@ -7116,6 +7180,11 @@
         (then
           (let $cev i64 (call $err_val))
           (let $cs i32 (call $to_str (local.get $cev)))
+          ;; Intentional early errors are all SyntaxErrors. If the constructor prelude has not
+          ;; executed yet at compile time, make_error yields a bare message string with no
+          ;; "SyntaxError" name — prepend it so a `negative: type: SyntaxError` harness match holds.
+          (if (i32.eqz (call $is_object (local.get $cev)))
+            (then (set! $cs (call $str_concat (cstring "SyntaxError: ") (local.get $cs)))))
           (call $host_throw (i32.add (local.get $cs) (i32.const 4)) (call $str_len (local.get $cs)))))
       (return (i32.const 1))))
   (block $e (loop $l
