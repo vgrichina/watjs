@@ -4851,9 +4851,34 @@
 ;; the internal promise's settlement into cap.[[Resolve]]/[[Reject]] and return cap's promise.
 (func $promise_comb_finalize (param $p i64) (param $custom i32) (param $cap i64) (result i64) (effects)
   (if (i32.eqz (local.get $custom)) (then (return (local.get $p))))
-  (drop (call $promise_then (local.get $p)
-    (call $get_prop (local.get $cap) (call $mk_str (cstring "resolve")))
-    (call $get_prop (local.get $cap) (call $mk_str (cstring "reject")))))
+  (let $st i32 (call $promise_state (local.get $p)))
+  (if (i32.eq (local.get $st) (i32.const 0))
+    ;; internal promise still pending (elements settle asynchronously) → bridge via then/microtask
+    (then (drop (call $promise_then (local.get $p)
+      (call $get_prop (local.get $cap) (call $mk_str (cstring "resolve")))
+      (call $get_prop (local.get $cap) (call $mk_str (cstring "reject"))))))
+    ;; already settled (every element settled synchronously): the spec resolve/reject-element function
+    ;; calls resultCapability.[[Resolve]]/[[Reject]] DIRECTLY (synchronously), so call the capability
+    ;; settler now rather than scheduling a microtask (observable: Promise.all.call(Ctor,…) with a sync
+    ;; thenable must have invoked the custom capability's resolve by the time all() returns).
+    (else
+      (let $pv i64 (call $get_prop (local.get $p) (call $mk_str (cstring "@@pval"))))
+      (let $settler i64 (if i64 (i32.eq (local.get $st) (i32.const 1))
+        (then (call $get_prop (local.get $cap) (call $mk_str (cstring "resolve"))))
+        (else (call $get_prop (local.get $cap) (call $mk_str (cstring "reject"))))))
+      (let $ab i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $ab) (local.get $pv))
+      (drop (call $call_val (local.get $settler) (i32.const 1) (local.get $ab) (call $v_undef)))
+      ;; IfAbruptRejectPromise: a throwing capability resolve/reject rejects the capability's promise
+      ;; (the old async then-bridge swallowed this into a rejection; do the same, don't propagate).
+      (if (call $err)
+        (then
+          (let $ev i64 (call $err_val))
+          (call $set_err (i32.const 0))
+          (let $ab2 i32 (call $heap_alloc (i32.const 8)))
+          (i64.store (local.get $ab2) (local.get $ev))
+          (drop (call $call_val (call $get_prop (local.get $cap) (call $mk_str (cstring "reject"))) (i32.const 1) (local.get $ab2) (call $v_undef)))
+          (if (call $err) (then (return (call $v_undef))))))))
   (call $get_prop (local.get $cap) (call $mk_str (cstring "promise"))))
 
 ;; dispatch the Annex B.2.2 HTML methods (ids 460-472) to CreateHTML
