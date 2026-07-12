@@ -3022,7 +3022,9 @@
   (if (i32.and (local.get $hasWr) (i32.eqz (local.get $wantWr))) (then (call $scope_define (call $arr_props (local.get $dpa)) (cstring "@@lenNW") (call $v_true)))))
 
 (func $array_define_one (param $arrv i64) (param $ky i64) (param $de i64) (effects)
-  (let $dpk i32 (call $to_str (local.get $ky)))
+  ;; to_prop_key (NOT to_str): a Symbol key must become its internal "@@sym:" key so define stores it
+  ;; under the SAME key get_prop/set_prop look up (to_str would give "Symbol(desc)" → an unreachable prop).
+  (let $dpk i32 (call $to_prop_key (local.get $ky)))
   (let $dpa i32 (call $val_payload (local.get $arrv)))
   (let $dpidx i32 (call $str_array_index (local.get $dpk)))
   (if (i32.ge_s (local.get $dpidx) (i32.const 0))
@@ -9635,7 +9637,7 @@
       ;; arrays: indices are {W:true,E:true,C:true}; length is {W:true,E:false,C:false}
       (if (call $is_array (local.get $ob))
         (then
-          (let $aks i32 (call $to_str (local.get $ky)))
+          (let $aks i32 (call $to_prop_key (local.get $ky)))  ;; Symbol → internal "@@sym:" key (matches array_define_one / get_prop)
           (let $aobj i32 (call $val_payload (local.get $ob)))
           (if (call $str_eq (local.get $aks) (cstring "length"))
             (then
