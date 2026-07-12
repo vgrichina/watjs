@@ -9432,45 +9432,49 @@
             (set! $fi (i32.add (local.get $fi) (i32.const 1)))
             (br $fdl)))))
       (return (local.get $ob))))
-  ;; Object.getOwnPropertyDescriptors(obj)
+  ;; Object.getOwnPropertyDescriptors(obj): spec = ownKeys(ToObject(O)), then for each key
+  ;; desc = [[GetOwnProperty]](O,key); if desc≠undefined CreateDataProperty(result, key, desc).
+  ;; Both the ownKeys and per-key gOPD go through the native paths that fire Proxy traps and
+  ;; handle array indices / function length·name·prototype / String wrappers correctly.
   (if (i32.eq (local.get $id) (i32.const 161))
     (then
       (let $ob i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.or (call $is_null (local.get $ob)) (call $is_undefined (local.get $ob)))  ;; ToObject → TypeError
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
+      ;; ToObject a primitive receiver (string→String wrapper with index/length own props, etc.)
+      (if (i32.eqz (i32.or (call $is_object (local.get $ob)) (i32.or (call $is_array (local.get $ob)) (i32.or (call $is_function (local.get $ob)) (call $is_proxy (local.get $ob))))))
+        (then (set! $ob (call $to_object (local.get $ob))) (if (call $err) (then (return (call $v_undef))))))
       (let $r i32 (call $obj_new (i32.const 8)))
-      (if (call $is_object (local.get $ob))
+      ;; string keys (indices + names); for a Proxy this fires the ownKeys trap ONCE and already
+      ;; includes symbol keys. For a non-proxy, append the own symbol keys (getOwnPropertySymbols).
+      (let $gdkeys i32 (call $own_enum_keys (local.get $ob) (i32.const 1)))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $is_proxy (local.get $ob)))
         (then
-          (let $os i32 (call $val_payload (local.get $ob)))
-          (let $cnt i32 (call $scope_count (local.get $os)))
-          (let $i i32 (i32.const 0))
-          (block $gde (loop $gdl
-            (br_if $gde (i32.ge_s (local.get $i) (local.get $cnt)))
-            (let $ent i32 (call $scope_entry (local.get $os) (local.get $i)))
-            (call $scope_define (local.get $r) (i32.load (local.get $ent)) (call $make_descriptor (i32.add (local.get $ent) (i32.const 8))))
-            (set! $i (i32.add (local.get $i) (i32.const 1)))
-            (br $gdl)))))
-      ;; string source: index chars {W:false,E:true,C:false} then length {W:false,E:false,C:false}
-      (if (call $is_string (local.get $ob))
-        (then
-          (let $gss i32 (call $val_payload (local.get $ob)))
-          (let $gsn i32 (call $str_len (local.get $gss)))
-          (let $gsi i32 (i32.const 0))
-          (block $gse (loop $gsl
-            (br_if $gse (i32.ge_s (local.get $gsi) (local.get $gsn)))
-            (let $cdr i32 (call $obj_new (i32.const 4)))
-            (call $scope_define (local.get $cdr) (cstring "value") (call $str_char_at (local.get $gss) (local.get $gsi)))
-            (call $scope_define (local.get $cdr) (cstring "writable") (call $v_false))
-            (call $scope_define (local.get $cdr) (cstring "enumerable") (call $v_true))
-            (call $scope_define (local.get $cdr) (cstring "configurable") (call $v_false))
-            (call $scope_define (local.get $r) (call $num_to_str (f64.convert_i32_s (local.get $gsi))) (call $mk_obj (local.get $cdr)))
-            (set! $gsi (i32.add (local.get $gsi) (i32.const 1))) (br $gsl)))
-          (let $lcdr i32 (call $obj_new (i32.const 4)))
-          (call $scope_define (local.get $lcdr) (cstring "value") (call $num (f64.convert_i32_s (local.get $gsn))))
-          (call $scope_define (local.get $lcdr) (cstring "writable") (call $v_false))
-          (call $scope_define (local.get $lcdr) (cstring "enumerable") (call $v_false))
-          (call $scope_define (local.get $lcdr) (cstring "configurable") (call $v_false))
-          (call $scope_define (local.get $r) (cstring "length") (call $mk_obj (local.get $lcdr)))))
+          (let $gdsv i64 (call $call_native (i32.const 248) (local.get $argc) (local.get $argv) (call $v_undef)))  ;; getOwnPropertySymbols
+          (if (call $err) (then (return (call $v_undef))))
+          (let $gdsa i32 (call $val_payload (local.get $gdsv)))
+          (let $gsj i32 (i32.const 0))
+          (block $gdse (loop $gdsl
+            (br_if $gdse (i32.ge_s (local.get $gsj) (call $arr_len (local.get $gdsa))))
+            (call $arr_push (local.get $gdkeys) (call $arr_get (local.get $gdsa) (local.get $gsj)))
+            (set! $gsj (i32.add (local.get $gsj) (i32.const 1))) (br $gdsl)))))
+      (let $gdi i32 (i32.const 0))
+      (let $gddb i32 (call $heap_alloc (i32.const 16)))
+      (block $gde (loop $gdl
+        (br_if $gde (i32.ge_s (local.get $gdi) (call $arr_len (local.get $gdkeys))))
+        (let $gdk i64 (call $arr_get (local.get $gdkeys) (local.get $gdi)))
+        (i64.store (local.get $gddb) (local.get $ob))
+        (i64.store (i32.add (local.get $gddb) (i32.const 8)) (local.get $gdk))
+        (let $gdd i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $gddb) (call $v_undef)))  ;; [[GetOwnProperty]]
+        (if (call $err) (then (return (call $v_undef))))
+        (if (i32.eqz (call $is_undefined (local.get $gdd)))
+          ;; CreateDataProperty: own {W,E,C:true} under the key's property-key string (symbol → internal
+          ;; @@key). scope_define (not set_prop) so a "__proto__" key can't hit the __proto__ setter.
+          (then (call $scope_define (local.get $r)
+                  (if i32 (call $is_string (local.get $gdk)) (then (call $val_payload (local.get $gdk))) (else (call $to_prop_key (local.get $gdk))))
+                  (local.get $gdd))))
+        (set! $gdi (i32.add (local.get $gdi) (i32.const 1))) (br $gdl)))
       (return (call $mk_obj (local.get $r)))))
   ;; Object.getOwnPropertyDescriptor(obj, key)
   (if (i32.eq (local.get $id) (i32.const 156))
