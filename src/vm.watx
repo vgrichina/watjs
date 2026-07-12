@@ -2378,21 +2378,32 @@
     (br $pl)))
   (call $cursor_restore (local.get $bodycur))  ;; rewind to '{'
   (i32.store (i32.const 388) (local.get $thisstrict))  ;; nested fns inherit this strictness
-  ;; strict: a parameter named `eval`/`arguments` is an early SyntaxError
-  (if (local.get $thisstrict)
+  ;; A duplicate parameter name is an early SyntaxError in strict-mode code AND in any function with a
+  ;; NON-SIMPLE parameter list (a rest param, a default initializer, or a destructuring pattern) even in
+  ;; sloppy mode (spec: UniqueFormalParameters / FormalParameters with IsSimpleParameterList false).
+  (let $nsdup i32 (i32.ge_s (local.get $restidx) (i32.const 0)))
+  (let $nsi0 i32 (i32.const 0))
+  (block $nse0 (loop $nsl0
+    (br_if $nse0 (i32.ge_s (local.get $nsi0) (local.get $np)))
+    (if (i32.or (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $nsi0) (i32.const 4)))) (i32.const 0))
+                (i32.ne (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $nsi0) (i32.const 4)))) (i32.const 0)))
+      (then (set! $nsdup (i32.const 1)) (br $nse0)))
+    (set! $nsi0 (i32.add (local.get $nsi0) (i32.const 1))) (br $nsl0)))
+  (if (i32.or (local.get $thisstrict) (local.get $nsdup))
     (then
       (let $spi i32 (i32.const 0))
       (block $spe (loop $spl
         (br_if $spe (i32.ge_s (local.get $spi) (local.get $np)))
         (let $spn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $spi) (i32.const 4)))))
-        (if (i32.or (call $str_eq (local.get $spn) (cstring "eval")) (call $str_eq (local.get $spn) (cstring "arguments")))
-          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Parameter named eval or arguments not allowed in strict mode"))))
-        ;; duplicate parameter name is an early SyntaxError in strict
+        ;; strict: a parameter named `eval`/`arguments` is an early SyntaxError
+        (if (local.get $thisstrict)
+          (then (if (i32.or (call $str_eq (local.get $spn) (cstring "eval")) (call $str_eq (local.get $spn) (cstring "arguments")))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Parameter named eval or arguments not allowed in strict mode"))))))
         (let $spj i32 (i32.add (local.get $spi) (i32.const 1)))
         (block $sde (loop $sdl
           (br_if $sde (i32.ge_s (local.get $spj) (local.get $np)))
           (if (call $str_eq (local.get $spn) (i32.load (i32.add (local.get $params) (i32.mul (local.get $spj) (i32.const 4)))))
-            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate parameter name not allowed in strict mode"))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate parameter name not allowed"))))
           (set! $spj (i32.add (local.get $spj) (i32.const 1)))
           (br $sdl)))
         (set! $spi (i32.add (local.get $spi) (i32.const 1)))
@@ -3099,6 +3110,18 @@
 (func $vm_c_arrow (param $code i32) (param $params i32) (param $np i32) (param $pdef i32) (param $restidx i32) (param $ppat i32) (effects)
   (let $arrsrcstart i32 (i32.load (i32.const 700)))  ;; source start sentinel (set by caller; 0=none)
   (i32.store (i32.const 700) (i32.const 0))
+  ;; ArrowFormalParameters are UniqueFormalParameters: a duplicate parameter name is always a SyntaxError.
+  (let $adi i32 (i32.const 0))
+  (block $ade (loop $adl
+    (br_if $ade (i32.ge_s (local.get $adi) (local.get $np)))
+    (let $adn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $adi) (i32.const 4)))))
+    (let $adj i32 (i32.add (local.get $adi) (i32.const 1)))
+    (block $ade2 (loop $adl2
+      (br_if $ade2 (i32.ge_s (local.get $adj) (local.get $np)))
+      (if (call $str_eq (local.get $adn) (i32.load (i32.add (local.get $params) (i32.mul (local.get $adj) (i32.const 4)))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate parameter name not allowed")) (return)))
+      (set! $adj (i32.add (local.get $adj) (i32.const 1))) (br $adl2)))
+    (set! $adi (i32.add (local.get $adi) (i32.const 1))) (br $adl)))
   ;; capture the async flag (reg 232, consumed later at fn-struct build) and set reg 896 so `await` is the
   ;; operator inside an async arrow body/default-params. A non-async arrow inside an async fn keeps the
   ;; enclosing value (arrows inherit await-context) — but here we always overwrite: an async arrow → 1, and
