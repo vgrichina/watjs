@@ -5452,7 +5452,7 @@
       ;; Only object searchValues can carry @@match/@@replace; a primitive (e.g. a string
       ;; separator) skips straight to the string algorithm without touching @@replace
       ;; (so it never triggers a poisoned String.prototype[@@replace] getter).
-      (if (i32.or (call $is_object (local.get $rasv)) (i32.or (call $is_regexp (local.get $rasv)) (call $is_function (local.get $rasv))))
+      (if (call $is_obj_like (local.get $rasv))
         (then
           ;; a. isRegExp = IsRegExp(searchValue) (via @@match, abrupt)
           (let $isre i32 (call $is_regexp_spec (local.get $rasv)))
@@ -7766,7 +7766,10 @@
           (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))
             (then (call $throw_type (cstring "TypeError") (cstring "String.prototype.split called on null or undefined")) (return (call $v_undef))))
           (let $spa0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-          (if (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (i32.or (call $is_undefined (local.get $spa0)) (call $is_null (local.get $spa0)))))
+          ;; ES2025: the @@split protocol is consulted ONLY when the separator is an Object — a primitive
+          ;; separator (number/string/boolean/bigint/symbol) skips straight to the string algorithm and must
+          ;; NOT read its @@split (e.g. a throwing getter on Number.prototype[@@split] must not fire).
+          (if (i32.or (call $is_object (local.get $spa0)) (i32.or (call $is_array (local.get $spa0)) (i32.or (call $is_function (local.get $spa0)) (call $is_proxy (local.get $spa0)))))
             (then
               (let $spm0 i64 (call $get_prop (local.get $spa0) (call $mk_str (cstring "@@split"))))
               (if (call $err) (then (return (call $v_undef))))
@@ -8764,9 +8767,9 @@
   (if (i32.eq (local.get $id) (i32.const 173))  ;; str.matchAll(regexp) — @@matchAll protocol dispatch
     (then
       (let $maa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      ;; if regexp is not null/undefined: flags-must-be-global check (for a RegExp) then
-      ;; GetMethod(regexp, @@matchAll) and Call it with the string
-      (if (i32.eqz (i32.or (call $is_null (local.get $maa)) (call $is_undefined (local.get $maa))))
+      ;; if regexp is an OBJECT: flags-must-be-global check (for a RegExp) then GetMethod(regexp,
+      ;; @@matchAll) and Call it (ES2025: a primitive regexp skips this and falls to RegExpCreate below)
+      (if (call $is_obj_like (local.get $maa))
         (then
           (if (call $is_regexp (local.get $maa))
             (then
@@ -9169,8 +9172,9 @@
     (then
       (let $sub i32 (call $to_str (local.get $thisv)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      ;; @@search / @@match protocol: a searchValue with the symbol method handles it
-      (if (i32.and (i32.or (i32.eq (local.get $id) (i32.const 104)) (i32.eq (local.get $id) (i32.const 102))) (i32.eqz (i32.or (call $is_null (local.get $a0)) (call $is_undefined (local.get $a0)))))
+      ;; @@search / @@match protocol: an OBJECT searchValue with the symbol method handles it (ES2025: a
+      ;; primitive searchValue skips the protocol and must not read its @@search/@@match)
+      (if (i32.and (i32.or (i32.eq (local.get $id) (i32.const 104)) (i32.eq (local.get $id) (i32.const 102))) (call $is_obj_like (local.get $a0)))
         (then
           (let $ssm i64 (call $get_prop (local.get $a0) (call $mk_str (if i32 (i32.eq (local.get $id) (i32.const 104)) (then (cstring "@@search")) (else (cstring "@@match"))))))
           (if (call $err) (then (return (call $v_undef))))
@@ -9179,8 +9183,9 @@
               (let $ssargs i32 (call $heap_alloc (i32.const 8)))
               (i64.store (local.get $ssargs) (call $mk_str (local.get $sub)))
               (return (call $call_val (local.get $ssm) (i32.const 1) (local.get $ssargs) (local.get $a0)))))))
-      ;; @@replace protocol: a searchValue with a @@replace method handles replace itself
-      (if (i32.and (i32.eq (local.get $id) (i32.const 103)) (i32.eqz (i32.or (call $is_null (local.get $a0)) (call $is_undefined (local.get $a0)))))
+      ;; @@replace protocol: an OBJECT searchValue with a @@replace method handles replace itself (ES2025:
+      ;; a primitive searchValue skips the protocol and must not read its @@replace)
+      (if (i32.and (i32.eq (local.get $id) (i32.const 103)) (call $is_obj_like (local.get $a0)))
         (then
           (let $srm i64 (call $get_prop (local.get $a0) (call $mk_str (cstring "@@replace"))))
           (if (call $err) (then (return (call $v_undef))))
