@@ -1384,6 +1384,31 @@
     (then (call $ta_write (local.get $buf) (i32.trunc_f64_s (local.get $n)) (local.get $elem) (local.get $cval))))
   (i32.const 1))
 
+;; OrdinarySet fallback for an array key with no OWN property: walk the array's prototype chain
+;; (Array.prototype → Object.prototype, reg 160) for an inherited accessor (fire its setter with
+;; receiver=the array) or an inherited non-writable data property (refuse — strict throws). Returns 1
+;; if the write was handled/refused there, 0 to fall through and create an own property. `keystr` is the
+;; property-key string ("2" for an index, "foo" for a named prop).
+(func $array_inherited_set (param $cont i64) (param $keystr i32) (param $val i64) (result i32) (effects)
+  (let $ainhp i32 (i32.load (i32.const 160)))
+  (if (local.get $ainhp)
+    (then
+      (let $ainhs i32 (call $scope_find (local.get $ainhp) (local.get $keystr)))
+      (if (local.get $ainhs)
+        (then
+          (if (call $entry_is_accessor (local.get $ainhs))
+            (then
+              (let $aiset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $ainhs))) (i32.const 8))))
+              (if (call $is_function (local.get $aiset))
+                (then
+                  (let $aiav i32 (call $heap_alloc (i32.const 8)))
+                  (i64.store (local.get $aiav) (local.get $val))
+                  (drop (call $call_val (local.get $aiset) (i32.const 1) (local.get $aiav) (local.get $cont))))
+                (else (call $set_fail)))  ;; getter-only → strict throws
+              (return (i32.const 1))))
+          (if (i32.eqz (call $entry_writable (local.get $ainhs))) (then (call $set_fail) (return (i32.const 1))))))))
+  (i32.const 0))
+
 (func $set_prop (param $cont i64) (param $key i64) (param $val i64) (effects)
   (if (call $is_array (local.get $cont))
     (then
@@ -1406,6 +1431,10 @@
               (let $nsi i32 (i32.trunc_f64_s (local.get $aset)))
               ;; deopted index (accessor / attributed) → @12 scope takes the write
               (if (local.get $ap12) (then (if (call $arr_deopt_set (local.get $a) (call $num_to_str (f64.convert_i32_s (local.get $nsi))) (local.get $val) (local.get $cont)) (then (return)))))
+              ;; no OWN element here (a hole / new index) → an inherited index accessor/non-writable on the
+              ;; prototype chain intercepts the write (OrdinarySet); a present element is a plain own data write
+              (if (i32.eqz (call $arr_has (local.get $a) (local.get $nsi)))
+                (then (if (call $array_inherited_set (local.get $cont) (call $num_to_str (f64.convert_i32_s (local.get $nsi))) (local.get $val)) (then (return)))))
               ;; non-extensible: refuse a write that would ADD a new index (>= length)
               (if (i32.and (local.get $anoext) (i32.ge_s (local.get $nsi) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
               (call $arr_set (local.get $a) (local.get $nsi) (local.get $val)) (return)))))
@@ -1415,6 +1444,8 @@
       (if (i32.ge_s (local.get $ssidx) (i32.const 0))
         (then
           (if (local.get $ap12) (then (if (call $arr_deopt_set (local.get $a) (local.get $askey) (local.get $val) (local.get $cont)) (then (return)))))
+          (if (i32.eqz (call $arr_has (local.get $a) (local.get $ssidx)))
+            (then (if (call $array_inherited_set (local.get $cont) (local.get $askey) (local.get $val)) (then (return)))))
           (if (i32.and (local.get $anoext) (i32.ge_s (local.get $ssidx) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
           (call $arr_set (local.get $a) (local.get $ssidx) (local.get $val)) (return)))
       ;; `length` assignment resizes the array (truncate / extend with holes);
@@ -1434,25 +1465,8 @@
       ;; accessor fires its setter; an existing data prop respects [[Writable]].
       (if (local.get $ap12) (then (if (call $arr_deopt_set (local.get $a) (local.get $askey) (local.get $val) (local.get $cont)) (then (return)))))
       ;; no OWN named property: an INHERITED accessor (Array.prototype → Object.prototype, reg 160)
-      ;; fires its setter with receiver = the array; a getter-only accessor or an inherited non-writable
-      ;; data property refuses the write (strict: throw). Otherwise fall through to create an own prop.
-      (let $ainhp i32 (i32.load (i32.const 160)))
-      (if (local.get $ainhp)
-        (then
-          (let $ainhs i32 (call $scope_find (local.get $ainhp) (local.get $askey)))
-          (if (local.get $ainhs)
-            (then
-              (if (call $entry_is_accessor (local.get $ainhs))
-                (then
-                  (let $aiset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $ainhs))) (i32.const 8))))
-                  (if (call $is_function (local.get $aiset))
-                    (then
-                      (let $aiav i32 (call $heap_alloc (i32.const 8)))
-                      (i64.store (local.get $aiav) (local.get $val))
-                      (drop (call $call_val (local.get $aiset) (i32.const 1) (local.get $aiav) (local.get $cont))))
-                    (else (call $set_fail)))  ;; getter-only → strict throws
-                  (return)))
-              (if (i32.eqz (call $entry_writable (local.get $ainhs))) (then (call $set_fail) (return)))))))
+      ;; fires its setter / a getter-only or non-writable inherited data prop refuses the write.
+      (if (call $array_inherited_set (local.get $cont) (local.get $askey) (local.get $val)) (then (return)))
       ;; Non-extensible refuses adding a NOT-already-present named property.
       (if (i32.and (local.get $anoext) (i32.eqz (i32.ne (call $scope_find_local (call $arr_props (local.get $a)) (local.get $askey)) (i32.const 0))))
         (then (call $set_fail) (return)))
