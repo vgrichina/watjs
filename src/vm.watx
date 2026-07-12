@@ -3318,7 +3318,10 @@
                 (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0)) (set! $pgen (i32.const 0)) (set! $pasync (i32.const 0))
                 ;; after the key: a method '(' or field '=' continues this element (atkey=0); anything else
                 ;; means a bare field with no initializer whose element ends now → the next token is a new key.
-                (call $look_save) (call $next_token) (let $pk1 i32 (call $tok_kind)) (call $look_restore)
+                (call $look_save) (call $next_token) (let $pk1 i32 (call $tok_kind)) (let $pnl1 i32 (call $nl_before)) (call $look_restore)
+                ;; a bare field followed on the SAME line by another identifier key needs a ';' separator.
+                (if (i32.and (i32.eqz (i32.or (i32.eq (local.get $pk1) (i32.const 15)) (i32.eq (local.get $pk1) (i32.const 24)))) (i32.and (i32.eq (local.get $pk1) (i32.const 3)) (i32.eqz (local.get $pnl1))))
+                  (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected identifier; expected ';' between class elements")) (br $done)))
                 (set! $atkey (i32.eqz (i32.or (i32.eq (local.get $pk1) (i32.const 15)) (i32.eq (local.get $pk1) (i32.const 24)))))
                 (set! $prev (local.get $k)) (call $next_token) (br $lp)))
             ;; prefix modifiers keep the key-expected position
@@ -3326,6 +3329,7 @@
             (if (call $tok_is_kw (cstring "get")) (then (set! $pget (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
             (if (call $tok_is_kw (cstring "set")) (then (set! $pset (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
             (if (call $tok_is_kw (cstring "async")) (then (set! $pasync (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+            (if (call $tok_is_kw (cstring "accessor")) (then (set! $prev (local.get $k)) (call $next_token) (br $lp)))  ;; auto-accessor modifier (keeps key-expected position)
             ;; a public plain-method `constructor` (no static/get/set/*/async) may occur at most once
             (if (i32.and (call $str_eq (call $ident_name) (cstring "constructor"))
                   (i32.eqz (i32.or (local.get $pstatic) (i32.or (local.get $pget) (i32.or (local.get $pset) (i32.or (local.get $pgen) (local.get $pasync)))))))
@@ -3336,7 +3340,9 @@
                     (if (i32.ge_s (local.get $ctorcnt) (i32.const 2)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A class may only have one constructor")) (br $done)))))))
             ;; any other identifier is a (public) key → a method '(' / field '=' continues the element,
             ;; else it is a bare field and the next token begins a new element.
-            (call $look_save) (call $next_token) (let $pk2 i32 (call $tok_kind)) (call $look_restore)
+            (call $look_save) (call $next_token) (let $pk2 i32 (call $tok_kind)) (let $pnl2 i32 (call $nl_before)) (call $look_restore)
+            (if (i32.and (i32.eqz (i32.or (i32.eq (local.get $pk2) (i32.const 15)) (i32.eq (local.get $pk2) (i32.const 24)))) (i32.and (i32.eq (local.get $pk2) (i32.const 3)) (i32.eqz (local.get $pnl2))))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected identifier; expected ';' between class elements")) (br $done)))
             (set! $atkey (i32.eqz (i32.or (i32.eq (local.get $pk2) (i32.const 15)) (i32.eq (local.get $pk2) (i32.const 24)))))
             (set! $prev (local.get $k)) (call $next_token) (br $lp)))
         (set! $prev (local.get $k)) (call $next_token) (br $lp)))
