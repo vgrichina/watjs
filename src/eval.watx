@@ -8955,6 +8955,14 @@
             (set! $rpReplc (call $to_str (call $call_val (local.get $rpRepl) (local.get $rpNargs) (local.get $rpAv) (call $v_undef))))
             (if (call $err) (then (return (call $v_undef)))))
           (else
+            ;; spec step 14.l.i: a non-functional replace with named captures does ToObject(namedCaptures)
+            ;; BEFORE building the replacement — groups:null → ToObject(null) throws TypeError ($to_object is
+            ;; the Object() constructor which returns {} for null, so check null explicitly).
+            (if (i32.eqz (call $is_undefined (local.get $rpNamed)))
+              (then
+                (if (call $is_null (local.get $rpNamed))
+                  (then (call $throw_type (cstring "TypeError") (cstring "named capture groups object is null")) (return (call $v_undef))))
+                (set! $rpNamed (call $to_object (local.get $rpNamed)))))
             ;; spec RegExpReplace step 14.h: ToString EVERY capture once (observable — a capture whose
             ;; toString throws must propagate even when the replacement string doesn't reference it).
             ;; Build a coerced captures object so get_substitution reads plain strings (no double toString).
