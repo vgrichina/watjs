@@ -1544,7 +1544,7 @@
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 23)) (return)))
   (if (i32.eq (local.get $k) (i32.const 47))  ;; ~
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 44)) (return)))
-  (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "await")))  ;; await expr
+  (if (i32.and (i32.and (i32.eq (local.get $k) (i32.const 3)) (i32.load (i32.const 896))) (call $tok_is_kw (cstring "await")))  ;; await expr (only in an async body; else `await` is an identifier)
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 50)) (return)))  ;; AWAIT
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "typeof")))  ;; typeof expr
     (then
@@ -2008,6 +2008,11 @@
   (i32.store (i32.const 320) (i32.const 0))
   (let $savederctor i32 (i32.load (i32.const 852)))  ;; reg852: compiling a DERIVED ctor body? (return-stmt → DERIVEDRETCHECK)
   (i32.store (i32.const 852) (i32.eq (local.get $classf) (i32.const 2)))
+  ;; reg896: compiling an ASYNC function body? `await` is the operator only here (else it's an ordinary
+  ;; identifier: `function f(await){ return await; }`). A plain fn resets it; nested arrows compile inline
+  ;; and inherit. Saved/restored per body so a nested regular fn doesn't clobber the enclosing value.
+  (let $saveinasync i32 (i32.load (i32.const 896)))
+  (i32.store (i32.const 896) (local.get $asyncf))
   ;; reg 868: is `super` property access lexically allowed here? True in a method/accessor (reg692) or a
   ;; class constructor (reg404); a plain function RESETS it; nested arrows inherit (vm_c_arrow compiles
   ;; inline, not via this fn). save/restore so a nested regular fn doesn't clobber the enclosing value.
@@ -2152,6 +2157,7 @@
   (i32.store (i32.const 788) (local.get $saveagen))  ;; restore enclosing async-generator-context
   (i32.store (i32.const 672) (local.get $savegen))  ;; restore enclosing generator-context
   (i32.store (i32.const 852) (local.get $savederctor))  ;; restore enclosing derived-ctor compile flag
+  (i32.store (i32.const 896) (local.get $saveinasync))  ;; restore enclosing in-async-body flag
   (i32.store (i32.const 868) (local.get $savesuperhome))  ;; restore enclosing super-property-allowed flag
   (i32.store (i32.const 884) (local.get $savesupercall))  ;; restore enclosing super()-call-allowed flag
   (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
@@ -2811,6 +2817,13 @@
 (func $vm_c_arrow (param $code i32) (param $params i32) (param $np i32) (param $pdef i32) (param $restidx i32) (param $ppat i32) (effects)
   (let $arrsrcstart i32 (i32.load (i32.const 700)))  ;; source start sentinel (set by caller; 0=none)
   (i32.store (i32.const 700) (i32.const 0))
+  ;; capture the async flag (reg 232, consumed later at fn-struct build) and set reg 896 so `await` is the
+  ;; operator inside an async arrow body/default-params. A non-async arrow inside an async fn keeps the
+  ;; enclosing value (arrows inherit await-context) — but here we always overwrite: an async arrow → 1, and
+  ;; a non-async arrow gets the enclosing 896 iff 232==0. So OR the enclosing value in for the non-async case.
+  (let $arrasync i32 (i32.load (i32.const 232)))
+  (let $arrsaveinasync i32 (i32.load (i32.const 896)))
+  (i32.store (i32.const 896) (i32.or (local.get $arrasync) (local.get $arrsaveinasync)))
   (call $next_token)  ;; '=>'
   (let $litstart i32 (call $vm_emit_cursor))  ;; arrow-literal emit span start (IsAnonymousFunctionDefinition)
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
@@ -2867,6 +2880,7 @@
     (else  ;; expression body → implicit return
       (call $vm_c_expr (local.get $code))
       (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET value
+  (i32.store (i32.const 896) (local.get $arrsaveinasync))  ;; restore enclosing in-async-body flag
   (call $vm_patch (local.get $code) (local.get $pj))
   (let $fn i32 (call $heap_alloc (i32.add (i32.const 52) (i32.mul (local.get $np) (i32.const 4)))))  ;; @(28+np*4) name, @(32+np*4) flags, @(36+np*4) .length, @(40+np*4) srcPtr (0=native form), @(44+np*4) srcLen, @(48+np*4) own-prop scope
   (i32.store (local.get $fn) (if i32 (i32.load (i32.const 232)) (then (i32.const 1448232528)) (else (i32.const 1448232526))))  ;; ASYNC if flagged, else NORMAL
