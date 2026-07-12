@@ -3208,6 +3208,82 @@
 ;; the constructor, and methods (static members stored on the prototype for now).
 ;; isExpr=1 leaves the class value on the operand stack; isExpr=0 (declaration)
 ;; STOREVARs it under the class name.
+;; Add a private element (name, kind 1=field/method 2=get 3=set, st=static) to the class-body private
+;; set and enforce the ClassBody duplicate rule: a PrivateBoundIdentifier may not repeat UNLESS it is
+;; exactly one getter + one setter with matching static-ness. Returns the new count, or -1 on a
+;; SyntaxError. enc bits: 1=solid(field/method) 2=has-get 4=has-set 8=get-static 16=set-static.
+(func $priv_dup_add (param $names i32) (param $encs i32) (param $n i32) (param $name i32) (param $kind i32) (param $st i32) (result i32) (effects)
+  (let $i i32 (i32.const 0))
+  (let $idx i32 (i32.const -1))
+  (block $b (loop $l
+    (br_if $b (i32.ge_s (local.get $i) (local.get $n)))
+    (if (call $str_eq (i32.load (i32.add (local.get $names) (i32.mul (local.get $i) (i32.const 4)))) (local.get $name)) (then (set! $idx (local.get $i)) (br $b)))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (if (i32.lt_s (local.get $idx) (i32.const 0))
+    (then
+      (let $e i32 (if i32 (i32.eq (local.get $kind) (i32.const 1)) (then (i32.const 1))
+                     (else (if i32 (i32.eq (local.get $kind) (i32.const 2)) (then (i32.or (i32.const 2) (i32.shl (local.get $st) (i32.const 3)))) (else (i32.or (i32.const 4) (i32.shl (local.get $st) (i32.const 4))))))))
+      (if (i32.lt_s (local.get $n) (i32.const 1024)) (then (i32.store (i32.add (local.get $names) (i32.mul (local.get $n) (i32.const 4))) (local.get $name)) (i32.store (i32.add (local.get $encs) (i32.mul (local.get $n) (i32.const 4))) (local.get $e))))
+      (return (i32.add (local.get $n) (i32.const 1)))))
+  (let $e i32 (i32.load (i32.add (local.get $encs) (i32.mul (local.get $idx) (i32.const 4)))))
+  (if (i32.and (local.get $e) (i32.const 1)) (then (return (i32.const -1))))  ;; existing solid → any duplicate errors
+  (if (i32.eq (local.get $kind) (i32.const 1)) (then (return (i32.const -1))))  ;; new solid on an existing entry
+  (if (i32.eq (local.get $kind) (i32.const 2))
+    (then
+      (if (i32.and (local.get $e) (i32.const 2)) (then (return (i32.const -1))))  ;; already a getter
+      (if (i32.and (local.get $e) (i32.const 4)) (then (if (i32.ne (i32.and (i32.shr_u (local.get $e) (i32.const 4)) (i32.const 1)) (local.get $st)) (then (return (i32.const -1))))))
+      (i32.store (i32.add (local.get $encs) (i32.mul (local.get $idx) (i32.const 4))) (i32.or (local.get $e) (i32.or (i32.const 2) (i32.shl (local.get $st) (i32.const 3)))))
+      (return (local.get $n))))
+  (if (i32.and (local.get $e) (i32.const 4)) (then (return (i32.const -1))))  ;; already a setter
+  (if (i32.and (local.get $e) (i32.const 2)) (then (if (i32.ne (i32.and (i32.shr_u (local.get $e) (i32.const 3)) (i32.const 1)) (local.get $st)) (then (return (i32.const -1))))))
+  (i32.store (i32.add (local.get $encs) (i32.mul (local.get $idx) (i32.const 4))) (i32.or (local.get $e) (i32.or (i32.const 4) (i32.shl (local.get $st) (i32.const 4)))))
+  (local.get $n))
+
+;; Early Error: the PrivateBoundIdentifiers of a ClassBody must have no duplicates (get/set pair excepted).
+;; Token pre-scan from the first element (cursor just past the class-body '{') to the matching '}'. At the
+;; class-body's own brace depth (0), a '#name' NOT preceded by '.' is an element key (a '.#x' access only
+;; ever appears in a method body/field initializer, and a field-init access is '.'-prefixed). get/set/static
+;; prefix flags are tracked and reset at each ';' and whenever a nested body/params close back to depth 0.
+(func $vm_class_priv_dup_check (effects)
+  (let $save i32 (call $cursor_save))
+  (let $names i32 (call $heap_alloc (i32.const 4096)))
+  (let $encs i32 (call $heap_alloc (i32.const 4096)))
+  (let $n i32 (i32.const 0))
+  (let $depth i32 (i32.const 0))
+  (let $pstatic i32 (i32.const 0))
+  (let $pget i32 (i32.const 0))
+  (let $pset i32 (i32.const 0))
+  (let $prev i32 (i32.const 0))
+  (block $done (loop $lp
+    (let $k i32 (call $tok_kind))
+    (br_if $done (i32.eqz (local.get $k)))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 18)) (i32.eqz (local.get $depth))) (then (br $done)))  ;; the class body '}'
+    (if (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.or (i32.eq (local.get $k) (i32.const 17)) (i32.eq (local.get $k) (i32.const 19))))
+      (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+    (if (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.eq (local.get $k) (i32.const 20))))
+      (then (set! $depth (i32.sub (local.get $depth) (i32.const 1)))
+        (if (i32.eqz (local.get $depth)) (then (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0))))
+        (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+    (if (i32.gt_s (local.get $depth) (i32.const 0)) (then (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+    (if (i32.eq (local.get $k) (i32.const 21)) (then (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))  ;; ';'
+    (if (i32.eq (local.get $k) (i32.const 3))
+      (then
+        ;; a private element key (kind-3 token starting with '#', not a '.'-prefixed member access)
+        (if (i32.and (i32.ne (local.get $prev) (i32.const 23)) (i32.eq (call $str_byte (call $ident_name) (i32.const 0)) (i32.const 35)))
+          (then
+            (let $kind i32 (if i32 (local.get $pget) (then (i32.const 2)) (else (if i32 (local.get $pset) (then (i32.const 3)) (else (i32.const 1))))))
+            (let $r i32 (call $priv_dup_add (local.get $names) (local.get $encs) (local.get $n) (call $ident_name) (local.get $kind) (local.get $pstatic)))
+            (if (i32.lt_s (local.get $r) (i32.const 0)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate private name")) (br $done)))
+            (set! $n (local.get $r))
+            (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0))
+            (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+        (if (call $tok_is_kw (cstring "static")) (then (set! $pstatic (i32.const 1))))
+        (if (call $tok_is_kw (cstring "get")) (then (set! $pget (i32.const 1))))
+        (if (call $tok_is_kw (cstring "set")) (then (set! $pset (i32.const 1))))
+        (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+    (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+  (call $cursor_restore (local.get $save)))
+
 (func $vm_c_class (param $code i32) (param $isExpr i32) (effects)
   (call $next_token)  ;; 'class'
   ;; a class definition (heritage + body: constructor, methods, accessors, field initializers,
@@ -3236,6 +3312,8 @@
   (if (local.get $clsname)
     (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; ENTERSCOPE clsname
   (call $next_token)  ;; '{'
+  (call $vm_class_priv_dup_check)  ;; Early Error: duplicate PrivateBoundIdentifiers in the ClassBody
+  (if (call $err) (then (i32.store (i32.const 388) (local.get $clssave)) (return)))
   (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWOBJ 0 → empty proto
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $protoT))
   ;; reserve `constructor` as the FIRST own key of the prototype (spec: MakeConstructor defines
