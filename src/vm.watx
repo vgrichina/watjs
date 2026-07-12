@@ -511,7 +511,7 @@
 ;; tagged template `tag`a${x}b`` — the tag fn is already on the stack. Builds the
 ;; (compile-time-constant) strings array [a,b] with a .raw copy, then calls
 ;; tag(strings, ...substitutions). Cooked == raw here (escape handling deferred).
-(func $vm_c_tagged_template (param $code i32) (effects)
+(func $vm_c_tagged_template (param $code i32) (param $ismethod i32) (effects)
   (let $tbase i32 (i32.add (call $src) (call $tok_start)))
   (let $tlen i32 (call $tok_len))
   (call $next_token)  ;; consume template token
@@ -572,7 +572,9 @@
     (call $set_src (local.get $ss) (local.get $sln)) (call $cursor_restore (local.get $sc))
     (set! $si (i32.add (local.get $si) (i32.const 1)))
     (br $sl)))
-  (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (i32.add (local.get $nsub) (i32.const 1))))  ;; CALL (1 + nsub args)
+  ;; CALLM (33) when the tag is a member expression (obj.fn`…` → this=obj), else CALL (19); same argc
+  ;; = strings array + nsub substitutions (CALLM additionally pops the receiver already under the tag fn).
+  (call $vm_emit_op (local.get $code) (if i32 (local.get $ismethod) (then (i32.const 33)) (else (i32.const 19)))) (call $vm_emit_op (local.get $code) (i32.add (local.get $nsub) (i32.const 1))))
 
 ;; IsAnonymousFunctionDefinition: true iff the just-compiled initializer (which
 ;; began emitting at $start, ending at the current cursor) was EXACTLY one
@@ -1210,7 +1212,7 @@
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (if (i32.eq (local.get $k) (i32.const 53))  ;; tagged template: fn`...`
-      (then (call $vm_c_tagged_template (local.get $code)) (br $l)))
+      (then (call $vm_c_tagged_template (local.get $code) (i32.const 0)) (br $l)))
     (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' call
       (then (call $vm_c_call_tail (local.get $code)) (br $l)))
     (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
@@ -1391,8 +1393,13 @@
                 (br $ml)))))
             (call $next_token)  ;; ')'
             (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $margc)))  ;; CALLM
-          (else
-            (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))))  ;; GETPROP
+          (else (if (i32.eq (call $tok_kind) (i32.const 53))  ;; member tagged template: obj.fn`…` → this=obj
+            (then
+              (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP receiver → [obj, obj]
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP → [obj, tagfn]
+              (call $vm_c_tagged_template (local.get $code) (i32.const 1)))  ;; CALLM with this=obj
+            (else
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))))))  ;; GETPROP
         (br $l)))
     (if (i32.eq (local.get $k) (i32.const 55))  ;; ?. optional chaining — short-circuit whole chain to undefined if receiver nullish
       (then
