@@ -2184,7 +2184,7 @@
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
-  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))  ;; prototype (set by class compilation)
+  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_hole))  ;; prototype (set by class compilation)
   (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))    ;; closureScope (filled at runtime by CLOSURE)
   (let $ci i32 (i32.const 0))
   (block $ce (loop $cl
@@ -2248,7 +2248,7 @@
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
-  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))
+  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_hole))
   (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))    ;; closureScope (0 → gscope fallback)
   (i32.store (i32.add (local.get $fn) (i32.const 28)) (i32.const 0))    ;; name ""
   (i32.store (i32.add (local.get $fn) (i32.const 32)) (i32.const 8))    ;; bit3 = class constructor (synthetic, no plain call)
@@ -2279,7 +2279,7 @@
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
-  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))
+  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_hole))
   (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))
   (i32.store (i32.add (local.get $fn) (i32.const 28)) (i32.const 0))
   (i32.store (i32.add (local.get $fn) (i32.const 32)) (i32.const 8))    ;; bit3 = class constructor
@@ -2307,7 +2307,7 @@
   (i32.store (i32.add (local.get $bfn) (i32.const 4)) (local.get $bentry))
   (i32.store (i32.add (local.get $bfn) (i32.const 8)) (i32.const 0))     ;; np
   (i32.store (i32.add (local.get $bfn) (i32.const 12)) (local.get $code))
-  (i64.store (i32.add (local.get $bfn) (i32.const 16)) (call $v_undef))  ;; proto
+  (i64.store (i32.add (local.get $bfn) (i32.const 16)) (call $v_hole))  ;; proto
   (i32.store (i32.add (local.get $bfn) (i32.const 24)) (i32.const 0))    ;; closureScope (CLOSURE fills at runtime)
   (i32.store (i32.add (local.get $bfn) (i32.const 28)) (i32.const 0))    ;; name
   (i32.store (i32.add (local.get $bfn) (i32.const 32)) (i32.const 0))    ;; flags 0 (own `this`)
@@ -2329,7 +2329,7 @@
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (i32.const 0))     ;; np
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
-  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))  ;; proto
+  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_hole))  ;; proto
   (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))    ;; closureScope (CLOSURE fills at runtime)
   (i32.store (i32.add (local.get $fn) (i32.const 28)) (i32.const 0))    ;; name
   (i32.store (i32.add (local.get $fn) (i32.const 32)) (i32.const 0))    ;; flags 0 (non-arrow → own `this`)
@@ -2895,7 +2895,7 @@
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
-  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_undef))
+  (i64.store (i32.add (local.get $fn) (i32.const 16)) (call $v_hole))
   (i32.store (i32.add (local.get $fn) (i32.const 24)) (i32.const 0))    ;; closureScope (filled at runtime by CLOSURE)
   (let $ci i32 (i32.const 0))
   (block $ce (loop $cl
