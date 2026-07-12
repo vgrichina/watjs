@@ -3315,7 +3315,11 @@
                 (let $r i32 (call $priv_dup_add (local.get $names) (local.get $encs) (local.get $n) (call $ident_name) (local.get $kind) (local.get $pstatic)))
                 (if (i32.lt_s (local.get $r) (i32.const 0)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate private name")) (br $done)))
                 (set! $n (local.get $r))
-                (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0)) (set! $pgen (i32.const 0)) (set! $pasync (i32.const 0)) (set! $atkey (i32.const 0))
+                (set! $pstatic (i32.const 0)) (set! $pget (i32.const 0)) (set! $pset (i32.const 0)) (set! $pgen (i32.const 0)) (set! $pasync (i32.const 0))
+                ;; after the key: a method '(' or field '=' continues this element (atkey=0); anything else
+                ;; means a bare field with no initializer whose element ends now → the next token is a new key.
+                (call $look_save) (call $next_token) (let $pk1 i32 (call $tok_kind)) (call $look_restore)
+                (set! $atkey (i32.eqz (i32.or (i32.eq (local.get $pk1) (i32.const 15)) (i32.eq (local.get $pk1) (i32.const 24)))))
                 (set! $prev (local.get $k)) (call $next_token) (br $lp)))
             ;; prefix modifiers keep the key-expected position
             (if (call $tok_is_kw (cstring "static")) (then (set! $pstatic (i32.const 1)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
@@ -3330,11 +3334,112 @@
                 (if (i32.eq (local.get $nk) (i32.const 15))  ;; followed by '(' → a constructor method
                   (then (set! $ctorcnt (i32.add (local.get $ctorcnt) (i32.const 1)))
                     (if (i32.ge_s (local.get $ctorcnt) (i32.const 2)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A class may only have one constructor")) (br $done)))))))
-            ;; any other identifier is a (public) key → consume the key-expected position
-            (set! $atkey (i32.const 0)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+            ;; any other identifier is a (public) key → a method '(' / field '=' continues the element,
+            ;; else it is a bare field and the next token begins a new element.
+            (call $look_save) (call $next_token) (let $pk2 i32 (call $tok_kind)) (call $look_restore)
+            (set! $atkey (i32.eqz (i32.or (i32.eq (local.get $pk2) (i32.const 15)) (i32.eq (local.get $pk2) (i32.const 24)))))
+            (set! $prev (local.get $k)) (call $next_token) (br $lp)))
         (set! $prev (local.get $k)) (call $next_token) (br $lp)))
     (set! $atkey (i32.const 0)) (set! $prev (local.get $k)) (call $next_token) (br $lp)))
+  ;; publish this class's declared private names into the global visible-set stack (reg 904 buffer /
+  ;; reg 908 count) so the reference-validation pass and any nested class can see them. The caller
+  ;; (vm_c_class) saved reg 908 before this call and restores it after the body → a scoped push.
+  (if (i32.eqz (i32.load (i32.const 904))) (then (i32.store (i32.const 904) (call $heap_alloc (i32.const 32768)))))
+  (let $gi i32 (i32.const 0))
+  (block $ge (loop $gl
+    (br_if $ge (i32.ge_s (local.get $gi) (local.get $n)))
+    (let $gc i32 (i32.load (i32.const 908)))
+    (if (i32.lt_s (local.get $gc) (i32.const 8192))
+      (then (i32.store (i32.add (i32.load (i32.const 904)) (i32.mul (local.get $gc) (i32.const 4))) (i32.load (i32.add (local.get $names) (i32.mul (local.get $gi) (i32.const 4)))))
+            (i32.store (i32.const 908) (i32.add (local.get $gc) (i32.const 1)))))
+    (set! $gi (i32.add (local.get $gi) (i32.const 1))) (br $gl)))
   (call $cursor_restore (local.get $save)))
+
+;; Skip one whole class from the cursor (positioned at the `class` keyword) — its optional name, its
+;; heritage (which may itself contain nested `class {}` / `function(){}` bodies), and its balanced body.
+;; Leaves the cursor just past the class body's closing '}'. Used by the private-name reference scans to
+;; step over a nested class (validated by its own pass). `pend` counts heritage class/function bodies
+;; still to consume before the real class body '{' at bracket-depth 0.
+(func $skip_one_class (effects)
+  (call $next_token)  ;; 'class'
+  (let $sd i32 (i32.const 0))
+  (let $pend i32 (i32.const 0))
+  (block $cbe (loop $cbl
+    (let $t i32 (call $tok_kind))
+    (br_if $cbe (i32.eqz (local.get $t)))
+    (if (i32.or (i32.eq (local.get $t) (i32.const 15)) (i32.eq (local.get $t) (i32.const 19))) (then (set! $sd (i32.add (local.get $sd) (i32.const 1)))))
+    (if (i32.or (i32.eq (local.get $t) (i32.const 16)) (i32.eq (local.get $t) (i32.const 20))) (then (set! $sd (i32.sub (local.get $sd) (i32.const 1)))))
+    (if (i32.and (i32.eqz (local.get $sd)) (i32.and (i32.eq (local.get $t) (i32.const 3)) (i32.or (call $tok_is_kw (cstring "class")) (call $tok_is_kw (cstring "function")))))
+      (then (set! $pend (i32.add (local.get $pend) (i32.const 1))) (call $next_token) (br $cbl)))
+    (if (i32.and (i32.eq (local.get $t) (i32.const 17)) (i32.eqz (local.get $sd)))
+      (then
+        (if (i32.gt_s (local.get $pend) (i32.const 0))
+          (then  ;; a heritage class/function body — skip it balanced, keep looking for the real body
+            (set! $pend (i32.sub (local.get $pend) (i32.const 1)))
+            (let $b i32 (i32.const 1)) (call $next_token)
+            (block $sbe (loop $sbl
+              (let $u i32 (call $tok_kind))
+              (br_if $sbe (i32.eqz (local.get $u)))
+              (if (i32.eq (local.get $u) (i32.const 17)) (then (set! $b (i32.add (local.get $b) (i32.const 1)))))
+              (if (i32.eq (local.get $u) (i32.const 18)) (then (set! $b (i32.sub (local.get $b) (i32.const 1))) (if (i32.eqz (local.get $b)) (then (call $next_token) (br $sbe)))))
+              (call $next_token) (br $sbl)))
+            (br $cbl))
+          (else (call $next_token) (br $cbe)))))  ;; the real class body '{' — consume and go skip it
+    (call $next_token) (br $cbl)))
+  (let $bd i32 (i32.const 1))
+  (block $bbe (loop $bbl
+    (let $t i32 (call $tok_kind))
+    (br_if $bbe (i32.eqz (local.get $t)))
+    (if (i32.eq (local.get $t) (i32.const 17)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1)))))
+    (if (i32.eq (local.get $t) (i32.const 18)) (then (set! $bd (i32.sub (local.get $bd) (i32.const 1))) (if (i32.eqz (local.get $bd)) (then (call $next_token) (br $bbe)))))
+    (call $next_token) (br $bbl))))
+
+;; Early Error (AllPrivateIdentifiersValid): every '#name' reference in the class body must resolve to a
+;; declared private name — of this class or an enclosing one (the global visible set, reg 904/908). Token
+;; scan from the first element (cursor just past '{') to the matching '}'; nested class bodies are skipped
+;; (their references are validated by their own pass against the accumulated set). A '#name' key is itself
+;; in the set, so declarations pass trivially; only an undeclared reference fails. Cursor restored.
+(func $vm_class_priv_ref_check (effects)
+  (let $save i32 (call $cursor_save))
+  (let $buf i32 (i32.load (i32.const 904)))
+  (let $cnt i32 (i32.load (i32.const 908)))
+  (let $depth i32 (i32.const 0))
+  (block $done (loop $lp
+    (let $k i32 (call $tok_kind))
+    (br_if $done (i32.eqz (local.get $k)))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 18)) (i32.eqz (local.get $depth))) (then (br $done)))  ;; the class body '}'
+    ;; a nested class → skip its whole body (its own ref pass validates it with the fuller set)
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "class")))
+      (then (call $skip_one_class) (br $lp)))
+    (if (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.or (i32.eq (local.get $k) (i32.const 17)) (i32.eq (local.get $k) (i32.const 19))))
+      (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (call $next_token) (br $lp)))
+    (if (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.eq (local.get $k) (i32.const 20))))
+      (then (set! $depth (i32.sub (local.get $depth) (i32.const 1))) (call $next_token) (br $lp)))
+    ;; a '#name' token (key or reference) must be in the visible set
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (i32.eq (call $str_byte (call $ident_name) (i32.const 0)) (i32.const 35)))
+      (then
+        (if (i32.eqz (call $dup_has (local.get $buf) (local.get $cnt) (call $ident_name)))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Private field must be declared in an enclosing class")) (br $done)))))
+    (call $next_token) (br $lp)))
+  (call $cursor_restore (local.get $save)))
+
+;; Early Error: a '#name' reference that is NOT lexically inside a class body is always invalid (the
+;; visible private-name set there is empty). Scan the whole program source, skipping every class body
+;; (each is validated by its own per-class pass); any '#name' found outside → SyntaxError. Self-contained
+;; lexer setup (the caller re-initialises the cursor afterwards for the hoist pass).
+(func $vm_toplevel_priv_check (param $ptr i32) (param $len i32) (effects)
+  (call $set_src (local.get $ptr) (local.get $len))
+  (call $lex_init)
+  (call $set_pos (call $hashbang_len))
+  (call $next_token)
+  (block $done (loop $lp
+    (let $k i32 (call $tok_kind))
+    (br_if $done (i32.eqz (local.get $k)))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "class")))
+      (then (call $skip_one_class) (br $lp)))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (i32.eq (call $str_byte (call $ident_name) (i32.const 0)) (i32.const 35)))
+      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Private field must be declared in an enclosing class")) (br $done)))
+    (call $next_token) (br $lp))))
 
 (func $vm_c_class (param $code i32) (param $isExpr i32) (effects)
   (call $next_token)  ;; 'class'
@@ -3364,8 +3469,11 @@
   (if (local.get $clsname)
     (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; ENTERSCOPE clsname
   (call $next_token)  ;; '{'
-  (call $vm_class_priv_dup_check)  ;; Early Error: duplicate PrivateBoundIdentifiers in the ClassBody
-  (if (call $err) (then (i32.store (i32.const 388) (local.get $clssave)) (return)))
+  (let $privsave i32 (i32.load (i32.const 908)))  ;; visible-private-name stack depth to restore on class exit
+  (call $vm_class_priv_dup_check)  ;; Early Error: duplicate PrivateBoundIdentifiers (also pushes this class's names)
+  (if (call $err) (then (i32.store (i32.const 388) (local.get $clssave)) (i32.store (i32.const 908) (local.get $privsave)) (return)))
+  (call $vm_class_priv_ref_check)  ;; Early Error: every '#name' reference resolves to a visible private name
+  (if (call $err) (then (i32.store (i32.const 388) (local.get $clssave)) (i32.store (i32.const 908) (local.get $privsave)) (return)))
   (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWOBJ 0 → empty proto
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $protoT))
   ;; reserve `constructor` as the FIRST own key of the prototype (spec: MakeConstructor defines
@@ -3610,6 +3718,7 @@
   (if (i32.eqz (local.get $isExpr))
     (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; STOREVAR C
   (i32.store (i32.const 680) (local.get $litstart)) (i32.store (i32.const 684) (call $vm_emit_cursor))  ;; record class-literal span [680,684] for name-inference (overwrites ctor's fnbody span)
+  (i32.store (i32.const 908) (local.get $privsave))  ;; pop this class's private names off the visible-set stack
   (i32.store (i32.const 388) (local.get $clssave)))  ;; restore enclosing strictness
 
 ;; does the block starting at the current '{' contain a TOP-LEVEL (depth-1) lexical declaration
@@ -4772,6 +4881,13 @@
     (if (local.get $pisus) (then (i32.store (i32.const 388) (i32.const 1))))
     (if (i32.eq (call $tok_kind) (i32.const 21)) (then (call $next_token)))
     (br $ppl)))
+  ;; Early Error: a '#name' reference outside any class body is invalid (empty private-name scope). Only
+  ;; for a fresh top-level program — a nested/direct eval ($prelude=0) may legitimately reference the
+  ;; enclosing method's class private names, which this flat scan cannot see.
+  (if (local.get $prelude)
+    (then
+      (call $vm_toplevel_priv_check (local.get $ptr) (local.get $len))
+      (if (call $err) (then (return (local.get $code))))))
   ;; hoist the user program's var declarations (define as undefined up front)
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
@@ -7457,6 +7573,8 @@
 (func $eval_prog (param $ptr i32) (param $len i32) (result i32) (effects)
   (call $set_err (i32.const 0))
   (i32.store (i32.const 400) (i32.const 0))  ;; "surfaceable syntax error" flag (set only by intentional early-error detections)
+  (i32.store (i32.const 904) (i32.const 0))  ;; private-name visible-set buffer (lazy-alloc; heap was reset)
+  (i32.store (i32.const 908) (i32.const 0))  ;; private-name visible-set count
   (i32.store (i32.const 704) (i32.const 0))  ;; fresh microtask queue (heap_reset freed any prior array)
   (let $ctx i32 (call $vm_new (call $vm_compile_prog (local.get $ptr) (local.get $len) (i32.const 1))))  ;; top-level: build the Error prelude
   (if (call $err)
