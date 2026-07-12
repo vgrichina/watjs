@@ -7318,6 +7318,10 @@
       (if (call $is_proxy (local.get $rcf))
         (then (return (call $vm_construct (local.get $rcf) (local.get $rcn) (local.get $rcbuf) (local.get $rcnt)))))
       (let $rcfn i32 (call $val_payload (local.get $rcf)))
+      ;; bound function → [[Construct]] via vm_construct so the bound retargeting runs (prepend bound args,
+      ;; and if newTarget is the bound fn itself replace it with the bound target, recursively).
+      (if (i32.eq (i32.load (local.get $rcfn)) (i32.const 1448232540))
+        (then (return (call $vm_construct (local.get $rcf) (local.get $rcn) (local.get $rcbuf) (local.get $rcnt)))))
       ;; native constructor → use its own return value. For a CUSTOM newTarget (3rd arg ≠ target),
       ;; GetPrototypeFromConstructor(newTarget): read newTarget.prototype (fires a getter — propagate its
       ;; throw) and, when it's an OBJECT, build the `this` the native ctor transplants its slots onto (so
