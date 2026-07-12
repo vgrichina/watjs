@@ -3246,6 +3246,13 @@
 ;; ToObject(v): objects/arrays/functions pass through; primitives → boxed wrapper.
 ;; null/undefined are the caller's responsibility (they must pre-check); here they
 ;; degrade to a fresh empty object rather than trapping.
+;; ToString abstract operation (§7.1.17): like $to_str (which is String()-style and stringifies a Symbol)
+;; but throws a TypeError on a Symbol, per spec. Returns 0 on throw (caller checks $err).
+(func $to_str_ck (param $v i64) (result i32) (effects)
+  (if (call $is_symbol (local.get $v))
+    (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (i32.const 0))))
+  (call $to_str (local.get $v)))
+
 (func $to_object (param $a i64) (result i64) (effects)
   (if (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a))))
     (then (return (local.get $a))))
@@ -8993,7 +9000,7 @@
     (then
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_function (local.get $thisv)) (call $is_array (local.get $thisv)))))
         (then (call $throw_type (cstring "TypeError") (cstring "RegExp.prototype[@@split] called on non-object")) (return (call $v_undef))))
-      (let $spSstr i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))  ;; S
+      (let $spSstr i32 (call $to_str_ck (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))  ;; S = ToString(string) — a Symbol throws
       (if (call $err) (then (return (call $v_undef))))
       (let $spS i64 (call $mk_str (local.get $spSstr)))
       (let $spSize i32 (call $str_len (local.get $spSstr)))
@@ -9002,7 +9009,7 @@
       (let $spC i64 (call $species_constructor (local.get $thisv) (local.get $spDef)))
       (if (call $err) (then (return (call $v_undef))))
       ;; newFlags = ToString(Get(rx,"flags")) with 'y' ensured
-      (let $spFlags i32 (call $to_str (call $get_prop (local.get $thisv) (call $mk_str (cstring "flags")))))
+      (let $spFlags i32 (call $to_str_ck (call $get_prop (local.get $thisv) (call $mk_str (cstring "flags")))))  ;; ToString(flags) — a Symbol throws
       (if (call $err) (then (return (call $v_undef))))
       (let $spNF i32 (if i32 (call $str_has_char (local.get $spFlags) (i32.const 121)) (then (local.get $spFlags)) (else (call $str_concat (local.get $spFlags) (cstring "y")))))
       ;; splitter = Construct(C, [rx, newFlags])
