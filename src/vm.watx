@@ -5980,7 +5980,10 @@
           (then (if (i32.and (call $is_string (local.get $dk)) (call $str_eq (call $val_payload (local.get $dk)) (cstring "__proto__")))
             (then (if (i32.or (call $is_object (local.get $dv)) (call $is_null (local.get $dv)))
               (then (drop (call $setproto_internal (local.get $dobj) (local.get $dv))))))
-            (else (call $set_prop (local.get $dobj) (local.get $dk) (local.get $dv)))))                              ;; DEFDATA
+            ;; a non-__proto__ literal property is CreateDataProperty (own {W,E,C}), NOT [[Set]] — it must
+            ;; ignore an inherited accessor of the same name (else `{k:v}` fails when Object.prototype has a
+            ;; getter-only `k`) and never fire an inherited setter.
+            (else (call $scope_define_attr (call $val_payload (local.get $dobj)) (call $to_prop_key (local.get $dk)) (local.get $dv) (i32.const 14)))))  ;; DEFDATA
           (else (call $scope_set_accessor_attr (call $val_payload (local.get $dobj)) (call $to_prop_key (local.get $dk)) (local.get $disget) (local.get $dv)
                   (if i32 (i32.or (i32.eq (local.get $op) (i32.const 66)) (i32.eq (local.get $op) (i32.const 67))) (then (i32.const 7)) (else (i32.const 5))))))  ;; obj-literal → E|C, class → C only
         (br $disp)))
