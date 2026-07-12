@@ -2893,9 +2893,20 @@
           (then
             (let $nt i32 (call $vm_tmpname))
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nt))  ;; STOREVAR nt
-            (call $vm_c_nested_with_default (local.get $code) (local.get $nt)))
+            (if (local.get $isrest)
+              (then
+                ;; a BindingRestElement may NOT carry a default initializer (`[...[x] = []]` is a SyntaxError)
+                (let $rps i32 (call $cursor_save))
+                (call $vm_skip_balanced)
+                (if (i32.eq (call $tok_kind) (i32.const 24)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element may not have a default initializer")) (return)))
+                (call $cursor_restore (local.get $rps))
+                (call $vm_c_destructure_param (local.get $code) (local.get $nt)))
+              (else (call $vm_c_nested_with_default (local.get $code) (local.get $nt)))))
           (else
             (let $nm i32 (call $ident_name)) (call $next_token)
+            ;; a simple BindingRestElement (`...x`) also may not have a default (`[...x = 1]`)
+            (if (i32.and (local.get $isrest) (i32.eq (call $tok_kind) (i32.const 24)))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element may not have a default initializer")) (return)))
             (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; member target a.b / a[i] (assignment form)
               (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval")) (call $vm_c_dstr_assign_member (local.get $code) (local.get $nm)))
               (else
