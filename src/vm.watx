@@ -3814,6 +3814,10 @@
       (let $lblnm i32 (call $ident_name)) (call $next_token)
       (if (i32.eq (call $tok_kind) (i32.const 37))  ;; ':'
         (then
+          ;; a LabelIdentifier may not be `await` in an async body / `yield` in a generator body
+          (if (i32.or (i32.and (i32.load (i32.const 896)) (call $str_eq (local.get $lblnm) (cstring "await")))
+                      (i32.and (i32.load (i32.const 672)) (call $str_eq (local.get $lblnm) (cstring "yield"))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await'/'yield' is a reserved label identifier here")) (return)))
           (call $next_token)
           (if (i32.or (call $tok_is_kw (cstring "for")) (i32.or (call $tok_is_kw (cstring "while")) (call $tok_is_kw (cstring "do"))))
             (then  ;; labeled loop — the loop consumes the pending label (break/continue both work)
