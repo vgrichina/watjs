@@ -4229,6 +4229,9 @@
           (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "finally")))
             (then (call $next_token) (set! $prefin (call $cursor_save))))  ;; cursor at finally '{'
           (call $cursor_restore (local.get $pscur))
+          ;; a TryStatement must have a Catch or a Finally (or both) — `try {}` alone is a SyntaxError.
+          (if (i32.and (i32.eqz (local.get $hasc0)) (i32.eqz (local.get $prefin)))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "missing catch or finally after 'try'")) (return)))
           (if (local.get $prefin) (then (call $vm_finally_push (local.get $prefin))))
           (call $vm_emit_op (local.get $code) (i32.const 48))  ;; PUSHHANDLER catchIp, varname (placeholders)
           (let $hloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catchIp
@@ -4252,6 +4255,8 @@
               (if (i32.eq (call $tok_kind) (i32.const 15))  ;; catch (...) — optional binding
                 (then
                   (call $next_token)  ;; '('
+                  ;; `catch ()` with an empty binding is a SyntaxError (a CatchParameter is required with parens).
+                  (if (i32.eq (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "missing catch binding")) (return)))
                   (if (i32.or (i32.eq (call $tok_kind) (i32.const 17)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; catch ({…}) / catch ([…]) destructuring
                     (then
                       ;; A destructuring catch parameter introduces its own declarative environment (spec
