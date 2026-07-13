@@ -244,6 +244,50 @@
     (set! $prevelse (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "else"))))
     (set! $prevk (local.get $k)) (call $next_token) (br $hl)))
   (call $cursor_restore (local.get $start)))
+
+;; Hoist `var` declarations in a FUNCTION BODY: emit DEFVAR name=undefined (create-if-absent) at the top of
+;; the body for every `var` at any nesting inside THIS function, so a reference before (or unreachable after,
+;; e.g. `return v; var v = 1`) its declaration sees `undefined` rather than a ReferenceError. Nested
+;; function / arrow bodies are skipped (their vars hoist to them). Single-declarator form (matches vm_hoist's
+;; program-level var pass); tracks only '{'/'}' for the body boundary (object literals net out; parens/brackets
+;; can't hold a statement-level `var` except via a skipped nested function). Cursor is at the body '{'; restored.
+(func $vm_hoist_vars (param $code i32) (effects)
+  (let $start i32 (call $cursor_save))
+  (call $next_token)  ;; consume the body '{'
+  (let $depth i32 (i32.const 0))
+  (block $done (loop $lp
+    (let $k i32 (call $tok_kind))
+    (br_if $done (i32.eqz (local.get $k)))
+    ;; a nested function → skip it whole (name/params/body); its vars belong to it
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function")))
+      (then (call $hoist_skip_fn) (call $next_token) (br $lp)))
+    ;; an arrow: '=>' followed by a '{' block body → skip the balanced block (its vars belong to the arrow)
+    (if (i32.eq (local.get $k) (i32.const 52))
+      (then
+        (call $next_token)
+        (if (i32.eq (call $tok_kind) (i32.const 17))
+          (then
+            (let $abd i32 (i32.const 1)) (call $next_token)
+            (block $abe (loop $abl
+              (let $t i32 (call $tok_kind))
+              (br_if $abe (i32.eqz (local.get $t)))
+              (if (i32.eq (local.get $t) (i32.const 17)) (then (set! $abd (i32.add (local.get $abd) (i32.const 1)))))
+              (if (i32.eq (local.get $t) (i32.const 18)) (then (set! $abd (i32.sub (local.get $abd) (i32.const 1))) (if (i32.eqz (local.get $abd)) (then (call $next_token) (br $abe)))))
+              (call $next_token) (br $abl)))))
+        (br $lp)))
+    (if (i32.eq (local.get $k) (i32.const 17)) (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (call $next_token) (br $lp)))  ;; '{'
+    (if (i32.eq (local.get $k) (i32.const 18))
+      (then (br_if $done (i32.eqz (local.get $depth)))  ;; the body's closing '}' → done
+            (set! $depth (i32.sub (local.get $depth) (i32.const 1))) (call $next_token) (br $lp)))
+    ;; `var NAME` → DEFVAR name (create-if-absent, undefined)
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "var")))
+      (then
+        (call $next_token)
+        (if (i32.eq (call $tok_kind) (i32.const 3))
+          (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))))
+        (br $lp)))
+    (call $next_token) (br $lp)))
+  (call $cursor_restore (local.get $start)))
 ;; AnnexB B.3.3 for a FUNCTION BODY: emit DEFVAR name=undefined for each function declaration nested in a
 ;; SUB-block (brace depth ≥ 2 relative to the body's '{'), UNLESS the name is bound by a lexical declaration
 ;; (let/const/class/catch-param/for-head let-const) in an ENCLOSING block — in that case B.3.3 hoisting is
@@ -2469,6 +2513,7 @@
   (if (i32.eq (call $tok_kind) (i32.const 17))
     (then
       (call $vm_hoist_fns (local.get $code) (i32.const 1))  ;; hoist `function NAME` decls (body is a '{...}' block)
+      (call $vm_hoist_vars (local.get $code))  ;; hoist `var` decls → DEFVAR undefined (forward/unreachable refs see undefined, not ReferenceError)
       (call $vm_hoist_block_fns (local.get $code))  ;; AnnexB B.3.3: block-nested fn decls → var binding = undefined (unless lexically shadowed)
       (i32.store (i32.const 856) (i32.const 1))))  ;; the immediate function-body block must NOT get its own lexical scope — the function scope already serves as it (else hoisted inner fn decls, which capture the function scope, can't see the body's let/const)
   ;; reg 672 = "compiling inside a generator body" — so `yield` is the yield-expression
@@ -3242,6 +3287,7 @@
             (set! $ansi (i32.add (local.get $ansi) (i32.const 1))) (br $ansl)))
           (if (local.get $ansimple) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Illegal 'use strict' directive in function with non-simple parameter list")) (return)))))
       (i32.store (i32.const 388) (local.get $arrstrict))
+      (call $vm_hoist_vars (local.get $code))  ;; hoist the arrow body's `var` decls (cursor is at the body '{')
       (call $vm_c_stmt (local.get $code))
       (i32.store (i32.const 388) (local.get $arrsave))  ;; restore strictness for the enclosing scope
       (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
@@ -3532,19 +3578,22 @@
   (let $protoT i32 (call $vm_tmpname))
   (let $ctorT i32 (call $vm_tmpname))
   (let $superT i32 (i32.const 0))
+  ;; a NAMED class has an inner immutable binding of its own name, scoped to the class body, that
+  ;; methods / static blocks / field initializers reference. Push the class scope BEFORE the ClassHeritage
+  ;; and bind the name in TDZ (v_tdz) — the ClassHeritage is evaluated inside the class scope where the name
+  ;; is uninitialized, so `class C extends C {}` (or a hoisted outer `C`) is a ReferenceError. The ctor is
+  ;; assigned into it (initializing the TDZ) before static initializers run; the scope is popped after
+  ;; (method/field closures keep it alive). Anonymous classes skip it.
+  (if (local.get $clsname)
+    (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (local.get $clsname))  ;; ENTERSCOPE clsname
+          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_tdz))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; clsname = TDZ until the ctor is built
   (if (call $tok_is_kw (cstring "extends"))
     (then
       (call $next_token)
       (set! $superT (call $vm_tmpname))
       (call $vm_c_postfix (local.get $code))
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $superT))))
-  ;; a NAMED class has an inner immutable binding of its own name, scoped to the class body, that
-  ;; methods / static blocks / field initializers reference. Push the class scope AFTER the ClassHeritage
-  ;; (extends) is evaluated — the name is NOT yet bound during the heritage, so `class C extends C {}` is a
-  ;; ReferenceError. Its closures capture this scope; the ctor is assigned into it before static
-  ;; initializers run; it is popped after (method/field closures keep it alive). Anonymous classes skip it.
-  (if (local.get $clsname)
-    (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; ENTERSCOPE clsname
   (call $next_token)  ;; '{'
   (let $privsave i32 (i32.load (i32.const 908)))  ;; visible-private-name stack depth to restore on class exit
   (call $vm_class_priv_dup_check)  ;; Early Error: duplicate PrivateBoundIdentifiers (also pushes this class's names)
