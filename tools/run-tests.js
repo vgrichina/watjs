@@ -12,10 +12,17 @@
 // A test passes when: eval returns 0 (no uncaught throw) AND, if a sibling
 // `<name>.expected` file exists, captured stdout matches it exactly.
 //
-// Usage: node tools/run-tests.js [dir-or-file ...]   (default: test/)
+// Usage: node tools/run-tests.js [--jobs N] [dir-or-file ...]   (default: test/)
+//
+// By default the files are sharded across a pool of worker processes
+// (os.cpus().length-1) — process-level parallelism avoids the GC pressure of
+// re-instantiating the wasm hundreds of times in one long-lived process, and
+// uses all cores. `--jobs 1` forces the original sequential single-process run.
+// `--worker` is the internal child mode (runs a shard, emits a summary line).
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, fork } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const WASM = path.join(ROOT, 'watjs.wasm');
@@ -81,26 +88,75 @@ async function runOne(wasmBytes, file) {
   return { ok: true, out };
 }
 
-(async () => {
-  build();
-  const wasmBytes = fs.readFileSync(WASM);
-  const targets = process.argv.slice(2);
-  const files = collect(targets.length ? targets : ['test']);
-  if (!files.length) { console.log('no tests found'); return; }
-
+// Run a list of files sequentially in THIS process; print ok/FAIL lines.
+async function runShard(wasmBytes, files) {
   let pass = 0, fail = 0;
-  const fails = [];
   for (const f of files) {
     const r = await runOne(wasmBytes, f);
     const rel = path.relative(ROOT, f);
     if (r.ok) { pass++; console.log(`ok   ${rel}`); }
-    else { fail++; fails.push({ rel, r }); console.log(`FAIL ${rel}  — ${r.reason}`); }
-  }
-  console.log(`\n${pass}/${pass + fail} passed`);
-  for (const { rel, r } of fails) {
-    if (r.exp !== undefined) {
-      console.log(`\n--- ${rel}\n  expected: ${JSON.stringify(r.exp)}\n  got:      ${JSON.stringify(r.out)}`);
+    else {
+      fail++;
+      console.log(`FAIL ${rel}  — ${r.reason}`);
+      if (r.exp !== undefined) console.log(`  expected: ${JSON.stringify(r.exp)}\n  got:      ${JSON.stringify(r.out)}`);
     }
   }
-  process.exit(fail ? 1 : 0);
+  return { pass, fail };
+}
+
+(async () => {
+  const argv = process.argv.slice(2);
+
+  // Child worker: files after '--worker' are this shard. Parent already built.
+  if (argv[0] === '--worker') {
+    const wasmBytes = fs.readFileSync(WASM);
+    const { pass, fail } = await runShard(wasmBytes, argv.slice(1));
+    console.log(`__SHARD__ ${pass} ${fail}`);
+    process.exit(fail ? 1 : 0);
+  }
+
+  // Parse --jobs N.
+  let jobs = Math.max(1, (os.cpus().length || 2) - 1);
+  const targets = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--jobs' || argv[i] === '-j') { jobs = Math.max(1, parseInt(argv[++i], 10) || 1); }
+    else targets.push(argv[i]);
+  }
+
+  build();
+  const files = collect(targets.length ? targets : ['test']);
+  if (!files.length) { console.log('no tests found'); return; }
+
+  // Sequential path (small runs / --jobs 1) — original single-process behavior.
+  if (jobs === 1 || files.length < 2 * jobs) {
+    const wasmBytes = fs.readFileSync(WASM);
+    const { pass, fail } = await runShard(wasmBytes, files);
+    console.log(`\n${pass}/${pass + fail} passed`);
+    process.exit(fail ? 1 : 0);
+  }
+
+  // Parallel: shard files round-robin across `jobs` worker processes.
+  const shards = Array.from({ length: jobs }, () => []);
+  files.forEach((f, i) => shards[i % jobs].push(f));
+  const self = __filename;
+  let pass = 0, fail = 0, done = 0, exitFail = 0;
+  await new Promise((resolve) => {
+    for (const shard of shards) {
+      if (!shard.length) { if (++done === shards.length) resolve(); continue; }
+      const child = fork(self, ['--worker', ...shard], { stdio: ['ignore', 'pipe', 'inherit', 'ipc'] });
+      let buf = '';
+      child.stdout.on('data', (d) => { buf += d; });
+      child.on('exit', (code) => {
+        if (code) exitFail = 1;
+        for (const line of buf.split('\n')) {
+          const m = line.match(/^__SHARD__ (\d+) (\d+)$/);
+          if (m) { pass += +m[1]; fail += +m[2]; }
+          else if (line.length) console.log(line);
+        }
+        if (++done === shards.length) resolve();
+      });
+    }
+  });
+  console.log(`\n${pass}/${pass + fail} passed`);
+  process.exit(fail || exitFail ? 1 : 0);
 })();
