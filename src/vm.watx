@@ -354,8 +354,8 @@
   ;; ident_name returns the decoded text.
   (if (i32.and (i32.load (i32.const 896)) (call $str_eq (local.get $name) (cstring "await")))
     (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' is reserved inside an async function")) (return (i32.const 1))))
-  (if (i32.and (i32.load (i32.const 672)) (call $str_eq (local.get $name) (cstring "yield")))
-    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is reserved inside a generator")) (return (i32.const 1))))
+  (if (i32.and (i32.or (i32.load (i32.const 672)) (i32.load (i32.const 388))) (call $str_eq (local.get $name) (cstring "yield")))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is reserved inside a generator or strict-mode code")) (return (i32.const 1))))
   (if (i32.load (i32.const 388))
     (then (if (i32.or (call $str_eq (local.get $name) (cstring "eval")) (call $str_eq (local.get $name) (cstring "arguments")))
       (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Assignment to eval or arguments is not allowed in strict mode")) (return (i32.const 1))))))
@@ -1080,6 +1080,10 @@
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_null)) (call $next_token) (return)))
       (let $vnstart i32 (call $tok_start))  ;; identifier start (for a single-param arrow's source span)
       (let $vn i32 (call $ident_name)) (call $next_token)
+      ;; `yield` is a reserved word in strict-mode code — it can never be an IdentifierReference here (a
+      ;; generator catches its yield-expression earlier, so reaching primary with `yield` means non-generator).
+      (if (i32.and (i32.load (i32.const 388)) (call $str_eq (local.get $vn) (cstring "yield")))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is a reserved identifier in strict mode")) (return)))
       (if (i32.eq (call $tok_kind) (i32.const 52))  ;; NAME => body  (single-param arrow, no parens)
         (then
           (i32.store (i32.const 700) (i32.add (local.get $vnstart) (i32.const 1)))
