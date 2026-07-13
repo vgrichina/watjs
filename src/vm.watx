@@ -2358,6 +2358,7 @@
   ;; strict mode: own "use strict" directive at body start, OR lexically inherited.
   (let $savestrict i32 (i32.load (i32.const 388)))
   (let $thisstrict i32 (local.get $savestrict))
+  (let $ownstrict i32 (i32.const 0))  ;; the body has its OWN "use strict" directive (vs inherited)
   (call $next_token)  ;; consume '{'
   ;; scan the WHOLE Directive Prologue (consecutive string-literal statements) for "use
   ;; strict" — it may follow other directives, not just be the first statement.
@@ -2373,7 +2374,7 @@
       (i32.or (i32.eq (call $tok_kind) (i32.const 18))
       (i32.or (i32.eq (call $tok_kind) (i32.const 0))
               (i32.eq (call $tok_kind) (i32.const 2))))))))
-    (if (local.get $isus) (then (set! $thisstrict (i32.const 1))))
+    (if (local.get $isus) (then (set! $thisstrict (i32.const 1)) (set! $ownstrict (i32.const 1))))
     (if (i32.eq (call $tok_kind) (i32.const 21)) (then (call $next_token)))  ;; consume ';' if present
     (br $pl)))
   (call $cursor_restore (local.get $bodycur))  ;; rewind to '{'
@@ -2389,6 +2390,9 @@
                 (i32.ne (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $nsi0) (i32.const 4)))) (i32.const 0)))
       (then (set! $nsdup (i32.const 1)) (br $nse0)))
     (set! $nsi0 (i32.add (local.get $nsi0) (i32.const 1))) (br $nsl0)))
+  ;; a function with a NON-SIMPLE parameter list may not have a "use strict" directive in its body.
+  (if (i32.and (local.get $nsdup) (local.get $ownstrict))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Illegal 'use strict' directive in function with non-simple parameter list")) (return)))
   (if (i32.or (local.get $thisstrict) (local.get $nsdup))
     (then
       (let $spi i32 (i32.const 0))
@@ -3180,6 +3184,7 @@
     (then
       ;; scan the directive prologue for "use strict" (mirrors vm_c_fnbody)
       (let $arrbc i32 (call $cursor_save))
+      (let $aownstrict i32 (i32.const 0))
       (call $next_token)  ;; '{'
       (block $ape (loop $apl
         (br_if $ape (i32.ne (call $tok_kind) (i32.const 2)))
@@ -3188,10 +3193,22 @@
         (br_if $ape (i32.eqz (i32.or (call $nl_before)
           (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18))
           (i32.or (i32.eq (call $tok_kind) (i32.const 0)) (i32.eq (call $tok_kind) (i32.const 2))))))))
-        (if (local.get $aisus) (then (set! $arrstrict (i32.const 1))))
+        (if (local.get $aisus) (then (set! $arrstrict (i32.const 1)) (set! $aownstrict (i32.const 1))))
         (if (i32.eq (call $tok_kind) (i32.const 21)) (then (call $next_token)))
         (br $apl)))
       (call $cursor_restore (local.get $arrbc))
+      ;; a non-simple arrow parameter list may not accompany a body "use strict" directive
+      (if (local.get $aownstrict)
+        (then
+          (let $ansimple i32 (i32.ge_s (local.get $restidx) (i32.const 0)))
+          (let $ansi i32 (i32.const 0))
+          (block $anse (loop $ansl
+            (br_if $anse (i32.ge_s (local.get $ansi) (local.get $np)))
+            (if (i32.or (i32.and (i32.ne (local.get $pdef) (i32.const 0)) (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $ansi) (i32.const 4)))) (i32.const 0)))
+                        (i32.and (i32.ne (local.get $ppat) (i32.const 0)) (i32.ne (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $ansi) (i32.const 4)))) (i32.const 0))))
+              (then (set! $ansimple (i32.const 1)) (br $anse)))
+            (set! $ansi (i32.add (local.get $ansi) (i32.const 1))) (br $ansl)))
+          (if (local.get $ansimple) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Illegal 'use strict' directive in function with non-simple parameter list")) (return)))))
       (i32.store (i32.const 388) (local.get $arrstrict))
       (call $vm_c_stmt (local.get $code))
       (i32.store (i32.const 388) (local.get $arrsave))  ;; restore strictness for the enclosing scope
