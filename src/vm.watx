@@ -1653,7 +1653,14 @@
   (if (i32.eq (local.get $k) (i32.const 47))  ;; ~
     (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 44)) (return)))
   (if (i32.and (i32.and (i32.eq (local.get $k) (i32.const 3)) (i32.load (i32.const 896))) (call $tok_is_kw (cstring "await")))  ;; await expr (only in an async body; else `await` is an identifier)
-    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 50)) (return)))  ;; AWAIT
+    (then
+      (call $next_token)
+      ;; AwaitExpression requires a UnaryExpression operand; a terminator (';' ')' ']' '}' ',' ':' EOF)
+      ;; means `await` was used as an IdentifierReference — forbidden in an async body.
+      (let $ak i32 (call $tok_kind))
+      (if (i32.or (i32.eqz (local.get $ak)) (i32.or (i32.eq (local.get $ak) (i32.const 21)) (i32.or (i32.eq (local.get $ak) (i32.const 16)) (i32.or (i32.eq (local.get $ak) (i32.const 20)) (i32.or (i32.eq (local.get $ak) (i32.const 18)) (i32.or (i32.eq (local.get $ak) (i32.const 22)) (i32.eq (local.get $ak) (i32.const 37))))))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' is not a valid identifier reference in an async function")) (return)))
+      (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 50)) (return)))  ;; AWAIT
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "typeof")))  ;; typeof expr
     (then
       (call $next_token)  ;; consume 'typeof'
