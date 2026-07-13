@@ -4276,7 +4276,11 @@
                       (i32.store (i32.const 676) (local.get $csdm))
                       (call $next_token))  ;; ')'
                     (else
-                      (i32.store (i32.add (local.get $code) (local.get $vloc)) (call $ident_name))  ;; simple binding
+                      ;; a simple CatchParameter may not be eval/arguments (strict) / yield (generator) /
+                      ;; await (async), same restriction as a binding identifier.
+                      (let $cpn i32 (call $ident_name))
+                      (if (call $vm_strict_lhs_check (local.get $cpn)) (then (return)))
+                      (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $cpn))  ;; simple binding
                       (call $next_token) (call $next_token))))  ;; var ')'
                 (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@catch"))))  ;; catch {} — bind to a throwaway
               ;; with a finally, wrap the catch body in a handler so a throw in the catch still runs
