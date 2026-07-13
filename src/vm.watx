@@ -1084,6 +1084,10 @@
       ;; generator catches its yield-expression earlier, so reaching primary with `yield` means non-generator).
       (if (i32.and (i32.load (i32.const 388)) (call $str_eq (local.get $vn) (cstring "yield")))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is a reserved identifier in strict mode")) (return)))
+      ;; `await` reaching primary as a plain identifier inside an async body is a reserved-word reference —
+      ;; this catches the \u-escaped spelling (tok_is_kw compares raw source so it misses the await operator).
+      (if (i32.and (i32.load (i32.const 896)) (call $str_eq (local.get $vn) (cstring "await")))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' is a reserved identifier in an async function")) (return)))
       (if (i32.eq (call $tok_kind) (i32.const 52))  ;; NAME => body  (single-param arrow, no parens)
         (then
           (i32.store (i32.const 700) (i32.add (local.get $vnstart) (i32.const 1)))
