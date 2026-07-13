@@ -3868,6 +3868,7 @@
       (call $next_token)  ;; ')'
       (call $vm_emit_op (local.get $code) (i32.const 93))  ;; ENTERWITH (consumes obj, pushes with-scope)
       (call $vm_finally_push_scope)  ;; break/continue/return through the body must pop the with-scope
+      (i32.store (i32.const 900) (i32.const 1))  ;; with-body is a single Statement — no lexical/async/gen decl
       (call $vm_c_stmt (local.get $code))  ;; body
       (call $vm_finally_pop)
       (call $vm_emit_op (local.get $code) (i32.const 94))  ;; LEAVEWITH (normal completion)
@@ -3913,6 +3914,13 @@
       ;; function NAME ( params ) { body }   (declaration)
       (if (call $tok_is_kw (cstring "function"))
         (then
+          ;; an async/generator function declaration may not occupy a single-statement slot (no Annex B
+          ;; exception, unlike a plain FunctionDeclaration in a sloppy if-body). reg 232 = async (set above).
+          (if (local.get $nodecl)
+            (then
+              (call $look_save) (call $next_token) (let $isgenfn i32 (i32.eq (call $tok_kind) (i32.const 12))) (call $look_restore)
+              (if (i32.or (i32.load (i32.const 232)) (local.get $isgenfn))
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "async/generator declaration not allowed in single-statement context")) (return)))))
           ;; already hoisted (compiled+bound at the top of this fn body)? skip it.
           (if (call $vm_hoist_contains (call $pos))
             (then (call $vm_skip_fn_decl) (return)))
