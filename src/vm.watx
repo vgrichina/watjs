@@ -3353,6 +3353,13 @@
                 (if (i32.eq (local.get $nk) (i32.const 15))  ;; followed by '(' → a constructor method
                   (then (set! $ctorcnt (i32.add (local.get $ctorcnt) (i32.const 1)))
                     (if (i32.ge_s (local.get $ctorcnt) (i32.const 2)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A class may only have one constructor")) (br $done)))))))
+            ;; a non-static `constructor` may not be a getter/setter/generator/async method
+            (if (i32.and (call $str_eq (call $ident_name) (cstring "constructor"))
+                  (i32.and (i32.eqz (local.get $pstatic)) (i32.or (local.get $pget) (i32.or (local.get $pset) (i32.or (local.get $pgen) (local.get $pasync))))))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Class constructor may not be an accessor, generator, or async method")) (br $done)))
+            ;; a static class element may not be named `prototype`
+            (if (i32.and (local.get $pstatic) (call $str_eq (call $ident_name) (cstring "prototype")))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Classes may not have a static property named 'prototype'")) (br $done)))
             ;; any other identifier is a (public) key → a method '(' / field '=' continues the element,
             ;; else it is a bare field and the next token begins a new element.
             (call $look_save) (call $next_token) (let $pk2 i32 (call $tok_kind)) (let $pnl2 i32 (call $nl_before)) (call $look_restore)
