@@ -3985,14 +3985,14 @@
                 (then
                   (call $look_save) (call $next_token)
                   (let $lk i32 (call $tok_kind))
-                  ;; a LineTerminator after `let` triggers ASI: `let` is then a standalone identifier
-                  ;; ExpressionStatement (`if (false) let \n x = 1;`), not a LexicalDeclaration → allowed.
-                  (if (i32.eqz (call $nl_before))
-                    (then
-                      (if (i32.or (i32.eq (local.get $lk) (i32.const 17)) (i32.eq (local.get $lk) (i32.const 19)))
-                        (then (set! $islex (i32.const 1)))
-                        (else (if (i32.eq (local.get $lk) (i32.const 3))
-                          (then (set! $islex (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (call $tok_is_kw (cstring "instanceof")))))))))))
+                  ;; `let [` is ALWAYS a LexicalDeclaration — the ExpressionStatement lookahead forbids a
+                  ;; leading `let [`, and no ASI can split it, so a newline does not matter. For `let {` and
+                  ;; `let <ident>` a LineTerminator triggers ASI (`let` becomes a standalone identifier
+                  ;; ExpressionStatement: `if (false) let \n x = 1;` / `let \n {}` block) → not a declaration.
+                  (if (i32.eq (local.get $lk) (i32.const 19)) (then (set! $islex (i32.const 1))))  ;; `let [` → always lexical
+                  (if (i32.and (i32.eqz (call $nl_before)) (i32.eq (local.get $lk) (i32.const 17))) (then (set! $islex (i32.const 1))))  ;; `let {` (same line) → lexical
+                  (if (i32.and (i32.eqz (call $nl_before)) (i32.eq (local.get $lk) (i32.const 3)))
+                    (then (set! $islex (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (call $tok_is_kw (cstring "instanceof")))))))
                   (call $look_restore)))
               (if (local.get $islex)
                 (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "lexical declaration not allowed in single-statement context")) (return)))))
