@@ -1376,6 +1376,8 @@
     (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
       (then
         (call $next_token)
+        (if (i32.eq (call $tok_kind) (i32.const 20))  ;; '[]' empty computed member — SyntaxError
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "unexpected ']' (empty computed member)")) (return)))
         (call $vm_c_expr (local.get $code))  ;; [obj, key]
         (call $next_token)  ;; ']'
         (if (i32.eq (call $tok_kind) (i32.const 24))  ;; arr[i] = v
