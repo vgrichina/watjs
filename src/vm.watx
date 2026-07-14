@@ -2389,6 +2389,8 @@
   (i32.store (i32.const 896) (local.get $asyncf))
   (let $savesb i32 (i32.load (i32.const 912)))  ;; a nested function body is NOT the class static block (return/arguments/await allowed per its own kind)
   (i32.store (i32.const 912) (i32.const 0))
+  (let $saveinfn i32 (i32.load (i32.const 920)))  ;; reg 920 = inside a function body → `return` is allowed
+  (i32.store (i32.const 920) (i32.const 1))
   (let $saveargs i32 (i32.load (i32.const 916)))  ;; a nested regular function has its OWN `arguments` — clear the forbidden flag
   (i32.store (i32.const 916) (i32.const 0))
   ;; reg 868: is `super` property access lexically allowed here? True in a method/accessor (reg692) or a
@@ -2560,6 +2562,7 @@
   (i32.store (i32.const 852) (local.get $savederctor))  ;; restore enclosing derived-ctor compile flag
   (i32.store (i32.const 896) (local.get $saveinasync))  ;; restore enclosing in-async-body flag
   (i32.store (i32.const 912) (local.get $savesb))  ;; restore in-static-block flag
+  (i32.store (i32.const 920) (local.get $saveinfn))  ;; restore in-function-body flag
   (i32.store (i32.const 916) (local.get $saveargs))  ;; restore enclosing arguments-forbidden flag
   (i32.store (i32.const 868) (local.get $savesuperhome))  ;; restore enclosing super-property-allowed flag
   (i32.store (i32.const 884) (local.get $savesupercall))  ;; restore enclosing super()-call-allowed flag
@@ -2699,9 +2702,10 @@
   (let $btasync i32 (i32.load (i32.const 896)))
   (let $btsb i32 (i32.load (i32.const 912)))
   (let $btargs i32 (i32.load (i32.const 916)))
-  (i32.store (i32.const 672) (i32.const 0)) (i32.store (i32.const 896) (i32.const 0)) (i32.store (i32.const 912) (i32.const 1)) (i32.store (i32.const 916) (i32.const 1))
+  (let $btinfn i32 (i32.load (i32.const 920)))  ;; a static block is not a function body — `return` forbidden (also caught by reg 912)
+  (i32.store (i32.const 672) (i32.const 0)) (i32.store (i32.const 896) (i32.const 0)) (i32.store (i32.const 912) (i32.const 1)) (i32.store (i32.const 916) (i32.const 1)) (i32.store (i32.const 920) (i32.const 0))
   (call $vm_c_stmt (local.get $code))  ;; the `{ ... }` block
-  (i32.store (i32.const 672) (local.get $btgen)) (i32.store (i32.const 896) (local.get $btasync)) (i32.store (i32.const 912) (local.get $btsb)) (i32.store (i32.const 916) (local.get $btargs))
+  (i32.store (i32.const 672) (local.get $btgen)) (i32.store (i32.const 896) (local.get $btasync)) (i32.store (i32.const 912) (local.get $btsb)) (i32.store (i32.const 916) (local.get $btargs)) (i32.store (i32.const 920) (local.get $btinfn))
   (i32.store (i32.const 868) (local.get $btsuperhome)) (i32.store (i32.const 884) (local.get $btsupercall))
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; PUSH undefined (no value)
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET
@@ -3273,6 +3277,8 @@
   (i32.store (i32.const 896) (i32.or (local.get $arrasync) (local.get $arrsaveinasync)))
   (let $arrsavesb i32 (i32.load (i32.const 912)))  ;; an arrow body has its own return; not the static block itself
   (i32.store (i32.const 912) (i32.const 0))
+  (let $arrsaveinfn i32 (i32.load (i32.const 920)))  ;; an arrow body allows `return`
+  (i32.store (i32.const 920) (i32.const 1))
   (call $next_token)  ;; '=>'
   (let $litstart i32 (call $vm_emit_cursor))  ;; arrow-literal emit span start (IsAnonymousFunctionDefinition)
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
@@ -3345,6 +3351,7 @@
       (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET value
   (i32.store (i32.const 896) (local.get $arrsaveinasync))  ;; restore enclosing in-async-body flag
   (i32.store (i32.const 912) (local.get $arrsavesb))  ;; restore in-static-block flag
+  (i32.store (i32.const 920) (local.get $arrsaveinfn))  ;; restore in-function-body flag
   (call $vm_patch (local.get $code) (local.get $pj))
   (let $fn i32 (call $heap_alloc (i32.add (i32.const 52) (i32.mul (local.get $np) (i32.const 4)))))  ;; @(28+np*4) name, @(32+np*4) flags, @(36+np*4) .length, @(40+np*4) srcPtr (0=native form), @(44+np*4) srcLen, @(48+np*4) own-prop scope
   (i32.store (local.get $fn) (if i32 (i32.load (i32.const 232)) (then (i32.const 1448232528)) (else (i32.const 1448232526))))  ;; ASYNC if flagged, else NORMAL
@@ -4043,6 +4050,8 @@
         (then
           ;; `return` is not allowed in a class static block (it is not a function body)
           (if (i32.load (i32.const 912)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'return' is not allowed in a class static block")) (return)))
+          ;; `return` outside any function body (top-level program / eval code) is a SyntaxError.
+          (if (i32.eqz (i32.load (i32.const 920))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'return' outside of function")) (return)))
           (call $next_token)
           ;; in a DERIVED class ctor, `return expr` must be Object/undefined (else TypeError) and
           ;; `return undefined`/`return;` requires super() first (else ReferenceError) — DERIVEDRETCHECK (109).
@@ -5114,6 +5123,7 @@
   (i32.store (i32.const 224) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; temp counter, async flag
   (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
   (i32.store (i32.const 912) (i32.const 0))  ;; in-static-block flag (reset per compile; balanced save/restore otherwise)
+  (i32.store (i32.const 920) (i32.const 0))  ;; in-function-body flag: 0 for program/eval code (`return` at top level is a SyntaxError)
   (i32.store (i32.const 916) (i32.const 0))  ;; arguments-forbidden flag (static block / field initializer)
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
   (i32.store (i32.const 252) (call $heap_alloc (i32.const 2048)))  ;; label-entry stack
