@@ -1257,6 +1257,7 @@
     (then
       (call $next_token)
       (call $vm_emit_op (local.get $code) (i32.const 36)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWOBJ 0 → empty obj on stack
+      (let $oprotocnt i32 (i32.const 0))  ;; count of `__proto__: v` [[Prototype]]-setting data properties (2+ is a SyntaxError)
       (if (i32.ne (call $tok_kind) (i32.const 18))
         (then (block $oe (loop $ol
           (br_if $oe (i32.eq (call $tok_kind) (i32.const 18)))  ;; trailing comma → '}' ends the literal
@@ -1288,6 +1289,10 @@
               (call $vm_emit_op (local.get $code) (i32.const 101)))  ;; DEFDATA_OWN — computed key never triggers the __proto__ proto-setter
             (else (if (i32.eq (call $tok_kind) (i32.const 2))  ;; "string": value
               (then
+                ;; `"__proto__": v` is a [[Prototype]] setter — a second one in the same literal is a SyntaxError.
+                (if (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "__proto__"))
+                  (then (set! $oprotocnt (i32.add (local.get $oprotocnt) (i32.const 1)))
+                        (if (i32.gt_s (local.get $oprotocnt) (i32.const 1)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate __proto__ fields are not allowed in object literals")) (return)))))
                 (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
                 (call $next_token) (call $next_token) (call $vm_c_expr (local.get $code))  ;; ':' value
                 (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
@@ -1323,7 +1328,12 @@
                       (let $afs i32 (call $vm_emit_cursor))
                       (let $oshort i32 (i32.const 0))
                       (if (i32.eq (call $tok_kind) (i32.const 37))  ;; key: value
-                        (then (call $next_token) (call $vm_c_expr (local.get $code)))
+                        (then
+                          ;; `__proto__: v` sets [[Prototype]] — a second such data property is a SyntaxError.
+                          (if (call $str_eq (local.get $oki) (cstring "__proto__"))
+                            (then (set! $oprotocnt (i32.add (local.get $oprotocnt) (i32.const 1)))
+                                  (if (i32.gt_s (local.get $oprotocnt) (i32.const 1)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate __proto__ fields are not allowed in object literals")) (return)))))
+                          (call $next_token) (call $vm_c_expr (local.get $code)))
                         (else (set! $oshort (i32.const 1)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $oki))))  ;; shorthand → LOADVAR
                       (if (call $vm_is_anon_fn_def (local.get $afs))  ;; `key: <anon fn>` → .name = key
                         (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))))
