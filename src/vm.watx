@@ -3223,6 +3223,9 @@
             (if (local.get $restmem)
               (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval")) (call $vm_c_dstr_assign_member (local.get $code) (local.get $restnm)))  ;; ...a.b / ...a[i]
               (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $restnm))))  ;; STOREVAR rest (identifier)
+            ;; a BindingRestProperty must be LAST and may not have a trailing comma: `{...a, b}` / `{...a,}` are SyntaxErrors.
+            (if (i32.ne (call $tok_kind) (i32.const 18))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element must be last in an object pattern")) (return)))
             (br $oe)))
         ;; computed key:  { [keyExpr]: target [= default] }
         (if (i32.eq (call $tok_kind) (i32.const 19))  ;; '['
