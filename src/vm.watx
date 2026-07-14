@@ -63,7 +63,7 @@
 (func $vm_label_find (param $name i32) (result i32) (effects)
   (let $i i32 (i32.sub (i32.load (i32.const 228)) (i32.const 1)))
   (block $e (loop $l
-    (br_if $e (i32.lt_s (local.get $i) (i32.const 0)))
+    (br_if $e (i32.lt_s (local.get $i) (i32.load (i32.const 932))))  ;; stop at the label floor (reg 932): labels of an enclosing function are not visible across a function boundary
     (let $en i32 (i32.add (i32.load (i32.const 252)) (i32.mul (local.get $i) (i32.const 28))))
     (if (call $str_eq (i32.load (local.get $en)) (local.get $name)) (then (return (local.get $en))))
     (set! $i (i32.sub (local.get $i) (i32.const 1)))
@@ -2421,6 +2421,18 @@
   (let $classf i32 (i32.load (i32.const 404)))  ;; this fn is a class constructor (set by vm_c_class)
   (let $noproto i32 (i32.load (i32.const 692)))  ;; reg 692: this fn is a method/accessor (non-constructor → no .prototype)
   (let $acckind i32 (i32.load (i32.const 924)))  ;; reg 924: accessor arity kind (0=none, 1=getter→0 params, 2=setter→exactly 1 non-rest)
+  ;; break/continue/label context does NOT cross a function boundary: a `break`/`continue` (labeled or not)
+  ;; inside a nested function may not target an enclosing loop/label. Save + reset the loop context (reg
+  ;; 208/216 break/continue lists, 248 curlabel, 244 pending, 360 loop-finally-base) and set the label-find
+  ;; floor (reg 932) to the current label depth so enclosing labels are invisible. Restored on exit.
+  (let $savelblfloor i32 (i32.load (i32.const 932)))
+  (let $savelbldepth i32 (i32.load (i32.const 228)))
+  (let $savebrkl i32 (i32.load (i32.const 208))) (let $savecontl i32 (i32.load (i32.const 216)))
+  (let $savecurlbl i32 (i32.load (i32.const 248))) (let $savependlbl i32 (i32.load (i32.const 244)))
+  (let $savelpfin i32 (i32.load (i32.const 360)))
+  (i32.store (i32.const 932) (local.get $savelbldepth))
+  (i32.store (i32.const 208) (i32.const 0)) (i32.store (i32.const 216) (i32.const 0))
+  (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 360) (i32.const 0))
   (i32.store (i32.const 924) (i32.const 0))
   (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0)) (i32.store (i32.const 404) (i32.const 0)) (i32.store (i32.const 692) (i32.const 0))  ;; clear so nested fns don't inherit
   (let $savefin i32 (i32.load (i32.const 320)))  ;; nested fn: a return runs only THIS fn's finallys
@@ -2608,6 +2620,12 @@
   (let $saveagen i32 (i32.load (i32.const 788)))  ;; reg 788 (was 716, which overlapped the i64 %TypedArray% intrinsic @712-719) = compiling an ASYNC generator body
   (i32.store (i32.const 788) (i32.and (local.get $genf) (local.get $asyncf)))
   (call $vm_c_stmt (local.get $code))  ;; body block
+  ;; restore the enclosing function's break/continue/label context
+  (i32.store (i32.const 932) (local.get $savelblfloor))
+  (i32.store (i32.const 228) (local.get $savelbldepth))
+  (i32.store (i32.const 208) (local.get $savebrkl)) (i32.store (i32.const 216) (local.get $savecontl))
+  (i32.store (i32.const 248) (local.get $savecurlbl)) (i32.store (i32.const 244) (local.get $savependlbl))
+  (i32.store (i32.const 360) (local.get $savelpfin))
   (i32.store (i32.const 788) (local.get $saveagen))  ;; restore enclosing async-generator-context
   (i32.store (i32.const 672) (local.get $savegen))  ;; restore enclosing generator-context
   (i32.store (i32.const 852) (local.get $savederctor))  ;; restore enclosing derived-ctor compile flag
@@ -3333,6 +3351,16 @@
   (i32.store (i32.const 912) (i32.const 0))
   (let $arrsaveinfn i32 (i32.load (i32.const 920)))  ;; an arrow body allows `return`
   (i32.store (i32.const 920) (i32.const 1))
+  ;; an arrow is a function boundary for break/continue/labels too (see vm_c_fnbody): isolate the loop
+  ;; context and raise the label-find floor so `l: for(;;){ ()=>{ continue l; } }` is a SyntaxError, not a trap.
+  (let $arrlblfloor i32 (i32.load (i32.const 932)))
+  (let $arrlbldepth i32 (i32.load (i32.const 228)))
+  (let $arrbrkl i32 (i32.load (i32.const 208))) (let $arrcontl i32 (i32.load (i32.const 216)))
+  (let $arrcurlbl i32 (i32.load (i32.const 248))) (let $arrpendlbl i32 (i32.load (i32.const 244)))
+  (let $arrlpfin i32 (i32.load (i32.const 360)))
+  (i32.store (i32.const 932) (local.get $arrlbldepth))
+  (i32.store (i32.const 208) (i32.const 0)) (i32.store (i32.const 216) (i32.const 0))
+  (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 360) (i32.const 0))
   (call $next_token)  ;; '=>'
   (let $litstart i32 (call $vm_emit_cursor))  ;; arrow-literal emit span start (IsAnonymousFunctionDefinition)
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
@@ -3406,6 +3434,11 @@
   (i32.store (i32.const 896) (local.get $arrsaveinasync))  ;; restore enclosing in-async-body flag
   (i32.store (i32.const 912) (local.get $arrsavesb))  ;; restore in-static-block flag
   (i32.store (i32.const 920) (local.get $arrsaveinfn))  ;; restore in-function-body flag
+  (i32.store (i32.const 932) (local.get $arrlblfloor))  ;; restore break/continue/label context
+  (i32.store (i32.const 228) (local.get $arrlbldepth))
+  (i32.store (i32.const 208) (local.get $arrbrkl)) (i32.store (i32.const 216) (local.get $arrcontl))
+  (i32.store (i32.const 248) (local.get $arrcurlbl)) (i32.store (i32.const 244) (local.get $arrpendlbl))
+  (i32.store (i32.const 360) (local.get $arrlpfin))
   (call $vm_patch (local.get $code) (local.get $pj))
   (let $fn i32 (call $heap_alloc (i32.add (i32.const 52) (i32.mul (local.get $np) (i32.const 4)))))  ;; @(28+np*4) name, @(32+np*4) flags, @(36+np*4) .length, @(40+np*4) srcPtr (0=native form), @(44+np*4) srcLen, @(48+np*4) own-prop scope
   (i32.store (local.get $fn) (if i32 (i32.load (i32.const 232)) (then (i32.const 1448232528)) (else (i32.const 1448232526))))  ;; ASYNC if flagged, else NORMAL
@@ -5202,6 +5235,7 @@
   (i32.store (i32.const 920) (i32.const 0))  ;; in-function-body flag: 0 for program/eval code (`return` at top level is a SyntaxError)
   (i32.store (i32.const 916) (i32.const 0))  ;; arguments-forbidden flag (static block / field initializer)
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
+  (i32.store (i32.const 932) (i32.const 0))  ;; label-find floor (0 = program top; raised at each function boundary)
   (i32.store (i32.const 252) (call $heap_alloc (i32.const 2800)))  ;; label-entry stack (stride 28 → 100 nested labels)
   (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 772) (call $heap_alloc (i32.const 512)))  ;; finally stack base (moved 340→772: 340 overlapped the i64 Function.prototype @336-343, so nested eval/Function-ctor corrupted Function.prototype)
   (i32.store (i32.const 360) (i32.const 0))  ;; innermost loop's finally-base
