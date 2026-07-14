@@ -3290,6 +3290,9 @@
   (if (i32.eq (call $tok_kind) (i32.const 12)) (then (i32.store (i32.const 236) (i32.const 1)) (call $next_token)))  ;; function*
   (let $fname i32 (i32.const 0))
   (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $fname (call $ident_name)) (call $next_token)))  ;; optional name
+  ;; a ReservedWord may not be a function name (`function if(){}`) — in any context (decl or expr).
+  ;; (yield/await are contextual and excluded from $is_reserved_word, so they are not rejected here.)
+  (if (local.get $fname) (then (if (call $is_reserved_word (local.get $fname)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as function name")) (return (i32.const 0))))))
   (call $vm_c_fnbody (local.get $code) (local.get $fname))
   (local.get $fname))
 
@@ -3745,6 +3748,8 @@
   (let $clsname i32 (i32.const 0))  ;; optional (anonymous class expression)
   (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eqz (call $tok_is_kw (cstring "extends"))))
     (then (set! $clsname (call $ident_name)) (call $next_token)))
+  ;; a ReservedWord may not be a class name (`class if {}`) — in any context.
+  (if (local.get $clsname) (then (if (call $is_reserved_word (local.get $clsname)) (then (i32.store (i32.const 388) (local.get $clssave)) (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as class name")) (return)))))
   ;; a ClassDeclaration (statement position, not an expression) requires a BindingIdentifier —
   ;; `class {}` / `class extends X {}` are only valid as ClassExpressions.
   (if (i32.and (i32.eqz (local.get $isExpr)) (i32.eqz (local.get $clsname)))
