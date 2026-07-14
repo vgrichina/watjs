@@ -4228,11 +4228,12 @@
                   (call $vm_finally_emit_to (local.get $code) (i32.load (i32.add (local.get $be) (i32.const 20))))  ;; run finallys/iterator-closes/scope-pops between here and the labeled statement
                   (call $vm_label_add (local.get $be) (i32.const 0) (call $vm_emit_jump (local.get $code) (i32.const 12))))
                 (else (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "undefined break label")) (return))))  ;; break to a label with no enclosing LabelledStatement
-            (else (if (i32.load (i32.const 208))  ;; plain break → innermost loop
+            (else (if (i32.load (i32.const 208))  ;; plain break → innermost loop or switch
               (then
                 (call $vm_finally_emit_to (local.get $code) (i32.load (i32.const 360)))  ;; run finallys between break and the loop
                 (i32.store (i32.add (i32.load (i32.const 208)) (i32.mul (i32.load (i32.const 212)) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 12)))
-                (i32.store (i32.const 212) (i32.add (i32.load (i32.const 212)) (i32.const 1)))))))
+                (i32.store (i32.const 212) (i32.add (i32.load (i32.const 212)) (i32.const 1))))
+              (else (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Illegal break statement")) (return)))))  ;; unlabeled break with no enclosing iteration/switch
           (drop (call $eat (i32.const 21)))
           (return)))
       (if (call $tok_is_kw (cstring "continue"))
@@ -4246,11 +4247,12 @@
                   (call $vm_finally_emit_to (local.get $code) (i32.load (i32.add (local.get $ce) (i32.const 20))))  ;; run finallys/iterator-closes/scope-pops between here and the labeled loop
                   (call $vm_label_add (local.get $ce) (i32.const 1) (call $vm_emit_jump (local.get $code) (i32.const 12))))
                 (else (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "undefined continue label")) (return))))  ;; continue to a label with no enclosing iteration statement
-            (else (if (i32.load (i32.const 216))  ;; plain continue
+            (else (if (i32.load (i32.const 216))  ;; plain continue → innermost loop
               (then
                 (call $vm_finally_emit_to (local.get $code) (i32.load (i32.const 360)))  ;; run finallys between continue and the loop
                 (i32.store (i32.add (i32.load (i32.const 216)) (i32.mul (i32.load (i32.const 220)) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 12)))
-                (i32.store (i32.const 220) (i32.add (i32.load (i32.const 220)) (i32.const 1)))))))
+                (i32.store (i32.const 220) (i32.add (i32.load (i32.const 220)) (i32.const 1))))
+              (else (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Illegal continue statement")) (return)))))  ;; continue with no enclosing iteration statement
           (drop (call $eat (i32.const 21)))
           (return)))
       (if (i32.and (i32.load (i32.const 672)) (call $tok_is_kw (cstring "yield")))  ;; yield-statement only inside a generator; else `yield` is an identifier (expression statement)
