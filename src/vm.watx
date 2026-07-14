@@ -738,6 +738,12 @@
   (i32.or (i32.and (i32.ge_s (local.get $tok) (i32.const 40)) (i32.le_s (local.get $tok) (i32.const 43)))
     (i32.or (i32.eq (local.get $tok) (i32.const 58))
             (i32.and (i32.ge_s (local.get $tok) (i32.const 62)) (i32.le_s (local.get $tok) (i32.const 68))))))
+;; any assignment operator: `=` (24), compound-assign (+=, …), or logical-assign (||= &&= ??=, 59-61).
+;; used to reject a following assignment after a primary that is not a valid AssignmentTarget (literals).
+(func $is_assign_op (param $tok i32) (result i32)
+  (i32.or (i32.eq (local.get $tok) (i32.const 24))
+    (i32.or (call $is_compound_assign (local.get $tok))
+            (i32.and (i32.ge_s (local.get $tok) (i32.const 59)) (i32.le_s (local.get $tok) (i32.const 61))))))
 ;; map a compound-assign token to the VM binary op it applies (ADD2 SUB3 MUL4 DIV5 MOD22
 ;; AND37 OR38 XOR39 SHL40 SHR41 USHR42 POW43)
 (func $compound_cop (param $tok i32) (result i32)
@@ -772,7 +778,7 @@
         (else (call $vm_emit_val (local.get $code) (call $num (call $tok_num)))))
       (call $next_token)
       ;; a numeric literal is not a valid AssignmentTarget: `1 = x` / `1 += x` is a SyntaxError.
-      (if (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (call $is_compound_assign (call $tok_kind)) (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))))
+      (if (call $is_assign_op (call $tok_kind))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 53))  ;; template literal
@@ -793,7 +799,7 @@
       (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
       (call $next_token)
       ;; a string literal is not a valid AssignmentTarget: `"x" = y` is a SyntaxError.
-      (if (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (call $is_compound_assign (call $tok_kind)) (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))))
+      (if (call $is_assign_op (call $tok_kind))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ( ... )  — grouping OR arrow params
@@ -1121,13 +1127,19 @@
           (call $vm_emit_op (local.get $code) (i32.const 46)) (call $vm_emit_op (local.get $code) (local.get $nargc))  ;; NEW
           (return)))
       (if (call $tok_is_kw (cstring "true"))
-        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1))) (call $next_token) (return)))
+        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1))) (call $next_token)
+          (if (call $is_assign_op (call $tok_kind)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
+          (return)))
       (if (call $tok_is_kw (cstring "false"))
-        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 0))) (call $next_token) (return)))
+        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 0))) (call $next_token)
+          (if (call $is_assign_op (call $tok_kind)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
+          (return)))
       (if (call $tok_is_kw (cstring "undefined"))
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (call $next_token) (return)))
       (if (call $tok_is_kw (cstring "null"))
-        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_null)) (call $next_token) (return)))
+        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_null)) (call $next_token)
+          (if (call $is_assign_op (call $tok_kind)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
+          (return)))
       (let $vnstart i32 (call $tok_start))  ;; identifier start (for a single-param arrow's source span)
       (let $vn i32 (call $ident_name)) (call $next_token)
       ;; `yield` is a reserved word in strict-mode code — it can never be an IdentifierReference here (a
@@ -4883,7 +4895,12 @@
       (call $look_save)
       (let $an i32 (call $ident_name)) (call $next_token)
       (if (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (call $is_compound_assign (call $tok_kind)) (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61))) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))))  ;; = / op= / ||= / ++ / --
-        (then (if (call $vm_strict_lhs_check (local.get $an)) (then (return)))))  ;; strict: eval/arguments target → SyntaxError
+        (then
+          ;; a keyword literal (true/false/null) or `this` is not a valid AssignmentTarget — reject before
+          ;; the fast-path treats it as an assignable identifier name (`true = 1` / `this += 1`).
+          (if (i32.or (call $str_eq (local.get $an) (cstring "true")) (i32.or (call $str_eq (local.get $an) (cstring "false")) (i32.or (call $str_eq (local.get $an) (cstring "null")) (call $str_eq (local.get $an) (cstring "this")))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
+          (if (call $vm_strict_lhs_check (local.get $an)) (then (return)))))  ;; strict: eval/arguments target → SyntaxError
       (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '='
         (then
           (call $next_token)
