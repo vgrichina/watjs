@@ -771,6 +771,9 @@
         (then (call $vm_emit_val (local.get $code) (call $mk_bigint (i64.load (i32.const 744)))))  ;; exact i64 from the lexer (mem 744), not via f64 (which loses bits past 2^53)
         (else (call $vm_emit_val (local.get $code) (call $num (call $tok_num)))))
       (call $next_token)
+      ;; a numeric literal is not a valid AssignmentTarget: `1 = x` / `1 += x` is a SyntaxError.
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (call $is_compound_assign (call $tok_kind)) (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 53))  ;; template literal
     (then (call $vm_c_template (local.get $code)) (return)))
@@ -789,6 +792,9 @@
       (call $vm_emit_op (local.get $code) (i32.const 1))      ;; PUSH
       (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
       (call $next_token)
+      ;; a string literal is not a valid AssignmentTarget: `"x" = y` is a SyntaxError.
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (call $is_compound_assign (call $tok_kind)) (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ( ... )  — grouping OR arrow params
     (then
