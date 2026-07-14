@@ -405,6 +405,28 @@
     (then (if (i32.or (call $str_eq (local.get $name) (cstring "eval")) (call $str_eq (local.get $name) (cstring "arguments")))
       (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Assignment to eval or arguments is not allowed in strict mode")) (return (i32.const 1))))))
   (i32.const 0))
+;; is `name` one of the ALWAYS-reserved keywords (ReservedWord)? These can never be a BindingIdentifier
+;; or LabelIdentifier. `yield`/`await` (contextual) and the strict-only reserved words (let/static/…) are
+;; handled at their own sites, so they are intentionally NOT listed here.
+(func $is_reserved_word (param $n i32) (result i32) (effects)
+  (i32.or (i32.or (i32.or (i32.or (call $str_eq (local.get $n) (cstring "break")) (call $str_eq (local.get $n) (cstring "case")))
+                          (i32.or (call $str_eq (local.get $n) (cstring "catch")) (call $str_eq (local.get $n) (cstring "class"))))
+                  (i32.or (i32.or (call $str_eq (local.get $n) (cstring "const")) (call $str_eq (local.get $n) (cstring "continue")))
+                          (i32.or (call $str_eq (local.get $n) (cstring "debugger")) (call $str_eq (local.get $n) (cstring "default")))))
+    (i32.or (i32.or (i32.or (i32.or (call $str_eq (local.get $n) (cstring "delete")) (call $str_eq (local.get $n) (cstring "do")))
+                            (i32.or (call $str_eq (local.get $n) (cstring "else")) (call $str_eq (local.get $n) (cstring "enum"))))
+                    (i32.or (i32.or (call $str_eq (local.get $n) (cstring "export")) (call $str_eq (local.get $n) (cstring "extends")))
+                            (i32.or (call $str_eq (local.get $n) (cstring "false")) (call $str_eq (local.get $n) (cstring "finally")))))
+      (i32.or (i32.or (i32.or (i32.or (call $str_eq (local.get $n) (cstring "for")) (call $str_eq (local.get $n) (cstring "function")))
+                              (i32.or (call $str_eq (local.get $n) (cstring "if")) (call $str_eq (local.get $n) (cstring "import"))))
+                      (i32.or (i32.or (call $str_eq (local.get $n) (cstring "in")) (call $str_eq (local.get $n) (cstring "instanceof")))
+                              (i32.or (call $str_eq (local.get $n) (cstring "new")) (call $str_eq (local.get $n) (cstring "null")))))
+        (i32.or (i32.or (i32.or (i32.or (call $str_eq (local.get $n) (cstring "return")) (call $str_eq (local.get $n) (cstring "super")))
+                                (i32.or (call $str_eq (local.get $n) (cstring "switch")) (call $str_eq (local.get $n) (cstring "this"))))
+                        (i32.or (i32.or (call $str_eq (local.get $n) (cstring "throw")) (call $str_eq (local.get $n) (cstring "true")))
+                                (i32.or (call $str_eq (local.get $n) (cstring "try")) (call $str_eq (local.get $n) (cstring "typeof")))))
+          (i32.or (i32.or (call $str_eq (local.get $n) (cstring "var")) (call $str_eq (local.get $n) (cstring "void")))
+                  (i32.or (call $str_eq (local.get $n) (cstring "while")) (call $str_eq (local.get $n) (cstring "with")))))))))
 ;; patch unlabeled break/continue lists AND (if the current loop is labeled) the
 ;; label entry's matching list, all to `target`.
 (func $vm_patch_breaks (param $code i32) (param $target i32) (effects)
@@ -4041,6 +4063,9 @@
           (if (i32.or (i32.and (i32.load (i32.const 896)) (call $str_eq (local.get $lblnm) (cstring "await")))
                       (i32.and (i32.load (i32.const 672)) (call $str_eq (local.get $lblnm) (cstring "yield"))))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await'/'yield' is a reserved label identifier here")) (return)))
+          ;; a LabelIdentifier may not be a ReservedWord (`finally: ;`, `in: ;`, `typeof: ;`, …)
+          (if (call $is_reserved_word (local.get $lblnm))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as label")) (return)))
           ;; a label may not duplicate an ENCLOSING label (ContainsDuplicateLabels) — `L: { L: ; }` is a
           ;; SyntaxError (sibling `L: ; L: ;` is fine — a label's scope is only the statement it labels).
           (if (call $vm_label_find (local.get $lblnm))
