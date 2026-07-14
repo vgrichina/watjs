@@ -2510,6 +2510,9 @@
             (call $next_token) (br $pskl))))
         (else
           (i32.store (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4))) (call $ident_name))
+          ;; a ReservedWord may not be a parameter name (`function f(if){}`).
+          (if (call $is_reserved_word (i32.load (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4)))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return)))
           (call $next_token)))
       (i32.store (i32.add (local.get $pdef) (i32.mul (local.get $np) (i32.const 4))) (i32.const 0))
       ;; a rest parameter may not carry a default initializer (`function(...x = [])`)
@@ -3315,6 +3318,9 @@
             (call $next_token) (br $pskl))))
         (else
           (i32.store (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4))) (call $ident_name))
+          ;; a ReservedWord may not be a parameter name (`function f(if){}` / arrow / method params).
+          (if (call $is_reserved_word (i32.load (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4)))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return (local.get $np))))
           (call $next_token)))
       (i32.store (i32.add (local.get $pdef) (i32.mul (local.get $np) (i32.const 4))) (i32.const 0))
       (if (i32.and (i32.eq (i32.load (i32.const 260)) (local.get $np)) (i32.eq (call $tok_kind) (i32.const 24)))  ;; rest param may not have a default
