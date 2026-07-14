@@ -4059,6 +4059,11 @@
   ;; declaration in such a slot is a SyntaxError (it is a StatementListItem, not a Statement).
   (let $nodecl i32 (i32.load (i32.const 900)))
   (i32.store (i32.const 900) (i32.const 0))
+  ;; reg 936 = "no FunctionDeclaration here even by AnnexB" — set by loop bodies (while/for/do/for-in/of)
+  ;; and `with`, where a plain function is a SyntaxError (unlike an if/else/label slot, which allows the
+  ;; sloppy AnnexB function). Read + clear so it governs only this statement.
+  (let $nofndecl i32 (i32.load (i32.const 936)))
+  (i32.store (i32.const 936) (i32.const 0))
   ;; `with` is a reserved word in strict mode → early SyntaxError. Sloppy `with` is supported
   ;; (see the `with` handler below + scope_find's with-object delegation).
   (if (i32.and (i32.load (i32.const 388)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "with"))))
@@ -4121,7 +4126,7 @@
       (call $next_token)  ;; ')'
       (call $vm_emit_op (local.get $code) (i32.const 93))  ;; ENTERWITH (consumes obj, pushes with-scope)
       (call $vm_finally_push_scope)  ;; break/continue/return through the body must pop the with-scope
-      (i32.store (i32.const 900) (i32.const 1))  ;; with-body is a single Statement — no lexical/async/gen decl
+      (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; with-body is a single Statement — no lexical/async/gen/function decl
       (call $vm_c_stmt (local.get $code))  ;; body
       (call $vm_finally_pop)
       (call $vm_emit_op (local.get $code) (i32.const 94))  ;; LEAVEWITH (normal completion)
@@ -4170,6 +4175,10 @@
       ;; function NAME ( params ) { body }   (declaration)
       (if (call $tok_is_kw (cstring "function"))
         (then
+          ;; a FunctionDeclaration may NOT be the body of a loop (while/for/do/for-in/of) or `with` —
+          ;; not even the AnnexB plain-function form allowed in an if/else/label slot.
+          (if (local.get $nofndecl)
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "function declaration not allowed in single-statement context")) (return)))
           ;; an async/generator function declaration may not occupy a single-statement slot (no Annex B
           ;; exception, unlike a plain FunctionDeclaration in a sloppy if-body). reg 232 = async (set above).
           (if (local.get $nodecl)
@@ -4645,7 +4654,7 @@
           (call $vm_c_expr (local.get $code))
           (call $next_token)  ;; ')'
           (let $pw i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end
-          (i32.store (i32.const 900) (i32.const 1))  ;; loop body is a single Statement — no lexical decl
+          (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; loop body is a single Statement — no lexical/function decl
           (call $vm_c_stmt (local.get $code))
           (call $vm_patch_conts (local.get $code) (local.get $top))  ;; continue → top
           (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $top))  ;; JMP top
@@ -4746,7 +4755,7 @@
           (let $dlsave i32 (call $vm_loop_enter))
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
           (let $dtop i32 (call $vm_emit_cursor))
-          (i32.store (i32.const 900) (i32.const 1))  ;; do-body is a single Statement — no lexical decl
+          (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; do-body is a single Statement — no lexical/function decl
           (call $vm_c_stmt (local.get $code))  ;; body
           (call $vm_patch_conts (local.get $code) (call $vm_emit_cursor))  ;; continue → cond
           (call $next_token)  ;; 'while'
@@ -4906,7 +4915,7 @@
                 (else (if (local.get $ofdecl)
                         (then (call $vm_emit_op (local.get $code) (if i32 (local.get $ofperiter) (then (i32.const 114)) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; per-iter let/const → LEXDEFINIT (fresh scope); var → DEFINIT (var scope)
                         (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))))))  ;; STOREVAR x: assignment-target head (`for (x of E)`)
-              (i32.store (i32.const 900) (i32.const 1))  ;; for-in/of body is a single Statement — no lexical decl
+              (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; for-in/of body is a single Statement — no lexical/function decl
               (call $vm_c_stmt (local.get $code))  ;; body
               (if (local.get $ofperiter) (then (call $vm_finally_pop)))  ;; the per-iter kind-2 was for the body only
               ;; normal + continue converge here: pop the per-iteration scope, POPHANDLER, then loop
@@ -5030,7 +5039,7 @@
             (call $next_token)
             (br $fsl)))
           (call $next_token)  ;; ')'
-          (i32.store (i32.const 900) (i32.const 1))  ;; C-style for body is a single Statement — no lexical decl
+          (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; C-style for body is a single Statement — no lexical/function decl
           (call $vm_c_stmt (local.get $code))  ;; body
           (let $fpost i32 (call $cursor_save))
           ;; continue → the update clause (compiled next)
