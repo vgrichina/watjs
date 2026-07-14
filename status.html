@@ -146,9 +146,10 @@
   <div class="sub">
     <span style="color:var(--accent)">▮&nbsp;commits / day</span> &nbsp;
     <span style="color:var(--accent2)">●&nbsp;output tokens / day (M)</span> &nbsp;
-    <span style="color:#f5b65b">◆&nbsp;human intervention</span> &nbsp;
+    <span style="color:#f5b65b">◆&nbsp;engine intervention</span> &nbsp;
+    <span style="color:#4fd1c5">◆&nbsp;dashboard steering</span> &nbsp;
     <span style="color:#f5b65b">12&nbsp;= nudges that day</span>
-    <br>amber diamonds mark days a human steered the <b>engine</b> work (hover for the prompts); the number is repeated "keep going"-style nudges. Status-dashboard prompts are excluded.
+    <br>diamonds mark days a human steered the work — <b style="color:#f5b65b">amber</b> = the JS engine, <b style="color:#4fd1c5">teal</b> = this status dashboard (hover for the prompts). The number is repeated "keep going"-style nudges.
   </div>
   <svg id="chart-daily" viewBox="0 0 920 240" role="img" aria-label="commits and output tokens per day"></svg>
 </div>
@@ -334,14 +335,18 @@ const HUMAN = {
   "Jun 1": { n:4 }, "Jun 2": { n:15 }, "Jun 3": { n:17 }, "Jun 4": { n:7 },
   "Jun 5": { n:14 }, "Jun 6": { n:13 }, "Jun 7": { n:8 }, "Jun 8": { n:9 },
   "Jun 9": { i:["continue the test262 work — finish the background with-statement A/B comparison","read the with-dir count from the task output and press on"], n:5 },
-  "Jun 10": { n:8 }, "Jun 11": { n:6 }, "Jun 12": { n:8 }, "Jun 13": { n:6 }, "Jun 14": { n:15 },
-  "Jun 15": { n:24 }, "Jun 16": { n:4 }, "Jun 19": { n:2 },
+  "Jun 10": { m:["write status.html with the project status","open it in Safari"], n:8 },
+  "Jun 11": { m:["add a session-history stats graph","make it per-day, not cumulative","measure source/byte size per day","show current test-dir status"], n:6 },
+  "Jun 12": { m:["add full-suite test262 status"], n:8 }, "Jun 13": { n:6 }, "Jun 14": { n:15 },
+  "Jun 15": { m:["check the full-suite results file","agents interfering — run with unique names","create a private GitHub repo + push"], n:24 }, "Jun 16": { n:4 }, "Jun 19": { n:2 },
   "Jun 20": { i:["restore the test262 suite from the git repo?","can we have faster test verification?"], n:9 },
-  "Jun 21": { i:["change approach — go for the bold architectural changes needed to unblock the rest"], n:20 },
+  "Jun 21": { i:["change approach — go for the bold architectural changes needed to unblock the rest"], m:["mark unique prompts on the history graph","add hover tooltips showing the prompts","exclude status work — keep the overlay engine-only","keep the prompts updated each cycle"], n:20 },
   "Jun 22": { n:1 }, "Jun 24": { n:3 }, "Jun 29": { n:8 }, "Jun 30": { n:5 },
   "Jul 2": { i:["make sure to at least push the latest changes"], n:0 },
-  "Jul 3": { n:23 }, "Jul 4": { n:14 }, "Jul 5": { n:18 }, "Jul 6": { n:24 }, "Jul 7": { n:11 },
-  "Jul 8": { n:1 }, "Jul 10": { n:1 }, "Jul 11": { n:8 }, "Jul 12": { n:12 }, "Jul 13": { n:16 },
+  "Jul 3": { n:23 }, "Jul 4": { n:14 },
+  "Jul 5": { m:["review the whole dashboard and update anything outdated"], n:18 },
+  "Jul 6": { n:24 }, "Jul 7": { n:11 }, "Jul 8": { n:1 }, "Jul 10": { n:1 }, "Jul 11": { n:8 }, "Jul 12": { n:12 },
+  "Jul 13": { m:["you missed unique-prompt diamonds — check the whole history","confirm today's intervention; check more thoroughly"], n:16 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
@@ -352,7 +357,7 @@ function el(name, attrs) { const e = document.createElementNS(NS, name);
 function barLineChart(svgId, data) {
   const svg = document.getElementById(svgId); if (!svg) return;
   const W = 920, H = 240, pad = { l: 42, r: 52, t: 40, b: 30 };
-  const BLUE = "#6ea8fe", PURP = "#a78bfa", AMBER = "#f5b65b";
+  const BLUE = "#6ea8fe", PURP = "#a78bfa", AMBER = "#f5b65b", TEAL = "#4fd1c5";
   // bar gradient
   const def = el("defs", {});
   const g = el("linearGradient", { id: svgId+"-bar", x1:0, y1:0, x2:0, y2:1 });
@@ -407,18 +412,24 @@ function barLineChart(svgId, data) {
       const ntt = el("title", {}); ntt.textContent = d[0]+": "+h.n+' nudges ("keep going" / "go" / "chk")';
       nt.appendChild(ntt); svg.appendChild(nt);
     }
-    if (h.i && h.i.length) {                     // unique-prompt intervention pin
+    const eng = h.i && h.i.length, meta = h.m && h.m.length;
+    if (eng || meta) {                           // intervention pin(s)
       svg.appendChild(el("line", { x1:x, y1:pad.t-9, x2:x, y2:base, stroke:AMBER,
-        "stroke-width":1, "stroke-opacity":.20, "stroke-dasharray":"2 3" }));
-      const dia = el("path", { class:"pin", d:`M${x} ${pad.t-19} l5 5 l-5 5 l-5 -5 z`,
-        fill:AMBER, stroke:"#10131a", "stroke-width":.8 });
-      const html = '<div class="vt-h">'+d[0]+' · human intervention</div><ul><li>'
-        + h.i.map(p => p.replace(/&/g,"&amp;").replace(/</g,"&lt;")).join("</li><li>")
-        + "</li></ul>";
-      dia.addEventListener("mouseenter", e => showTip(html, e));
-      dia.addEventListener("mousemove", moveTip);
-      dia.addEventListener("mouseleave", hideTip);
-      svg.appendChild(dia);
+        "stroke-width":1, "stroke-opacity":.16, "stroke-dasharray":"2 3" }));
+      const drawDia = (dx, color, list, kind) => {
+        const px = x + dx;
+        const dia = el("path", { class:"pin", d:`M${px} ${pad.t-19} l5 5 l-5 5 l-5 -5 z`,
+          fill:color, stroke:"#10131a", "stroke-width":.8 });
+        const html = '<div class="vt-h" style="color:'+color+'">'+d[0]+' · '+kind+'</div><ul><li>'
+          + list.map(p => p.replace(/&/g,"&amp;").replace(/</g,"&lt;")).join("</li><li>")
+          + "</li></ul>";
+        dia.addEventListener("mouseenter", e => showTip(html, e));
+        dia.addEventListener("mousemove", moveTip);
+        dia.addEventListener("mouseleave", hideTip);
+        svg.appendChild(dia);
+      };
+      if (eng)  drawDia(meta ? -6 : 0, AMBER, h.i, "engine intervention");
+      if (meta) drawDia(eng ? 6 : 0, TEAL, h.m, "dashboard steering");
     }
   });
 }
