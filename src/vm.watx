@@ -1706,9 +1706,15 @@
 
 ;; ** exponentiation (right-assoc, binds tighter than unary; left is postfix)
 (func $vm_c_pow (param $code i32) (effects)
+  ;; reg 940 (set by a unary-prefix handler) marks that this pow's left operand is a UnaryExpression.
+  ;; `UnaryExpression ** X` (`-2 ** 2`, `typeof x ** 2`) has no grammar production → SyntaxError.
+  (let $powunary i32 (i32.load (i32.const 940)))
+  (i32.store (i32.const 940) (i32.const 0))
   (call $vm_c_postfix (local.get $code))
   (if (i32.eq (call $tok_kind) (i32.const 51))  ;; **
     (then
+      (if (local.get $powunary)
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unary operator used immediately before exponentiation expression; parenthesis must be used")) (return)))
       (call $next_token)
       (call $vm_c_unary (local.get $code))  ;; right operand may have a unary prefix; right-assoc via unary→pow
       (call $vm_emit_op (local.get $code) (i32.const 43)))))  ;; POW
@@ -1784,13 +1790,13 @@
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; STOREVAR
       (return)))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
-    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 6)) (return)))
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 6)) (return)))
   (if (i32.eq (local.get $k) (i32.const 10))  ;; + (numeric coercion)
-    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 63)) (return)))  ;; TONUM
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 63)) (return)))  ;; TONUM
   (if (i32.eq (local.get $k) (i32.const 33))  ;; !
-    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 23)) (return)))
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 23)) (return)))
   (if (i32.eq (local.get $k) (i32.const 47))  ;; ~
-    (then (call $next_token) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 44)) (return)))
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 44)) (return)))
   (if (i32.and (i32.and (i32.eq (local.get $k) (i32.const 3)) (i32.load (i32.const 896))) (call $tok_is_kw (cstring "await")))  ;; await expr (only in an async body; else `await` is an identifier)
     (then
       (call $next_token)
@@ -1807,11 +1813,12 @@
       ;; variables softly (undefined for unbound, no ReferenceError) so typeof x,
       ;; typeof(x), typeof undeclared all yield "undefined" instead of throwing.
       (i32.store (i32.const 240) (i32.add (i32.load (i32.const 240)) (i32.const 1)))
+      (i32.store (i32.const 940) (i32.const 1))
       (call $vm_c_unary (local.get $code))
       (i32.store (i32.const 240) (i32.sub (i32.load (i32.const 240)) (i32.const 1)))
       (call $vm_emit_op (local.get $code) (i32.const 58)) (return)))  ;; TYPEOF
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "void")))  ;; void expr → undefined
-    (then (call $next_token) (call $vm_c_unary (local.get $code))
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP operand
           (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (return)))
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "delete")))  ;; delete obj.prop / obj[k]
@@ -5293,6 +5300,7 @@
   (i32.store (i32.const 916) (i32.const 0))  ;; arguments-forbidden flag (static block / field initializer)
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
   (i32.store (i32.const 932) (i32.const 0))  ;; label-find floor (0 = program top; raised at each function boundary)
+  (i32.store (i32.const 940) (i32.const 0))  ;; unary-before-** flag (transient; cleared each vm_c_pow)
   (i32.store (i32.const 252) (call $heap_alloc (i32.const 2800)))  ;; label-entry stack (stride 28 → 100 nested labels)
   (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 772) (call $heap_alloc (i32.const 512)))  ;; finally stack base (moved 340→772: 340 overlapped the i64 Function.prototype @336-343, so nested eval/Function-ctor corrupted Function.prototype)
   (i32.store (i32.const 360) (i32.const 0))  ;; innermost loop's finally-base
