@@ -2364,6 +2364,9 @@
       (call $vm_c_expr (local.get $code))                                   ;; then branch
       (let $p2 i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → end
       (call $vm_patch (local.get $code) (local.get $p1))
+      ;; a ConditionalExpression requires `:` between the two branches (`a ? b` is a SyntaxError).
+      (if (i32.ne (call $tok_kind) (i32.const 37))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ':' in conditional expression")) (return)))
       (call $next_token)  ;; ':'
       (call $vm_c_expr (local.get $code))                                   ;; else branch
       (call $vm_patch (local.get $code) (local.get $p2)))))
