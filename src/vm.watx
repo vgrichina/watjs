@@ -1964,7 +1964,10 @@
       ;; call foo and yield true) → fall through to the postfix path below.
       (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.or (i32.eq (call $tok_kind) (i32.const 19))
             (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.eq (call $tok_kind) (i32.const 53))))))
-        (then (call $vm_emit_op (local.get $code) (i32.const 95)) (call $vm_emit_op (local.get $code) (local.get $din)) (return)))
+        (then
+          ;; strict mode: `delete <bare identifier>` (deleting an unqualified variable reference) is a SyntaxError.
+          (if (i32.load (i32.const 388)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Delete of an unqualified identifier in strict mode")) (return)))
+          (call $vm_emit_op (local.get $code) (i32.const 95)) (call $vm_emit_op (local.get $code) (local.get $din)) (return)))
       (call $look_restore)))  ;; member access / call follows → fall through to the reference path
   ;; `delete super.name` / `delete super[expr]` — deleting a SuperReference is a runtime ReferenceError
   ;; (spec 13.5.1.2 step 5.a). The expr IS evaluated (GetValue) but NOT ToPropertyKey'd, so a throwing
