@@ -4061,6 +4061,37 @@
             (else (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET
           (drop (call $eat (i32.const 21)))
           (return)))
+      ;; `using` declaration (ES2026 explicit resource management): `using x = expr (, y = expr)* ;`.
+      ;; `using` is a contextual keyword — a UsingDeclaration only when followed on the SAME line by a
+      ;; BindingIdentifier (else `using` is an ordinary identifier: `using;`/`using.x`/`using(…)`/`using\nx`).
+      ;; Each binding is a plain identifier (no destructuring) and REQUIRES an initializer. Disposal
+      ;; (Symbol.dispose at scope exit) is not yet implemented — the binding is compiled like `const`.
+      (if (call $tok_is_kw (cstring "using"))
+        (then
+          (call $look_save) (call $next_token)
+          (let $uk i32 (call $tok_kind)) (let $unl i32 (call $nl_before))
+          (let $isusing i32 (i32.and (i32.eqz (local.get $unl)) (i32.and (i32.eq (local.get $uk) (i32.const 3))
+            (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (i32.or (call $tok_is_kw (cstring "instanceof")) (call $tok_is_kw (cstring "of"))))))))
+          (call $look_restore)
+          (if (local.get $isusing)
+            (then
+              (if (local.get $nodecl) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration not allowed in single-statement context")) (return)))
+              (call $next_token)  ;; consume 'using'
+              (block $ud (loop $ul
+                (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))  ;; [..]/{..} — no destructuring in a using declaration
+                  (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration binding must be an identifier")) (return)))
+                (let $unm i32 (call $ident_name)) (call $next_token)
+                (if (call $vm_strict_lhs_check (local.get $unm)) (then (return)))
+                (if (call $str_eq (local.get $unm) (cstring "let")) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'let' is not a valid lexical binding name")) (return)))
+                (if (i32.ne (call $tok_kind) (i32.const 24))  ;; '=' — a UsingDeclaration binding must have an initializer
+                  (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration requires an initializer")) (return)))
+                (call $next_token)  ;; '='
+                (call $vm_c_expr (local.get $code))  ;; init value → [v]
+                (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $unm))  ;; DEFCONST (immutable binding; disposal TBD)
+                (br_if $ud (i32.eqz (call $eat (i32.const 22))))  ;; ',' → next binding
+                (br $ul)))
+              (drop (call $eat (i32.const 21)))  ;; ';'
+              (return)))))
       ;; var NAME [= expr] (, …)* ;   |   var [a,b] = e ;   |   var {x,y} = e ;
       (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))
         (then
