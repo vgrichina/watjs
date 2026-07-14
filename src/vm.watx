@@ -1297,6 +1297,9 @@
       (if (i32.ne (call $tok_kind) (i32.const 18))
         (then (block $oe (loop $ol
           (br_if $oe (i32.eq (call $tok_kind) (i32.const 18)))  ;; trailing comma → '}' ends the literal
+          ;; an object literal has no elisions: a leading/doubled comma (`{,}`, `{a:1,,b:2}`) is a SyntaxError.
+          (if (i32.eq (call $tok_kind) (i32.const 22))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected ',' in object literal")) (return)))
           (let $opropstart i32 (call $tok_start))  ;; property start (for a method's source span, incl. get/set/async/*)
           ;; `async` method modifier — only if a method-name start follows (ident/`*`/`[`/string/
           ;; number) with no LineTerminator; otherwise `async` is an ordinary property key.
