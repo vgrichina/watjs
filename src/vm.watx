@@ -3995,6 +3995,17 @@
           (if (call $vm_label_find (local.get $lblnm))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "duplicate label")) (return)))
           (call $next_token)
+          ;; a LabelledItem that is a FunctionDeclaration is Annex B (sloppy) only, and only for a PLAIN
+          ;; function — strict mode and generator function declarations are SyntaxErrors.
+          (if (call $tok_is_kw (cstring "function"))
+            (then
+              (if (i32.load (i32.const 388))
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "In strict mode code, functions can only be declared at top level or inside a block")) (return)))
+              (call $look_save) (call $next_token)
+              (let $lblgen i32 (i32.eq (call $tok_kind) (i32.const 12)))  ;; `function*` → generator
+              (call $look_restore)
+              (if (local.get $lblgen)
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Generator function declarations cannot be labelled")) (return)))))
           (if (i32.or (call $tok_is_kw (cstring "for")) (i32.or (call $tok_is_kw (cstring "while")) (call $tok_is_kw (cstring "do"))))
             (then  ;; labeled loop — the loop consumes the pending label (break/continue both work)
               (i32.store (i32.const 244) (local.get $lblnm))
