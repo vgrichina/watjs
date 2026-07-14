@@ -2208,11 +2208,13 @@
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
     (call $vm_patch (local.get $code) (i32.load (i32.add (local.get $patches) (i32.mul (local.get $i) (i32.const 4)))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
-    (br $pl))))
+    (br $pl)))
+  (i32.store (i32.const 944) (i32.gt_s (local.get $np) (i32.const 0))))  ;; signal whether this AND-expression used `&&` (for the ?? mixing check in vm_c_or)
 
 ;; logical OR (||, kind 35): short-circuit via JMPT_PEEK (keep truthy operand)
 (func $vm_c_or (param $code i32) (effects)
   (call $vm_c_and (local.get $code))
+  (let $anyand i32 (i32.load (i32.const 944)))  ;; did any operand at this level use `&&`? (?? may not mix with && or ||)
   (let $patches i32 (call $heap_alloc (i32.const 256)))
   (let $np i32 (i32.const 0))
   (block $e (loop $l
@@ -2222,6 +2224,7 @@
     (set! $np (i32.add (local.get $np) (i32.const 1)))
     (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP (discard falsy left)
     (call $vm_c_and (local.get $code))
+    (set! $anyand (i32.or (local.get $anyand) (i32.load (i32.const 944))))
     (br $l)))
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
@@ -2229,17 +2232,27 @@
     (call $vm_patch (local.get $code) (i32.load (i32.add (local.get $patches) (i32.mul (local.get $i) (i32.const 4)))))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $pl)))
-  ;; ?? nullish coalescing (token 56): a ?? b → a unless a is null/undefined
+  ;; ?? nullish coalescing (token 56): a ?? b → a unless a is null/undefined.
+  ;; A CoalesceExpression may NOT be combined with `||` or `&&` without parentheses
+  ;; (`a ?? b || c`, `a || b ?? c`, `a && b ?? c` are SyntaxErrors).
   (let $npat i32 (call $heap_alloc (i32.const 256)))
   (let $nn i32 (i32.const 0))
   (block $ne (loop $nl
     (br_if $ne (i32.ne (call $tok_kind) (i32.const 56)))
+    (if (i32.or (i32.gt_s (local.get $np) (i32.const 0)) (local.get $anyand))  ;; left mixed `||`/`&&` with `??`
+      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Cannot use '??' unparenthesized within '||'/'&&' expression")) (return)))
     (call $next_token)
     (i32.store (i32.add (local.get $npat) (i32.mul (local.get $nn) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 68)))  ;; JMP_NN (keep non-nullish left)
     (set! $nn (i32.add (local.get $nn) (i32.const 1)))
     (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP nullish left
     (call $vm_c_and (local.get $code))
+    (if (i32.load (i32.const 944))  ;; the ?? operand used `&&` → `a ?? b && c`
+      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Cannot use '??' unparenthesized within '&&' expression")) (return)))
     (br $nl)))
+  ;; a `||`/`&&` immediately after a ?? chain (`a ?? b || c`) — the operators are same-level, so the
+  ;; token was left unconsumed by the ?? loop; reject it here.
+  (if (i32.and (i32.gt_s (local.get $nn) (i32.const 0)) (i32.or (i32.eq (call $tok_kind) (i32.const 35)) (i32.eq (call $tok_kind) (i32.const 34))))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Cannot use '??' unparenthesized within '||'/'&&' expression")) (return)))
   (let $ni i32 (i32.const 0))
   (block $npe (loop $npl
     (br_if $npe (i32.ge_s (local.get $ni) (local.get $nn)))
