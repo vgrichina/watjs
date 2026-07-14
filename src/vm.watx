@@ -4807,6 +4807,7 @@
           (let $ofdetect i32 (call $cursor_save))
           (let $ofdecl i32 (i32.const 0))  ;; 1 = var/let/const head (binding); 0 = assignment-target head
           (let $ofisvar i32 (i32.const 0))  ;; 1 = `var` (for the annex-B `for(var x=init in E)` sloppy exception)
+          (let $ofisconst i32 (call $tok_is_kw (cstring "const")))  ;; 1 = `const` head → immutable per-iteration binding
           (if (call $tok_is_kw (cstring "var")) (then (set! $ofdecl (i32.const 1)) (set! $ofisvar (i32.const 1)) (call $next_token))
             (else (if (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))) (then (set! $ofdecl (i32.const 1)) (call $next_token)))))
           (let $ofvar i32 (i32.const 0))
@@ -4942,7 +4943,7 @@
                   (i32.store (i32.const 676) (local.get $ofsm))
                   (call $cursor_restore (local.get $ofbody)))
                 (else (if (local.get $ofdecl)
-                        (then (call $vm_emit_op (local.get $code) (if i32 (local.get $ofperiter) (then (i32.const 114)) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; per-iter let/const → LEXDEFINIT (fresh scope); var → DEFINIT (var scope)
+                        (then (call $vm_emit_op (local.get $code) (if i32 (local.get $ofperiter) (then (if i32 (local.get $ofisconst) (then (i32.const 79)) (else (i32.const 114)))) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; per-iter const → DEFCONST (non-writable) / let → LEXDEFINIT; var → DEFINIT (var scope)
                         (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))))))  ;; STOREVAR x: assignment-target head (`for (x of E)`)
               (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; for-in/of body is a single Statement — no lexical/function decl
               (call $vm_c_stmt (local.get $code))  ;; body
