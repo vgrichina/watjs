@@ -1739,7 +1739,8 @@
                     (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 83)) (else (i32.const 35))))  ;; SETIDX → [new]
                     (br $pme)))))))
           (return)))
-      ;; bare identifier target
+      ;; bare identifier target — strict mode: `++eval` / `--arguments` targets eval/arguments (invalid).
+      (if (call $vm_strict_lhs_check (local.get $pvn)) (then (return)))
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; LOADVAR
       (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC (BigInt preserved)
       (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → new value
