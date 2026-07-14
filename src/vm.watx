@@ -799,6 +799,10 @@
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 2))  ;; string literal
     (then
+      ;; strict mode: a LegacyOctalEscapeSequence (`"\1"`, `"\07"`) or NonOctalDecimalEscapeSequence
+      ;; (`"\8"`) is a SyntaxError (lexer flag at mem 928; read before next_token clobbers it).
+      (if (i32.and (i32.load (i32.const 388)) (i32.load (i32.const 928)))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Octal escape sequences are not allowed in strict mode")) (return)))
       (call $vm_emit_op (local.get $code) (i32.const 1))      ;; PUSH
       (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
       (call $next_token)

@@ -356,12 +356,22 @@
 (func $lex_string (param $quote i32) (effects)
   (call $set_pos (i32.add (call $pos) (i32.const 1)))  ;; skip opening quote
   (let $start i32 (call $pos))
+  (i32.store (i32.const 928) (i32.const 0))  ;; clear the legacy-octal-escape flag (set below if a \octal / \8 / \9 escape appears)
   (block $se (loop $sl
     (let $c i32 (call $ch_at (i32.const 0)))
     (br_if $se (i32.eq (local.get $c) (i32.const -1)))
     (br_if $se (i32.eq (local.get $c) (local.get $quote)))
     ;; skip escaped char (so \" \\ etc. don't end the string)
-    (if (i32.eq (local.get $c) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))
+    (if (i32.eq (local.get $c) (i32.const 92))
+      (then
+        ;; LegacyOctalEscapeSequence (\1-\7, or \0 followed by a digit) / NonOctalDecimalEscapeSequence
+        ;; (\8, \9) — allowed in sloppy strings, a SyntaxError in strict (flagged at mem 928).
+        (let $e i32 (call $ch_at (i32.const 1)))
+        (if (i32.or (i32.and (i32.ge_s (local.get $e) (i32.const 49)) (i32.le_s (local.get $e) (i32.const 55)))  ;; '1'..'7'
+              (i32.or (i32.and (i32.ge_s (local.get $e) (i32.const 56)) (i32.le_s (local.get $e) (i32.const 57)))  ;; '8' '9'
+                (i32.and (i32.eq (local.get $e) (i32.const 48)) (call $is_digit (call $ch_at (i32.const 2))))))  ;; '0' + digit
+          (then (i32.store (i32.const 928) (i32.const 1))))
+        (call $set_pos (i32.add (call $pos) (i32.const 1)))))
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $sl)))
   (call $set_tok (i32.const 2) (local.get $start) (i32.sub (call $pos) (local.get $start)))
