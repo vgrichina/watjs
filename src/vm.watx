@@ -4102,6 +4102,9 @@
                 (br $vl)))
             (let $nm i32 (call $ident_name)) (call $next_token)
             (if (call $vm_strict_lhs_check (local.get $nm)) (then (return)))  ;; strict: `var/let/const eval|arguments` → SyntaxError
+            ;; `let` is not a valid BindingIdentifier in a LexicalDeclaration (`let let`/`const let`); `var let` is fine.
+            (if (i32.and (i32.eqz (local.get $isvar)) (call $str_eq (local.get $nm) (cstring "let")))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'let' is not a valid lexical binding name")) (return)))
             (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' initializer
               (then
                 (call $next_token)
@@ -4521,6 +4524,9 @@
           (if (i32.eq (call $tok_kind) (i32.const 3))
             (then (set! $ofvar (call $ident_name))
               (if (local.get $ofdecl) (then (if (call $vm_strict_lhs_check (local.get $ofvar)) (then (return)))))  ;; strict: `for (var eval|arguments ...)` → SyntaxError
+              ;; `for (let let …)` / `for (const let …)` — `let` is not a valid lexical binding name
+              (if (i32.and (i32.and (local.get $ofdecl) (i32.eqz (local.get $ofisvar))) (call $str_eq (local.get $ofvar) (cstring "let")))
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'let' is not a valid lexical binding name")) (return)))
               (call $next_token)))
           ;; member-expression assignment target as the loop head: `for (o.p in E)` / `for (a[i] of E)`.
           ;; Capture the base name + the cursor at the '.'/'[' navigation, skip to `in`/`of`; the per-
