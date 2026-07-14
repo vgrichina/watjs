@@ -4542,6 +4542,7 @@
                       ;; await (async), same restriction as a binding identifier.
                       (let $cpn i32 (call $ident_name))
                       (if (call $vm_strict_lhs_check (local.get $cpn)) (then (return)))
+                      (if (call $is_reserved_word (local.get $cpn)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return)))  ;; `catch(if)`
                       (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $cpn))  ;; simple binding
                       (call $next_token) (call $next_token))))  ;; var ')'
                 (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@catch"))))  ;; catch {} — bind to a throwaway
@@ -4774,6 +4775,9 @@
           (if (i32.eq (call $tok_kind) (i32.const 3))
             (then (set! $ofvar (call $ident_name))
               (if (local.get $ofdecl) (then (if (call $vm_strict_lhs_check (local.get $ofvar)) (then (return)))))  ;; strict: `for (var eval|arguments ...)` → SyntaxError
+              ;; a ReservedWord may not be a for-in/of binding name (`for (var if in {})`).
+              (if (i32.and (local.get $ofdecl) (call $is_reserved_word (local.get $ofvar)))
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return)))
               ;; `for (let let …)` / `for (const let …)` — `let` is not a valid lexical binding name
               (if (i32.and (i32.and (local.get $ofdecl) (i32.eqz (local.get $ofisvar))) (call $str_eq (local.get $ofvar) (cstring "let")))
                 (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'let' is not a valid lexical binding name")) (return)))
@@ -4977,6 +4981,8 @@
                         (set! $forletname (i32.const 0)))  ;; destructuring → no per-iteration copy
                       (else
                         (let $fin i32 (call $ident_name)) (call $next_token)  ;; NAME
+                        ;; a ReservedWord may not be a for-head binding name (`for (var if in {})`).
+                        (if (call $is_reserved_word (local.get $fin)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return)))
                         (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' initializer present
                           (then
                             (call $next_token)  ;; consume '='
