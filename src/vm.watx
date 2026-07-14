@@ -1341,7 +1341,12 @@
                             (then (set! $oprotocnt (i32.add (local.get $oprotocnt) (i32.const 1)))
                                   (if (i32.gt_s (local.get $oprotocnt) (i32.const 1)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate __proto__ fields are not allowed in object literals")) (return)))))
                           (call $next_token) (call $vm_c_expr (local.get $code)))
-                        (else (set! $oshort (i32.const 1)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $oki))))  ;; shorthand → LOADVAR
+                        (else
+                          ;; `{ a = 1 }` (CoverInitializedName) is only valid when the object literal is
+                          ;; refined to a destructuring pattern; in an ordinary object literal it is a SyntaxError.
+                          (if (i32.eq (call $tok_kind) (i32.const 24))
+                            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid shorthand property initializer")) (return)))
+                          (set! $oshort (i32.const 1)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $oki))))  ;; shorthand → LOADVAR
                       (if (call $vm_is_anon_fn_def (local.get $afs))  ;; `key: <anon fn>` → .name = key
                         (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))))
                       ;; literal `key: value` uses DEFDATA (the `__proto__: v` form sets [[Prototype]]); a
