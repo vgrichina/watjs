@@ -158,6 +158,14 @@
       (br $done))))
 
 ;; Lex a number starting at POS. Sets TOK_KIND=1, TOK_NUM, advances POS.
+;; Early Error: a NumericLiteral may not be immediately followed by an IdentifierStart or a DecimalDigit
+;; (`3abc`, `0b12`, `0x1g`, `1n2`). Throw when the char right after the literal starts an identifier/digit.
+(func $num_boundary_check (effects)
+  (let $c i32 (call $ch_at (i32.const 0)))
+  (if (i32.or (call $is_digit (local.get $c)) (i32.or (call $is_alpha (local.get $c))
+        (i32.and (i32.ge_s (local.get $c) (i32.const 128)) (i32.eqz (call $uni_ws_len)))))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier directly after numeric literal")))))
+
 (func $lex_number (effects)
   (let $start i32 (call $pos))
   (i32.store (i32.const 928) (i32.const 0))  ;; clear the legacy-octal / non-octal-decimal flag (set below only for `0`+digit)
@@ -201,6 +209,7 @@
               (i64.store (i32.const 744) (local.get $ov))
               (i32.store (i32.const 304) (i32.const 0))  ;; not a BigInt literal
               (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start)))
+              (call $num_boundary_check)
               (return)))))))
   ;; accurate mantissa+exponent accumulation (matches $str_to_num): collect up
   ;; to 17 significant digits into an i64, tracking a decimal exponent, then
@@ -277,7 +286,8 @@
   (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 110))
     (then (i32.store (i32.const 304) (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))))
     (else (i32.store (i32.const 304) (i32.const 0))))
-  (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start))))
+  (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start)))
+  (call $num_boundary_check))
 
 ;; Lex a radix literal (16/8/2). Assumes cursor at the leading '0'; consumes
 ;; the prefix and digits, sets TOK_KIND=1, TOK_NUM.
@@ -309,7 +319,8 @@
   (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 110))  ;; 0xFFn etc.
     (then (i32.store (i32.const 304) (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))))
     (else (i32.store (i32.const 304) (i32.const 0))))
-  (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start))))
+  (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start)))
+  (call $num_boundary_check))
 
 ;; 10^e for integer-ish e (handles +/-), by repeated mult.
 (func $pow10 (param $e f64) (result f64) (effects)
