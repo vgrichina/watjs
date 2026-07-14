@@ -772,6 +772,10 @@
 (func $vm_c_primary (param $code i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 1))  ;; NUM literal
     (then
+      ;; strict mode: a LegacyOctalIntegerLiteral (`010`) or NonOctalDecimalIntegerLiteral (`08`) is a
+      ;; SyntaxError (flagged by the lexer at mem 928). Read while the number is still the current token.
+      (if (i32.and (i32.load (i32.const 388)) (i32.load (i32.const 928)))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Octal literals are not allowed in strict mode")) (return)))
       (call $vm_emit_op (local.get $code) (i32.const 1))      ;; PUSH
       (if (i32.load (i32.const 304))  ;; BigInt literal (123n)
         (then (call $vm_emit_val (local.get $code) (call $mk_bigint (i64.load (i32.const 744)))))  ;; exact i64 from the lexer (mem 744), not via f64 (which loses bits past 2^53)

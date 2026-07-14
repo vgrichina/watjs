@@ -53,6 +53,7 @@
   (i32.store (i32.add (local.get $b) (i32.const 12)) (call $tok_len))
   (f64.store (i32.add (local.get $b) (i32.const 16)) (call $tok_num))
   (i32.store (i32.add (local.get $b) (i32.const 24)) (i32.load (i32.const 304)))
+  (i32.store (i32.add (local.get $b) (i32.const 28)) (i32.load (i32.const 928)))  ;; legacy-octal / non-octal-decimal flag
   (i64.store (i32.add (local.get $b) (i32.const 32)) (i64.load (i32.const 744))))
 
 ;; heap-allocated save (persists across iterations; for loop cursors)
@@ -72,6 +73,7 @@
                  (i32.load (i32.add (local.get $b) (i32.const 12))))
   (f64.store (i32.const 32) (f64.load (i32.add (local.get $b) (i32.const 16))))
   (i32.store (i32.const 304) (i32.load (i32.add (local.get $b) (i32.const 24))))
+  (i32.store (i32.const 928) (i32.load (i32.add (local.get $b) (i32.const 28))))  ;; legacy-octal / non-octal-decimal flag
   (i64.store (i32.const 744) (i64.load (i32.add (local.get $b) (i32.const 32)))))
 
 ;; byte at src+pos+offset, or -1 past end
@@ -158,6 +160,7 @@
 ;; Lex a number starting at POS. Sets TOK_KIND=1, TOK_NUM, advances POS.
 (func $lex_number (effects)
   (let $start i32 (call $pos))
+  (i32.store (i32.const 928) (i32.const 0))  ;; clear the legacy-octal / non-octal-decimal flag (set below only for `0`+digit)
   (let $val f64 (f64.const 0))
   ;; hex / binary / octal literals: 0x.. 0b.. 0o..
   (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 48))  ;; leading '0'
@@ -168,7 +171,37 @@
       (if (i32.or (i32.eq (local.get $p1) (i32.const 98)) (i32.eq (local.get $p1) (i32.const 66)))   ;; b/B
         (then (call $lex_radix (i32.const 2)) (return)))
       (if (i32.or (i32.eq (local.get $p1) (i32.const 111)) (i32.eq (local.get $p1) (i32.const 79)))  ;; o/O
-        (then (call $lex_radix (i32.const 8)) (return)))))
+        (then (call $lex_radix (i32.const 8)) (return)))
+      ;; Annex B: `0` immediately followed by a decimal digit is a LegacyOctalIntegerLiteral (all digits
+      ;; 0-7 → octal value) or a NonOctalDecimalIntegerLiteral (contains 8/9 → decimal value). Both are
+      ;; sloppy-only — flag them (mem 928) so the number-literal compiler rejects them in strict mode.
+      (if (call $is_digit (local.get $p1))
+        (then
+          ;; scan the leading digit run to decide octal vs non-octal-decimal (any 8/9 or a following '.'/'e' → decimal)
+          (let $q i32 (i32.const 1)) (let $alloct i32 (i32.const 1))
+          (block $se (loop $sl
+            (let $dc i32 (call $ch_at (local.get $q)))
+            (br_if $se (i32.eqz (call $is_digit (local.get $dc))))
+            (if (i32.gt_s (local.get $dc) (i32.const 55)) (then (set! $alloct (i32.const 0))))  ;; '8' or '9'
+            (set! $q (i32.add (local.get $q) (i32.const 1))) (br $sl)))
+          (let $after i32 (call $ch_at (local.get $q)))
+          (if (i32.or (i32.eq (local.get $after) (i32.const 46)) (i32.or (i32.eq (local.get $after) (i32.const 101)) (i32.eq (local.get $after) (i32.const 69))))
+            (then (set! $alloct (i32.const 0))))  ;; a '.'/'e'/'E' tail → not a pure octal integer → decimal value
+          (i32.store (i32.const 928) (i32.const 1))  ;; legacy form (strict-rejected)
+          (if (local.get $alloct)
+            (then  ;; pure LegacyOctalIntegerLiteral → accumulate base-8 value
+              (call $set_pos (i32.add (call $pos) (i32.const 1)))  ;; skip leading '0'
+              (let $ov i64 (i64.const 0))
+              (block $oe (loop $ol
+                (let $oc i32 (call $ch_at (i32.const 0)))
+                (br_if $oe (i32.eqz (call $is_digit (local.get $oc))))
+                (set! $ov (i64.add (i64.mul (local.get $ov) (i64.const 8)) (i64.extend_i32_s (i32.sub (local.get $oc) (i32.const 48)))))
+                (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $ol)))
+              (f64.store (i32.const 32) (f64.convert_i64_s (local.get $ov)))
+              (i64.store (i32.const 744) (local.get $ov))
+              (i32.store (i32.const 304) (i32.const 0))  ;; not a BigInt literal
+              (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start)))
+              (return)))))))
   ;; accurate mantissa+exponent accumulation (matches $str_to_num): collect up
   ;; to 17 significant digits into an i64, tracking a decimal exponent, then
   ;; combine with one exact multiply/divide when in range.
