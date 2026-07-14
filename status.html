@@ -124,20 +124,20 @@
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
   <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
   <div class="meta">
-    <span class="chip">status as of <b>2026-07-12</b></span>
+    <span class="chip">status as of <b>2026-07-13</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>ca6526d</b></span>
-    <span class="chip"><b>1318</b> commits</span>
+    <span class="chip">@ <b>ebd57c6</b></span>
+    <span class="chip"><b>1338</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">26.2k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">294 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">26.4k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">296 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
-  <div class="card"><div class="n">63.5M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">64.4M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -183,7 +183,7 @@
   <tr><td>4</td><td>threaded-code VM + GC + test262 breadth</td><td><span class="pill wip">in progress</span></td></tr>
 </table>
 
-<h2>Test suites <span class="em">live run · 2026-07-12</span></h2>
+<h2>Test suites <span class="em">live run · 2026-07-13</span></h2>
 <table>
   <tr><th>suite</th><th>files</th><th>pass rate</th></tr>
   <tr><td>self-check <code>test/</code></td><td class="mono">486 / 486</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
@@ -216,12 +216,12 @@
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
-  <tr><td class="mono">ca6526d</td><td>class early errors: non-static constructor accessor/gen/async + static <code>prototype</code> (+12)</td></tr>
-  <tr><td class="mono">7f4d5b6</td><td><code>BindingRestElement</code> must be the last element in an array pattern (+174)</td></tr>
-  <tr><td class="mono">d96c3bf</td><td><code>BindingRestElement</code> may not have a default initializer (+165)</td></tr>
-  <tr><td class="mono">1c2fb9a</td><td>private-name resolution early error — <code>AllPrivateIdentifiersValid</code> (+59)</td></tr>
-  <tr><td class="mono">2814cf0</td><td>duplicate parameter names: non-simple lists (sloppy) + arrow functions (+32)</td></tr>
-  <tr><td class="mono">fac56f8</td><td><code>ClassBody</code> duplicate PrivateBoundIdentifiers early error (+18)</td></tr>
+  <tr><td class="mono">ebd57c6</td><td><code>arguments</code> forbidden in a class field initializer / static block (+30)</td></tr>
+  <tr><td class="mono">520ea57</td><td><code>let</code> is not a valid lexical binding name (+8)</td></tr>
+  <tr><td class="mono">443ecd7</td><td>block-level duplicate <code>LexicallyDeclaredNames</code> early error (+5)</td></tr>
+  <tr><td class="mono">eb28457</td><td><code>try</code> statement: require catch/finally; reject empty catch parens (+13)</td></tr>
+  <tr><td class="mono">d51572f</td><td>class static-block context restrictions: <code>return</code>/<code>await</code>/<code>yield</code>/<code>arguments</code> (+4)</td></tr>
+  <tr><td class="mono">54c7a58</td><td>tooling: parallel worker-pool <code>run-tests.js</code> (~180× faster)</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -304,7 +304,7 @@ const DAILY = [
   ["Jun 28", 3, 0], ["Jun 29", 16, 0.64], ["Jun 30", 3, 0.56], ["Jul 1", 0, 0],
   ["Jul 2", 18, 0], ["Jul 3", 45, 2.77], ["Jul 4", 13, 2.13], ["Jul 5", 45, 1.90],
   ["Jul 6", 59, 2.76], ["Jul 7", 18, 1.44], ["Jul 8", 0, 0], ["Jul 9", 0, 0],
-  ["Jul 10", 9, 0.17], ["Jul 11", 38, 0.80], ["Jul 12", 19, 2.30],
+  ["Jul 10", 9, 0.17], ["Jul 11", 38, 0.80], ["Jul 12", 26, 2.24], ["Jul 13", 13, 0.94],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -321,7 +321,7 @@ const GROWTH = [
   ["Jun 28", 21933, 244], ["Jun 29", 22066, 246], ["Jun 30", 22158, 247], ["Jul 1", 22158, 247],
   ["Jul 2", 22398, 249], ["Jul 3", 23045, 254], ["Jul 4", 23155, 256], ["Jul 5", 23816, 262],
   ["Jul 6", 24575, 269], ["Jul 7", 25029, 274], ["Jul 8", 25029, 274], ["Jul 9", 25029, 274],
-  ["Jul 10", 25163, 276], ["Jul 11", 25576, 282], ["Jul 12", 26203, 294],
+  ["Jul 10", 25163, 276], ["Jul 11", 25576, 282], ["Jul 12", 26252, 294], ["Jul 13", 26370, 296],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
@@ -340,7 +340,7 @@ const HUMAN = {
   "Jun 22": { n:1 }, "Jun 24": { n:3 }, "Jun 29": { n:8 }, "Jun 30": { n:5 },
   "Jul 2": { i:["make sure to at least push the latest changes"], n:0 },
   "Jul 3": { n:23 }, "Jul 4": { n:14 }, "Jul 5": { n:18 }, "Jul 6": { n:24 }, "Jul 7": { n:11 },
-  "Jul 8": { n:1 }, "Jul 10": { n:1 }, "Jul 11": { n:8 }, "Jul 12": { n:14 },
+  "Jul 8": { n:1 }, "Jul 10": { n:1 }, "Jul 11": { n:8 }, "Jul 12": { n:12 }, "Jul 13": { n:16 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
