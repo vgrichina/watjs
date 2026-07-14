@@ -3675,6 +3675,10 @@
   (let $clsname i32 (i32.const 0))  ;; optional (anonymous class expression)
   (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eqz (call $tok_is_kw (cstring "extends"))))
     (then (set! $clsname (call $ident_name)) (call $next_token)))
+  ;; a ClassDeclaration (statement position, not an expression) requires a BindingIdentifier —
+  ;; `class {}` / `class extends X {}` are only valid as ClassExpressions.
+  (if (i32.and (i32.eqz (local.get $isExpr)) (i32.eqz (local.get $clsname)))
+    (then (i32.store (i32.const 388) (local.get $clssave)) (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Class declaration must have a name")) (return)))
   (let $litstart i32 (call $vm_emit_cursor))  ;; class-literal emit span start (IsAnonymousFunctionDefinition)
   (let $protoT i32 (call $vm_tmpname))
   (let $ctorT i32 (call $vm_tmpname))
