@@ -623,7 +623,10 @@
       (then (set! $ti (i32.add (local.get $ti) (i32.const 2))) (br $l)))
     (if (i32.and (i32.eq (local.get $tc) (i32.const 36)) (i32.eq (i32.load8_u (i32.add (local.get $tbase) (i32.add (local.get $ti) (i32.const 1)))) (i32.const 123)))
       (then  ;; ${ expr }
-        ;; decode + push the cooked literal segment [tseg, ti)
+        ;; decode + push the cooked literal segment [tseg, ti). An untagged template with an invalid
+        ;; escape (\x/\u malformed, legacy octal, \8/\9) is a SyntaxError (only tagged templates get undefined).
+        (if (call $tmpl_bad_escape (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $ti) (local.get $tseg)))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid escape sequence in template literal")) (return)))
         (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $tmpl_cook (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $ti) (local.get $tseg)))))
         (call $vm_emit_op (local.get $code) (i32.const 2))  ;; ADD
         (set! $ti (i32.add (local.get $ti) (i32.const 2)))
@@ -650,6 +653,8 @@
       (else
         (set! $ti (i32.add (local.get $ti) (i32.const 1)))))
     (br $l)))
+  (if (call $tmpl_bad_escape (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $tlen) (local.get $tseg)))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid escape sequence in template literal")) (return)))
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $tmpl_cook (i32.add (local.get $tbase) (local.get $tseg)) (i32.sub (local.get $tlen) (local.get $tseg)))))  ;; trailing chunk
   (call $vm_emit_op (local.get $code) (i32.const 2)))  ;; ADD
 
