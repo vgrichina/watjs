@@ -3282,6 +3282,9 @@
   (block $ade (loop $adl
     (br_if $ade (i32.ge_s (local.get $adi) (local.get $np)))
     (let $adn i32 (i32.load (i32.add (local.get $params) (i32.mul (local.get $adi) (i32.const 4)))))
+    ;; a strict arrow's parameter may not be named `eval`/`arguments` (nor `yield`/`await` in the
+    ;; respective contexts) — same BindingIdentifier restriction as ordinary function params.
+    (if (call $vm_strict_lhs_check (local.get $adn)) (then (return)))
     (let $adj i32 (i32.add (local.get $adi) (i32.const 1)))
     (block $ade2 (loop $adl2
       (br_if $ade2 (i32.ge_s (local.get $adj) (local.get $np)))
