@@ -4061,6 +4061,36 @@
             (else (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET
           (drop (call $eat (i32.const 21)))
           (return)))
+      ;; `await using x = expr;` — an async ClassStaticBlock/function resource declaration. Only in an
+      ;; async body (reg 896): `await [no LT] using [no LT] BindingIdentifier`. Compiled like the sync
+      ;; `using` (const binding; Symbol.asyncDispose scope-exit disposal is a follow-up).
+      (if (i32.and (i32.load (i32.const 896)) (call $tok_is_kw (cstring "await")))
+        (then
+          (call $look_save) (call $next_token)  ;; past 'await'
+          (let $auok i32 (i32.const 0))
+          (if (i32.and (i32.eqz (call $nl_before)) (call $tok_is_kw (cstring "using")))
+            (then (call $next_token)  ;; past 'using'
+              (set! $auok (i32.and (i32.eqz (call $nl_before)) (i32.and (i32.eq (call $tok_kind) (i32.const 3))
+                (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (i32.or (call $tok_is_kw (cstring "instanceof")) (call $tok_is_kw (cstring "of"))))))))))
+          (call $look_restore)
+          (if (local.get $auok)
+            (then
+              (if (local.get $nodecl) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "await using declaration not allowed in single-statement context")) (return)))
+              (call $next_token) (call $next_token)  ;; consume 'await' 'using'
+              (block $aud (loop $aul
+                (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))
+                  (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration binding must be an identifier")) (return)))
+                (let $aunm i32 (call $ident_name)) (call $next_token)
+                (if (call $vm_strict_lhs_check (local.get $aunm)) (then (return)))
+                (if (call $str_eq (local.get $aunm) (cstring "let")) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'let' is not a valid lexical binding name")) (return)))
+                (if (i32.ne (call $tok_kind) (i32.const 24)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration requires an initializer")) (return)))
+                (call $next_token)
+                (call $vm_c_expr (local.get $code))
+                (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $aunm))  ;; DEFCONST
+                (br_if $aud (i32.eqz (call $eat (i32.const 22))))
+                (br $aul)))
+              (drop (call $eat (i32.const 21)))
+              (return)))))
       ;; `using` declaration (ES2026 explicit resource management): `using x = expr (, y = expr)* ;`.
       ;; `using` is a contextual keyword — a UsingDeclaration only when followed on the SAME line by a
       ;; BindingIdentifier (else `using` is an ordinary identifier: `using;`/`using.x`/`using(…)`/`using\nx`).
