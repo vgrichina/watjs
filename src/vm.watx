@@ -1313,8 +1313,10 @@
                       (else (set! $oaname (if i32 (i32.eq (call $tok_kind) (i32.const 2)) (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))) (else (call $ident_name)))) (call $next_token)
                             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $oaname)))))
                     (i32.store (i32.const 692) (i32.const 1))  ;; accessor → no .prototype
+                    (i32.store (i32.const 924) (if i32 (local.get $isget) (then (i32.const 1)) (else (i32.const 2))))  ;; accessor arity: getter→0 params / setter→1
                     (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1)))
                     (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; pushes the accessor fn
+                    (if (call $err) (then (return)))
                     (if (local.get $oaname)  ;; accessor .name = "get "/"set " + key
                       (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (call $str_concat (if i32 (local.get $isget) (then (cstring "get ")) (else (cstring "set "))) (local.get $oaname)))))
                     (call $vm_emit_op (local.get $code) (if i32 (local.get $isget) (then (i32.const 66)) (else (i32.const 67)))))  ;; DEFGET / DEFSET
@@ -2403,6 +2405,8 @@
   (let $asyncf i32 (i32.load (i32.const 232)))
   (let $classf i32 (i32.load (i32.const 404)))  ;; this fn is a class constructor (set by vm_c_class)
   (let $noproto i32 (i32.load (i32.const 692)))  ;; reg 692: this fn is a method/accessor (non-constructor → no .prototype)
+  (let $acckind i32 (i32.load (i32.const 924)))  ;; reg 924: accessor arity kind (0=none, 1=getter→0 params, 2=setter→exactly 1 non-rest)
+  (i32.store (i32.const 924) (i32.const 0))
   (i32.store (i32.const 236) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0)) (i32.store (i32.const 404) (i32.const 0)) (i32.store (i32.const 692) (i32.const 0))  ;; clear so nested fns don't inherit
   (let $savefin i32 (i32.load (i32.const 320)))  ;; nested fn: a return runs only THIS fn's finallys
   (i32.store (i32.const 320) (i32.const 0))
@@ -2482,6 +2486,12 @@
       (br_if $pe (i32.eqz (call $eat (i32.const 22))))
       (br $pl)))))
   (call $next_token)  ;; ')'
+  ;; accessor arity (get/set have fixed formal-parameter counts):
+  ;; a getter takes no parameters; a setter takes exactly one, which may not be a rest element.
+  (if (i32.and (i32.eq (local.get $acckind) (i32.const 1)) (i32.ne (local.get $np) (i32.const 0)))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Getter must not have any formal parameters")) (return)))
+  (if (i32.and (i32.eq (local.get $acckind) (i32.const 2)) (i32.or (i32.ne (local.get $np) (i32.const 1)) (i32.ge_s (local.get $restidx) (i32.const 0))))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Setter must have exactly one formal parameter")) (return)))
   (let $litstart i32 (call $vm_emit_cursor))  ;; fn-literal emit span start (IsAnonymousFunctionDefinition)
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
   (let $entry i32 (call $vm_emit_cursor))
@@ -3825,8 +3835,10 @@
             (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $ganame)))))  ;; literal key
         (if (local.get $isstatic) (then (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND key (static)
         (i32.store (i32.const 692) (i32.const 1))  ;; class accessor → no .prototype
+        (i32.store (i32.const 924) (if i32 (local.get $gsi) (then (i32.const 1)) (else (i32.const 2))))  ;; accessor arity: getter→0 params / setter→1
         (i32.store (i32.const 700) (i32.add (local.get $memberstart) (i32.const 1)))  ;; class method source span
         (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; accessor fn → static: [smethT, fn]; instance: [proto, key, fn]
+        (if (call $err) (then (return)))
         (if (local.get $ganame)  ;; accessor .name = "get "/"set " + key
           (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (call $str_concat (if i32 (local.get $gsi) (then (cstring "get ")) (else (cstring "set "))) (local.get $ganame)))))
         (if (local.get $isstatic)
