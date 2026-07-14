@@ -1133,9 +1133,10 @@
       ;; compares raw source so it misses the await operator).
       (if (i32.and (i32.or (i32.load (i32.const 896)) (i32.load (i32.const 912))) (call $str_eq (local.get $vn) (cstring "await")))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' is a reserved identifier here")) (return)))
-      ;; a class static block may not reference `arguments`
-      (if (i32.and (i32.load (i32.const 912)) (call $str_eq (local.get $vn) (cstring "arguments")))
-        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'arguments' is not allowed in a class static block")) (return)))
+      ;; a class static block / field initializer may not reference `arguments` (reg 916; inherited by
+      ;; nested arrows, reset by a nested regular function that has its own `arguments`).
+      (if (i32.and (i32.load (i32.const 916)) (call $str_eq (local.get $vn) (cstring "arguments")))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'arguments' is not allowed here")) (return)))
       (if (i32.eq (call $tok_kind) (i32.const 52))  ;; NAME => body  (single-param arrow, no parens)
         (then
           (i32.store (i32.const 700) (i32.add (local.get $vnstart) (i32.const 1)))
@@ -2368,6 +2369,8 @@
   (i32.store (i32.const 896) (local.get $asyncf))
   (let $savesb i32 (i32.load (i32.const 912)))  ;; a nested function body is NOT the class static block (return/arguments/await allowed per its own kind)
   (i32.store (i32.const 912) (i32.const 0))
+  (let $saveargs i32 (i32.load (i32.const 916)))  ;; a nested regular function has its OWN `arguments` — clear the forbidden flag
+  (i32.store (i32.const 916) (i32.const 0))
   ;; reg 868: is `super` property access lexically allowed here? True in a method/accessor (reg692) or a
   ;; class constructor (reg404); a plain function RESETS it; nested arrows inherit (vm_c_arrow compiles
   ;; inline, not via this fn). save/restore so a nested regular fn doesn't clobber the enclosing value.
@@ -2537,6 +2540,7 @@
   (i32.store (i32.const 852) (local.get $savederctor))  ;; restore enclosing derived-ctor compile flag
   (i32.store (i32.const 896) (local.get $saveinasync))  ;; restore enclosing in-async-body flag
   (i32.store (i32.const 912) (local.get $savesb))  ;; restore in-static-block flag
+  (i32.store (i32.const 916) (local.get $saveargs))  ;; restore enclosing arguments-forbidden flag
   (i32.store (i32.const 868) (local.get $savesuperhome))  ;; restore enclosing super-property-allowed flag
   (i32.store (i32.const 884) (local.get $savesupercall))  ;; restore enclosing super()-call-allowed flag
   (i32.store (i32.const 320) (local.get $savefin))  ;; restore enclosing fn's finally depth
@@ -2674,9 +2678,10 @@
   (let $btgen i32 (i32.load (i32.const 672)))
   (let $btasync i32 (i32.load (i32.const 896)))
   (let $btsb i32 (i32.load (i32.const 912)))
-  (i32.store (i32.const 672) (i32.const 0)) (i32.store (i32.const 896) (i32.const 0)) (i32.store (i32.const 912) (i32.const 1))
+  (let $btargs i32 (i32.load (i32.const 916)))
+  (i32.store (i32.const 672) (i32.const 0)) (i32.store (i32.const 896) (i32.const 0)) (i32.store (i32.const 912) (i32.const 1)) (i32.store (i32.const 916) (i32.const 1))
   (call $vm_c_stmt (local.get $code))  ;; the `{ ... }` block
-  (i32.store (i32.const 672) (local.get $btgen)) (i32.store (i32.const 896) (local.get $btasync)) (i32.store (i32.const 912) (local.get $btsb))
+  (i32.store (i32.const 672) (local.get $btgen)) (i32.store (i32.const 896) (local.get $btasync)) (i32.store (i32.const 912) (local.get $btsb)) (i32.store (i32.const 916) (local.get $btargs))
   (i32.store (i32.const 868) (local.get $btsuperhome)) (i32.store (i32.const 884) (local.get $btsupercall))
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; PUSH undefined (no value)
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET
@@ -2699,7 +2704,12 @@
   (let $ftsuperhome i32 (i32.load (i32.const 868)))  ;; a class field initializer has a [[HomeObject]] → super property access allowed, but super() is NOT
   (let $ftsupercall i32 (i32.load (i32.const 884)))
   (i32.store (i32.const 868) (i32.const 1)) (i32.store (i32.const 884) (i32.const 0))
+  ;; a class field initializer may not reference `arguments` (reg 916), even via a nested arrow (arrows
+  ;; inherit; a nested regular function resets it in vm_c_fnbody since it has its own `arguments`).
+  (let $ftargs i32 (i32.load (i32.const 916)))
+  (i32.store (i32.const 916) (i32.const 1))
   (call $vm_c_expr (local.get $code))  ;; compile init expr → value
+  (i32.store (i32.const 916) (local.get $ftargs))
   (i32.store (i32.const 868) (local.get $ftsuperhome)) (i32.store (i32.const 884) (local.get $ftsupercall))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET (returns TOS)
   (call $vm_patch (local.get $code) (local.get $pj))
@@ -5016,6 +5026,7 @@
   (i32.store (i32.const 224) (i32.const 0)) (i32.store (i32.const 232) (i32.const 0))  ;; temp counter, async flag
   (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
   (i32.store (i32.const 912) (i32.const 0))  ;; in-static-block flag (reset per compile; balanced save/restore otherwise)
+  (i32.store (i32.const 916) (i32.const 0))  ;; arguments-forbidden flag (static block / field initializer)
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
   (i32.store (i32.const 252) (call $heap_alloc (i32.const 2048)))  ;; label-entry stack
   (i32.store (i32.const 320) (i32.const 0)) (i32.store (i32.const 772) (call $heap_alloc (i32.const 512)))  ;; finally stack base (moved 340→772: 340 overlapped the i64 Function.prototype @336-343, so nested eval/Function-ctor corrupted Function.prototype)
