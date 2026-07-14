@@ -4699,6 +4699,9 @@
               (else
                 (if (call $tok_is_kw (cstring "default"))
                   (then
+                    ;; a CaseBlock may have at most one DefaultClause.
+                    (if (i32.ne (local.get $sdefidx) (i32.const -1))
+                      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "More than one default clause in switch statement")) (return)))
                     (call $next_token) (call $next_token)  ;; 'default' ':'
                     (i32.store (i32.add (local.get $spatch) (i32.mul (local.get $snc) (i32.const 4))) (i32.const 0))  ;; no test
                     (i32.store (i32.add (local.get $sbodies) (i32.mul (local.get $snc) (i32.const 4))) (call $cursor_save))
