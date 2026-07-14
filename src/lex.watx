@@ -252,14 +252,17 @@
       (if (i32.eq (local.get $ec) (i32.const 43)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))
       (if (i32.eq (local.get $ec) (i32.const 45)) (then (set! $esign (i32.const -1)) (call $set_pos (i32.add (call $pos) (i32.const 1)))))
       (let $en i32 (i32.const 0))
+      (let $endig i32 (i32.const 0))  ;; exponent digit count (0 → `1e`/`1e+` empty exponent = SyntaxError)
       (block $ee (loop $el
         (let $c i32 (call $ch_at (i32.const 0)))
         (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator in the exponent → skip
           (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $el)))
         (br_if $ee (i32.eqz (call $is_digit (local.get $c))))
+        (set! $endig (i32.add (local.get $endig) (i32.const 1)))
         (set! $en (i32.add (i32.mul (local.get $en) (i32.const 10)) (i32.sub (local.get $c) (i32.const 48))))
         (call $set_pos (i32.add (call $pos) (i32.const 1)))
         (br $el)))
+      (if (i32.eqz (local.get $endig)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Missing exponent digits in numeric literal")) (return)))  ;; `1e`, `1e+`
       (set! $exp (i32.add (local.get $exp) (i32.mul (local.get $esign) (local.get $en))))))
   ;; combine
   (set! $val (f64.convert_i64_s (local.get $mant)))
@@ -296,10 +299,15 @@
   (call $set_pos (i32.add (call $pos) (i32.const 2)))  ;; skip 0x/0b/0o
   (let $val f64 (f64.const 0))
   (let $ival i64 (i64.const 0))  ;; exact integer accumulation for a BigInt literal (no f64 precision loss)
+  (let $ndig i32 (i32.const 0))  ;; radix-digit count (0 → `0x`/`0b`/`0o` with no digits = SyntaxError)
+  (let $prevus i32 (i32.const 0))  ;; previous char was a '_' numeric separator
   (block $de (loop $dl
     (let $c i32 (call $ch_at (i32.const 0)))
-    (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator → skip
-      (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $dl)))
+    (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator: must sit between two digits
+      (then
+        (if (i32.or (i32.eqz (local.get $ndig)) (local.get $prevus))  ;; `0x_`/`__` → invalid separator
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Numeric separator '_' is not allowed here")) (return)))
+        (set! $prevus (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $dl)))
     (let $d i32 (i32.const -1))
     (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57)))
       (then (set! $d (i32.sub (local.get $c) (i32.const 48)))))                       ;; 0-9
@@ -308,12 +316,15 @@
     (if (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 70)))
       (then (set! $d (i32.add (i32.sub (local.get $c) (i32.const 65)) (i32.const 10)))))  ;; A-F
     (br_if $de (i32.or (i32.lt_s (local.get $d) (i32.const 0)) (i32.ge_s (local.get $d) (local.get $radix))))
+    (set! $ndig (i32.add (local.get $ndig) (i32.const 1))) (set! $prevus (i32.const 0))
     (set! $val (f64.add (f64.mul (local.get $val) (f64.convert_i32_s (local.get $radix))) (f64.convert_i32_s (local.get $d))))
     (if (i64.gt_u (local.get $ival) (i64.div_u (i64.sub (i64.const 9223372036854775807) (i64.extend_i32_s (local.get $d))) (i64.extend_i32_s (local.get $radix))))
       (then (set! $ival (i64.const 9223372036854775807)))
       (else (set! $ival (i64.add (i64.mul (local.get $ival) (i64.extend_i32_s (local.get $radix))) (i64.extend_i32_s (local.get $d))))))
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $dl)))
+  (if (local.get $prevus) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Numeric separator '_' is not allowed at the end")) (return)))  ;; `0x1_`
+  (if (i32.eqz (local.get $ndig)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Missing digits after '0x'/'0b'/'0o' prefix")) (return)))  ;; `0x`/`0b`/`0o`
   (f64.store (i32.const 32) (local.get $val))
   (i64.store (i32.const 744) (local.get $ival))  ;; exact integer value for the BigInt-literal path
   (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 110))  ;; 0xFFn etc.
