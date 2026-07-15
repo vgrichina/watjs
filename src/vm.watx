@@ -1946,6 +1946,52 @@
     (set! $stmt (i32.const 0)) (call $next_token) (br $lp)))
   (call $cursor_restore (local.get $save)))
 
+;; Early Error: the LexicallyDeclaredNames of a function body may not contain any parameter name
+;; (`function f(a){ let a; }` is a SyntaxError; `var a` / `function a(){}` are var-scoped and may alias
+;; a param, so they are NOT checked). Cursor at the body '{'; scan body-top-level (brace-depth 0,
+;; statement-position, governed-statement-aware) let/const/class names vs the $params array. Restored.
+;; First binding identifier per declarator only (destructuring patterns skipped, matching switch check).
+(func $vm_param_body_check (param $params i32) (param $np i32) (effects)
+  (if (i32.eqz (local.get $np)) (then (return)))
+  (let $save i32 (call $cursor_save))
+  (call $next_token)  ;; past the body '{'
+  (let $depth i32 (i32.const 0))
+  (let $stmt i32 (i32.const 1))
+  (let $govern i32 (i32.const 0))
+  (block $done (loop $lp
+    (let $k i32 (call $tok_kind))
+    (br_if $done (i32.eqz (local.get $k)))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 18)) (i32.eqz (local.get $depth))) (then (br $done)))  ;; the body's '}'
+    (if (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.or (i32.eq (local.get $k) (i32.const 17)) (i32.eq (local.get $k) (i32.const 19))))
+      (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $stmt (i32.const 0)) (call $next_token) (br $lp)))
+    (if (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.eq (local.get $k) (i32.const 20))))
+      (then (set! $depth (i32.sub (local.get $depth) (i32.const 1)))
+        (if (i32.eqz (local.get $depth))
+          (then (if (i32.and (i32.eq (local.get $k) (i32.const 16)) (local.get $govern))
+                  (then (set! $govern (i32.const 0)) (set! $stmt (i32.const 0)))
+                  (else (set! $stmt (i32.const 1))))))
+        (call $next_token) (br $lp)))
+    (if (i32.gt_s (local.get $depth) (i32.const 0)) (then (call $next_token) (br $lp)))
+    (if (i32.eq (local.get $k) (i32.const 21)) (then (set! $stmt (i32.const 1)) (call $next_token) (br $lp)))  ;; ';'
+    (if (i32.eq (local.get $k) (i32.const 3))
+      (then
+        (if (local.get $stmt)
+          (then
+            (if (i32.or (call $tok_is_kw (cstring "if")) (i32.or (call $tok_is_kw (cstring "for")) (i32.or (call $tok_is_kw (cstring "while")) (i32.or (call $tok_is_kw (cstring "with")) (call $tok_is_kw (cstring "switch"))))))
+              (then (set! $govern (i32.const 1)) (set! $stmt (i32.const 0)) (call $next_token) (br $lp)))
+            (if (i32.or (call $tok_is_kw (cstring "else")) (call $tok_is_kw (cstring "do")))
+              (then (set! $stmt (i32.const 0)) (call $next_token) (br $lp)))
+            (if (i32.or (call $tok_is_kw (cstring "let")) (i32.or (call $tok_is_kw (cstring "const")) (call $tok_is_kw (cstring "class"))))
+              (then (call $next_token)
+                (if (i32.eq (call $tok_kind) (i32.const 3))
+                  (then (let $nm i32 (call $ident_name))
+                    (if (call $dup_has (local.get $params) (local.get $np) (local.get $nm))
+                      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (br $done)))))
+                (set! $stmt (i32.const 0)) (br $lp)))))
+        (set! $stmt (i32.const 0)) (call $next_token) (br $lp)))
+    (set! $stmt (i32.const 0)) (call $next_token) (br $lp)))
+  (call $cursor_restore (local.get $save)))
+
 ;; Early Error (parse phase): `delete` applied to a MemberExpression.PrivateName /
 ;; CallExpression.PrivateName — including the case where the operand is wholly wrapped
 ;; in cover-parens ("delete ((this.#x))"). Token pre-scan from the current cursor:
@@ -2574,6 +2620,9 @@
   (let $pj i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP over body
   (let $entry i32 (call $vm_emit_cursor))
   (let $bodycur i32 (call $cursor_save))  ;; '{' of the body
+  ;; Early Error: a body top-level lexical name (let/const/class) may not duplicate a parameter name.
+  (call $vm_param_body_check (local.get $params) (local.get $np))
+  (if (call $err) (then (return)))
   ;; strict mode: own "use strict" directive at body start, OR lexically inherited.
   (let $savestrict i32 (i32.load (i32.const 388)))
   (let $thisstrict i32 (local.get $savestrict))
