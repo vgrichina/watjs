@@ -3504,6 +3504,9 @@
   (let $arrstrict i32 (local.get $arrsave))  ;; inherited strictness (an arrow can also carry its own "use strict")
   (if (i32.eq (call $tok_kind) (i32.const 17))  ;; block body
     (then
+      ;; Early Error: an arrow body's top-level lexical name may not duplicate a parameter (`(a)=>{ let a; }`).
+      (call $vm_param_body_check (local.get $params) (local.get $np))
+      (if (call $err) (then (return)))
       ;; scan the directive prologue for "use strict" (mirrors vm_c_fnbody)
       (let $arrbc i32 (call $cursor_save))
       (let $aownstrict i32 (i32.const 0))
