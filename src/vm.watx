@@ -5119,6 +5119,8 @@
           ;; return (finally base 0) still pops it. (Per-iteration fresh bindings for closures = TODO.)
           (let $forlex i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))))
           (let $forletname i32 (i32.const 0))  ;; the single head let/const name → per-iteration fresh binding (0 = none / multi / destructuring: isolation only)
+          (let $forlexb i32 (call $heap_alloc (i32.const 512)))  ;; all head let/const binding names (for the body-var-conflict early error)
+          (let $forlexn i32 (i32.const 0))
           (if (local.get $forlex)
             (then
               (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE 0
@@ -5160,6 +5162,8 @@
                         (let $fin i32 (call $ident_name)) (call $next_token)  ;; NAME
                         ;; a ReservedWord may not be a for-head binding name (`for (var if in {})`).
                         (if (call $is_reserved_word (local.get $fin)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return)))
+                        (if (i32.and (local.get $forlex) (i32.lt_s (local.get $forlexn) (i32.const 128)))  ;; record each let/const head name
+                          (then (i32.store (i32.add (local.get $forlexb) (i32.mul (local.get $forlexn) (i32.const 4))) (local.get $fin)) (set! $forlexn (i32.add (local.get $forlexn) (i32.const 1)))))
                         (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' initializer present
                           (then
                             (call $next_token)  ;; consume '='
@@ -5208,6 +5212,16 @@
             (br $fsl)))
           (call $next_token)  ;; ')'
           (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; C-style for body is a single Statement — no lexical/function decl
+          ;; Early Error: a C-style for `let`/`const` head binding may not also be a body VarDeclaredName
+          ;; (`for (let x=0;;) { var x; }`). Block body only; each recorded head lexical name checked.
+          (if (i32.and (local.get $forlex) (i32.eq (call $tok_kind) (i32.const 17)))
+            (then
+              (let $fci i32 (i32.const 0))
+              (block $fce (loop $fcl
+                (br_if $fce (i32.ge_s (local.get $fci) (local.get $forlexn)))
+                (if (call $var_name_in_block (i32.load (i32.add (local.get $forlexb) (i32.mul (local.get $fci) (i32.const 4)))))
+                  (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (return)))
+                (set! $fci (i32.add (local.get $fci) (i32.const 1))) (br $fcl)))))
           (call $vm_c_stmt (local.get $code))  ;; body
           (let $fpost i32 (call $cursor_save))
           ;; continue → the update clause (compiled next)
