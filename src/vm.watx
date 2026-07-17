@@ -292,10 +292,10 @@
 ;; Does `name` appear as a `var NAME` anywhere in the block at the current cursor ('{'), at any nesting
 ;; EXCEPT inside a nested function/arrow body (those vars belong to the nested function)? Cursor restored.
 ;; Used for the for-in/of ForDeclaration-vs-body-VarDeclaredNames early error. Mirrors vm_hoist_vars' skips.
-(func $var_name_in_block (param $name i32) (result i32) (effects)
+(func $var_name_in_block (param $name i32) (param $noenter i32) (result i32) (effects)
   (let $start i32 (call $cursor_save))
   (let $found i32 (i32.const 0))
-  (call $next_token)  ;; consume the body '{'
+  (if (i32.eqz (local.get $noenter)) (then (call $next_token)))  ;; consume the body '{' (unless the cursor is already inside)
   (let $depth i32 (i32.const 0))
   (block $done (loop $lp
     (let $k i32 (call $tok_kind))
@@ -1987,7 +1987,21 @@
                 (set! $stmt (i32.const 0)) (br $lp)))))
         (set! $stmt (i32.const 0)) (call $next_token) (br $lp)))
     (set! $stmt (i32.const 0)) (call $next_token) (br $lp)))
-  (call $cursor_restore (local.get $save)))
+  (call $cursor_restore (local.get $save))
+  ;; a block/CaseBlock lexical name may ALSO not be a VarDeclaredName in a NESTED sub-block
+  ;; (`{ let x; { var x; } }`) — the depth-0 scan above misses those. For each collected lexical name,
+  ;; scan the whole block for a matching `var` (skipping nested function bodies). Cursor is at $save
+  ;; (just inside the block's '{'), so var_name_in_block is called with noenter=1.
+  (if (i32.eqz (call $err))
+    (then
+      (let $nvi i32 (i32.const 0))
+      (block $nve (loop $nvl
+        (br_if $nve (i32.ge_s (local.get $nvi) (local.get $ln)))
+        (call $cursor_restore (local.get $save))
+        (if (call $var_name_in_block (i32.load (i32.add (local.get $lexb) (i32.mul (local.get $nvi) (i32.const 4)))) (i32.const 1))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (call $cursor_restore (local.get $save)) (return)))
+        (set! $nvi (i32.add (local.get $nvi) (i32.const 1))) (br $nvl)))
+      (call $cursor_restore (local.get $save)))))
 
 ;; Early Error: the LexicallyDeclaredNames of a function body may not contain any parameter name
 ;; (`function f(a){ let a; }` is a SyntaxError; `var a` / `function a(){}` are var-scoped and may alias
@@ -5082,7 +5096,7 @@
               ;; Early Error: a for-in/of ForDeclaration (let/const) bound name may not also be a
               ;; VarDeclaredName of the body (`for (let x of y) { var x; }`). Simple-name heads + block body.
               (if (i32.and (i32.and (local.get $ofdecl) (i32.eqz (local.get $ofisvar))) (i32.and (i32.gt_s (local.get $ofvar) (i32.const 0)) (i32.eq (call $tok_kind) (i32.const 17))))
-                (then (if (call $var_name_in_block (local.get $ofvar))
+                (then (if (call $var_name_in_block (local.get $ofvar) (i32.const 0))
                   (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (return)))))
               (call $vm_c_stmt (local.get $code))  ;; body
               (if (local.get $ofperiter) (then (call $vm_finally_pop)))  ;; the per-iter kind-2 was for the body only
@@ -5219,7 +5233,7 @@
               (let $fci i32 (i32.const 0))
               (block $fce (loop $fcl
                 (br_if $fce (i32.ge_s (local.get $fci) (local.get $forlexn)))
-                (if (call $var_name_in_block (i32.load (i32.add (local.get $forlexb) (i32.mul (local.get $fci) (i32.const 4)))))
+                (if (call $var_name_in_block (i32.load (i32.add (local.get $forlexb) (i32.mul (local.get $fci) (i32.const 4)))) (i32.const 0))
                   (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (return)))
                 (set! $fci (i32.add (local.get $fci) (i32.const 1))) (br $fcl)))))
           (call $vm_c_stmt (local.get $code))  ;; body
