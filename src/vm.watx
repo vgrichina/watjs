@@ -289,6 +289,43 @@
         (br $lp)))
     (call $next_token) (br $lp)))
   (call $cursor_restore (local.get $start)))
+;; Does `name` appear as a `var NAME` anywhere in the block at the current cursor ('{'), at any nesting
+;; EXCEPT inside a nested function/arrow body (those vars belong to the nested function)? Cursor restored.
+;; Used for the for-in/of ForDeclaration-vs-body-VarDeclaredNames early error. Mirrors vm_hoist_vars' skips.
+(func $var_name_in_block (param $name i32) (result i32) (effects)
+  (let $start i32 (call $cursor_save))
+  (let $found i32 (i32.const 0))
+  (call $next_token)  ;; consume the body '{'
+  (let $depth i32 (i32.const 0))
+  (block $done (loop $lp
+    (let $k i32 (call $tok_kind))
+    (br_if $done (i32.eqz (local.get $k)))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function")))
+      (then (call $hoist_skip_fn) (call $next_token) (br $lp)))  ;; skip nested function whole
+    (if (i32.eq (local.get $k) (i32.const 52))  ;; '=>' with a block body → skip the arrow body
+      (then
+        (call $next_token)
+        (if (i32.eq (call $tok_kind) (i32.const 17))
+          (then (let $abd i32 (i32.const 1)) (call $next_token)
+            (block $abe (loop $abl
+              (let $t i32 (call $tok_kind))
+              (br_if $abe (i32.eqz (local.get $t)))
+              (if (i32.eq (local.get $t) (i32.const 17)) (then (set! $abd (i32.add (local.get $abd) (i32.const 1)))))
+              (if (i32.eq (local.get $t) (i32.const 18)) (then (set! $abd (i32.sub (local.get $abd) (i32.const 1))) (if (i32.eqz (local.get $abd)) (then (call $next_token) (br $abe)))))
+              (call $next_token) (br $abl)))))
+        (br $lp)))
+    (if (i32.eq (local.get $k) (i32.const 17)) (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (call $next_token) (br $lp)))
+    (if (i32.eq (local.get $k) (i32.const 18))
+      (then (br_if $done (i32.eqz (local.get $depth)))
+            (set! $depth (i32.sub (local.get $depth) (i32.const 1))) (call $next_token) (br $lp)))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "var")))
+      (then (call $next_token)
+        (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $str_eq (call $ident_name) (local.get $name)))
+          (then (set! $found (i32.const 1)) (br $done)))
+        (br $lp)))
+    (call $next_token) (br $lp)))
+  (call $cursor_restore (local.get $start))
+  (local.get $found))
 ;; AnnexB B.3.3 for a FUNCTION BODY: emit DEFVAR name=undefined for each function declaration nested in a
 ;; SUB-block (brace depth ≥ 2 relative to the body's '{'), UNLESS the name is bound by a lexical declaration
 ;; (let/const/class/catch-param/for-head let-const) in an ENCLOSING block — in that case B.3.3 hoisting is
@@ -5042,6 +5079,11 @@
                         (then (call $vm_emit_op (local.get $code) (if i32 (local.get $ofperiter) (then (if i32 (local.get $ofisconst) (then (i32.const 79)) (else (i32.const 114)))) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; per-iter const → DEFCONST (non-writable) / let → LEXDEFINIT; var → DEFINIT (var scope)
                         (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))))))  ;; STOREVAR x: assignment-target head (`for (x of E)`)
               (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; for-in/of body is a single Statement — no lexical/function decl
+              ;; Early Error: a for-in/of ForDeclaration (let/const) bound name may not also be a
+              ;; VarDeclaredName of the body (`for (let x of y) { var x; }`). Simple-name heads + block body.
+              (if (i32.and (i32.and (local.get $ofdecl) (i32.eqz (local.get $ofisvar))) (i32.and (i32.gt_s (local.get $ofvar) (i32.const 0)) (i32.eq (call $tok_kind) (i32.const 17))))
+                (then (if (call $var_name_in_block (local.get $ofvar))
+                  (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (return)))))
               (call $vm_c_stmt (local.get $code))  ;; body
               (if (local.get $ofperiter) (then (call $vm_finally_pop)))  ;; the per-iter kind-2 was for the body only
               ;; normal + continue converge here: pop the per-iteration scope, POPHANDLER, then loop
