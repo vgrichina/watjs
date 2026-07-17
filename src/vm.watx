@@ -5282,20 +5282,31 @@
                             (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
                             (br $ficl))))
                     (else (call $look_restore) (call $vm_c_commaexpr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11))))))))
-          (call $expect (i32.const 21) (cstring "expected ;"))
+          ;; a C-style for head requires exactly two ';' (ASI never applies inside it): `for(;)` / `for()` → SyntaxError
+          (if (i32.ne (call $tok_kind) (i32.const 21))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ';' in for-loop header")) (return)))
+          (call $next_token)  ;; consume first ';'
           (let $ftop i32 (call $vm_emit_cursor))
           (if (i32.ne (call $tok_kind) (i32.const 21))
             (then (call $vm_c_expr (local.get $code)))
             (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1)))))
-          (call $expect (i32.const 21) (cstring "expected ;"))
+          (if (i32.ne (call $tok_kind) (i32.const 21))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ';' in for-loop header")) (return)))
+          (call $next_token)  ;; consume second ';'
           (let $fpend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end
           ;; save update-clause cursor, skip its tokens to the ')'
           (let $fupd i32 (call $cursor_save))
           (let $fdepth i32 (i32.const 0))
           (block $fse (loop $fsl
-            (br_if $fse (i32.eq (call $tok_kind) (i32.const 0)))
-            (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $fdepth (i32.add (local.get $fdepth) (i32.const 1)))))
-            (if (i32.eq (call $tok_kind) (i32.const 16))
+            (let $utk i32 (call $tok_kind))
+            (br_if $fse (i32.eq (local.get $utk) (i32.const 0)))
+            ;; a ';' at bracket-depth 0 in the Update clause means a third ';' in the head → `for(;;;)` → SyntaxError
+            ;; (otherwise the extra clause is silently dropped and the loop runs forever).
+            (if (i32.and (i32.eq (local.get $utk) (i32.const 21)) (i32.eqz (local.get $fdepth)))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' in for-loop header")) (return)))
+            (if (i32.or (i32.eq (local.get $utk) (i32.const 15)) (i32.or (i32.eq (local.get $utk) (i32.const 17)) (i32.eq (local.get $utk) (i32.const 19)))) (then (set! $fdepth (i32.add (local.get $fdepth) (i32.const 1)))))
+            (if (i32.or (i32.eq (local.get $utk) (i32.const 18)) (i32.eq (local.get $utk) (i32.const 20))) (then (set! $fdepth (i32.sub (local.get $fdepth) (i32.const 1)))))  ;; '}' / ']'
+            (if (i32.eq (local.get $utk) (i32.const 16))  ;; ')'
               (then (br_if $fse (i32.eqz (local.get $fdepth))) (set! $fdepth (i32.sub (local.get $fdepth) (i32.const 1)))))
             (call $next_token)
             (br $fsl)))
