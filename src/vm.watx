@@ -5009,9 +5009,17 @@
           (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; do-body is a single Statement — no lexical/function decl
           (call $vm_c_stmt (local.get $code))  ;; body
           (call $vm_patch_conts (local.get $code) (call $vm_emit_cursor))  ;; continue → cond
+          ;; a do-loop body must be followed by `while ( Expression )`; ASI never inserts here.
+          ;; `do while(false)` (body swallowed the `while`) → SyntaxError, not a silent misparse.
+          (if (i32.eqz (call $tok_is_kw (cstring "while")))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected 'while' after do-loop body")) (return)))
           (call $next_token)  ;; 'while'
+          (if (i32.ne (call $tok_kind) (i32.const 15))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '(' after 'while'")) (return)))
           (call $next_token)  ;; '('
           (call $vm_c_expr (local.get $code))
+          (if (i32.ne (call $tok_kind) (i32.const 16))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after do-while condition")) (return)))
           (call $next_token)  ;; ')'
           (drop (call $eat (i32.const 21)))
           (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
