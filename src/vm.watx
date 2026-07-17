@@ -890,7 +890,7 @@
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 53))  ;; template literal
-    (then (call $vm_c_template (local.get $code)) (return)))
+    (then (call $vm_c_template (local.get $code)) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a TemplateLiteral is not an assignment target
   (if (i32.eq (call $tok_kind) (i32.const 57))  ;; regex literal → new RegExp(pattern, flags)
     (then
       (let $rpat i32 (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len)))
@@ -900,6 +900,7 @@
       (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $rpat)))
       (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $rflg)))
       (call $vm_emit_op (local.get $code) (i32.const 46)) (call $vm_emit_op (local.get $code) (i32.const 2))  ;; NEW 2
+      (i32.store (i32.const 956) (i32.const 0))  ;; a RegularExpressionLiteral is not an assignment target
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 2))  ;; string literal
     (then
@@ -1245,6 +1246,7 @@
                       (br $nsl2)))))
                   (call $next_token)  ;; ')'
                   (call $vm_emit_op (local.get $code) (i32.const 76))  ;; NEWSPREAD
+                  (i32.store (i32.const 956) (i32.const 0))  ;; a NewExpression is not an assignment target
                   (return)))
               (if (i32.ne (call $tok_kind) (i32.const 16))
                 (then (block $nae (loop $nal
@@ -1254,6 +1256,7 @@
                   (br $nal)))))
               (call $next_token)))  ;; ')'
           (call $vm_emit_op (local.get $code) (i32.const 46)) (call $vm_emit_op (local.get $code) (local.get $nargc))  ;; NEW
+          (i32.store (i32.const 956) (i32.const 0))  ;; a NewExpression is not an assignment target
           (return)))
       (if (call $tok_is_kw (cstring "true"))
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1))) (call $next_token)
@@ -1338,6 +1341,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP (old numeric value)
           (call $vm_emit_op (local.get $code) (local.get $iop))  ;; INC/DEC → new value
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR → leaves old
+          (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (x++) is not an assignment target
           (return)))
       ;; a bare #privateName (only valid as the LHS of `#x in obj`) → push the key
       ;; string so the `in` operator becomes a private-brand check
@@ -1543,9 +1547,9 @@
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (if (i32.eq (local.get $k) (i32.const 53))  ;; tagged template: fn`...`
-      (then (call $vm_c_tagged_template (local.get $code) (i32.const 0)) (br $l)))
+      (then (call $vm_c_tagged_template (local.get $code) (i32.const 0)) (i32.store (i32.const 956) (i32.const 0)) (br $l)))  ;; a CallExpression result is not an assignment target
     (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' call
-      (then (call $vm_c_call_tail (local.get $code)) (br $l)))
+      (then (call $vm_c_call_tail (local.get $code)) (i32.store (i32.const 956) (i32.const 0)) (br $l)))  ;; `f() = 1` → the trailing '=' becomes a SyntaxError in vm_c_expr
     (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
       (then
         (call $next_token)
@@ -1737,6 +1741,7 @@
     (if (i32.eq (local.get $k) (i32.const 55))  ;; ?. optional chaining — short-circuit whole chain to undefined if receiver nullish
       (then
         (call $next_token)
+        (i32.store (i32.const 956) (i32.const 0))  ;; an OptionalExpression is not an assignment target
         (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP receiver → [R, R]
         (let $jacc i32 (call $vm_emit_jump (local.get $code) (i32.const 68)))  ;; JMP_NN → access (not nullish)
         (call $vm_emit_op (local.get $code) (i32.const 11))  ;; nullish: POP dup
@@ -1874,6 +1879,7 @@
                     (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pcv))  ;; LOADVAR new → [obj,key,new]
                     (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 83)) (else (i32.const 35))))  ;; SETIDX → [new]
                     (br $pme)))))))
+          (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (++obj.x) is not an assignment target
           (return)))
       ;; bare identifier target — strict mode: `++eval` / `--arguments` targets eval/arguments (invalid).
       (if (call $vm_strict_lhs_check (local.get $pvn)) (then (return)))
@@ -1882,6 +1888,7 @@
       (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → new value
       (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → new value is the result
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; STOREVAR
+      (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (++x) is not an assignment target
       (return)))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
     (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 6)) (return)))
@@ -1917,7 +1924,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP operand
           (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (return)))
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "delete")))  ;; delete obj.prop / obj[k]
-    (then (call $next_token) (call $vm_c_delete_operand (local.get $code)) (return)))
+    (then (call $next_token) (call $vm_c_delete_operand (local.get $code)) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a delete UnaryExpression is not an assignment target
   (call $vm_c_pow (local.get $code)))
 
 ;; is `name` present in buf[0..n) (array of string pointers)?
