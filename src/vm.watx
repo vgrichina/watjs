@@ -837,6 +837,41 @@
       (else (if i64 (f64.lt (local.get $x) (f64.const -9223372036854775808.0)) (then (i64.const -9223372036854775808))  ;; < -2^63
         (else (i64.trunc_f64_s (local.get $x)))))))))
 
+;; Read-only scan: is the token sequence at the cursor a simple AssignmentTarget — a
+;; possibly-parenthesized identifier or member-access chain, with no operators, calls,
+;; literals, or `this`? Consumes the target's tokens (does NOT emit); the caller checks
+;; whether the cursor then sits exactly on the wrapping ')'. Returns 1 if a simple target
+;; was consumed, 0 otherwise. Distinguishes `(x)=1` / `(o.a)=1` / `(a[i])=1` (valid) from
+;; `(a+b)=1` / `(f())=1` / `(this)=1` / `(a,b)=1` (SyntaxError).
+(func $scan_lhs_target (result i32) (effects)
+  (let $k i32 (call $tok_kind))
+  (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' → nested parenthesized target
+    (then
+      (call $next_token)
+      (if (i32.eqz (call $scan_lhs_target)) (then (return (i32.const 0))))
+      (if (i32.ne (call $tok_kind) (i32.const 16)) (then (return (i32.const 0))))  ;; expect ')'
+      (call $next_token))
+    (else
+      (if (i32.ne (local.get $k) (i32.const 3)) (then (return (i32.const 0))))  ;; not an identifier
+      ;; `this` / `true` / `false` / `null` / `super` are not simple assignment targets
+      (if (i32.or (call $tok_is_kw (cstring "this")) (i32.or (call $tok_is_kw (cstring "true"))
+            (i32.or (call $tok_is_kw (cstring "false")) (i32.or (call $tok_is_kw (cstring "null")) (call $tok_is_kw (cstring "super"))))))
+        (then (return (i32.const 0))))
+      (call $next_token)))
+  ;; member tail: `.name` | `[ … ]` (a following '(' is a call → non-simple)
+  (block $done (loop $l
+    (let $k2 i32 (call $tok_kind))
+    (if (i32.eq (local.get $k2) (i32.const 23))  ;; '.'
+      (then (call $next_token)
+            (if (i32.ne (call $tok_kind) (i32.const 3)) (then (return (i32.const 0))))
+            (call $next_token) (br $l)))
+    (if (i32.eq (local.get $k2) (i32.const 19))  ;; '[' … ']'
+      (then (call $vm_skip_balanced) (br $l)))
+    (if (i32.eq (local.get $k2) (i32.const 15))  ;; '(' → call
+      (then (return (i32.const 0))))
+    (br $done)))
+  (i32.const 1))
+
 ;; ── compiler: source → bytecode (precedence-climbing, reuses the lexer) ──
 (func $vm_c_primary (param $code i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 1))  ;; NUM literal
@@ -910,6 +945,19 @@
       (call $next_token)  ;; '(' — plain grouping
       (call $vm_c_commaexpr (local.get $code))
       (call $next_token)                                       ;; consume ')'
+      ;; `( … ) = RHS`: a ParenthesizedExpression is a valid AssignmentTarget only when it
+      ;; wraps a simple reference. `(a+b)=1` / `(f())=1` / `(this)=1` → SyntaxError. Re-scan the
+      ;; inner ($pc still holds the '(' position; cursor is now at the assign-op) to classify it.
+      (if (call $is_assign_op (call $tok_kind))
+        (then
+          (let $asc i32 (call $cursor_save))
+          (call $cursor_restore (local.get $pc))
+          (call $next_token)  ;; re-consume '('
+          (let $simple i32 (call $scan_lhs_target))
+          (let $onrp i32 (i32.eq (call $tok_kind) (i32.const 16)))  ;; landed exactly on the wrapping ')'
+          (call $cursor_restore (local.get $asc))
+          (if (i32.eqz (i32.and (local.get $simple) (local.get $onrp)))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid left-hand side in assignment")) (return)))))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 3))  ;; identifier / true / false / function-expression
     (then
