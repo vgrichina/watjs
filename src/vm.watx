@@ -1881,6 +1881,10 @@
                     (br $pme)))))))
           (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (++obj.x) is not an assignment target
           (return)))
+      ;; a bare keyword-literal (`++this`, `++true`, `++null`) is not a valid target; a member on it
+      ;; (`++this.x`) already took the member path above, so reaching here means it stands alone.
+      (if (i32.or (call $str_eq (local.get $pvn) (cstring "this")) (i32.or (call $str_eq (local.get $pvn) (cstring "true")) (i32.or (call $str_eq (local.get $pvn) (cstring "false")) (call $str_eq (local.get $pvn) (cstring "null")))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement")) (return)))
       ;; bare identifier target — strict mode: `++eval` / `--arguments` targets eval/arguments (invalid).
       (if (call $vm_strict_lhs_check (local.get $pvn)) (then (return)))
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; LOADVAR
