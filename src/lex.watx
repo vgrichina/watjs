@@ -680,7 +680,15 @@
           (i32.and (i32.eq (call $ch_at (i32.const 1)) (i32.const 128))
             (i32.or (i32.eq (call $ch_at (i32.const 2)) (i32.const 168)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 169)))))
       (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unterminated regular expression literal")) (br $e)))
-    (if (i32.eq (local.get $ch) (i32.const 92)) (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $l)))  ;; '\' escape
+    (if (i32.eq (local.get $ch) (i32.const 92))  ;; '\' escape — a RegularExpressionBackslashSequence may not contain a LineTerminator
+      (then
+        (if (i32.or (i32.eq (call $ch_at (i32.const 1)) (i32.const 10)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 13)))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unterminated regular expression literal")) (br $e)))
+        (if (i32.and (i32.eq (call $ch_at (i32.const 1)) (i32.const 226))  ;; LS/PS after '\'
+              (i32.and (i32.eq (call $ch_at (i32.const 2)) (i32.const 128))
+                (i32.or (i32.eq (call $ch_at (i32.const 3)) (i32.const 168)) (i32.eq (call $ch_at (i32.const 3)) (i32.const 169)))))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unterminated regular expression literal")) (br $e)))
+        (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $l)))  ;; '\' escape
     (if (i32.eq (local.get $ch) (i32.const 91)) (then (set! $inclass (i32.const 1))))  ;; '['
     (if (i32.eq (local.get $ch) (i32.const 93)) (then (set! $inclass (i32.const 0))))  ;; ']'
     (if (i32.and (i32.eq (local.get $ch) (i32.const 47)) (i32.eqz (local.get $inclass))) (then (br $e)))  ;; unescaped '/'
