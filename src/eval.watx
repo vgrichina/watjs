@@ -4926,6 +4926,25 @@
     (then (call $throw_type (cstring "TypeError") (cstring "'caller', 'callee', and 'arguments' are restricted")) (return (call $v_undef))))
   (call $v_undef))
 
+;; Array join/toString/toLocaleString cycle detection via a global stack (reg 948=base, 952=count).
+;; enter(thisv): 1 = ok to proceed (pushed), 0 = a cycle (this object is already being joined → yield "").
+;; exit(): pop one entry. Paired around each join; nesting is balanced (the join loop always reaches exit).
+(func $join_cycle_enter (param $thisv i64) (result i32) (effects)
+  (if (i32.eqz (i32.load (i32.const 948))) (then (i32.store (i32.const 948) (call $heap_alloc (i32.const 8192)))))  ;; 2048 slots
+  (let $stk i32 (i32.load (i32.const 948)))
+  (let $cnt i32 (i32.load (i32.const 952)))
+  (let $p i32 (call $val_payload (local.get $thisv)))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $cnt)))
+    (if (i32.eq (i32.load (i32.add (local.get $stk) (i32.mul (local.get $i) (i32.const 4)))) (local.get $p)) (then (return (i32.const 0))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (if (i32.lt_s (local.get $cnt) (i32.const 2048)) (then (i32.store (i32.add (local.get $stk) (i32.mul (local.get $cnt) (i32.const 4))) (local.get $p)) (i32.store (i32.const 952) (i32.add (local.get $cnt) (i32.const 1)))))
+  (i32.const 1))
+(func $join_cycle_exit (effects)
+  (let $c i32 (i32.load (i32.const 952)))
+  (if (i32.gt_s (local.get $c) (i32.const 0)) (then (i32.store (i32.const 952) (i32.sub (local.get $c) (i32.const 1))))))
+
 (func $call_native (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   ;; "not generic" %TypedArray%.prototype methods (485-504): ValidateTypedArray(this) — these
   ;; share a native id with the generic Array.prototype version, so the TA prototype binds the
@@ -5164,6 +5183,8 @@
       ;; (null/undefined/holes → empty), joined with ",".
       (if (call $is_array (local.get $thisv))
         (then
+          ;; cycle detection (shared global join-stack) — a self-referential array yields "".
+          (if (i32.eqz (call $join_cycle_enter (local.get $thisv))) (then (return (call $mk_str (cstring "")))))
           (let $altp i32 (call $val_payload (local.get $thisv)))
           (let $alr i32 (cstring ""))
           (let $aln i32 (call $arr_len (local.get $altp)))
@@ -5175,14 +5196,15 @@
             (if (i32.eqz (i32.or (call $is_null (local.get $ael)) (call $is_undefined (local.get $ael))))
               (then
                 (let $aem i64 (call $get_prop (local.get $ael) (call $mk_str (cstring "toLocaleString"))))
-                (if (call $err) (then (return (call $v_undef))))
+                (if (call $err) (then (call $join_cycle_exit) (return (call $v_undef))))
                 (if (i32.eqz (call $is_function (local.get $aem)))
-                  (then (call $throw_type (cstring "TypeError") (cstring "element toLocaleString is not a function")) (return (call $v_undef))))
+                  (then (call $join_cycle_exit) (call $throw_type (cstring "TypeError") (cstring "element toLocaleString is not a function")) (return (call $v_undef))))
                 (let $aev i64 (call $call_fn0 (local.get $aem) (local.get $ael)))
-                (if (call $err) (then (return (call $v_undef))))
+                (if (call $err) (then (call $join_cycle_exit) (return (call $v_undef))))
                 (set! $alr (call $str_concat (local.get $alr) (call $to_str (local.get $aev))))))
             (set! $ali (i32.add (local.get $ali) (i32.const 1)))
             (br $all)))
+          (call $join_cycle_exit)
           (return (call $mk_str (local.get $alr)))))
       ;; %TypedArray%.prototype.toLocaleString: each element's own toLocaleString(), joined with ",".
       ;; Elements are read via [[Get]] (numbers, never null/undefined for valid indices); OOB/detached → 0 len.
@@ -10942,6 +10964,11 @@
           (return (call $num (f64.const -1)))))
       (if (i32.eq (local.get $id) (i32.const 23))  ;; join(sep)
         (then
+          ;; cycle detection via a GLOBAL join-stack (reg 948=base, 952=count) — NO mutation of the array
+          ;; (an @@ property on it corrupted its index storage / Object.keys). A self-referential array
+          ;; (`a[0]=a; a.join()`) recurses join → to_str → toString → join; a re-entrant join on an object
+          ;; already on the stack yields "" (like every engine) instead of overflowing.
+          (if (i32.eqz (call $join_cycle_enter (local.get $thisv))) (then (return (call $mk_str (cstring "")))))
           (let $sep i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (local.get $a0)))) (then (call $to_str (local.get $a0))) (else (cstring ","))))  ;; undefined separator → ","
           (let $out i32 (cstring ""))
           (let $i i32 (i32.const 0))
@@ -10953,6 +10980,7 @@
               (then (set! $out (call $str_concat (local.get $out) (call $to_str (local.get $e))))))
             (set! $i (i32.add (local.get $i) (i32.const 1)))
             (br $jl)))
+          (call $join_cycle_exit)
           (return (call $mk_str (local.get $out)))))
       (if (i32.eq (local.get $id) (i32.const 27))  ;; includes(x[, fromIndex]) — SameValueZero (matches NaN)
         (then
