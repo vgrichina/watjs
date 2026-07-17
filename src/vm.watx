@@ -1291,7 +1291,7 @@
           (i32.store (local.get $ap1) (local.get $vn))
           (call $vm_c_arrow (local.get $code) (local.get $ap1) (i32.const 1) (i32.const 0) (i32.const -1) (i32.const 0))
           (return)))
-      (if (i32.eq (call $tok_kind) (i32.const 24))  ;; NAME = expr  (assignment expression; result = assigned value)
+      (if (i32.and (i32.load (i32.const 956)) (i32.eq (call $tok_kind) (i32.const 24)))  ;; NAME = expr  (assignment expression; result = assigned value). reg 956=0 → this NAME is an operator's operand, not a target: leave '=' for the SyntaxError guard in vm_c_expr.
         (then
           (call $next_token)
           (let $afs i32 (call $vm_emit_cursor))
@@ -1301,7 +1301,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 32))                                           ;; DUP → leave value as the expression result
           (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; plain assign: strict→80 / sloppy→85 (implicit global)
           (return)))
-      (if (call $is_compound_assign (call $tok_kind))  ;; NAME += -= *= /= %= **= &= |= ^= <<= >>= >>>= expr
+      (if (i32.and (i32.load (i32.const 956)) (call $is_compound_assign (call $tok_kind)))  ;; NAME += -= *= /= %= **= &= |= ^= <<= >>= >>>= expr
         (then
           (let $pcop i32 (call $compound_cop (call $tok_kind)))
           (call $next_token)
@@ -1311,7 +1311,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 32))                                           ;; DUP result
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR
           (return)))
-      (if (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61)))  ;; NAME ||= &&= ??= (expression form — leaves the resulting value)
+      (if (i32.and (i32.load (i32.const 956)) (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61))))  ;; NAME ||= &&= ??= (expression form — leaves the resulting value)
         (then
           (let $ljop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 59)) (then (i32.const 28))   ;; ||=→JMPT_PEEK
                           (else (if i32 (i32.eq (call $tok_kind) (i32.const 60)) (then (i32.const 27)) (else (i32.const 68))))))  ;; &&=→JMPF_PEEK, ??=→JMP_NN
@@ -1809,7 +1809,7 @@
     (then
       (if (local.get $powunary)
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unary operator used immediately before exponentiation expression; parenthesis must be used")) (return)))
-      (call $next_token)
+      (call $next_token) (i32.store (i32.const 956) (i32.const 0))
       (call $vm_c_unary (local.get $code))  ;; right operand may have a unary prefix; right-assoc via unary→pow
       (call $vm_emit_op (local.get $code) (i32.const 43)))))  ;; POW
 
@@ -1884,13 +1884,13 @@
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; STOREVAR
       (return)))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
-    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 6)) (return)))
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 6)) (return)))
   (if (i32.eq (local.get $k) (i32.const 10))  ;; + (numeric coercion)
-    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 63)) (return)))  ;; TONUM
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 63)) (return)))  ;; TONUM
   (if (i32.eq (local.get $k) (i32.const 33))  ;; !
-    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 23)) (return)))
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 23)) (return)))
   (if (i32.eq (local.get $k) (i32.const 47))  ;; ~
-    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 44)) (return)))
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 44)) (return)))
   (if (i32.and (i32.and (i32.eq (local.get $k) (i32.const 3)) (i32.load (i32.const 896))) (call $tok_is_kw (cstring "await")))  ;; await expr (only in an async body; else `await` is an identifier)
     (then
       (call $next_token)
@@ -1899,7 +1899,7 @@
       (let $ak i32 (call $tok_kind))
       (if (i32.or (i32.eqz (local.get $ak)) (i32.or (i32.eq (local.get $ak) (i32.const 21)) (i32.or (i32.eq (local.get $ak) (i32.const 16)) (i32.or (i32.eq (local.get $ak) (i32.const 20)) (i32.or (i32.eq (local.get $ak) (i32.const 18)) (i32.or (i32.eq (local.get $ak) (i32.const 22)) (i32.eq (local.get $ak) (i32.const 37))))))))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' is not a valid identifier reference in an async function")) (return)))
-      (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 50)) (return)))  ;; AWAIT
+      (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 50)) (return)))  ;; AWAIT
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "typeof")))  ;; typeof expr
     (then
       (call $next_token)  ;; consume 'typeof'
@@ -1908,11 +1908,12 @@
       ;; typeof(x), typeof undeclared all yield "undefined" instead of throwing.
       (i32.store (i32.const 240) (i32.add (i32.load (i32.const 240)) (i32.const 1)))
       (i32.store (i32.const 940) (i32.const 1))
+      (i32.store (i32.const 956) (i32.const 0))
       (call $vm_c_unary (local.get $code))
       (i32.store (i32.const 240) (i32.sub (i32.load (i32.const 240)) (i32.const 1)))
       (call $vm_emit_op (local.get $code) (i32.const 58)) (return)))  ;; TYPEOF
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "void")))  ;; void expr → undefined
-    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (call $vm_c_unary (local.get $code))
+    (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_unary (local.get $code))
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP operand
           (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (return)))
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "delete")))  ;; delete obj.prop / obj[k]
@@ -2286,7 +2287,7 @@
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 12)) (i32.or (i32.eq (local.get $k) (i32.const 13)) (i32.eq (local.get $k) (i32.const 14))))))
-    (call $next_token)
+    (call $next_token) (i32.store (i32.const 956) (i32.const 0))
     (call $vm_c_unary (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 12)) (then (i32.const 4))
@@ -2298,7 +2299,7 @@
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 10)) (i32.eq (local.get $k) (i32.const 11)))))
-    (call $next_token)
+    (call $next_token) (i32.store (i32.const 956) (i32.const 0))
     (call $vm_c_mul (local.get $code))
     (call $vm_emit_op (local.get $code) (if i32 (i32.eq (local.get $k) (i32.const 10)) (then (i32.const 2)) (else (i32.const 3))))
     (br $l))))
@@ -2309,7 +2310,7 @@
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 48)) (i32.or (i32.eq (local.get $k) (i32.const 49)) (i32.eq (local.get $k) (i32.const 50))))))
-    (call $next_token)
+    (call $next_token) (i32.store (i32.const 956) (i32.const 0))
     (call $vm_c_add (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 48)) (then (i32.const 40))
@@ -2327,13 +2328,13 @@
     (if (i32.eq (local.get $k) (i32.const 3))
       (then
         (if (call $tok_is_kw (cstring "instanceof"))
-          (then (call $next_token) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 59)) (br $l)))
+          (then (call $next_token) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 59)) (br $l)))
         (if (call $tok_is_kw (cstring "in"))
-          (then (call $next_token) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 60)) (br $l)))))
+          (then (call $next_token) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 60)) (br $l)))))
     ;; < 29 > 30 <= 31 >= 32
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 29)) (i32.or (i32.eq (local.get $k) (i32.const 30))
       (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.eq (local.get $k) (i32.const 32)))))))
-    (call $next_token)
+    (call $next_token) (i32.store (i32.const 956) (i32.const 0))
     (call $vm_c_shift (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 29)) (then (i32.const 14))
@@ -2348,7 +2349,7 @@
     (let $k i32 (call $tok_kind))
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 26)) (i32.or (i32.eq (local.get $k) (i32.const 28))
       (i32.or (i32.eq (local.get $k) (i32.const 25)) (i32.eq (local.get $k) (i32.const 27)))))))
-    (call $next_token)
+    (call $next_token) (i32.store (i32.const 956) (i32.const 0))
     (call $vm_c_rel (local.get $code))
     (call $vm_emit_op (local.get $code)
       (if i32 (i32.eq (local.get $k) (i32.const 26)) (then (i32.const 18))
@@ -2361,21 +2362,21 @@
   (call $vm_c_cmp (local.get $code))
   (block $e (loop $l
     (br_if $e (i32.ne (call $tok_kind) (i32.const 44)))  ;; &
-    (call $next_token) (call $vm_c_cmp (local.get $code))
+    (call $next_token) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_cmp (local.get $code))
     (call $vm_emit_op (local.get $code) (i32.const 37))  ;; BAND
     (br $l))))
 (func $vm_c_bitxor (param $code i32) (effects)
   (call $vm_c_bitand (local.get $code))
   (block $e (loop $l
     (br_if $e (i32.ne (call $tok_kind) (i32.const 46)))  ;; ^
-    (call $next_token) (call $vm_c_bitand (local.get $code))
+    (call $next_token) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_bitand (local.get $code))
     (call $vm_emit_op (local.get $code) (i32.const 39))  ;; BXOR
     (br $l))))
 (func $vm_c_bitor (param $code i32) (effects)
   (call $vm_c_bitxor (local.get $code))
   (block $e (loop $l
     (br_if $e (i32.ne (call $tok_kind) (i32.const 45)))  ;; |
-    (call $next_token) (call $vm_c_bitxor (local.get $code))
+    (call $next_token) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_bitxor (local.get $code))
     (call $vm_emit_op (local.get $code) (i32.const 38))  ;; BOR
     (br $l))))
 
@@ -2390,6 +2391,7 @@
     (i32.store (i32.add (local.get $patches) (i32.mul (local.get $np) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 27)))  ;; JMPF_PEEK
     (set! $np (i32.add (local.get $np) (i32.const 1)))
     (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP (discard truthy left)
+    (i32.store (i32.const 956) (i32.const 0))
     (call $vm_c_bitor (local.get $code))  ;; && RHS is a BitwiseORExpression (| ^ & below it), NOT just a comparison
     (br $l)))
   (let $i i32 (i32.const 0))
@@ -2412,6 +2414,7 @@
     (i32.store (i32.add (local.get $patches) (i32.mul (local.get $np) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 28)))  ;; JMPT_PEEK
     (set! $np (i32.add (local.get $np) (i32.const 1)))
     (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP (discard falsy left)
+    (i32.store (i32.const 956) (i32.const 0))
     (call $vm_c_and (local.get $code))
     (set! $anyand (i32.or (local.get $anyand) (i32.load (i32.const 944))))
     (br $l)))
@@ -2434,6 +2437,7 @@
     (i32.store (i32.add (local.get $npat) (i32.mul (local.get $nn) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 68)))  ;; JMP_NN (keep non-nullish left)
     (set! $nn (i32.add (local.get $nn) (i32.const 1)))
     (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP nullish left
+    (i32.store (i32.const 956) (i32.const 0))
     (call $vm_c_and (local.get $code))
     (if (i32.load (i32.const 944))  ;; the ?? operand used `&&` → `a ?? b && c`
       (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Cannot use '??' unparenthesized within '&&' expression")) (return)))
@@ -2496,6 +2500,11 @@
 
 ;; conditional  c ? t : e  (lowest precedence, right-assoc)
 (func $vm_c_expr (param $code i32) (effects)
+  ;; assignment is allowed here: this is a fresh AssignmentExpression position, so the
+  ;; leftmost simple reference may grab a following '='. A binary/unary operator clears
+  ;; reg 956 before parsing its operand, so an operand identifier (`y` in `x - y = 1`)
+  ;; will NOT grab the '=' — it propagates here and the end-of-function guard rejects it.
+  (i32.store (i32.const 956) (i32.const 1))
   ;; yield expression: `yield [expr]` → resume value is the expression result;
   ;; `yield* E` delegates (result left undefined). yield is the lowest precedence.
   (if (i32.and (i32.load (i32.const 672)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "yield"))))  ;; yield-expr only inside a generator body; else `yield` is an identifier
@@ -2555,7 +2564,13 @@
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ':' in conditional expression")) (return)))
       (call $next_token)  ;; ':'
       (call $vm_c_expr (local.get $code))                                   ;; else branch
-      (call $vm_patch (local.get $code) (local.get $p2)))))
+      (call $vm_patch (local.get $code) (local.get $p2))))
+  ;; a non-simple LHS followed by an assignment operator that reached here (the leftmost
+  ;; primary refused to grab it because reg 956 was cleared by an operator): `x - y = 1`,
+  ;; `+x = 1`, `a | b = c` → early SyntaxError. reg 956 == 1 means the whole expression was
+  ;; the leftmost simple reference (e.g. parenthesized `(x) = 2`), which is a valid target.
+  (if (i32.and (call $is_assign_op (call $tok_kind)) (i32.eqz (i32.load (i32.const 956))))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid left-hand side in assignment")) (return))))
 
 ;; comma operator: a, b, c → evaluate each (discarding all but the last). Only
 ;; valid where a full expression is allowed (statement, for-clauses, parens) —
