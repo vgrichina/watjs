@@ -225,8 +225,16 @@
       (then
         (if (local.get $dot) (then (br $ie)))
         (set! $dot (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $il)))
-    (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator → skip
-      (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $il)))
+    (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator: valid ONLY strictly between two digits
+      (then
+        ;; error if: prev is not a digit (leading/double/after-'.') OR next is not a digit (trailing/before-'.'/'e')
+        ;; OR the literal is a legacy octal/nonoctal form (`08_1`) OR it directly follows a leading `0` (`0_7`).
+        (if (i32.or (i32.eqz (call $is_digit (call $ch_at (i32.const -1))))
+              (i32.or (i32.eqz (call $is_digit (call $ch_at (i32.const 1))))
+                (i32.or (i32.load (i32.const 928))
+                  (i32.and (i32.eq (call $pos) (i32.add (local.get $start) (i32.const 1))) (i32.eq (call $ch_at (i32.const -1)) (i32.const 48))))))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Numeric separators are not allowed here")) (return)))
+        (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $il)))
     (br_if $ie (i32.eqz (call $is_digit (local.get $c))))
     (if (i32.eqz (local.get $dot))  ;; integer digits → exact i64 (BigInt path); saturate at i64-max to match BigInt(str)'s f64_sat
       (then
@@ -255,8 +263,11 @@
       (let $endig i32 (i32.const 0))  ;; exponent digit count (0 → `1e`/`1e+` empty exponent = SyntaxError)
       (block $ee (loop $el
         (let $c i32 (call $ch_at (i32.const 0)))
-        (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator in the exponent → skip
-          (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $el)))
+        (if (i32.eq (local.get $c) (i32.const 95))  ;; '_' numeric separator in the exponent: only between two digits
+          (then
+            (if (i32.or (i32.eqz (call $is_digit (call $ch_at (i32.const -1)))) (i32.eqz (call $is_digit (call $ch_at (i32.const 1)))))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Numeric separators are not allowed here")) (return)))
+            (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $el)))
         (br_if $ee (i32.eqz (call $is_digit (local.get $c))))
         (set! $endig (i32.add (local.get $endig) (i32.const 1)))
         (set! $en (i32.add (i32.mul (local.get $en) (i32.const 10)) (i32.sub (local.get $c) (i32.const 48))))
