@@ -3342,6 +3342,16 @@
       (then (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $name)))
       (else (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $name)))))))  ;; declarator mode: DEFINIT binds via the nearest var scope
 
+;; A destructuring leaf identifier may not be a reserved word: always-reserved (`{if}`, `[function]`)
+;; in any mode, or eval/arguments/strict-reserved under strict mode. NOTE the caller must gate this on the
+;; leaf NOT being a member-target base — in an assignment pattern `[this.x]=y` / `[eval.x]=y`, the base
+;; (`this`/`super`/`eval`/…) is a valid reference, not a binding, so the reserved/strict checks must be
+;; skipped (detected by a following '.'/'[' token). Returns 1 (and raises) on a violation.
+(func $dstr_leaf_reserved (param $name i32) (result i32) (effects)
+  (if (call $is_reserved_word (local.get $name))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return (i32.const 1))))
+  (call $vm_strict_lhs_check (local.get $name)))
+
 (func $vm_c_destructure_param (param $code i32) (param $srcTmp i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [ array pattern ] — via iterator protocol
     (then
@@ -3389,7 +3399,7 @@
               (else (call $vm_c_nested_with_default (local.get $code) (local.get $nt)))))
           (else
             (let $nm i32 (call $ident_name)) (call $next_token)
-            (if (call $vm_strict_lhs_check (local.get $nm)) (then (return)))  ;; strict: eval/arguments/strict-reserved array-element leaf
+            (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))) (then (if (call $dstr_leaf_reserved (local.get $nm)) (then (return)))))  ;; reserved/strict array-element leaf (skip a member-target base; nested ifs — i32.and is not short-circuit)
             ;; a simple BindingRestElement (`...x`) also may not have a default (`[...x = 1]`)
             (if (i32.and (local.get $isrest) (i32.eq (call $tok_kind) (i32.const 24)))
               (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element may not have a default initializer")) (return)))
@@ -3452,7 +3462,7 @@
           (then
             (call $next_token)
             (let $restnm i32 (call $ident_name)) (call $next_token)
-            (if (call $vm_strict_lhs_check (local.get $restnm)) (then (return)))  ;; strict: eval/arguments/strict-reserved rest target
+            (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))) (then (if (call $dstr_leaf_reserved (local.get $restnm)) (then (return)))))  ;; reserved/strict rest target (skip a member-target base)
             ;; a member target (...a.b / ...a[i]) — computing the rest object emits no tokens, so the
             ;; current token still marks the member navigation for vm_c_dstr_assign_member
             (let $restmem i32 (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))))
@@ -3482,7 +3492,7 @@
             (drop (call $eat (i32.const 37)))  ;; ':'
             (let $cnested i32 (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17))))
             (let $cbind i32 (i32.const 0))
-            (if (i32.eqz (local.get $cnested)) (then (set! $cbind (call $ident_name)) (call $next_token) (if (call $vm_strict_lhs_check (local.get $cbind)) (then (return)))))  ;; strict: eval/arguments/strict-reserved leaf
+            (if (i32.eqz (local.get $cnested)) (then (set! $cbind (call $ident_name)) (call $next_token) (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))) (then (if (call $dstr_leaf_reserved (local.get $cbind)) (then (return)))))))  ;; reserved/strict computed-key leaf (skip a member-target base)
             ;; fetch src[keyVal]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $srcTmp))  ;; LOADVAR src
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ckt))  ;; LOADVAR ckt
@@ -3520,10 +3530,10 @@
             (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))
               (then (set! $nested (i32.const 1)))
               (else (set! $bind (call $ident_name)) (call $next_token)
-                    (if (call $vm_strict_lhs_check (local.get $bind)) (then (return)))  ;; strict: eval/arguments/strict-reserved leaf
+                    (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))) (then (if (call $dstr_leaf_reserved (local.get $bind)) (then (return)))))  ;; reserved/strict rename target (skip a member-target base)
                     (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))) (then (set! $omem (i32.const 1))))))))
         ;; shorthand `{static}` (no `:`) binds the KEY itself → strict: eval/arguments/strict-reserved leaf
-        (if (i32.and (i32.eqz (local.get $nested)) (call $vm_strict_lhs_check (local.get $bind))) (then (return)))
+        (if (i32.and (i32.eqz (local.get $nested)) (i32.eqz (local.get $omem))) (then (if (call $dstr_leaf_reserved (local.get $bind)) (then (return)))))  ;; shorthand `{if}`/`{static}` binding (skip a `key: base.member` target)
         ;; fetch srcTmp[key]
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $srcTmp))
         (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP key
