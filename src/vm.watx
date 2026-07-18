@@ -4392,7 +4392,8 @@
           (return)))
       (if (i32.ne (call $tok_kind) (i32.const 15)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '(' after 'with'")) (return)))
       (call $next_token)  ;; '('
-      (call $vm_c_expr (local.get $code))  ;; object → [obj]
+      (call $vm_c_commaexpr (local.get $code))  ;; object → [obj]  (a full Expression, comma allowed)
+      (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after with object")) (return)))
       (call $next_token)  ;; ')'
       (call $vm_emit_op (local.get $code) (i32.const 93))  ;; ENTERWITH (consumes obj, pushes with-scope)
       (call $vm_finally_push_scope)  ;; break/continue/return through the body must pop the with-scope
@@ -4909,7 +4910,8 @@
           (if (i32.ne (call $tok_kind) (i32.const 15)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '(' after 'if'")) (return)))
           (call $next_token)  ;; '('
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: IfStatement does UpdateEmpty(result, undefined)
-          (call $vm_c_expr (local.get $code))
+          (call $vm_c_commaexpr (local.get $code))  ;; the condition is a full Expression (comma allowed)
+          (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after if condition")) (return)))
           (call $next_token)  ;; ')'
           (let $p1 i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → else/end
           (i32.store (i32.const 900) (i32.const 1))  ;; the consequent is a single Statement — no lexical decl
@@ -4932,7 +4934,8 @@
           (let $lsave i32 (call $vm_loop_enter))
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
           (let $top i32 (call $vm_emit_cursor))
-          (call $vm_c_expr (local.get $code))
+          (call $vm_c_commaexpr (local.get $code))  ;; the condition is a full Expression (comma allowed)
+          (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after while condition")) (return)))
           (call $next_token)  ;; ')'
           (let $pw i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end
           (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; loop body is a single Statement — no lexical/function decl
@@ -5052,7 +5055,7 @@
           (if (i32.ne (call $tok_kind) (i32.const 15))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '(' after 'while'")) (return)))
           (call $next_token)  ;; '('
-          (call $vm_c_expr (local.get $code))
+          (call $vm_c_commaexpr (local.get $code))  ;; the condition is a full Expression (comma allowed)
           (if (i32.ne (call $tok_kind) (i32.const 16))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after do-while condition")) (return)))
           (call $next_token)  ;; ')'
