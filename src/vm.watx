@@ -4885,7 +4885,9 @@
           (return)))
       (if (call $tok_is_kw (cstring "if"))
         (then
-          (call $next_token) (call $next_token)  ;; 'if' '('
+          (call $next_token)  ;; 'if'
+          (if (i32.ne (call $tok_kind) (i32.const 15)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '(' after 'if'")) (return)))
+          (call $next_token)  ;; '('
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: IfStatement does UpdateEmpty(result, undefined)
           (call $vm_c_expr (local.get $code))
           (call $next_token)  ;; ')'
@@ -4904,7 +4906,9 @@
           (return)))
       (if (call $tok_is_kw (cstring "while"))
         (then
-          (call $next_token) (call $next_token)  ;; 'while' '('
+          (call $next_token)  ;; 'while'
+          (if (i32.ne (call $tok_kind) (i32.const 15)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '(' after 'while'")) (return)))
+          (call $next_token)  ;; '('
           (let $lsave i32 (call $vm_loop_enter))
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
           (let $top i32 (call $vm_emit_cursor))
@@ -4921,7 +4925,9 @@
           (return)))
       (if (call $tok_is_kw (cstring "switch"))  ;; switch (disc) { case E: … default: … }
         (then
-          (call $next_token) (call $next_token)  ;; 'switch' '('
+          (call $next_token)  ;; 'switch'
+          (if (i32.ne (call $tok_kind) (i32.const 15)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '(' after 'switch'")) (return)))
+          (call $next_token)  ;; '('
           (call $vm_c_expr (local.get $code))
           (call $next_token)  ;; ')'
           (call $next_token)  ;; '{'
