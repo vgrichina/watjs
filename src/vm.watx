@@ -1664,6 +1664,8 @@
     (if (i32.eq (local.get $k) (i32.const 23))  ;; '.' member
       (then
         (call $next_token)
+        ;; `.` must be followed by an IdentifierName (or #private, tokenized as an identifier): `a."b"` / `a.5` → SyntaxError
+        (if (i32.ne (call $tok_kind) (i32.const 3)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected property name after '.'")) (return)))
         (let $key i32 (call $ident_name)) (call $next_token)
         (if (i32.eq (call $tok_kind) (i32.const 24))  ;; obj.key = v
           (then
