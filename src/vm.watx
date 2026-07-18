@@ -4031,6 +4031,8 @@
       (set! $superT (call $vm_tmpname))
       (call $vm_c_postfix (local.get $code))
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $superT))))
+  ;; a ClassTail requires a ClassBody `{ … }` (`class C extends X` / `class C extends {}` with no body → SyntaxError).
+  (if (i32.ne (call $tok_kind) (i32.const 17)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '{' for class body")) (i32.store (i32.const 388) (local.get $clssave)) (return)))
   (call $next_token)  ;; '{'
   (let $privsave i32 (i32.load (i32.const 908)))  ;; visible-private-name stack depth to restore on class exit
   (call $vm_class_priv_dup_check)  ;; Early Error: duplicate PrivateBoundIdentifiers (also pushes this class's names)
@@ -4824,6 +4826,8 @@
                       (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $cpn))  ;; simple binding
                       (call $next_token) (call $next_token))))  ;; var ')'
                 (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@catch"))))  ;; catch {} — bind to a throwaway
+              ;; the catch body is a Block — `catch(e) x;` (any non-'{' statement) is a SyntaxError.
+              (if (i32.ne (call $tok_kind) (i32.const 17)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '{' for catch block")) (return)))
               ;; with a finally, wrap the catch body in a handler so a throw in the catch still runs
               ;; the finally (then re-raises). Without this, an abrupt catch skips the finally entirely.
               (let $cfhloc i32 (i32.const 0))
