@@ -4293,8 +4293,14 @@
     (if (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.or (i32.eq (local.get $k) (i32.const 20)) (i32.eq (local.get $k) (i32.const 16))))  ;; } ] )
       (then (set! $depth (i32.sub (local.get $depth) (i32.const 1))) (br_if $e (i32.eqz (local.get $depth)))))  ;; matching '}'
     (if (i32.and (i32.eq (local.get $depth) (i32.const 1)) (i32.eq (local.get $k) (i32.const 3)))
-      (then (if (i32.or (call $tok_is_kw (cstring "let")) (i32.or (call $tok_is_kw (cstring "const")) (call $tok_is_kw (cstring "class"))))
-        (then (set! $found (i32.const 1)) (br $e)))))
+      (then
+        (if (i32.or (call $tok_is_kw (cstring "let")) (i32.or (call $tok_is_kw (cstring "const")) (call $tok_is_kw (cstring "class"))))
+          (then (set! $found (i32.or (local.get $found) (i32.const 1)))))  ;; bit0: needs a block scope (let/const/class)
+        ;; bit1: a possible block-level FunctionDeclaration (function / generator / async function). A
+        ;; false positive (function EXPRESSION) only makes the dup check run harmlessly — that check is
+        ;; statement-position-aware. Its LexicallyDeclaredNames still need the duplicate early-error scan.
+        (if (i32.or (call $tok_is_kw (cstring "function")) (call $tok_is_kw (cstring "async")))
+          (then (set! $found (i32.or (local.get $found) (i32.const 2)))))))
     (call $next_token) (br $l)))
   (call $cursor_restore (local.get $sv))
   (local.get $found))
@@ -4387,13 +4393,16 @@
       ;; kind-2 scope-pop so break/continue/return/labeled-break through the block pop it too.
       ;; the immediate function-body block is flagged (reg 856): don't give it its own scope.
       (let $isfnbody i32 (i32.load (i32.const 856))) (i32.store (i32.const 856) (i32.const 0))
-      (let $blk i32 (if i32 (local.get $isfnbody) (then (i32.const 0)) (else (call $vm_block_has_lexical))))
+      (let $blkbits i32 (if i32 (local.get $isfnbody) (then (i32.const 0)) (else (call $vm_block_has_lexical))))
+      (let $blk i32 (i32.and (local.get $blkbits) (i32.const 1)))  ;; bit0: let/const/class → needs its own scope
       (if (local.get $blk)
         (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)))  ;; ENTERSCOPE 0
       (call $next_token)
-      ;; Early Error: a block that declares lexical names may not have duplicate LexicallyDeclaredNames or a
-      ;; lexical/var collision (same scan as a switch CaseBlock; cursor now just past the block '{').
-      (if (local.get $blk) (then (call $vm_switch_dup_check (i32.const 1)) (if (call $err) (then (return)))))
+      ;; Early Error: a block that declares lexical names (incl. block-level function declarations, bit1)
+      ;; may not have duplicate LexicallyDeclaredNames or a lexical/var collision (same scan as a switch
+      ;; CaseBlock; cursor now just past the block '{'). The scope is only for let/const/class, but the
+      ;; duplicate-name early error applies to function declarations too.
+      (if (local.get $blkbits) (then (call $vm_switch_dup_check (i32.const 1)) (if (call $err) (then (return)))))
       (block $be (loop $bl
         (br_if $be (i32.eq (call $tok_kind) (i32.const 18)))  ;; '}'
         (br_if $be (i32.eq (call $tok_kind) (i32.const 0)))
