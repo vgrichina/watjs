@@ -439,8 +439,13 @@
   (if (i32.and (i32.or (i32.load (i32.const 672)) (i32.load (i32.const 388))) (call $str_eq (local.get $name) (cstring "yield")))
     (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is reserved inside a generator or strict-mode code")) (return (i32.const 1))))
   (if (i32.load (i32.const 388))
-    (then (if (i32.or (call $str_eq (local.get $name) (cstring "eval")) (call $str_eq (local.get $name) (cstring "arguments")))
-      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Assignment to eval or arguments is not allowed in strict mode")) (return (i32.const 1))))))
+    (then
+      (if (i32.or (call $str_eq (local.get $name) (cstring "eval")) (call $str_eq (local.get $name) (cstring "arguments")))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Assignment to eval or arguments is not allowed in strict mode")) (return (i32.const 1))))
+      ;; a strict-reserved word (implements/interface/package/private/protected/public/static/let)
+      ;; may not be a BindingIdentifier or the target of an assignment in strict mode.
+      (if (call $is_strict_reserved (local.get $name))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected strict-mode reserved word")) (return (i32.const 1))))))
   (i32.const 0))
 ;; is `name` one of the ALWAYS-reserved keywords (ReservedWord)? These can never be a BindingIdentifier
 ;; or LabelIdentifier. `yield`/`await` (contextual) and the strict-only reserved words (let/static/…) are
@@ -3557,9 +3562,10 @@
   (if (local.get $fname)
     (then
       (if (call $is_reserved_word (local.get $fname)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as function name")) (return (i32.const 0))))
-      ;; strict enclosing code: the BindingIdentifier may not be `eval`/`arguments` (`"use strict"; function eval(){}`).
-      (if (i32.and (i32.load (i32.const 388)) (i32.or (call $str_eq (local.get $fname) (cstring "eval")) (call $str_eq (local.get $fname) (cstring "arguments"))))
-        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'eval'/'arguments' is not a valid function name in strict mode")) (return (i32.const 0))))))
+      ;; strict enclosing code: the BindingIdentifier may not be `eval`/`arguments` (`"use strict"; function eval(){}`)
+      ;; nor a strict-reserved word (`function interface(){}` / `function static(){}`).
+      (if (i32.and (i32.load (i32.const 388)) (i32.or (i32.or (call $str_eq (local.get $fname) (cstring "eval")) (call $str_eq (local.get $fname) (cstring "arguments"))) (call $is_strict_reserved (local.get $fname))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid function name in strict mode")) (return (i32.const 0))))))
   ;; after the (optional) name, a function's ParameterList must open with '(' (`function f g(){}` /
   ;; `function f.g(){}` → SyntaxError). Anonymous expressions land here with tok already at '('.
   (if (i32.ne (call $tok_kind) (i32.const 15))
