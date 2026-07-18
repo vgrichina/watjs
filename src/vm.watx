@@ -1469,7 +1469,11 @@
                           (if (call $str_eq (local.get $oki) (cstring "__proto__"))
                             (then (set! $oprotocnt (i32.add (local.get $oprotocnt) (i32.const 1)))
                                   (if (i32.gt_s (local.get $oprotocnt) (i32.const 1)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate __proto__ fields are not allowed in object literals")) (return)))))
-                          (call $next_token) (call $vm_c_expr (local.get $code)))
+                          (call $next_token)  ;; ':'
+                          ;; a PropertyDefinition `key : AssignmentExpression` requires a value — `{a:}` / `{a:,b}` → SyntaxError.
+                          (if (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eq (call $tok_kind) (i32.const 0))))
+                            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Missing property value in object literal")) (return)))
+                          (call $vm_c_expr (local.get $code)))
                         (else
                           ;; `{ a = 1 }` (CoverInitializedName) is only valid when the object literal is
                           ;; refined to a destructuring pattern; in an ordinary object literal it is a SyntaxError.
