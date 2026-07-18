@@ -4625,6 +4625,11 @@
                 (call $cursor_restore (local.get $vpost))  ;; resume after the RHS
                 (br_if $vd (i32.eqz (call $eat (i32.const 22))))
                 (br $vl)))
+            ;; a var/const declarator that is not a [/{ pattern must be a BindingIdentifier (`var;`, `var 5;`,
+            ;; `var a, ;` → SyntaxError). Gated to var/const: a bare `let` here may be a sloppy IdentifierReference
+            ;; (`var let=5; let + 1;`), which the declaration handler is (over-eagerly) entered for.
+            (if (i32.and (i32.or (local.get $isvar) (local.get $isconst)) (i32.ne (call $tok_kind) (i32.const 3)))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected a binding identifier in declaration")) (return)))
             (let $nm i32 (call $ident_name)) (call $next_token)
             (if (call $vm_strict_lhs_check (local.get $nm)) (then (return)))  ;; strict: `var/let/const eval|arguments` → SyntaxError
             ;; a ReservedWord may not be a binding name (`var if`, `let this`, `const in`, …).
