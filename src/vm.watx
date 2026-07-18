@@ -4371,6 +4371,9 @@
           ;; a LabelIdentifier may not be a ReservedWord (`finally: ;`, `in: ;`, `typeof: ;`, …)
           (if (call $is_reserved_word (local.get $lblnm))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as label")) (return)))
+          ;; nor a strict-reserved word under strict mode (`"use strict"; static: ;`)
+          (if (i32.and (i32.load (i32.const 388)) (call $is_strict_reserved (local.get $lblnm)))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected strict-mode reserved word as label")) (return)))
           ;; a label may not duplicate an ENCLOSING label (ContainsDuplicateLabels) — `L: { L: ; }` is a
           ;; SyntaxError (sibling `L: ; L: ;` is fine — a label's scope is only the statement it labels).
           (if (call $vm_label_find (local.get $lblnm))
