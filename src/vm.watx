@@ -3536,7 +3536,16 @@
   (if (i32.eq (call $tok_kind) (i32.const 3)) (then (set! $fname (call $ident_name)) (call $next_token)))  ;; optional name
   ;; a ReservedWord may not be a function name (`function if(){}`) — in any context (decl or expr).
   ;; (yield/await are contextual and excluded from $is_reserved_word, so they are not rejected here.)
-  (if (local.get $fname) (then (if (call $is_reserved_word (local.get $fname)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as function name")) (return (i32.const 0))))))
+  (if (local.get $fname)
+    (then
+      (if (call $is_reserved_word (local.get $fname)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as function name")) (return (i32.const 0))))
+      ;; strict enclosing code: the BindingIdentifier may not be `eval`/`arguments` (`"use strict"; function eval(){}`).
+      (if (i32.and (i32.load (i32.const 388)) (i32.or (call $str_eq (local.get $fname) (cstring "eval")) (call $str_eq (local.get $fname) (cstring "arguments"))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'eval'/'arguments' is not a valid function name in strict mode")) (return (i32.const 0))))))
+  ;; after the (optional) name, a function's ParameterList must open with '(' (`function f g(){}` /
+  ;; `function f.g(){}` → SyntaxError). Anonymous expressions land here with tok already at '('.
+  (if (i32.ne (call $tok_kind) (i32.const 15))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '(' in function definition")) (return (i32.const 0))))
   (call $vm_c_fnbody (local.get $code) (local.get $fname))
   (local.get $fname))
 
