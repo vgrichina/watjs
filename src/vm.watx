@@ -3389,6 +3389,7 @@
               (else (call $vm_c_nested_with_default (local.get $code) (local.get $nt)))))
           (else
             (let $nm i32 (call $ident_name)) (call $next_token)
+            (if (call $vm_strict_lhs_check (local.get $nm)) (then (return)))  ;; strict: eval/arguments/strict-reserved array-element leaf
             ;; a simple BindingRestElement (`...x`) also may not have a default (`[...x = 1]`)
             (if (i32.and (local.get $isrest) (i32.eq (call $tok_kind) (i32.const 24)))
               (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element may not have a default initializer")) (return)))
@@ -3451,6 +3452,7 @@
           (then
             (call $next_token)
             (let $restnm i32 (call $ident_name)) (call $next_token)
+            (if (call $vm_strict_lhs_check (local.get $restnm)) (then (return)))  ;; strict: eval/arguments/strict-reserved rest target
             ;; a member target (...a.b / ...a[i]) — computing the rest object emits no tokens, so the
             ;; current token still marks the member navigation for vm_c_dstr_assign_member
             (let $restmem i32 (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))))
@@ -3480,7 +3482,7 @@
             (drop (call $eat (i32.const 37)))  ;; ':'
             (let $cnested i32 (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17))))
             (let $cbind i32 (i32.const 0))
-            (if (i32.eqz (local.get $cnested)) (then (set! $cbind (call $ident_name)) (call $next_token)))
+            (if (i32.eqz (local.get $cnested)) (then (set! $cbind (call $ident_name)) (call $next_token) (if (call $vm_strict_lhs_check (local.get $cbind)) (then (return)))))  ;; strict: eval/arguments/strict-reserved leaf
             ;; fetch src[keyVal]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $srcTmp))  ;; LOADVAR src
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ckt))  ;; LOADVAR ckt
@@ -3518,7 +3520,10 @@
             (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))
               (then (set! $nested (i32.const 1)))
               (else (set! $bind (call $ident_name)) (call $next_token)
+                    (if (call $vm_strict_lhs_check (local.get $bind)) (then (return)))  ;; strict: eval/arguments/strict-reserved leaf
                     (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))) (then (set! $omem (i32.const 1))))))))
+        ;; shorthand `{static}` (no `:`) binds the KEY itself → strict: eval/arguments/strict-reserved leaf
+        (if (i32.and (i32.eqz (local.get $nested)) (call $vm_strict_lhs_check (local.get $bind))) (then (return)))
         ;; fetch srcTmp[key]
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $srcTmp))
         (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $key))  ;; GETPROP key
