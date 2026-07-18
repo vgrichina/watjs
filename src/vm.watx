@@ -4758,7 +4758,10 @@
           (call $next_token)
           (if (call $nl_before)  ;; `throw` [no LineTerminator here] Expression — newline → SyntaxError
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Illegal newline after throw")) (return)))
-          (call $vm_c_expr (local.get $code))
+          ;; ThrowStatement requires an Expression — `throw;` / `throw }` (no operand) is a SyntaxError.
+          (if (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "throw statement requires an expression")) (return)))
+          (call $vm_c_commaexpr (local.get $code))  ;; throw's operand is a full Expression (comma allowed)
           (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW
           (drop (call $eat (i32.const 21)))
           (return)))
