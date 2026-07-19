@@ -1428,7 +1428,9 @@
               (call $vm_emit_op (local.get $code) (i32.const 69)))  ;; OSPREAD → [obj]
           (else (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed]: value  |  [computed](){} method
             (then
-              (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']' → [obj, key]
+              (call $next_token) (call $vm_c_expr (local.get $code))  ;; '[' key — a computed PropertyName is an AssignmentExpression (NO comma)
+              (if (i32.ne (call $tok_kind) (i32.const 20)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ']' after computed property name")) (return)))  ;; `{[a,b]:v}` → SyntaxError
+              (call $next_token)  ;; ']' → [obj, key]
               (call $vm_emit_op (local.get $code) (i32.const 102))  ;; ToPropertyKey(key) NOW — before the value expr (spec order)
               (if (i32.eq (call $tok_kind) (i32.const 15))  ;; computed method
                 (then (i32.store (i32.const 236) (local.get $ogen)) (i32.store (i32.const 232) (local.get $oasync)) (i32.store (i32.const 692) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $opropstart) (i32.const 1))) (call $vm_c_fnbody (local.get $code) (i32.const 0)))  ;; computed method → no .prototype / non-constructable (reg 692); → [obj, key, fn]
@@ -4169,7 +4171,9 @@
     (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed](){} method  |  [computed] = field
       (then
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
-        (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' key ']' → [proto, key]
+        (call $next_token) (call $vm_c_expr (local.get $code))  ;; '[' key — computed ClassElementName is an AssignmentExpression (no comma)
+        (if (i32.ne (call $tok_kind) (i32.const 20)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ']' after computed class element name")) (return)))  ;; `class C{[a,b](){}}` → SyntaxError
+        (call $next_token)  ;; ']' → [proto, key]
         (if (i32.eq (call $tok_kind) (i32.const 15))  ;; method → non-enumerable {W,C}, name from key
           (then
             (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync))
