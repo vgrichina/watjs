@@ -947,7 +947,9 @@
         (call $next_token) (br $pl)))
       (call $next_token)  ;; consume the matching ')'
       (let $isarrow i32 (i32.eq (call $tok_kind) (i32.const 52)))  ;; '=>'
+      (let $arrownl i32 (i32.and (local.get $isarrow) (call $nl_before)))  ;; ArrowParameters [no LineTerminator here] => : `(a)\n=> a` is a SyntaxError
       (call $cursor_restore (local.get $pc))
+      (if (local.get $arrownl) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '=>'")) (return)))
       (if (local.get $isarrow)
         (then
           (let $ap i32 (call $heap_alloc (i32.const 256)))
@@ -1305,6 +1307,8 @@
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'arguments' is not allowed here")) (return)))
       (if (i32.eq (call $tok_kind) (i32.const 52))  ;; NAME => body  (single-param arrow, no parens)
         (then
+          ;; ArrowParameters [no LineTerminator here] => — a newline before `=>` is a SyntaxError (`x \n => x`).
+          (if (call $nl_before) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '=>'")) (return)))
           (i32.store (i32.const 700) (i32.add (local.get $vnstart) (i32.const 1)))
           (let $ap1 i32 (call $heap_alloc (i32.const 8)))
           (i32.store (local.get $ap1) (local.get $vn))
