@@ -2769,6 +2769,8 @@
   (let $savehb i32 (i32.load (i32.const 376)))
   (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))
   (i32.store (i32.const 372) (i32.const 0))
+  ;; Early Error: a non-simple parameter list's BoundNames must be unique (`function f([a,a]){}`).
+  (if (call $vm_param_dup_scan) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate parameter name not allowed in this context"))))
   (call $next_token)  ;; '('
   (let $params i32 (call $heap_alloc (i32.const 256)))
   (let $pdef i32 (call $heap_alloc (i32.const 256)))   ;; per-param default-expr cursor (0 = none)
@@ -3617,7 +3619,65 @@
 ;; parse `( a, b = d, ...rest )` from cursor at '(' through ')'. Fills names into
 ;; $params and default-expr cursors (0 = none) into $pdef; the rest index → reg
 ;; 260 (-1 if none). Returns the parameter count. Shared by arrow functions.
+;; Read-only scan of a param list `( … )` (cursor AT '('): returns 1 iff the list is NON-SIMPLE
+;; (has a destructuring pattern / default / rest) AND its BoundNames contain a duplicate — a SyntaxError
+;; (`function f([a,a]){}`, `function f({a,a}){}`, `function f([a],a){}`, `([a,a])=>`). Simple lists return
+;; 0 here (a sloppy `function(a,a)` dup is legal; strict/arrow simple dups are caught elsewhere). Cursor
+;; is restored. Distinguishes object-pattern keys/computed-keys/default-values from binding leaves.
+(func $vm_param_dup_scan (result i32) (effects)
+  (let $save i32 (call $cursor_save))
+  (let $names i32 (call $heap_alloc (i32.const 4096)))
+  (let $n i32 (i32.const 0))
+  (let $nonsimple i32 (i32.const 0))
+  (let $dup i32 (i32.const 0))
+  (let $ctx i32 (call $heap_alloc (i32.const 256)))  ;; per-depth: 1 = object pattern, 0 = array/param-list
+  (let $depth i32 (i32.const 0))
+  (i32.store8 (local.get $ctx) (i32.const 0))  ;; top level = list
+  (call $next_token)  ;; '('
+  (block $done (loop $lp
+    (let $k i32 (call $tok_kind))
+    (br_if $done (i32.eqz (local.get $k)))  ;; EOF
+    (if (i32.and (i32.eq (local.get $k) (i32.const 16)) (i32.eqz (local.get $depth))) (then (br $done)))  ;; ')' at depth 0
+    (if (i32.eq (local.get $k) (i32.const 17))  ;; '{' → object pattern
+      (then (set! $nonsimple (i32.const 1)) (set! $depth (i32.add (local.get $depth) (i32.const 1))) (if (i32.lt_s (local.get $depth) (i32.const 255)) (then (i32.store8 (i32.add (local.get $ctx) (local.get $depth)) (i32.const 1)))) (call $next_token) (br $lp)))
+    (if (i32.eq (local.get $k) (i32.const 19))  ;; '['
+      (then
+        (if (i32.and (i32.lt_s (local.get $depth) (i32.const 255)) (i32.load8_u (i32.add (local.get $ctx) (local.get $depth))))
+          (then (call $vm_skip_balanced) (br $lp))  ;; computed key inside an object pattern → skip its contents (references, not bindings)
+          (else (set! $nonsimple (i32.const 1)) (set! $depth (i32.add (local.get $depth) (i32.const 1))) (if (i32.lt_s (local.get $depth) (i32.const 255)) (then (i32.store8 (i32.add (local.get $ctx) (local.get $depth)) (i32.const 0)))) (call $next_token) (br $lp)))))  ;; array pattern
+    (if (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.eq (local.get $k) (i32.const 20)))  ;; '}' / ']'
+      (then (if (i32.gt_s (local.get $depth) (i32.const 0)) (then (set! $depth (i32.sub (local.get $depth) (i32.const 1))))) (call $next_token) (br $lp)))
+    (if (i32.eq (local.get $k) (i32.const 24))  ;; '=' default → skip the balanced default expression
+      (then
+        (set! $nonsimple (i32.const 1)) (call $next_token)
+        (let $dd i32 (i32.const 0))
+        (block $de (loop $dl
+          (let $dk i32 (call $tok_kind))
+          (br_if $de (i32.eqz (local.get $dk)))
+          (if (i32.or (i32.eq (local.get $dk) (i32.const 15)) (i32.or (i32.eq (local.get $dk) (i32.const 17)) (i32.eq (local.get $dk) (i32.const 19)))) (then (set! $dd (i32.add (local.get $dd) (i32.const 1))) (call $next_token) (br $dl)))
+          (if (i32.or (i32.eq (local.get $dk) (i32.const 16)) (i32.or (i32.eq (local.get $dk) (i32.const 18)) (i32.eq (local.get $dk) (i32.const 20))))
+            (then (if (i32.eqz (local.get $dd)) (then (br $de)) (else (set! $dd (i32.sub (local.get $dd) (i32.const 1))) (call $next_token) (br $dl)))))  ;; closer at depth 0 = pattern's own closer, leave it
+          (if (i32.and (i32.eq (local.get $dk) (i32.const 22)) (i32.eqz (local.get $dd))) (then (br $de)))  ;; ',' at depth 0 ends the default
+          (call $next_token) (br $dl)))
+        (br $lp)))
+    (if (i32.eq (local.get $k) (i32.const 54)) (then (set! $nonsimple (i32.const 1)) (call $next_token) (br $lp)))  ;; '...' rest → next ident is a binding
+    (if (i32.eq (local.get $k) (i32.const 3))  ;; identifier
+      (then
+        (let $nm i32 (call $ident_name)) (call $next_token)
+        ;; object-pattern property key `IDENT :` → not a binding (the target follows the ':')
+        (if (i32.and (i32.and (i32.lt_s (local.get $depth) (i32.const 255)) (i32.load8_u (i32.add (local.get $ctx) (local.get $depth)))) (i32.eq (call $tok_kind) (i32.const 37)))
+          (then (call $next_token) (br $lp)))  ;; consume ':'
+        ;; a binding leaf
+        (if (call $dup_has (local.get $names) (local.get $n) (local.get $nm)) (then (set! $dup (i32.const 1)) (br $done)))
+        (if (i32.lt_s (local.get $n) (i32.const 1024)) (then (i32.store (i32.add (local.get $names) (i32.mul (local.get $n) (i32.const 4))) (local.get $nm)) (set! $n (i32.add (local.get $n) (i32.const 1)))))
+        (br $lp)))
+    (call $next_token) (br $lp)))  ;; ',' or anything else
+  (call $cursor_restore (local.get $save))
+  (i32.and (local.get $dup) (local.get $nonsimple)))
+
 (func $vm_c_paramlist (param $params i32) (param $pdef i32) (param $ppat i32) (result i32) (effects)
+  ;; Early Error: a non-simple (or arrow) parameter list's BoundNames must be unique.
+  (if (call $vm_param_dup_scan) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate parameter name not allowed in this context"))))
   (call $next_token)  ;; '('
   (i32.store (i32.const 260) (i32.const -1))  ;; restidx
   (let $np i32 (i32.const 0))
