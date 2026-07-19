@@ -1233,6 +1233,8 @@
             (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; GETPROP
             (call $next_token)
             (br $nml)))
+          ;; a NewExpression's MemberExpression may not be an optional chain (`new a?.b()` → SyntaxError)
+          (if (i32.eq (call $tok_kind) (i32.const 55)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Optional chain may not be used in a 'new' expression")) (return)))
           (let $nargc i32 (i32.const 0))
           (if (i32.eq (call $tok_kind) (i32.const 15))  ;; '(' present → argument list (else `new F` with no args)
             (then
@@ -1570,7 +1572,10 @@
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (if (i32.eq (local.get $k) (i32.const 53))  ;; tagged template: fn`...`
-      (then (call $vm_c_tagged_template (local.get $code) (i32.const 0)) (i32.store (i32.const 956) (i32.const 0)) (br $l)))  ;; a CallExpression result is not an assignment target
+      (then
+        ;; a tagged template may not appear in an optional chain (`` a?.b`x` `` → SyntaxError)
+        (if (i32.gt_s (local.get $ocn) (i32.const 0)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Tagged template literals may not be used in an optional chain")) (return)))
+        (call $vm_c_tagged_template (local.get $code) (i32.const 0)) (i32.store (i32.const 956) (i32.const 0)) (br $l)))  ;; a CallExpression result is not an assignment target
     (if (i32.eq (local.get $k) (i32.const 15))  ;; '(' call
       (then (call $vm_c_call_tail (local.get $code)) (i32.store (i32.const 956) (i32.const 0)) (br $l)))  ;; `f() = 1` → the trailing '=' becomes a SyntaxError in vm_c_expr
     (if (i32.eq (local.get $k) (i32.const 19))  ;; '[' index
