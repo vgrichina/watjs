@@ -637,6 +637,10 @@
       (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (call $skip_template_expr) (br $sl)))
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $sl)))
+  ;; the loop ended on the closing '`' (96) or ran off the end — an unterminated template (`` `abc ``,
+  ;; `` `${1} `` with no closing backtick) is a SyntaxError, not a silently-truncated literal.
+  (if (i32.ne (call $ch_at (i32.const 0)) (i32.const 96))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unterminated template literal")) (return)))
   (call $set_tok (i32.const 53) (local.get $start) (i32.sub (call $pos) (local.get $start)))
   (call $set_pos (i32.add (call $pos) (i32.const 1))))  ;; skip closing `
 
