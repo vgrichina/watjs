@@ -722,7 +722,7 @@
         (let $tssrc i32 (call $src)) (let $tslen i32 (call $src_len)) (let $tscur i32 (call $cursor_save))
         (call $set_src (i32.add (local.get $texpr) (i32.const 4)) (call $str_len (local.get $texpr)))
         (call $lex_init) (call $next_token)
-        (call $vm_c_expr (local.get $code))
+        (call $vm_c_commaexpr (local.get $code))  ;; a template substitution `${ Expression }` is a full Expression (comma allowed)
         (call $set_src (local.get $tssrc) (local.get $tslen)) (call $cursor_restore (local.get $tscur))
         (call $vm_emit_op (local.get $code) (i32.const 115))  ;; TOSTR: template substitution is ToString (string-hint), NOT `+`/default-hint
         (call $vm_emit_op (local.get $code) (i32.const 2))  ;; ADD (string + string → concat)
@@ -1589,7 +1589,7 @@
         (call $next_token)
         (if (i32.eq (call $tok_kind) (i32.const 20))  ;; '[]' empty computed member — SyntaxError
           (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "unexpected ']' (empty computed member)")) (return)))
-        (call $vm_c_expr (local.get $code))  ;; [obj, key]
+        (call $vm_c_commaexpr (local.get $code))  ;; a computed member key `a[ Expression ]` is a full Expression (comma allowed)
         (call $next_token)  ;; ']'
         (if (i32.eq (call $tok_kind) (i32.const 24))  ;; arr[i] = v
           (then
