@@ -5423,7 +5423,7 @@
           (call $next_token)  ;; consume first ';'
           (let $ftop i32 (call $vm_emit_cursor))
           (if (i32.ne (call $tok_kind) (i32.const 21))
-            (then (call $vm_c_expr (local.get $code)))
+            (then (call $vm_c_commaexpr (local.get $code)))  ;; the condition is a full Expression (comma allowed: `for(;a,b;)`)
             (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_bool (i32.const 1)))))
           (if (i32.ne (call $tok_kind) (i32.const 21))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ';' in for-loop header")) (return)))
