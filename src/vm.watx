@@ -991,6 +991,8 @@
               (let $aan i32 (call $ident_name)) (call $next_token)
               (if (i32.eq (call $tok_kind) (i32.const 52))
                 (then
+                  ;; `async x [no LineTerminator here] => …` — a newline before '=>' is a SyntaxError
+                  (if (call $nl_before) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '=>'")) (return)))
                   (i32.store (i32.const 232) (i32.const 1))
                   (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1)))  ;; arrow source span starts at 'async'
                   (let $aap i32 (call $heap_alloc (i32.const 8))) (i32.store (local.get $aap) (local.get $aan))
@@ -1007,6 +1009,8 @@
               (call $next_token)  ;; ')'
               (if (i32.eq (call $tok_kind) (i32.const 52))  ;; '=>'
                 (then
+                  ;; `async ( params ) [no LineTerminator here] => …` — a newline before '=>' is a SyntaxError
+                  (if (call $nl_before) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '=>'")) (return)))
                   (i32.store (i32.const 232) (i32.const 1))
                   (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1)))  ;; arrow source span starts at 'async'
                   (call $cursor_restore (local.get $apc))  ;; back to '(' (vm_c_paramlist consumes it)
