@@ -1143,7 +1143,7 @@
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this"))
               (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO → [recv, superproto]
-              (call $vm_c_expr (local.get $code))  ;; → [recv, superproto, key]
+              (call $vm_c_commaexpr (local.get $code))  ;; → [recv, superproto, key] (computed key is a full Expression)
               (call $next_token)  ;; ']'
               (let $sek i32 (call $vm_tmpname))
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sek))  ;; STOREVAR @@key → [recv, superproto]
@@ -1871,7 +1871,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 116))  ;; [recv, superproto]
           (if (i32.eq (call $tok_kind) (i32.const 23))
             (then (call $next_token) (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $ident_name))) (call $next_token))  ;; '.' name → PUSH key, consume name
-            (else (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)))  ;; '[' expr ']' → key on stack
+            (else (call $next_token) (call $vm_c_commaexpr (local.get $code)) (call $next_token)))  ;; '[' expr ']' → key on stack (full Expression)
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $psk))  ;; STOREVAR @@key → [recv, superproto]
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $psk))  ;; LOADVAR @@key → [recv, superproto, key]
           (call $vm_emit_op (local.get $code) (i32.const 117)) (call $vm_emit_op (local.get $code) (i32.const 97)) (call $vm_emit_op (local.get $code) (local.get $pop)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $psn))  ;; SUPERGET,TONUMERIC,INC/DEC,STOREVAR @@new
@@ -1898,7 +1898,7 @@
                     (br $pme))))
               (else  ;; '[' index
                 (call $next_token)
-                (call $vm_c_expr (local.get $code))  ;; index → [obj, key]
+                (call $vm_c_commaexpr (local.get $code))  ;; computed member key is a full Expression (comma allowed)
                 (call $next_token)  ;; ']'
                 (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; more chain → plain GETIDX
                   (then (call $vm_emit_op (local.get $code) (i32.const 31)) (br $pml))
