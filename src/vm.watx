@@ -5023,14 +5023,21 @@
           (call $next_token)  ;; 'switch'
           (if (i32.ne (call $tok_kind) (i32.const 15)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '(' after 'switch'")) (return)))
           (call $next_token)  ;; '('
-          (call $vm_c_expr (local.get $code))
+          (call $vm_c_commaexpr (local.get $code))  ;; discriminant: a full Expression, evaluated OUTSIDE the CaseBlock scope
+          (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after switch discriminant")) (return)))
           (call $next_token)  ;; ')'
+          (if (i32.ne (call $tok_kind) (i32.const 17)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '{' after switch head")) (return)))
+          (let $scaselex i32 (i32.and (call $vm_block_has_lexical) (i32.const 1)))  ;; CaseBlock has let/const/class → needs its own lexical scope
           (call $next_token)  ;; '{'
           (call $vm_switch_dup_check (i32.const 0))  ;; Early Error: duplicate LexicallyDeclaredNames in the CaseBlock
           (if (call $err) (then (return)))
           (let $sdT i32 (call $vm_tmpname))
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sdT))  ;; STOREVAR disc
-          (let $slsave i32 (call $vm_loop_enter))
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sdT))  ;; STOREVAR disc (in the enclosing scope, before ENTERSCOPE)
+          (let $slsave i32 (call $vm_loop_enter))  ;; sets reg 360 = finally-base BEFORE the CaseBlock scope, so break unwinds it
+          ;; the CaseBlock has its own lexical environment (spec): case SELECTORS + bodies run inside it,
+          ;; a `let x` in a body binds here, and closures made in a selector/body capture this scope.
+          (if (local.get $scaselex)
+            (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)))  ;; ENTERSCOPE 0
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: switch completion starts undefined
           (i32.store (i32.const 216) (i32.load (i32.add (local.get $slsave) (i32.const 8))))  ;; continue passes through to enclosing loop
           (i32.store (i32.const 220) (i32.load (i32.add (local.get $slsave) (i32.const 12))))
@@ -5047,7 +5054,7 @@
               (then
                 (call $next_token)
                 (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sdT))  ;; LOADVAR disc
-                (call $vm_c_expr (local.get $code))
+                (call $vm_c_commaexpr (local.get $code))  ;; a CaseClause label is a full Expression (comma allowed), evaluated inside the CaseBlock scope
                 (call $vm_emit_op (local.get $code) (i32.const 18))  ;; SEQ
                 (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
                 (i32.store (i32.add (local.get $spatch) (i32.mul (local.get $snc) (i32.const 4))) (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → bodyN (matched)
@@ -5099,7 +5106,12 @@
             (br $sbl)))
           (if (i32.eq (local.get $sdefidx) (i32.const -1))
             (then (call $vm_patch (local.get $code) (local.get $sdefjmp))))  ;; no default → no-match jumps to end
-          (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → end
+          ;; normal completion (fall-through / no-match) pops the CaseBlock scope here; a `break` already
+          ;; popped it via its finally-unwind (finally-base reg 360 sits below the scope), so break's jump
+          ;; target is set AFTER this LEAVEWITH — no double pop.
+          (if (local.get $scaselex)
+            (then (call $vm_finally_pop) (call $vm_emit_op (local.get $code) (i32.const 94))))  ;; LEAVEWITH
+          (call $vm_patch_breaks (local.get $code) (call $vm_emit_cursor))  ;; break → end (after the LEAVEWITH)
           ;; `continue` inside the switch was appended to the ENCLOSING loop's continue
           ;; list (216/220); vm_loop_exit would reset the count and drop those jumps
           ;; (→ unpatched JMP → OOB), so preserve the live list across the restore.
