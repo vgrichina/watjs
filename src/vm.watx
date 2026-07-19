@@ -5225,6 +5225,9 @@
         (then
           (call $next_token)  ;; 'for'
           (let $isawait i32 (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "await"))))  ;; for-await-of
+          ;; `for await` is only valid inside an async function/generator/arrow body (reg 896).
+          (if (i32.and (local.get $isawait) (i32.eqz (i32.load (i32.const 896))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'for await' is only allowed in an async function")) (return)))
           (if (local.get $isawait) (then (call $next_token)))  ;; 'await'
           (call $next_token)  ;; '('
           ;; detect for-of:  [var] IDENT of E
