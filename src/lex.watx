@@ -298,7 +298,12 @@
   (i64.store (i32.const 744) (local.get $ival))  ;; exact integer value for the BigInt-literal path
   ;; trailing 'n' → BigInt literal (flag at mem 304, read by the number-literal compiler)
   (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 110))
-    (then (i32.store (i32.const 304) (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))))
+    (then
+      ;; a BigInt literal is an integer — a '.' ($dot) or exponent ($c0 == e/E) before 'n' is a SyntaxError
+      ;; (`1.5n`, `1e5n`, `.5n`).
+      (if (i32.or (local.get $dot) (i32.or (i32.eq (local.get $c0) (i32.const 101)) (i32.eq (local.get $c0) (i32.const 69))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid BigInt literal (no decimal point or exponent allowed)")) (return)))
+      (i32.store (i32.const 304) (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))))
     (else (i32.store (i32.const 304) (i32.const 0))))
   (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start)))
   (call $num_boundary_check))
