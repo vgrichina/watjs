@@ -1385,6 +1385,9 @@
             (else (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...spread
               (then
                 (call $next_token)
+                ;; a SpreadElement requires an AssignmentExpression operand (`[...]` / `[..., 1]` → SyntaxError)
+                (if (i32.or (i32.eq (call $tok_kind) (i32.const 20)) (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eq (call $tok_kind) (i32.const 0))))
+                  (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token after spread operator")) (return)))
                 (call $vm_c_expr (local.get $code))
                 (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD into array
               (else
@@ -1545,7 +1548,10 @@
         (then (block $se2 (loop $sl2
           (br_if $se2 (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')' ends the args
           (if (i32.eq (call $tok_kind) (i32.const 54))
-            (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
+            (then (call $next_token)
+                  (if (i32.or (i32.eq (call $tok_kind) (i32.const 16)) (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eq (call $tok_kind) (i32.const 0))))
+                    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token after spread operator")) (return)))  ;; `f(...)` → SyntaxError
+                  (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))  ;; SPREAD
             (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND
           (br_if $se2 (i32.eqz (call $eat (i32.const 22))))
           (br $sl2)))))
