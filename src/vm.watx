@@ -3103,6 +3103,9 @@
   ;; inherit; a nested regular function resets it in vm_c_fnbody since it has its own `arguments`).
   (let $ftargs i32 (i32.load (i32.const 916)))
   (i32.store (i32.const 916) (i32.const 1))
+  ;; a field initializer `x = <AssignmentExpression>` requires a value — `class C{ x = ; }` → SyntaxError
+  (if (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eq (call $tok_kind) (i32.const 0)))))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "class field initializer requires a value")) (return)))
   (call $vm_c_expr (local.get $code))  ;; compile init expr → value
   (i32.store (i32.const 916) (local.get $ftargs))
   (i32.store (i32.const 868) (local.get $ftsuperhome)) (i32.store (i32.const 884) (local.get $ftsupercall))
