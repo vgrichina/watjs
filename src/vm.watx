@@ -5231,8 +5231,13 @@
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
               (let $itn i32 (call $vm_tmpname))
               (let $rn i32 (call $vm_tmpname))
+              ;; the for-in object / for-of iterable is required — `for (x of )` / `for (x in )` → SyntaxError.
+              (if (i32.eq (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "for-in/of head requires an expression")) (return)))
               ;; for-in RHS is an Expression (comma allowed); for-of RHS is an AssignmentExpression (no comma)
               (if (local.get $isin) (then (call $vm_c_commaexpr (local.get $code))) (else (call $vm_c_expr (local.get $code))))  ;; the iterable / object
+              ;; the head must close with ')'; a top-level comma after a for-of iterable (`for (x of a, b)`)
+              ;; is a SyntaxError since the RHS is an AssignmentExpression, not an Expression.
+              (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after for-in/of expression")) (return)))
               (if (local.get $isin) (then (call $vm_emit_op (local.get $code) (i32.const 56))))  ;; for-in: object → keys array
               (call $vm_emit_op (local.get $code) (if i32 (local.get $isawait) (then (i32.const 96)) (else (i32.const 45))))  ;; GETAITER (async iterator) / GETITER
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; STOREVAR it
