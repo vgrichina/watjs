@@ -2891,6 +2891,13 @@
     (br $pl)))
   (call $cursor_restore (local.get $bodycur))  ;; rewind to '{'
   (i32.store (i32.const 388) (local.get $thisstrict))  ;; nested fns inherit this strictness
+  ;; a strict-mode function may not be NAMED `eval`/`arguments` or a strict-reserved word. This is checked
+  ;; HERE (not at the name-parse site) because a function's OWN "use strict" directive is only known after
+  ;; the prologue scan above. $selfname is non-zero only for a real FunctionDeclaration/Expression name
+  ;; (methods/accessors pass 0, so a method named `eval` is unaffected).
+  (if (i32.and (local.get $thisstrict) (i32.ne (local.get $selfname) (i32.const 0)))
+    (then (if (i32.or (call $str_eq (local.get $selfname) (cstring "eval")) (i32.or (call $str_eq (local.get $selfname) (cstring "arguments")) (call $is_strict_reserved (local.get $selfname))))
+      (then (i32.store (i32.const 388) (local.get $savestrict)) (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Function name may not be 'eval'/'arguments' or a reserved word in strict mode")) (return)))))
   ;; A duplicate parameter name is an early SyntaxError in strict-mode code AND in any function with a
   ;; NON-SIMPLE parameter list (a rest param, a default initializer, or a destructuring pattern) even in
   ;; sloppy mode (spec: UniqueFormalParameters / FormalParameters with IsSimpleParameterList false).
