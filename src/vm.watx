@@ -7773,7 +7773,9 @@
 (func $vm_make_generator (param $fn i32) (param $argc i32) (param $argv i32) (param $gscope i32) (param $thisv i64) (result i64) (effects)
   (let $np i32 (i32.load (i32.add (local.get $fn) (i32.const 8))))
   (let $ns i32 (call $scope_new (call $vm_fn_parent (local.get $fn) (local.get $gscope)) (i32.add (local.get $np) (i32.const 5))))
-  (call $scope_define (local.get $ns) (cstring "this") (local.get $thisv))  ;; receiver captured at call time (generator body resumes with the right `this`)
+  ;; receiver captured at call time (generator body resumes with the right `this`); OrdinaryCallBindThis
+  ;; coerces per strictness (generators are never arrows, so `this` is always bound here).
+  (call $scope_define (local.get $ns) (cstring "this") (call $coerce_this (local.get $thisv) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4))))))
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
