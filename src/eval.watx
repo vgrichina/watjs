@@ -3257,6 +3257,8 @@
           (let $gbit7 i32 (i32.and (i32.load (i32.add (local.get $gfp) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $gfp) (i32.const 8))) (i32.const 4))))) (i32.const 128)))
           (let $gintr i32 (i32.load (if i32 (local.get $gbit7) (then (i32.const 804)) (else (i32.const 800)))))
           (if (local.get $gintr) (then (return (call $mk_obj (local.get $gintr)))))))
+      (if (i32.eq (i32.load (call $val_payload (local.get $ov))) (i32.const 1448232528))  ;; async fn → %AsyncFunction.prototype%
+        (then (if (i32.load (i32.const 964)) (then (return (call $mk_obj (i32.load (i32.const 964))))))))
       (return (i64.load (i32.const 336)))))
   (if (call $is_object (local.get $ov))
     (then
@@ -5263,10 +5265,11 @@
   ;; Function(p1, …, pN, body)  |  new Function(…)  — build source and eval it,
   ;; returning the resulting function. Params are the all-but-last args (joined by
   ;; ','), the body is the last arg. The name is "anonymous" per spec.
-  (if (i32.or (i32.eq (local.get $id) (i32.const 157)) (i32.or (i32.eq (local.get $id) (i32.const 513)) (i32.eq (local.get $id) (i32.const 514))))
+  (if (i32.or (i32.eq (local.get $id) (i32.const 157)) (i32.or (i32.eq (local.get $id) (i32.const 513)) (i32.or (i32.eq (local.get $id) (i32.const 514)) (i32.eq (local.get $id) (i32.const 527)))))
     (then
       (let $fsrc i32 (if i32 (i32.eq (local.get $id) (i32.const 513)) (then (cstring "(function* anonymous("))
-        (else (if i32 (i32.eq (local.get $id) (i32.const 514)) (then (cstring "(async function* anonymous(")) (else (cstring "(function anonymous("))))))
+        (else (if i32 (i32.eq (local.get $id) (i32.const 514)) (then (cstring "(async function* anonymous("))
+          (else (if i32 (i32.eq (local.get $id) (i32.const 527)) (then (cstring "(async function anonymous(")) (else (cstring "(function anonymous("))))))))
       (let $fnp i32 (if i32 (i32.gt_s (local.get $argc) (i32.const 0)) (then (i32.sub (local.get $argc) (i32.const 1))) (else (i32.const 0))))
       (let $fi i32 (i32.const 0))
       (block $ffe (loop $ffl
@@ -11426,6 +11429,7 @@
   (if (i32.eq (local.get $id) (i32.const 180)) (then (return (i32.const 7))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 100)) (i32.eq (local.get $id) (i32.const 209))) (then (return (i32.const 2))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 9)) (i32.or (i32.eq (local.get $id) (i32.const 88)) (i32.or (i32.eq (local.get $id) (i32.const 157)) (i32.eq (local.get $id) (i32.const 192))))) (then (return (i32.const 1))))
+  (if (i32.eq (local.get $id) (i32.const 527)) (then (return (i32.const 1))))  ;; AsyncFunction(body) length 1
   (if (i32.eq (local.get $id) (i32.const 247)) (then (return (i32.const 1))))  ;; BigInt(value) length 1
   ;; Object static methods — length 3: defineProperty(90)
   (if (i32.eq (local.get $id) (i32.const 90)) (then (return (i32.const 3))))
@@ -11487,6 +11491,7 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 363)) (i32.eq (local.get $id) (i32.const 383))) (then (return (i32.const 1))))  ;; DataView, SharedArrayBuffer
   (if (i32.eq (local.get $id) (i32.const 157)) (then (return (i32.const 1))))  ;; Function
   (if (i32.or (i32.eq (local.get $id) (i32.const 513)) (i32.eq (local.get $id) (i32.const 514))) (then (return (i32.const 1))))  ;; GeneratorFunction, AsyncGeneratorFunction
+  (if (i32.eq (local.get $id) (i32.const 527)) (then (return (i32.const 1))))  ;; AsyncFunction
   (i32.const 0))
 
 ;; 1 if a value is a constructor. Native fns consult native_is_ctor; VM and bound
@@ -11985,7 +11990,19 @@
   (let $agf i64 (call $mk_native (i32.const 514) (cstring "AsyncGeneratorFunction")))
   (i64.store (i32.const 824) (local.get $agf))
   (call $scope_define_attr (call $fn_props (call $val_payload (local.get $agf))) (cstring "prototype") (call $mk_obj (local.get $agen)) (i32.const 0))
-  (call $scope_define_attr (local.get $agen) (cstring "constructor") (local.get $agf) (i32.const 4)))
+  (call $scope_define_attr (local.get $agen) (cstring "constructor") (local.get $agf) (i32.const 4))
+  ;; %AsyncFunction% intrinsic: an async (non-generator) function inherits %AsyncFunction.prototype% (reg 964),
+  ;; which carries @@toStringTag "AsyncFunction" and constructor → %AsyncFunction% (reg 968, native 527), BEFORE
+  ;; the %Function.prototype% chain. Mirrors the generator wiring; call/apply/bind still come from
+  ;; %Function.prototype% via fn_inherited_slot. Parent is Object.prototype (op) — same reason as %Generator%.
+  (let $afp i32 (call $obj_new (i32.const 4)))
+  (i32.store (local.get $afp) (local.get $op))
+  (i32.store (i32.const 964) (local.get $afp))
+  (call $scope_define_attr (local.get $afp) (cstring "@@toStringTag") (call $mk_str (cstring "AsyncFunction")) (i32.const 4))
+  (let $aff i64 (call $mk_native (i32.const 527) (cstring "AsyncFunction")))
+  (i64.store (i32.const 968) (local.get $aff))
+  (call $scope_define_attr (call $fn_props (call $val_payload (local.get $aff))) (cstring "prototype") (call $mk_obj (local.get $afp)) (i32.const 0))
+  (call $scope_define_attr (local.get $afp) (cstring "constructor") (local.get $aff) (i32.const 4)))
 
 ;; Register all builtins/globals into scope $g — shared by the re-scan engine
 ;; (eval_program) and the bytecode VM (eval_prog) so both see the same protos.

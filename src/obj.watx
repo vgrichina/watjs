@@ -831,6 +831,7 @@
           ;; a generator fn inherits %Generator%/%AsyncGenerator% OWN props (constructor → %GeneratorFunction%,
           ;; @@toStringTag "GeneratorFunction") BEFORE the %Function.prototype% chain.
           (let $gfpr i32 (call $gen_fn_proto (local.get $fn)))
+          (if (i32.eqz (local.get $gfpr)) (then (set! $gfpr (call $async_fn_proto (local.get $fn)))))  ;; async fn → %AsyncFunction.prototype%
           (if (local.get $gfpr)
             (then (let $gfsl i32 (call $scope_find_local (local.get $gfpr) (local.get $ks)))
               (if (local.get $gfsl) (then (return (i64.load (local.get $gfsl)))))))
@@ -1047,6 +1048,12 @@
   (if i32 (i32.eq (i32.load (local.get $fn)) (i32.const 1448232527))
     (then (i32.load (if i32 (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 128)) (then (i32.const 804)) (else (i32.const 800)))))
     (else (i32.const 0))))
+;; an async (non-generator) function's OWN [[Prototype]] %AsyncFunction.prototype% (reg 964) — carries
+;; constructor (→ %AsyncFunction%) and @@toStringTag ("AsyncFunction"). 0 for any other function kind.
+(func $async_fn_proto (param $fn i32) (result i32) (effects)
+  (if i32 (i32.eq (i32.load (local.get $fn)) (i32.const 1448232528))
+    (then (i32.load (i32.const 964)))
+    (else (i32.const 0))))
 
 ;; get-or-create a function's .prototype object value
 (func $fn_get_prototype (param $fn i32) (result i64) (effects)
@@ -1127,6 +1134,10 @@
           (let $xb7 i32 (i32.and (i32.load (i32.add (local.get $xfp) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $xfp) (i32.const 8))) (i32.const 4))))) (i32.const 128)))
           (let $xint i32 (i32.load (if i32 (local.get $xb7) (then (i32.const 804)) (else (i32.const 800)))))
           (if (local.get $xint) (then (if (call $strict_eq (local.get $fpv) (call $mk_obj (local.get $xint))) (then (return (call $v_true))))))))
+      ;; an async (non-generator) function (magic 528) is an instance of %AsyncFunction% — i.e. its
+      ;; f.prototype === %AsyncFunction.prototype% (reg 964, the async fn's real [[Prototype]]).
+      (if (i32.eq (i32.load (call $val_payload (local.get $x))) (i32.const 1448232528))
+        (then (if (i32.load (i32.const 964)) (then (if (call $strict_eq (local.get $fpv) (call $mk_obj (i32.load (i32.const 964)))) (then (return (call $v_true))))))))
       (return (call $v_false))))
   ;; OrdinaryHasInstance: walk x's [[Prototype]] chain (via js_get_prototype, which honors an
   ;; array/function-as-[[Prototype]] stored in @@protoval, proxy getPrototypeOf traps, and native
