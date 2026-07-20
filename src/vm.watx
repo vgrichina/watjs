@@ -7416,6 +7416,13 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $v i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        ;; `obj.#x = v` (PrivateFieldSet): the field must already be present on the receiver (installed via
+        ;; vm_apply_fields, which calls set_prop DIRECTLY — bypassing this op — so it is unaffected). Setting
+        ;; a private member the object's class did not declare, or before its own field entry is installed
+        ;; (`y = this.#x = 1; #x;`), is a TypeError. Mirrors the GETPROP brand check.
+        (if (call $is_private_key (local.get $nm))
+          (then (if (i32.eqz (call $truthy (call $js_in (call $mk_str (local.get $nm)) (i64.load (i32.add (local.get $stack) (local.get $t))))))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot write private member to an object whose class did not declare it")) (br $disp)))))
         (call $set_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (call $mk_str (local.get $nm)) (local.get $v))
         (i64.store (i32.add (local.get $stack) (local.get $t)) (local.get $v))  ;; assignment yields the value
         (br $disp)))
@@ -7426,6 +7433,9 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $v i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (if (call $is_private_key (local.get $nm))  ;; PrivateFieldSet brand check (see SETPROP)
+          (then (if (i32.eqz (call $truthy (call $js_in (call $mk_str (local.get $nm)) (i64.load (i32.add (local.get $stack) (local.get $t))))))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot write private member to an object whose class did not declare it")) (br $disp)))))
         (i32.store (i32.const 392) (i32.const 1))
         (call $set_prop (i64.load (i32.add (local.get $stack) (local.get $t))) (call $mk_str (local.get $nm)) (local.get $v))
         (i32.store (i32.const 392) (i32.const 0))
@@ -7492,12 +7502,17 @@
         (if (i32.and (i32.ne (local.get $rfsok) (i32.const 0)) (call $truthy (i64.load (local.get $rfsok))))
           (then (call $throw_type (cstring "ReferenceError") (cstring "super() called twice")) (br $disp)))
         (call $scope_define (local.get $scope) (cstring "@@superok") (call $v_true))  ;; for CHECKSUPER at ctor end
-        ;; BindThisValue = @@newo (the object super() threaded to the base ctor as receiver and inited)
+        ;; BindThisValue = the base [[Construct]] RESULT (left on the stack top by SUPERCALL/SUPERCALLSPREAD).
+        ;; Per OrdinaryCallEvaluateBody, when a base constructor `return`s an object, [[Construct]] yields
+        ;; THAT object; otherwise it yields the receiver super() threaded in (@@newo). So use the stack result
+        ;; when it is an object, else @@newo. (`class Base{constructor(o){return o}}; class C extends Base{#f}` →
+        ;; `new C(x)` must be x with C's fields installed on x.)
+        (let $rfres i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
         (let $rfnwo i32 (call $scope_find (local.get $scope) (cstring "@@newo")))
         (let $rftsl i32 (call $scope_find (local.get $scope) (cstring "this")))
         (if (i32.and (i32.ne (local.get $rfnwo) (i32.const 0)) (i32.ne (local.get $rftsl) (i32.const 0)))
           (then
-            (i64.store (local.get $rftsl) (i64.load (local.get $rfnwo)))  ;; `this` = @@newo
+            (i64.store (local.get $rftsl) (if i64 (call $is_object (local.get $rfres)) (then (local.get $rfres)) (else (i64.load (local.get $rfnwo)))))  ;; `this` = base Construct result (object) else @@newo
             (let $rfhp i32 (call $scope_find (local.get $scope) (cstring "@@homeproto")))
             (if (i32.ne (local.get $rfhp) (i32.const 0))
               (then (call $vm_run_own_fields (i64.load (local.get $rftsl)) (i64.load (local.get $rfhp)))))))
