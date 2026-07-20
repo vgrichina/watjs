@@ -1309,6 +1309,10 @@
       ;; nested arrows, reset by a nested regular function that has its own `arguments`).
       (if (i32.and (i32.load (i32.const 916)) (call $str_eq (local.get $vn) (cstring "arguments")))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'arguments' is not allowed here")) (return)))
+      ;; a generator's FormalParameters may not contain `yield` (reg 960 bit0, set during a generator's
+      ;; parameter-default compilation and inherited by a nested arrow): `function* g(a = yield)`.
+      (if (i32.and (i32.and (i32.load (i32.const 960)) (i32.const 1)) (call $str_eq (local.get $vn) (cstring "yield")))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is not allowed in generator parameters")) (return)))
       (if (i32.eq (call $tok_kind) (i32.const 52))  ;; NAME => body  (single-param arrow, no parens)
         (then
           ;; ArrowParameters [no LineTerminator here] => — a newline before `=>` is a SyntaxError (`x \n => x`).
@@ -2895,7 +2899,12 @@
         (set! $spi (i32.add (local.get $spi) (i32.const 1)))
         (br $spl)))))
   ;; default-parameter prologue: left-to-right TDZ initialization (see $vm_emit_default_params).
+  ;; reg 960 bit0 = "compiling a generator's parameter defaults" → `yield` is forbidden there (a nested
+  ;; regular function RESETS it to its own kind; a nested arrow inherits it — see vm_c_arrow).
+  (let $savepa960 i32 (i32.load (i32.const 960)))
+  (i32.store (i32.const 960) (local.get $genf))
   (call $vm_emit_default_params (local.get $code) (local.get $params) (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))
+  (i32.store (i32.const 960) (local.get $savepa960))
   ;; rest parameter: restName = arguments.slice(restidx)
   (if (i32.ge_s (local.get $restidx) (i32.const 0))
     (then
@@ -3776,6 +3785,8 @@
   (let $entry i32 (call $vm_emit_cursor))
   (let $bodycur i32 (call $cursor_save))
   ;; default-parameter prologue: left-to-right TDZ initialization (see $vm_emit_default_params).
+  ;; an arrow INHERITS the generator param `yield`-reservation (reg 960 bit0) — a nested `() => yield`
+  ;; inside a generator's parameter default is still forbidden (arrows are never generators themselves).
   (if (local.get $pdef)
     (then (call $vm_emit_default_params (local.get $code) (local.get $params) (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))))
   ;; rest-parameter prologue
