@@ -4367,7 +4367,7 @@
         (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk/undef
         (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP array
         (drop (call $eat (i32.const 21))))  ;; optional ';'
-      (else (if (call $str_eq (local.get $mn) (cstring "constructor"))
+      (else (if (i32.and (call $str_eq (local.get $mn) (cstring "constructor")) (i32.eqz (local.get $isstatic)))  ;; ONLY a non-static `constructor` is the class ctor; `static constructor` is an ordinary static method
         (then
           (i32.store (i32.const 404) (if i32 (local.get $superT) (then (i32.const 2)) (else (i32.const 1))))  ;; class ctor; 2 = DERIVED (extends) → must call super()
           (call $vm_c_fnbody (local.get $code) (i32.const 0))
