@@ -3569,7 +3569,11 @@
                 (call $vm_emit_dstr_store (local.get $code) (local.get $cbind))))  ;; store computed-key target
             (br_if $oe (i32.eqz (call $eat (i32.const 22))))
             (br $ol)))
-        (let $key i32 (call $ident_name)) (call $next_token)
+        (let $key i32 (call $ident_name))
+        ;; a PrivateName may not be an object-pattern property key: `const {#x: y} = obj` is a SyntaxError.
+        (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eq (call $str_byte (local.get $key) (i32.const 0)) (i32.const 35)))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Private names are not allowed in object destructuring patterns")) (return)))
+        (call $next_token)
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $exclT))  ;; LOADVAR exclT
         (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $key)))  ;; PUSH key
         (call $vm_emit_op (local.get $code) (i32.const 52)) (call $vm_emit_op (local.get $code) (i32.const 11))  ;; APPEND; POP
