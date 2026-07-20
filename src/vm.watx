@@ -5783,6 +5783,9 @@
   ;; eval()/JSON.parse can read the last expression value. Same stack effect as POP.
   (call $vm_c_commaexpr (local.get $code))
   (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (pops TOS → mem 288)
+  ;; NOTE: an enforced $vm_eat_stmt_end here (rejecting `x = 5 6`) breaks — this fallthrough is reused
+  ;; for the last-statement-in-eval / substatement positions where a leftover token is handled elsewhere;
+  ;; the reverted attempt failed the local suite. Left as an optional eat (under-parse-tolerant).
   (drop (call $eat (i32.const 21))))
 
 ;; compile a whole program (statement list) → HALT-terminated bytecode
