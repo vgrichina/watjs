@@ -1638,6 +1638,31 @@
                         (else (call $set_fail)))
                       (return)))
                   (if (i32.eqz (call $entry_writable (local.get $svinh))) (then (call $set_fail) (return)))))))
+          ;; static-inheritance setter: a derived class ctor (e.g. `class MyRegExp extends RegExp`) inherits
+          ;; its parent ctor's accessor statics; an assignment must invoke the parent's SETTER with the
+          ;; receiver = this ctor (mirrors the get_prop @@super/@@fnproto static-inheritance path). Only when
+          ;; there is no own prop (svs absent) and the Function.prototype inherited slot didn't handle it.
+          (if (i32.eqz (local.get $svs))
+            (then
+              (let $ssproto i64 (i64.load (i32.add (local.get $sfn) (i32.const 16))))
+              (if (call $is_object (local.get $ssproto))
+                (then
+                  (let $sssup i32 (call $scope_find_local (call $val_payload (local.get $ssproto)) (cstring "@@super")))
+                  (if (i32.eqz (local.get $sssup)) (then (set! $sssup (call $scope_find_local (call $val_payload (local.get $ssproto)) (cstring "@@fnproto")))))
+                  (if (local.get $sssup)
+                    (then (if (call $is_function (i64.load (local.get $sssup)))
+                      (then
+                        (let $sssupsc i32 (call $fn_def_scope (i64.load (local.get $sssup))))
+                        (if (local.get $sssupsc)
+                          (then (let $sssupsl i32 (call $scope_find_local (local.get $sssupsc) (local.get $svk)))
+                            (if (local.get $sssupsl)
+                              (then (if (call $entry_is_accessor (local.get $sssupsl))
+                                (then
+                                  (let $sssset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $sssupsl))) (i32.const 8))))
+                                  (if (call $is_function (local.get $sssset))
+                                    (then (let $sssav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $sssav) (local.get $val)) (drop (call $call_val (local.get $sssset) (i32.const 1) (local.get $sssav) (local.get $cont))))
+                                    (else (call $set_fail)))  ;; getter-only inherited accessor → strict throws
+                                  (return)))))))))))))))
           (call $scope_define (local.get $sosc) (local.get $svk) (local.get $val))
           (return)))
       (let $sfk i32 (call $to_prop_key (local.get $key)))
