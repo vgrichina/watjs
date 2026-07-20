@@ -4497,6 +4497,14 @@
   (call $cursor_restore (local.get $sv))
   (local.get $found))
 
+;; A statement must terminate with a ';' or an ASI-eligible boundary: a LineTerminator before the next
+;; token, a '}', or EOF. Consume the ';' when present; otherwise raise a SyntaxError unless ASI applies.
+(func $vm_eat_stmt_end (effects)
+  (if (i32.eq (call $tok_kind) (i32.const 21))
+    (then (call $next_token))
+    (else (if (i32.eqz (i32.or (call $nl_before) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0)))))
+      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token; expected ';' or a line break")))))))
+
 ;; statement compiler — emits bytecode (control flow via jumps, not re-scanning)
 (func $vm_c_stmt (param $code i32) (effects)
   ;; "no lexical declaration here" flag (reg 900): set by the callers that supply a single Statement
@@ -4682,13 +4690,13 @@
               (call $vm_finally_emit_all (local.get $code))
               (if (local.get $dctor) (then (call $vm_emit_op (local.get $code) (i32.const 109))))
               (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET
-              (drop (call $eat (i32.const 21)))
+              (call $vm_eat_stmt_end)
               (return)))
           (if (local.get $dctor)  ;; derived ctor: validate the return value (no tail-call peephole)
             (then
               (call $vm_emit_op (local.get $code) (i32.const 109))
               (call $vm_emit_op (local.get $code) (i32.const 20))
-              (drop (call $eat (i32.const 21)))
+              (call $vm_eat_stmt_end)
               (return)))
           (if (i32.eq (i32.load (i32.add (local.get $code) (i32.sub (call $vm_emit_cursor) (i32.const 8)))) (i32.const 19))  ;; ends in CALL?
             (then
@@ -4698,7 +4706,7 @@
               ;; for the short-circuit path to land on (dead on the normal/tail path).
               (call $vm_emit_op (local.get $code) (i32.const 20)))  ;; RET (short-circuit fallthrough)
             (else (call $vm_emit_op (local.get $code) (i32.const 20))))  ;; RET
-          (drop (call $eat (i32.const 21)))
+          (call $vm_eat_stmt_end)
           (return)))
       ;; `await using x = expr;` — an async ClassStaticBlock/function resource declaration. Only in an
       ;; async body (reg 896): `await [no LT] using [no LT] BindingIdentifier`. Compiled like the sync
@@ -4968,7 +4976,12 @@
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "throw statement requires an expression")) (return)))
           (call $vm_c_commaexpr (local.get $code))  ;; throw's operand is a full Expression (comma allowed)
           (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW
-          (drop (call $eat (i32.const 21)))
+          ;; a ThrowStatement must end with ';' or an ASI boundary (LineTerminator / '}' / EOF);
+          ;; `throw 5 6;` is a SyntaxError.
+          (if (i32.eq (call $tok_kind) (i32.const 21))
+            (then (call $next_token))
+            (else (if (i32.eqz (i32.or (call $nl_before) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0)))))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token after throw expression; expected ';'")) (return)))))
           (return)))
       (if (call $tok_is_kw (cstring "try"))
         (then
