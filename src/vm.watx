@@ -1073,6 +1073,9 @@
           (if (i32.eq (call $tok_kind) (i32.const 23))  ;; super.name — method call `super.name(...)` OR value `super.name`
             (then
               (call $next_token)
+              ;; a SuperProperty may not reference a PrivateName: `super.#x` is a SyntaxError.
+              (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eq (call $str_byte (call $ident_name) (i32.const 0)) (i32.const 35)))
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Private names are not allowed in super property access")) (return)))
               (let $smn i32 (call $ident_name)) (call $next_token)
               (if (i32.eq (call $tok_kind) (i32.const 15))  ;; '(' → super method call with this = receiver
                 (then
