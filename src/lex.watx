@@ -374,14 +374,26 @@
     (if (i32.and (i32.eq (call $ch_at (i32.const 0)) (i32.const 92)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 117)))
       (then
         (call $set_pos (i32.add (call $pos) (i32.const 2)))  ;; skip "\u"
+        (let $idcp i32 (i32.const -1))  ;; decoded codepoint (for identifier-validity check)
         (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 123))  ;; \u{ … }
           (then
+            (set! $idcp (i32.const 0))
             (block $ce (loop $cl
               (br_if $ce (i32.eq (call $ch_at (i32.const 0)) (i32.const -1)))
               (br_if $ce (i32.eq (call $ch_at (i32.const 0)) (i32.const 125)))  ;; '}'
+              (set! $idcp (i32.add (i32.mul (local.get $idcp) (i32.const 16)) (call $hexval (call $ch_at (i32.const 0)))))
               (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $cl)))
             (call $set_pos (i32.add (call $pos) (i32.const 1))))  ;; skip '}'
-          (else (call $set_pos (i32.add (call $pos) (i32.const 4)))))  ;; 4 hex digits
+          (else
+            (set! $idcp (i32.add (i32.add (i32.mul (call $hexval (call $ch_at (i32.const 0))) (i32.const 4096)) (i32.mul (call $hexval (call $ch_at (i32.const 1))) (i32.const 256)))
+                                 (i32.add (i32.mul (call $hexval (call $ch_at (i32.const 2))) (i32.const 16)) (call $hexval (call $ch_at (i32.const 3))))))
+            (call $set_pos (i32.add (call $pos) (i32.const 4)))))  ;; 4 hex digits
+        ;; an IdentifierName unicode escape must decode to a valid identifier character. An ASCII escape
+        ;; that isn't [A-Za-z0-9_$] (e.g. `#` = '#', which cannot spell the PrivateName '#' token) is
+        ;; a SyntaxError. (Non-ASCII validity needs Unicode ID tables — accepted here as before.)
+        (if (i32.and (i32.ge_s (local.get $idcp) (i32.const 0)) (i32.lt_s (local.get $idcp) (i32.const 128)))
+          (then (if (i32.eqz (i32.or (call $is_alnum (local.get $idcp)) (i32.or (i32.eq (local.get $idcp) (i32.const 95)) (i32.eq (local.get $idcp) (i32.const 36)))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid Unicode escape in identifier")) (return)))))
         (br $il)))
     (let $ic i32 (call $ch_at (i32.const 0)))
     ;; identifier-continue: ASCII alnum, OR any non-ASCII UTF-8 byte that isn't Unicode whitespace/LT
