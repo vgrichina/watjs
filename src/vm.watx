@@ -3519,6 +3519,10 @@
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $exclT))  ;; STOREVAR exclT
       (block $oe (loop $ol
         (br_if $oe (i32.eq (call $tok_kind) (i32.const 18)))  ;; }
+        ;; a MethodDefinition is not a valid ObjectAssignmentPattern property: `{ *g(){} }` (generator),
+        ;; `{ m(){} }`, `{ get x(){} }`, `{ set x(v){} }` are all SyntaxErrors (checked here + at the key below).
+        (if (i32.eq (call $tok_kind) (i32.const 12))  ;; '*' → generator method
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A method is not a valid destructuring pattern property")) (return)))
         (if (i32.eq (call $tok_kind) (i32.const 54))  ;; ...rest — bind remaining own enumerable props
           (then
             (call $next_token)
@@ -3583,6 +3587,14 @@
         (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eq (call $str_byte (local.get $key) (i32.const 0)) (i32.const 35)))
           (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Private names are not allowed in object destructuring patterns")) (return)))
         (call $next_token)
+        ;; `{ m(){} }` — a '(' after the key is a MethodDefinition, not a valid pattern property.
+        (if (i32.eq (call $tok_kind) (i32.const 15))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A method is not a valid destructuring pattern property")) (return)))
+        ;; `{ get x(){} }` / `{ set x(v){} }` — a `get`/`set` key NOT followed by a valid property continuation
+        ;; (`:` rename, `,`/`}` shorthand, `=` shorthand-default) is an accessor MethodDefinition → SyntaxError.
+        (if (i32.and (i32.or (call $str_eq (local.get $key) (cstring "get")) (call $str_eq (local.get $key) (cstring "set")))
+              (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 37)) (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 24)))))))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "An accessor is not a valid destructuring pattern property")) (return)))
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $exclT))  ;; LOADVAR exclT
         (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $key)))  ;; PUSH key
         (call $vm_emit_op (local.get $code) (i32.const 52)) (call $vm_emit_op (local.get $code) (i32.const 11))  ;; APPEND; POP
