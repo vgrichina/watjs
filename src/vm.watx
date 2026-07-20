@@ -4305,6 +4305,11 @@
           (else  ;; computed field [k] = v (stack: [proto, key]) → append [key, thunk] to static/instance array
             (let $ck i32 (call $vm_tmpname))
             (if (local.get $isstatic) (then (set! $hasstatic (i32.const 1))))
+            ;; ClassFieldDefinitionEvaluation evaluates the ClassElementName (ToPropertyKey) AT CLASS-DEFINITION
+            ;; time, not per-instance — so a throwing computed key (`[{toString(){throw}}]`) throws when the
+            ;; class is defined. Force ToPropertyKey now; set_prop's later to_prop_key on the resulting
+            ;; string/symbol is idempotent.
+            (call $vm_emit_op (local.get $code) (i32.const 102))  ;; TOPROPKEY
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; STOREVAR key → [proto]
             (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP proto → []
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (if i32 (local.get $isstatic) (then (local.get $staticT)) (else (local.get $fieldsT))))  ;; LOADVAR target array
