@@ -3186,6 +3186,10 @@
 (func $vm_c_nested_with_default (param $code i32) (param $nt i32) (effects)
   (let $ps i32 (call $cursor_save))  ;; at the '[' / '{'
   (call $vm_skip_balanced)           ;; advance past the matching closer
+  ;; an optional chain applied to the pattern (`[{…}?.y = 42]`) makes it a member expression on an object/
+  ;; array LITERAL, which is not a valid assignment target → SyntaxError.
+  (if (i32.eq (call $tok_kind) (i32.const 55))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Optional chain is not a valid assignment target")) (return)))
   (let $hd i32 (i32.eq (call $tok_kind) (i32.const 24)))  ;; '=' default follows?
   (let $rs i32 (i32.const 0))
   (if (local.get $hd)
@@ -3453,6 +3457,9 @@
               (else (call $vm_c_nested_with_default (local.get $code) (local.get $nt)))))
           (else
             (let $nm i32 (call $ident_name)) (call $next_token)
+            ;; an optional chain is never a valid assignment target: `[a?.b] = …` is a SyntaxError.
+            (if (i32.eq (call $tok_kind) (i32.const 55))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Optional chain is not a valid assignment target")) (return)))
             (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))) (then (if (call $dstr_leaf_reserved (local.get $nm)) (then (return)))))  ;; reserved/strict array-element leaf (skip a member-target base; nested ifs — i32.and is not short-circuit)
             ;; a simple BindingRestElement (`...x`) also may not have a default (`[...x = 1]`)
             (if (i32.and (local.get $isrest) (i32.eq (call $tok_kind) (i32.const 24)))
@@ -3588,6 +3595,9 @@
             (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))
               (then (set! $nested (i32.const 1)))
               (else (set! $bind (call $ident_name)) (call $next_token)
+                    ;; an optional chain is never a valid assignment target: `{k: a?.b} = …` is a SyntaxError.
+                    (if (i32.eq (call $tok_kind) (i32.const 55))
+                      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Optional chain is not a valid assignment target")) (return)))
                     (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))) (then (if (call $dstr_leaf_reserved (local.get $bind)) (then (return)))))  ;; reserved/strict rename target (skip a member-target base)
                     (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))) (then (set! $omem (i32.const 1))))))))
         ;; shorthand `{static}` (no `:`) binds the KEY itself → strict: eval/arguments/strict-reserved leaf
