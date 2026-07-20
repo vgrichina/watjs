@@ -9858,7 +9858,7 @@
                        (i32.and (i32.ge_s (i32.load (local.get $ffn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $ffn)) (i32.const 1448232528))))
             (then
               (let $pflags i32 (i32.load (i32.add (i32.add (local.get $ffn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $ffn) (i32.const 8))) (i32.const 4)))))
-              (if (i32.eqz (i32.and (local.get $pflags) (i32.const 2)))  ;; not an arrow
+              (if (i32.and (i32.ne (i32.load (local.get $ffn)) (i32.const 1448232528)) (i32.eqz (i32.and (local.get $pflags) (i32.const 2))))  ;; not async (magic 528), not an arrow
                 (then
                   (let $pdr i32 (call $obj_new (i32.const 4)))
                   (call $scope_define (local.get $pdr) (cstring "value") (call $get_prop (local.get $ob) (call $mk_str (cstring "prototype"))))

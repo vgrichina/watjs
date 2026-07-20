@@ -777,8 +777,10 @@
           (let $vproto i64 (i64.load (i32.add (local.get $fn) (i32.const 16))))
           (if (call $str_eq (local.get $ks) (cstring "prototype"))
             (then
-              ;; arrows (bit1) and methods/accessors (bit6) are non-constructors → no .prototype
-              (if (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 66))
+              ;; arrows (bit1) and methods/accessors (bit6) are non-constructors → no .prototype; an async
+              ;; (non-generator) function (magic 528) also has no .prototype, whatever its declaration form.
+              (if (i32.or (i32.eq (i32.load (local.get $fn)) (i32.const 1448232528))
+                    (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 66)))
                 (then (return (call $v_undef))))
               ;; lazily create .prototype ONLY when it's still the never-assigned sentinel (v_hole,
               ;; from fn creation). An EXPLICITLY assigned value — including null, undefined, or a
@@ -1014,9 +1016,11 @@
     (then
       (if (call $str_eq (local.get $ks) (cstring "name"))  ;; VM fns own .name unless deleted (flag bit4=16)
         (then (return (i32.eqz (i32.and (i32.load (i32.add (local.get $fn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4))))) (i32.const 16))))))
-      ;; .prototype is an own property of every constructor VM fn (not arrow bit1, not method/accessor bit6)
+      ;; .prototype is an own property of every constructor VM fn (not arrow bit1, not method/accessor bit6,
+      ;; and not an async non-generator function — magic 528 — which has no .prototype in any form)
       (if (call $str_eq (local.get $ks) (cstring "prototype"))
-        (then (return (i32.eqz (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 66))))))
+        (then (return (i32.and (i32.ne (i32.load (local.get $fn)) (i32.const 1448232528))
+          (i32.eqz (i32.and (i32.load (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $fn) (i32.const 8))) (i32.const 4)))) (i32.const 66)))))))
       (let $osc i32 (call $fn_ownsc_peek (local.get $fn)))
       (if (local.get $osc)
         (then (if (call $scope_find_local (local.get $osc) (local.get $ks)) (then (return (i32.const 1))))))
