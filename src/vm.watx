@@ -3506,6 +3506,10 @@
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@dexc"))  ;; LOADVAR @@dexc
       (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW
       (call $vm_patch (local.get $code) (local.get $dskip))
+      ;; the pattern must close with ']' here; a leftover token (`[a b]` — a missing comma between
+      ;; elements) is a SyntaxError rather than being silently consumed as the closer.
+      (if (i32.ne (call $tok_kind) (i32.const 20))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token in array destructuring pattern; expected ']'")) (return)))
       (call $next_token)))  ;; consume ]
   (if (i32.eq (call $tok_kind) (i32.const 17))  ;; { object pattern }
     (then
@@ -3641,6 +3645,10 @@
             (call $vm_emit_dstr_store (local.get $code) (local.get $bind))))))  ;; store object-prop target
         (br_if $oe (i32.eqz (call $eat (i32.const 22))))
         (br $ol)))
+      ;; the pattern must close with '}' here; a leftover token (`{a b}` — a missing comma between
+      ;; properties) is a SyntaxError rather than being silently consumed as the closer.
+      (if (i32.ne (call $tok_kind) (i32.const 18))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token in object destructuring pattern; expected '}'")) (return)))
       (call $next_token))))  ;; consume }
 
 ;; function declaration/expression: cursor at 'function'. Returns name ptr (0 if anonymous).
