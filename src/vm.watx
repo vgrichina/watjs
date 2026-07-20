@@ -5371,6 +5371,11 @@
           (let $ofdecl i32 (i32.const 0))  ;; 1 = var/let/const head (binding); 0 = assignment-target head
           (let $ofisvar i32 (i32.const 0))  ;; 1 = `var` (for the annex-B `for(var x=init in E)` sloppy exception)
           (let $ofisconst i32 (call $tok_is_kw (cstring "const")))  ;; 1 = `const` head → immutable per-iteration binding
+          ;; NOTE: extending the `let`-as-IdentifierReference disambiguation into the for-head (so `for(let of E)`
+          ;; treats `let` as the loop target) is net-NEGATIVE: it regresses for-of/head-lhs-let and the strict
+          ;; `let`-as-LHS test (strict `let` must stay a reserved word / declaration keyword, not an identifier —
+          ;; the for-head path lacks the strict guard the statement path has). Left as-is; `let` in a for-head is
+          ;; always a declaration here. The statement-start disambiguation (6e67bb2) is unaffected.
           (if (call $tok_is_kw (cstring "var")) (then (set! $ofdecl (i32.const 1)) (set! $ofisvar (i32.const 1)) (call $next_token))
             (else (if (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))) (then (set! $ofdecl (i32.const 1)) (call $next_token)))))
           (let $ofvar i32 (i32.const 0))
