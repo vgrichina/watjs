@@ -4825,6 +4825,10 @@
   ;; 'u' (16) and 'v' (128) are mutually exclusive → SyntaxError
   (if (i32.eq (i32.and (local.get $fseen) (i32.const 144)) (i32.const 144))
     (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression flags: u and v cannot be combined")) (return (call $v_undef))))
+  ;; validate the PATTERN like the RegExp constructor does — unbalanced groups, bad quantifiers, an
+  ;; unterminated character class, a trailing backslash → SyntaxError (compile shared none of this before).
+  (call $re_check_quant (local.get $pat))
+  (if (call $err) (then (return (call $v_undef))))
   ;; re-initialize the regex object in place + reset lastIndex
   (let $rs i32 (call $val_payload (local.get $thisv)))
   (call $scope_define_attr (local.get $rs) (cstring "__re_src__") (call $mk_str (local.get $pat)) (i32.const 0))
@@ -7848,8 +7852,10 @@
         (then (set! $st (i32.add (local.get $sl2) (local.get $st))) (if (i32.lt_s (local.get $st) (i32.const 0)) (then (set! $st (i32.const 0))))))
       (if (i32.gt_s (local.get $st) (local.get $sl2)) (then (set! $st (local.get $sl2))))
       (let $ln i32 (i32.sub (local.get $sl2) (local.get $st)))  ;; default → to end
-      (if (i32.ge_s (local.get $argc) (i32.const 2))
-        (then (set! $ln (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
+      ;; an UNDEFINED length (`substr(1, undefined)` or omitted) means "to the end", NOT ToInteger(undefined)=0.
+      (let $lenarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      (if (i32.eqz (call $is_undefined (local.get $lenarg)))
+        (then (set! $ln (call $to_int_idx (call $to_num (local.get $lenarg))))))
       (if (i32.lt_s (local.get $ln) (i32.const 0)) (then (set! $ln (i32.const 0))))
       (if (i32.gt_s (local.get $ln) (i32.sub (local.get $sl2) (local.get $st))) (then (set! $ln (i32.sub (local.get $sl2) (local.get $st)))))
       (return (call $mk_str (call $substr (local.get $s2) (local.get $st) (local.get $ln))))))
