@@ -4852,7 +4852,12 @@
                         (call $vm_emit_op (local.get $code) (if i32 (local.get $isconst) (then (i32.const 79)) (else (i32.const 114)))) (call $vm_emit_op (local.get $code) (local.get $nm))))))  ;; `let NAME;` → undefined in the block scope
             (br_if $vd (i32.eqz (call $eat (i32.const 22))))  ;; ',' → another declarator
             (br $vl)))
-          (drop (call $eat (i32.const 21)))
+          ;; a var/let/const statement must end with ';' or an ASI-eligible position (LineTerminator before
+          ;; the next token, '}', or EOF). `let x 0;` / `let a b;` (no separator) is a SyntaxError.
+          (if (i32.eq (call $tok_kind) (i32.const 21))
+            (then (call $next_token))  ;; consume ';'
+            (else (if (i32.eqz (i32.or (call $nl_before) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0)))))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token in declaration; expected ';'")) (return)))))
           (return)))
       (if (call $tok_is_kw (cstring "break"))
         (then
