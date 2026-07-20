@@ -12229,6 +12229,16 @@
   (call $scope_define_attr (local.get $symp) (cstring "matchAll") (call $make_symbol (cstring "@@matchAll") (cstring "Symbol.matchAll")) (i32.const 0))
   (call $scope_define_attr (local.get $symp) (cstring "dispose") (call $make_symbol (cstring "@@dispose") (cstring "Symbol.dispose")) (i32.const 0))
   (call $scope_define_attr (local.get $symp) (cstring "asyncDispose") (call $make_symbol (cstring "@@asyncDispose") (cstring "Symbol.asyncDispose")) (i32.const 0))
+  ;; Register every well-known symbol in the identity table (reg 752) so getOwnPropertySymbols /
+  ;; Reflect.ownKeys recover its canonical value on any built-in that owns it (Array.prototype[@@iterator],
+  ;; RegExp.prototype[@@replace], …) — not just after user code first uses the symbol as a key.
+  (let $wksi i32 (i32.const 0))
+  (let $wksc i32 (call $scope_count (local.get $symp)))
+  (block $wkse (loop $wksl
+    (br_if $wkse (i32.ge_s (local.get $wksi) (local.get $wksc)))
+    (let $wksv i64 (i64.load (i32.add (call $scope_entry (local.get $symp) (local.get $wksi)) (i32.const 8))))
+    (if (call $is_symbol (local.get $wksv)) (then (call $sym_register (local.get $wksv))))
+    (set! $wksi (i32.add (local.get $wksi) (i32.const 1))) (br $wksl)))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "for")) (call $mk_native (i32.const 197) (cstring "for")))
   (call $set_prop (local.get $symf) (call $mk_str (cstring "keyFor")) (call $mk_native (i32.const 198) (cstring "keyFor")))
   ;; Symbol.prototype — Symbol is not a constructor but still exposes a prototype
