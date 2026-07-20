@@ -1216,6 +1216,10 @@
               ;; \u-escaped `target` (tok_is_kw compares RAW source, so it rejects `new.target`).
               (if (i32.eqz (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "target"))))
                 (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid meta-property; expected 'new.target'")) (return)))
+              ;; NOTE: top-level `new.target` in a script/eval should be a SyntaxError, but a check on reg 920
+              ;; (in-function-body) wrongly rejects a DIRECT eval nested in a function — its body compiles with
+              ;; reg 920=0 yet new.target IS legal there. Correct rejection needs direct-eval-scope inheritance
+              ;; (architectural); until then op 62 soft-loads undefined, which is at least runtime-harmless.
               (call $next_token)  ;; 'target'
               (call $vm_emit_op (local.get $code) (i32.const 62)) (call $vm_emit_op (local.get $code) (cstring "@@newtarget"))  ;; soft load (undefined outside a construct)
               (return)))
