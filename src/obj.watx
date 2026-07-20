@@ -791,7 +791,10 @@
                   (let $gipp i32 (call $gen_inst_proto (local.get $fn)))  ;; generator → inherit %GeneratorPrototype%
                   (if (local.get $gipp) (then (i32.store (call $val_payload (local.get $vproto)) (local.get $gipp))))
                   (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vproto))
-                  (call $scope_define_attr (call $val_payload (local.get $vproto)) (cstring "constructor") (local.get $cont) (i32.const 12))))  ;; F.prototype.constructor === F {W:true,E:false,C:true}
+                  ;; a generator function's .prototype is an ordinary object with NO own `constructor` (only a
+                  ;; NON-generator's F.prototype.constructor === F {W:true,E:false,C:true}).
+                  (if (i32.eqz (local.get $gipp))
+                    (then (call $scope_define_attr (call $val_payload (local.get $vproto)) (cstring "constructor") (local.get $cont) (i32.const 12))))))
               (return (local.get $vproto))))
           (if (call $str_eq (local.get $ks) (cstring "length"))  ;; an own length (defineProperty) overrides the param-count field
             (then
@@ -1074,7 +1077,9 @@
       (if (local.get $gipp) (then (i32.store (local.get $vpo) (local.get $gipp))))
       (let $vpv i64 (call $mk_obj (local.get $vpo)))
       (i64.store (i32.add (local.get $fn) (i32.const 16)) (local.get $vpv))
-      (call $scope_define_attr (local.get $vpo) (cstring "constructor") (call $mk_fn (local.get $fn)) (i32.const 12))
+      ;; a generator function's .prototype has NO own `constructor` (only a non-generator's does)
+      (if (i32.eqz (local.get $gipp))
+        (then (call $scope_define_attr (local.get $vpo) (cstring "constructor") (call $mk_fn (local.get $fn)) (i32.const 12))))
       (return (local.get $vpv))))
   (let $props i32 (call $fn_props (local.get $fn)))
   (let $slot i32 (call $scope_find_local (local.get $props) (cstring "prototype")))
