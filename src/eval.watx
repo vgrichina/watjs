@@ -9572,8 +9572,12 @@
           (block $gse (loop $gsl
             (br_if $gse (i32.ge_s (local.get $gsi) (local.get $gsc)))
             (let $gsk i32 (i32.load (call $scope_entry (local.get $gss) (local.get $gsi))))
-            ;; user symbol keys are "@@sym:…"/"@@symfor:…"
-            (if (i32.or (i32.eq (call $str_indexof (local.get $gsk) (cstring "@@sym:")) (i32.const 0)) (i32.eq (call $str_indexof (local.get $gsk) (cstring "@@symfor:")) (i32.const 0)))
+            ;; A symbol-valued key: a user symbol ("@@sym:…"/"@@symfor:…"), OR a well-known symbol
+            ;; ("@@iterator", "@@toStringTag", …) whose canonical value has been registered in the symbol
+            ;; identity table (reg 752). Internal bookkeeping keys (@@super/@@noext/@@homeproto/…) are never
+            ;; real Symbols, so they never appear in that table — this cleanly excludes them.
+            (if (i32.or (i32.or (i32.eq (call $str_indexof (local.get $gsk) (cstring "@@sym:")) (i32.const 0)) (i32.eq (call $str_indexof (local.get $gsk) (cstring "@@symfor:")) (i32.const 0)))
+                        (i32.and (i32.ne (i32.load (i32.const 752)) (i32.const 0)) (i32.ne (call $scope_find_local (i32.load (i32.const 752)) (local.get $gsk)) (i32.const 0))))
               (then (call $arr_push (local.get $gsarr) (call $sym_from_key (local.get $gsk)))))
             (set! $gsi (i32.add (local.get $gsi) (i32.const 1))) (br $gsl)))))
       (return (call $mk_arr (local.get $gsarr)))))
