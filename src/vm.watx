@@ -986,7 +986,7 @@
           ;; `async [no LineTerminator here] function` — a newline before `function` means `async` is a
           ;; plain IdentifierReference, not the head of an async function expression (fall through to 1022).
           (if (i32.and (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "function"))) (i32.eqz (call $nl_before)))
-            (then (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1))) (drop (call $vm_c_function (local.get $code))) (return)))
+            (then (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1))) (drop (call $vm_c_function (local.get $code))) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; an async FunctionExpression is not an assignment target
           ;; async x => …   |   async ( … ) => …
           (if (i32.eq (call $tok_kind) (i32.const 3))  ;; async IDENT =>
             (then
@@ -1023,9 +1023,9 @@
                   (call $vm_c_arrow (local.get $code) (local.get $aap2) (local.get $aanp) (local.get $aapd) (i32.load (i32.const 260)) (local.get $aapp)) (return)))))
           (call $cursor_restore (local.get $asc))))  ;; "async" is just an identifier
       (if (call $tok_is_kw (cstring "function"))  ;; function expression → pushes the fn value
-        (then (drop (call $vm_c_function (local.get $code))) (return)))
+        (then (drop (call $vm_c_function (local.get $code))) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a FunctionExpression is not an assignment target
       (if (call $tok_is_kw (cstring "class"))  ;; class expression → pushes the class value
-        (then (call $vm_c_class (local.get $code) (i32.const 1)) (return)))
+        (then (call $vm_c_class (local.get $code) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a ClassExpression is not an assignment target
       (if (call $tok_is_kw (cstring "super"))  ;; super(args)  |  super.method(args)
         (then
           (call $next_token)
