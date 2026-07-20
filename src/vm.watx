@@ -1420,6 +1420,10 @@
                 (call $vm_emit_op (local.get $code) (i32.const 52))))))  ;; APPEND
           (br_if $ae (i32.eqz (call $eat (i32.const 22))))
           (br $al)))))
+      ;; the array literal must close with ']' here; a leftover token (`[1 2]` — a missing comma) is a
+      ;; SyntaxError, not silently consumed as the closer. (Verified 0-regression across the full A/B.)
+      (if (i32.ne (call $tok_kind) (i32.const 20))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token in array literal; expected ',' or ']'")) (return)))
       (call $next_token)  ;; ']'
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 17))  ;; object literal { … }
@@ -1538,6 +1542,10 @@
                       (call $vm_emit_op (local.get $code) (if i32 (local.get $oshort) (then (i32.const 101)) (else (i32.const 65))))))))))))))  ;; DEFDATA/_OWN (+ spread else)
           (br_if $oe (i32.eqz (call $eat (i32.const 22))))
           (br $ol)))))
+      ;; the object literal must close with '}' here; a leftover token (`{a:1 b:2}` — a missing comma) is a
+      ;; SyntaxError, not silently consumed as the closer.
+      (if (i32.ne (call $tok_kind) (i32.const 18))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token in object literal; expected ',' or '}'")) (return)))
       (call $next_token)  ;; '}'
       (return)))
   ;; unrecognized token at expression position: push undefined and ADVANCE so the
