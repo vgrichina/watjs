@@ -4677,6 +4677,10 @@
           ;; not even the AnnexB plain-function form allowed in an if/else/label slot.
           (if (local.get $nofndecl)
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "function declaration not allowed in single-statement context")) (return)))
+          ;; the AnnexB B.3.4 relaxation (a plain FunctionDeclaration in an if/else/label single-statement
+          ;; slot) is SLOPPY-mode only; in strict mode it is a SyntaxError. $nodecl marks the slot, reg 388 strict.
+          (if (i32.and (local.get $nodecl) (i32.load (i32.const 388)))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "function declaration not allowed in single-statement context in strict mode")) (return)))
           ;; an async/generator function declaration may not occupy a single-statement slot (no Annex B
           ;; exception, unlike a plain FunctionDeclaration in a sloppy if-body). reg 232 = async (set above).
           (if (local.get $nodecl)
