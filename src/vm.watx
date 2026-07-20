@@ -1212,6 +1212,10 @@
           (if (i32.eq (call $tok_kind) (i32.const 23))  ;; new.target meta-property
             (then
               (call $next_token)  ;; '.'
+              ;; the meta-property is exactly `new.target` — the component may not be a different name nor a
+              ;; \u-escaped `target` (tok_is_kw compares RAW source, so it rejects `new.target`).
+              (if (i32.eqz (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "target"))))
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid meta-property; expected 'new.target'")) (return)))
               (call $next_token)  ;; 'target'
               (call $vm_emit_op (local.get $code) (i32.const 62)) (call $vm_emit_op (local.get $code) (cstring "@@newtarget"))  ;; soft load (undefined outside a construct)
               (return)))
