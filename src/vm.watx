@@ -2586,6 +2586,8 @@
       (call $next_token)
       (if (i32.eq (call $tok_kind) (i32.const 12))  ;; yield* E
         (then
+          ;; `yield [no LineTerminator here] *` — a newline between `yield` and the '*' is a SyntaxError.
+          (if (call $nl_before) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '*' in a yield* expression")) (return)))
           (call $next_token)
           (call $vm_c_expr (local.get $code))
           ;; async generator: delegate over the ASYNC iterator (GETAITER) and await each next() result
@@ -4888,6 +4890,11 @@
       (if (i32.and (i32.load (i32.const 672)) (call $tok_is_kw (cstring "yield")))  ;; yield-statement only inside a generator; else `yield` is an identifier (expression statement)
         (then
           (call $next_token)
+          ;; `yield [no LineTerminator here] *` — a '*' after a newline can ONLY be a yield* whose delegation
+          ;; the line break has broken, which is a SyntaxError (a bare `yield` followed by a leading `*` at
+          ;; statement start is not a valid Expression either).
+          (if (i32.and (i32.eq (call $tok_kind) (i32.const 12)) (call $nl_before))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '*' in a yield* expression")) (return)))
           ;; no operand: a LineTerminator after `yield` (restricted production) OR a token that can't
           ;; start an expression (`;` `)` `]` `}` `,` EOF) → `yield` with no argument. (Mirrors the
           ;; yield-EXPRESSION check; without the token cases, `function*(){ yield }` fell through to
