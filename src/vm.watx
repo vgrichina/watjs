@@ -3017,7 +3017,9 @@
   (let $eli i32 (i32.const 0))
   (block $ele (loop $ell
     (br_if $ele (i32.ge_s (local.get $eli) (local.get $np)))
-    (if (i32.or (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $eli) (i32.const 4)))) (i32.const 0)) (i32.eq (local.get $eli) (local.get $restidx)))
+    ;; $pdef may be 0 (null, no defaults array — e.g. a parenless single-ident arrow `x => …`); guard the load,
+    ;; else i32.load(0) reads garbage at memory[0] and wrongly clamps .length to 0.
+    (if (i32.or (i32.and (i32.ne (local.get $pdef) (i32.const 0)) (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $eli) (i32.const 4)))) (i32.const 0))) (i32.eq (local.get $eli) (local.get $restidx)))
       (then (set! $explen (local.get $eli)) (br $ele)))
     (set! $eli (i32.add (local.get $eli) (i32.const 1)))
     (br $ell)))
@@ -3897,7 +3899,9 @@
   (let $eli i32 (i32.const 0))
   (block $ele (loop $ell
     (br_if $ele (i32.ge_s (local.get $eli) (local.get $np)))
-    (if (i32.or (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $eli) (i32.const 4)))) (i32.const 0)) (i32.eq (local.get $eli) (local.get $restidx)))
+    ;; $pdef may be 0 (null, no defaults array — e.g. a parenless single-ident arrow `x => …`); guard the load,
+    ;; else i32.load(0) reads garbage at memory[0] and wrongly clamps .length to 0.
+    (if (i32.or (i32.and (i32.ne (local.get $pdef) (i32.const 0)) (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $eli) (i32.const 4)))) (i32.const 0))) (i32.eq (local.get $eli) (local.get $restidx)))
       (then (set! $explen (local.get $eli)) (br $ele)))
     (set! $eli (i32.add (local.get $eli) (i32.const 1)))
     (br $ell)))
