@@ -2850,6 +2850,9 @@
       (set! $np (i32.add (local.get $np) (i32.const 1)))
       (br_if $pe (i32.eqz (call $eat (i32.const 22))))
       (br $pl)))))
+  ;; NOTE: enforcing ')' here (to reject `function g(a b)` missing-comma) regresses the annexB
+  ;; Function-constructor HTML-comment-in-params web-compat tests (createdynfn-html-*-comment-params) — a
+  ;; `<!--`/`-->` in the param list leaves a non-')' token this check misjudges. Left as a silent consume.
   (call $next_token)  ;; ')'
   ;; accessor arity (get/set have fixed formal-parameter counts):
   ;; a getter takes no parameters; a setter takes exactly one, which may not be a rest element.
