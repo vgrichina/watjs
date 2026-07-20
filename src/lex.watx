@@ -123,16 +123,44 @@
 
 ;; Skip whitespace and // line / /* block comments.
 (func $skip_trivia (effects)
+  ;; track whether the current position is at the start of a line (only whitespace / comments / a
+  ;; LineTerminator precede it since the last token). Governs the Annex B `-->` HTMLCloseComment: `-->` is
+  ;; a single-line comment only at line start. At input start (pos 0) the first line counts as line-start.
+  (let $ls i32 (i32.eqz (call $pos)))
   (block $done
     (loop $again
       (let $c i32 (call $ch_at (i32.const 0)))
       (if (call $is_space (local.get $c))
-        (then (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $again)))
+        (then (if (i32.or (i32.eq (local.get $c) (i32.const 10)) (i32.eq (local.get $c) (i32.const 13))) (then (set! $ls (i32.const 1))))  ;; \n /\r → line start
+              (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $again)))
       ;; multibyte Unicode whitespace / LineTerminator (NBSP, U+1680, U+2000-200A/2028/2029/202F/205F,
       ;; U+3000, BOM) — one helper covers them all
       (let $wl i32 (call $uni_ws_len))
       (if (i32.gt_s (local.get $wl) (i32.const 0))
-        (then (call $set_pos (i32.add (call $pos) (local.get $wl))) (br $again)))
+        (then
+          ;; U+2028 LINE SEPARATOR / U+2029 PARAGRAPH SEPARATOR (E2 80 A8/A9) are LineTerminators → line start
+          (if (i32.and (i32.eq (local.get $c) (i32.const 226)) (i32.and (i32.eq (call $ch_at (i32.const 1)) (i32.const 128)) (i32.or (i32.eq (call $ch_at (i32.const 2)) (i32.const 168)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 169)))))
+            (then (set! $ls (i32.const 1))))
+          (call $set_pos (i32.add (call $pos) (local.get $wl))) (br $again)))
+      ;; Annex B B.1.3 `<!--` SingleLineHTMLOpenComment — always a comment-to-end-of-line.
+      (if (i32.and (i32.and (i32.eq (local.get $c) (i32.const 60)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 33)))
+            (i32.and (i32.eq (call $ch_at (i32.const 2)) (i32.const 45)) (i32.eq (call $ch_at (i32.const 3)) (i32.const 45))))
+        (then
+          (block $he (loop $hl
+            (let $d i32 (call $ch_at (i32.const 0)))
+            (br_if $he (i32.eq (local.get $d) (i32.const -1)))
+            (br_if $he (i32.or (i32.eq (local.get $d) (i32.const 10)) (i32.eq (local.get $d) (i32.const 13))))
+            (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $hl)))
+          (br $again)))
+      ;; Annex B B.1.3 `-->` SingleLineHTMLCloseComment — a comment-to-end-of-line only at line start.
+      (if (i32.and (local.get $ls) (i32.and (i32.and (i32.eq (local.get $c) (i32.const 45)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 45))) (i32.eq (call $ch_at (i32.const 2)) (i32.const 62))))
+        (then
+          (block $ce2 (loop $cl2
+            (let $d i32 (call $ch_at (i32.const 0)))
+            (br_if $ce2 (i32.eq (local.get $d) (i32.const -1)))
+            (br_if $ce2 (i32.or (i32.eq (local.get $d) (i32.const 10)) (i32.eq (local.get $d) (i32.const 13))))
+            (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $cl2)))
+          (br $again)))
       ;; // line comment
       (if (i32.and (i32.eq (local.get $c) (i32.const 47)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 47)))
         (then
@@ -152,6 +180,8 @@
             (br_if $endc (i32.eq (local.get $d) (i32.const -1)))
             (if (i32.and (i32.eq (local.get $d) (i32.const 42)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 47)))
               (then (call $set_pos (i32.add (call $pos) (i32.const 2))) (br $endc)))
+            ;; a MultiLineComment that contains a LineTerminator keeps the following `-->` at line-start
+            (if (i32.or (i32.eq (local.get $d) (i32.const 10)) (i32.eq (local.get $d) (i32.const 13))) (then (set! $ls (i32.const 1))))
             (call $set_pos (i32.add (call $pos) (i32.const 1)))
             (br $bl)))
           (br $again)))
