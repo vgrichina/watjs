@@ -983,7 +983,9 @@
           (let $asyncstart i32 (call $tok_start))  ;; 'async' keyword offset (for `async function`'s source span)
           (let $asc i32 (call $cursor_save))
           (call $next_token)  ;; past 'async'
-          (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "function")))
+          ;; `async [no LineTerminator here] function` — a newline before `function` means `async` is a
+          ;; plain IdentifierReference, not the head of an async function expression (fall through to 1022).
+          (if (i32.and (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "function"))) (i32.eqz (call $nl_before)))
             (then (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1))) (drop (call $vm_c_function (local.get $code))) (return)))
           ;; async x => …   |   async ( … ) => …
           (if (i32.eq (call $tok_kind) (i32.const 3))  ;; async IDENT =>
@@ -4597,8 +4599,13 @@
           (let $sasyncstart i32 (call $tok_start))  ;; 'async' offset for the source span
           (call $look_save)
           (call $next_token)
+          ;; `async [no LineTerminator here] function` — a line break makes `async` a bare IdentifierReference
+          ;; (its own ExpressionStatement), NOT the start of an async FunctionDeclaration.
           (if (call $tok_is_kw (cstring "function"))
-            (then (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $sasyncstart) (i32.const 1))))  ;; fall through to the function-decl branch
+            (then
+              (if (call $nl_before)
+                (then (call $look_restore))  ;; newline before `function` → `async` is an identifier
+                (else (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $sasyncstart) (i32.const 1))))))  ;; fall through to the function-decl branch
             (else (call $look_restore)))))
       ;; function NAME ( params ) { body }   (declaration)
       (if (call $tok_is_kw (cstring "function"))
