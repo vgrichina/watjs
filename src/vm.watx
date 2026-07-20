@@ -4143,6 +4143,11 @@
     (then (set! $clsname (call $ident_name)) (call $next_token)))
   ;; a ReservedWord may not be a class name (`class if {}`) — in any context.
   (if (local.get $clsname) (then (if (call $is_reserved_word (local.get $clsname)) (then (i32.store (i32.const 388) (local.get $clssave)) (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as class name")) (return)))))
+  ;; a class definition is ALWAYS strict, so its BindingIdentifier may not be a strict-reserved word
+  ;; (`class yield {}`, `class implements {}`, `class static {}`) nor eval/arguments.
+  (if (local.get $clsname)
+    (then (if (i32.or (call $is_strict_reserved (local.get $clsname)) (i32.or (call $str_eq (local.get $clsname) (cstring "eval")) (call $str_eq (local.get $clsname) (cstring "arguments"))))
+      (then (i32.store (i32.const 388) (local.get $clssave)) (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected strict-mode reserved word as class name")) (return)))))
   ;; a ClassDeclaration (statement position, not an expression) requires a BindingIdentifier —
   ;; `class {}` / `class extends X {}` are only valid as ClassExpressions.
   (if (i32.and (i32.eqz (local.get $isExpr)) (i32.eqz (local.get $clsname)))
