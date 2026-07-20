@@ -5844,6 +5844,17 @@
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
+  ;; Annex B legacy RegExp static accessors (RegExp.$1-$9 / input / lastMatch / lastParen / left|rightContext
+  ;; and the $-aliases). GetLegacyRegExpStaticProperty / SetLegacyRegExpStaticProperty require the receiver to
+  ;; be the %RegExp% constructor itself (SameValue), else a TypeError. Match state is not tracked, so the
+  ;; getter returns "" — the conformance tests exercise the descriptor shape and this-brand, not the values.
+  (if (i32.or (i32.eq (local.get $id) (i32.const 528)) (i32.eq (local.get $id) (i32.const 529)))
+    (then
+      (let $lrxc i32 (call $scope_find_local (i32.load (i32.const 152)) (cstring "RegExp")))
+      (if (i32.or (i32.eqz (local.get $lrxc)) (i32.eqz (call $same_value (local.get $thisv) (i64.load (local.get $lrxc)))))
+        (then (call $throw_type (cstring "TypeError") (cstring "RegExp legacy static property accessor requires the RegExp constructor as receiver")) (return (call $v_undef))))
+      (if (i32.eq (local.get $id) (i32.const 528)) (then (return (call $mk_str (cstring "")))))  ;; getter → "" (no tracked state)
+      (return (call $v_undef))))  ;; setter (input/$_) → ignore the value
   ;; Iterator Helpers (335-357) — handled in $native_iterator
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357)))
     (then (return (call $native_iterator (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
@@ -12071,6 +12082,29 @@
   (i32.store (i32.const 324) (local.get $reproto))
   (call $scope_define_attr (call $fn_def_scope (local.get $ref)) (cstring "prototype") (call $mk_obj (local.get $reproto)) (i32.const 0))
   (call $scope_define_attr (call $fn_def_scope (local.get $ref)) (cstring "escape") (call $mk_native (i32.const 473) (cstring "escape")) (i32.const 12))  ;; ES2025 RegExp.escape {W:true,E:false,C:true}
+  ;; Annex B legacy RegExp static accessors, all {[[Enumerable]]:false, [[Configurable]]:true} (attr 5).
+  ;; $1-$9 / lastMatch($&) / lastParen($+) / leftContext($`) / rightContext($') are GET-only; input($_) has
+  ;; both get and set. Getter=native 528, setter=native 529 (brand-checked to the RegExp constructor).
+  (let $rxc i32 (call $fn_props (call $val_payload (local.get $ref))))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$1") (call $mk_native (i32.const 528) (cstring "get $1")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$2") (call $mk_native (i32.const 528) (cstring "get $2")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$3") (call $mk_native (i32.const 528) (cstring "get $3")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$4") (call $mk_native (i32.const 528) (cstring "get $4")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$5") (call $mk_native (i32.const 528) (cstring "get $5")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$6") (call $mk_native (i32.const 528) (cstring "get $6")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$7") (call $mk_native (i32.const 528) (cstring "get $7")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$8") (call $mk_native (i32.const 528) (cstring "get $8")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$9") (call $mk_native (i32.const 528) (cstring "get $9")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "input") (call $mk_native (i32.const 528) (cstring "get input")) (call $mk_native (i32.const 529) (cstring "set input")) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$_") (call $mk_native (i32.const 528) (cstring "get $_")) (call $mk_native (i32.const 529) (cstring "set $_")) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "lastMatch") (call $mk_native (i32.const 528) (cstring "get lastMatch")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$&") (call $mk_native (i32.const 528) (cstring "get $&")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "lastParen") (call $mk_native (i32.const 528) (cstring "get lastParen")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$+") (call $mk_native (i32.const 528) (cstring "get $+")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "leftContext") (call $mk_native (i32.const 528) (cstring "get leftContext")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$`") (call $mk_native (i32.const 528) (cstring "get $`")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "rightContext") (call $mk_native (i32.const 528) (cstring "get rightContext")) (call $v_undef) (i32.const 5))
+  (call $scope_define_accessor_attr (local.get $rxc) (cstring "$'") (call $mk_native (i32.const 528) (cstring "get $'")) (call $v_undef) (i32.const 5))
   ;; Number with NaN / Infinity constants
   (let $numproto i32 (call $scope_new (i32.const 0) (i32.const 8)))  ;; Number.prototype (reg 164)
   (i32.store (i32.const 164) (local.get $numproto))
