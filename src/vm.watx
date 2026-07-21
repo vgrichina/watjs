@@ -2093,6 +2093,17 @@
                     (if (i32.eq (local.get $c) (i32.const 1)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (br $done)))
                     (if (i32.and (i32.eqz (local.get $c)) (i32.lt_s (local.get $ln) (i32.const 1024))) (then (i32.store (i32.add (local.get $lexb) (i32.mul (local.get $ln) (i32.const 4))) (local.get $nm)) (i32.store (i32.add (local.get $lexk) (i32.mul (local.get $ln) (i32.const 4))) (i32.const 0)) (set! $ln (i32.add (local.get $ln) (i32.const 1)))))))
                 (set! $stmt (i32.const 0)) (br $lp)))
+            ;; using [await] NAME → lexical (a UsingDeclaration BoundName). Contextual: only a declaration
+            ;; when a BindingIdentifier follows on the SAME line (else `using` is an IdentifierReference).
+            (if (call $tok_is_kw (cstring "using"))
+              (then (call $next_token)
+                (if (call $tok_is_kw (cstring "await")) (then (call $next_token)))  ;; `await using` (skip the await keyword)
+                (if (i32.and (i32.eqz (call $nl_before)) (i32.eq (call $tok_kind) (i32.const 3)))
+                  (then (let $nm i32 (call $ident_name))
+                    (let $c i32 (call $lex_collide (local.get $lexb) (local.get $ln) (local.get $lexk) (local.get $varb) (local.get $vn) (local.get $nm) (i32.const 0)))
+                    (if (i32.eq (local.get $c) (i32.const 1)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (br $done)))
+                    (if (i32.and (i32.eqz (local.get $c)) (i32.lt_s (local.get $ln) (i32.const 1024))) (then (i32.store (i32.add (local.get $lexb) (i32.mul (local.get $ln) (i32.const 4))) (local.get $nm)) (i32.store (i32.add (local.get $lexk) (i32.mul (local.get $ln) (i32.const 4))) (i32.const 0)) (set! $ln (i32.add (local.get $ln) (i32.const 1)))))))
+                (set! $stmt (i32.const 0)) (br $lp)))
             ;; function [*] NAME → lexical (plain only if no '*'; a generator is kind 0)
             (if (call $tok_is_kw (cstring "function"))
               (then (call $next_token)
@@ -4818,6 +4829,8 @@
                 (let $unm i32 (call $ident_name)) (call $next_token)
                 (if (call $vm_strict_lhs_check (local.get $unm)) (then (return)))
                 (if (call $str_eq (local.get $unm) (cstring "let")) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'let' is not a valid lexical binding name")) (return)))
+                ;; `await` may not be a binding name inside an async body (reg 896) or a class static block (reg 912).
+                (if (i32.and (i32.or (i32.load (i32.const 896)) (i32.load (i32.const 912))) (call $str_eq (local.get $unm) (cstring "await"))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' is a reserved binding name here")) (return)))
                 (if (i32.ne (call $tok_kind) (i32.const 24))  ;; '=' — a UsingDeclaration binding must have an initializer
                   (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration requires an initializer")) (return)))
                 (call $next_token)  ;; '='
