@@ -888,6 +888,11 @@
 
 ;; ── compiler: source → bytecode (precedence-climbing, reuses the lexer) ──
 (func $vm_c_primary (param $code i32) (effects)
+  ;; class-heritage context (reg 984): the extends clause is a LeftHandSideExpression, so a top-level
+  ;; ArrowFunction (`extends () => {}`, `extends x => x`) is an early SyntaxError. Read+clear on entry so
+  ;; only the OUTERMOST primary (the heritage itself) is guarded — a parenthesized `(()=>{})` or an arrow
+  ;; nested in a call argument re-enters with the flag cleared and is fine.
+  (let $heritnoarrow i32 (i32.load (i32.const 984))) (i32.store (i32.const 984) (i32.const 0))
   (if (i32.eq (call $tok_kind) (i32.const 1))  ;; NUM literal
     (then
       ;; strict mode: a LegacyOctalIntegerLiteral (`010`) or NonOctalDecimalIntegerLiteral (`08`) is a
@@ -952,6 +957,7 @@
       (if (local.get $arrownl) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '=>'")) (return)))
       (if (local.get $isarrow)
         (then
+          (if (local.get $heritnoarrow) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "class heritage may not be an arrow function")) (return)))
           (let $ap i32 (call $heap_alloc (i32.const 256)))
           (let $apd i32 (call $heap_alloc (i32.const 256)))
           (let $app i32 (call $heap_alloc (i32.const 256)))
@@ -993,6 +999,7 @@
               (let $aan i32 (call $ident_name)) (call $next_token)
               (if (i32.eq (call $tok_kind) (i32.const 52))
                 (then
+                  (if (local.get $heritnoarrow) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "class heritage may not be an arrow function")) (return)))
                   ;; `async x [no LineTerminator here] => …` — a newline before '=>' is a SyntaxError
                   (if (call $nl_before) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '=>'")) (return)))
                   (i32.store (i32.const 232) (i32.const 1))
@@ -1011,6 +1018,7 @@
               (call $next_token)  ;; ')'
               (if (i32.eq (call $tok_kind) (i32.const 52))  ;; '=>'
                 (then
+                  (if (local.get $heritnoarrow) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "class heritage may not be an arrow function")) (return)))
                   ;; `async ( params ) [no LineTerminator here] => …` — a newline before '=>' is a SyntaxError
                   (if (call $nl_before) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '=>'")) (return)))
                   (i32.store (i32.const 232) (i32.const 1))
@@ -1328,6 +1336,7 @@
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is not allowed in generator parameters")) (return)))
       (if (i32.eq (call $tok_kind) (i32.const 52))  ;; NAME => body  (single-param arrow, no parens)
         (then
+          (if (local.get $heritnoarrow) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "class heritage may not be an arrow function")) (return)))
           ;; ArrowParameters [no LineTerminator here] => — a newline before `=>` is a SyntaxError (`x \n => x`).
           (if (call $nl_before) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '=>'")) (return)))
           (i32.store (i32.const 700) (i32.add (local.get $vnstart) (i32.const 1)))
@@ -4252,7 +4261,10 @@
     (then
       (call $next_token)
       (set! $superT (call $vm_tmpname))
+      (i32.store (i32.const 984) (i32.const 1))  ;; ClassHeritage is a LeftHandSideExpression → reject a top-level arrow
       (call $vm_c_postfix (local.get $code))
+      (i32.store (i32.const 984) (i32.const 0))
+      (if (call $err) (then (i32.store (i32.const 388) (local.get $clssave)) (return)))
       (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $superT))))
   ;; a ClassTail requires a ClassBody `{ … }` (`class C extends X` / `class C extends {}` with no body → SyntaxError).
   (if (i32.ne (call $tok_kind) (i32.const 17)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '{' for class body")) (i32.store (i32.const 388) (local.get $clssave)) (return)))
