@@ -399,10 +399,12 @@
 (func $lex_ident (effects)
   (let $start i32 (call $pos))
   (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 35)) (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))  ;; private name #x → include the '#'
+  (let $bodystart i32 (call $pos))  ;; first IdentifierStart position (after an optional leading '#')
   (block $ie (loop $il
     ;; a \uHHHH or \u{H+} unicode escape is part of the identifier (IdentifierName)
     (if (i32.and (i32.eq (call $ch_at (i32.const 0)) (i32.const 92)) (i32.eq (call $ch_at (i32.const 1)) (i32.const 117)))
       (then
+        (let $escstart i32 (call $pos))  ;; position of this escape's backslash (== bodystart iff it is the first char)
         (call $set_pos (i32.add (call $pos) (i32.const 2)))  ;; skip "\u"
         (let $idcp i32 (i32.const -1))  ;; decoded codepoint (for identifier-validity check)
         (if (i32.eq (call $ch_at (i32.const 0)) (i32.const 123))  ;; \u{ … }
@@ -424,6 +426,10 @@
         (if (i32.and (i32.ge_s (local.get $idcp) (i32.const 0)) (i32.lt_s (local.get $idcp) (i32.const 128)))
           (then (if (i32.eqz (i32.or (call $is_alnum (local.get $idcp)) (i32.or (i32.eq (local.get $idcp) (i32.const 95)) (i32.eq (local.get $idcp) (i32.const 36)))))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid Unicode escape in identifier")) (return)))))
+        ;; ZWNJ (U+200C) / ZWJ (U+200D) are valid in IdentifierPart but NOT IdentifierStart — an escaped
+        ;; one as the first character (of the name, after any '#') is a SyntaxError.
+        (if (i32.and (i32.eq (local.get $escstart) (local.get $bodystart)) (i32.or (i32.eq (local.get $idcp) (i32.const 8204)) (i32.eq (local.get $idcp) (i32.const 8205))))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid IdentifierStart")) (return)))
         (br $il)))
     (let $ic i32 (call $ch_at (i32.const 0)))
     ;; identifier-continue: ASCII alnum, OR any non-ASCII UTF-8 byte that isn't Unicode whitespace/LT
