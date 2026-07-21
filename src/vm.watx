@@ -4430,6 +4430,12 @@
     (call $next_token)
     (if (i32.ne (call $tok_kind) (i32.const 15))  ;; not '(' → class field → append [name, thunk] to the static or instance array
       (then
+        ;; early errors: PropName of a FieldDefinition may not be "constructor" (static or instance);
+        ;; a static FieldDefinition may not be named "prototype".
+        (if (call $str_eq (local.get $mn) (cstring "constructor"))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "class field may not be named 'constructor'")) (return)))
+        (if (i32.and (local.get $isstatic) (call $str_eq (local.get $mn) (cstring "prototype")))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "static class field may not be named 'prototype'")) (return)))
         (if (local.get $isstatic) (then (set! $hasstatic (i32.const 1))))
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (if i32 (local.get $isstatic) (then (local.get $staticT)) (else (local.get $fieldsT))))  ;; LOADVAR target array
         (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $mn)))  ;; PUSH name
