@@ -5577,6 +5577,7 @@
           ;; pop it exactly once via the explicit LEAVEWITH at the break-target (not double via finally).
           ;; return (finally base 0) still pops it. (Per-iteration fresh bindings for closures = TODO.)
           (let $forlex i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))))
+          (let $forconst i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (call $tok_is_kw (cstring "const"))))  ;; const head → immutable binding (DEFCONST, reassign throws)
           (let $forletname i32 (i32.const 0))  ;; the single head let/const name → per-iteration fresh binding (0 = none / multi / destructuring: isolation only)
           (let $forlexb i32 (call $heap_alloc (i32.const 512)))  ;; all head let/const binding names (for the body-var-conflict early error)
           (let $forlexn i32 (i32.const 0))
@@ -5628,7 +5629,7 @@
                             (call $next_token)  ;; consume '='
                             (if (i32.and (i32.eqz (local.get $fmulti)) (local.get $forlex)) (then (set! $forletname (local.get $fin))))  ;; sole let/const declarator → eligible for the per-iteration copy
                             (call $vm_c_expr (local.get $code))
-                            (call $vm_emit_op (local.get $code) (if i32 (local.get $forlex) (then (i32.const 114)) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $fin)))  ;; let/const → LEXDEFINIT (loop scope); var → DEFINIT (var scope)
+                            (call $vm_emit_op (local.get $code) (if i32 (local.get $forconst) (then (i32.const 79)) (else (if i32 (local.get $forlex) (then (i32.const 114)) (else (i32.const 89)))))) (call $vm_emit_op (local.get $code) (local.get $fin)))  ;; const → DEFCONST (immutable); let → LEXDEFINIT (loop scope); var → DEFINIT (var scope)
                           (else  ;; no initializer: let/const bind undefined in the loop scope; var → DEFVAR
                             (if (local.get $forlex)
                               (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $fin)))
@@ -5705,7 +5706,7 @@
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $forletname))  ;; LOADVAR i → [v]
               (call $vm_emit_op (local.get $code) (i32.const 94))  ;; LEAVEWITH (pop current iteration's scope; body closures keep it)
               (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE 0 (fresh)
-              (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $forletname))))  ;; LEXDEFINIT i = v (copied forward)
+              (call $vm_emit_op (local.get $code) (if i32 (local.get $forconst) (then (i32.const 79)) (else (i32.const 114)))) (call $vm_emit_op (local.get $code) (local.get $forletname))))  ;; const → DEFCONST / let → LEXDEFINIT i = v (copied forward)
           ;; re-scan + compile the update, then loop
           (call $cursor_restore (local.get $fupd))
           (if (i32.ne (call $tok_kind) (i32.const 16))
