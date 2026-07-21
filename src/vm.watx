@@ -5394,13 +5394,31 @@
           (let $ofdecl i32 (i32.const 0))  ;; 1 = var/let/const head (binding); 0 = assignment-target head
           (let $ofisvar i32 (i32.const 0))  ;; 1 = `var` (for the annex-B `for(var x=init in E)` sloppy exception)
           (let $ofisconst i32 (call $tok_is_kw (cstring "const")))  ;; 1 = `const` head → immutable per-iteration binding
+          (let $ofisusing i32 (i32.const 0))  ;; 1 = `using` head (for-of only; immutable per-iteration; for-in with using is a SyntaxError)
           ;; NOTE: extending the `let`-as-IdentifierReference disambiguation into the for-head (so `for(let of E)`
           ;; treats `let` as the loop target) is net-NEGATIVE: it regresses for-of/head-lhs-let and the strict
           ;; `let`-as-LHS test (strict `let` must stay a reserved word / declaration keyword, not an identifier —
           ;; the for-head path lacks the strict guard the statement path has). Left as-is; `let` in a for-head is
           ;; always a declaration here. The statement-start disambiguation (6e67bb2) is unaffected.
           (if (call $tok_is_kw (cstring "var")) (then (set! $ofdecl (i32.const 1)) (set! $ofisvar (i32.const 1)) (call $next_token))
-            (else (if (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))) (then (set! $ofdecl (i32.const 1)) (call $next_token)))))
+            (else (if (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))) (then (set! $ofdecl (i32.const 1)) (call $next_token))
+              ;; `using` ForDeclaration: `for (using x of E)` — a using head is an immutable per-iteration
+              ;; binding. Decl only when the next token, on the same line, is a BindingIdentifier (kind 3,
+              ;; excluding the `in`/`instanceof` operators). `of` is normally a valid binding name here
+              ;; (`for (using of = e; …)` binds `of` in a regular-for), EXCEPT for the `[lookahead ≠ using
+              ;; [no LT] of]` restriction: `for (using of of E)` / `for (using of in E)` is `using`-as-loop-
+              ;; variable over `of…` (a 3-token peek: `using of of`/`using of in` → not a declaration).
+              (else (if (call $tok_is_kw (cstring "using"))
+                (then
+                  (call $look_save) (call $next_token)
+                  (let $uofok i32 (i32.and (i32.eqz (call $nl_before)) (i32.and (i32.eq (call $tok_kind) (i32.const 3))
+                    (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (call $tok_is_kw (cstring "instanceof")))))))
+                  (if (i32.and (local.get $uofok) (call $tok_is_kw (cstring "of")))
+                    (then
+                      (call $next_token)
+                      (if (i32.or (call $tok_is_kw (cstring "of")) (call $tok_is_kw (cstring "in"))) (then (set! $uofok (i32.const 0))))))
+                  (call $look_restore)
+                  (if (local.get $uofok) (then (set! $ofdecl (i32.const 1)) (set! $ofisconst (i32.const 1)) (set! $ofisusing (i32.const 1)) (call $next_token)))))))))
           (let $ofvar i32 (i32.const 0))
           (if (i32.eq (call $tok_kind) (i32.const 3))
             (then (set! $ofvar (call $ident_name))
@@ -5463,6 +5481,9 @@
               (call $cursor_restore (local.get $hidet))))  ;; restore to '=' so the regular-for init parser runs
           (let $isof i32 (i32.and (i32.or (i32.ne (local.get $ofvar) (i32.const 0)) (i32.ne (local.get $ofmembase) (i32.const 0))) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of")))))
           (let $isin i32 (i32.and (i32.or (i32.ne (local.get $ofvar) (i32.const 0)) (i32.ne (local.get $ofmembase) (i32.const 0))) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "in")))))
+          ;; a `using` declaration is only valid in a for-of / for-await-of head, never for-in.
+          (if (i32.and (local.get $ofisusing) (local.get $isin))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'using' declaration is not allowed in a for-in loop")) (return)))
           (if (i32.or (local.get $isof) (local.get $isin))
             (then
               (call $next_token)  ;; 'of' / 'in'
@@ -5580,8 +5601,20 @@
           ;; continue) above the kind-2 — so continue stays in the loop scope, and break/labeled-break
           ;; pop it exactly once via the explicit LEAVEWITH at the break-target (not double via finally).
           ;; return (finally base 0) still pops it. (Per-iteration fresh bindings for closures = TODO.)
-          (let $forlex i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))))
-          (let $forconst i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (call $tok_is_kw (cstring "const"))))  ;; const head → immutable binding (DEFCONST, reassign throws)
+          ;; `using` in a regular-for head (`for (using x = e; …)`) is a lexical, immutable (const-like)
+          ;; binding. Lookahead-gated: decl only when `using` is followed on the same line by a
+          ;; BindingIdentifier (`using = 1` keeps `using` as an assignment target / IdentifierReference).
+          ;; `for (using of = e; …)` declares a variable named `of` (the `≠ using of` restriction is
+          ;; for-of-only; already consumed by the for-of probe, so it never reaches here as a for-of).
+          (let $forusing i32 (i32.const 0))
+          (if (call $tok_is_kw (cstring "using"))
+            (then
+              (call $look_save) (call $next_token)
+              (set! $forusing (i32.and (i32.eqz (call $nl_before)) (i32.and (i32.eq (call $tok_kind) (i32.const 3))
+                (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (call $tok_is_kw (cstring "instanceof")))))))
+              (call $look_restore)))
+          (let $forlex i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (local.get $forusing) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))))
+          (let $forconst i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (local.get $forusing) (call $tok_is_kw (cstring "const")))))  ;; const/using head → immutable binding (DEFCONST, reassign throws)
           (let $forletname i32 (i32.const 0))  ;; the single head let/const name → per-iteration fresh binding (0 = none / multi / destructuring: isolation only)
           (let $forlexb i32 (call $heap_alloc (i32.const 512)))  ;; all head let/const binding names (for the body-var-conflict early error)
           (let $forlexn i32 (i32.const 0))
@@ -5594,9 +5627,9 @@
           ;; init (consumes up to ';')
           (if (i32.ne (call $tok_kind) (i32.const 21))
             (then
-              (if (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))
+              (if (i32.or (local.get $forusing) (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))))
                 (then
-                  (call $next_token)  ;; consume var/let/const
+                  (call $next_token)  ;; consume var/let/const/using
                   ;; parse the BindingList: one-or-more comma-separated declarators, each a simple
                   ;; NAME [= init] or a [pattern]/{pattern} = init. A multi-declarator head disables the
                   ;; single-name per-iteration copy (isolation only).
