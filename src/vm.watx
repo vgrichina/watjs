@@ -6900,6 +6900,11 @@
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $rv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        ;; ERM: dispose function-body-level sync `using` resources on return (the fn body has no
+        ;; block scope of its own, so they live on the function scope). A throwing dispose replaces
+        ;; the return with a throw completion (dispatch loop unwinds). No-op for non-using functions.
+        (call $vm_dispose_scope (local.get $scope))
+        (if (call $err) (then (br $disp)))
         (if (i32.eqz (local.get $frame))  ;; top-level return → halt
           (then
             (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 1))
