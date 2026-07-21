@@ -4780,7 +4780,9 @@
                 (if (call $str_eq (local.get $aunm) (cstring "let")) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'let' is not a valid lexical binding name")) (return)))
                 (if (i32.ne (call $tok_kind) (i32.const 24)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration requires an initializer")) (return)))
                 (call $next_token)
+                (let $auafs i32 (call $vm_emit_cursor))  ;; NamedEvaluation for `await using f = function/arrow/class(){}`
                 (call $vm_c_expr (local.get $code))
+                (if (call $vm_is_anon_fn_def (local.get $auafs)) (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $aunm))))
                 (call $vm_emit_op (local.get $code) (i32.const 120)) (call $vm_emit_op (local.get $code) (i32.const 1))  ;; CHECKDISPOSE async (validate [Symbol.asyncDispose] / [Symbol.dispose])
                 (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $aunm))  ;; DEFCONST
                 (br_if $aud (i32.eqz (call $eat (i32.const 22))))
@@ -4819,7 +4821,9 @@
                 (if (i32.ne (call $tok_kind) (i32.const 24))  ;; '=' — a UsingDeclaration binding must have an initializer
                   (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration requires an initializer")) (return)))
                 (call $next_token)  ;; '='
+                (let $uafs i32 (call $vm_emit_cursor))  ;; NamedEvaluation: `using f = function/arrow/class(){}` → f.name="f"
                 (call $vm_c_expr (local.get $code))  ;; init value → [v]
+                (if (call $vm_is_anon_fn_def (local.get $uafs)) (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $unm))))
                 (call $vm_emit_op (local.get $code) (i32.const 120)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; CHECKDISPOSE sync (validate [Symbol.dispose])
                 (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $unm))  ;; DEFCONST (immutable binding; disposal-at-scope-exit TBD)
                 (br_if $ud (i32.eqz (call $eat (i32.const 22))))  ;; ',' → next binding
