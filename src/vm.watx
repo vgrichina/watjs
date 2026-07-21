@@ -7553,7 +7553,12 @@
         ;; absent (a bare redeclare must not reset an already-assigned binding).
         (let $dvtgt i32 (call $scope_var_target (local.get $scope)))
         (if (i32.eqz (call $scope_find_local (local.get $dvtgt) (local.get $dvnm)))
-          (then (call $scope_define_attr (local.get $dvtgt) (local.get $dvnm) (call $v_undef) (if i32 (i32.load (i32.const 996)) (then (i32.const 14)) (else (i32.const 10))))))  ;; eval-configurable
+          (then
+            ;; CanDeclareGlobalVar: a NEW `var` binding cannot be created on a NON-EXTENSIBLE global object
+            ;; (@@noext) — TypeError. (Only the top var/global scope carries @@noext; a function scope never does.)
+            (if (call $scope_find_local (local.get $dvtgt) (cstring "@@noext"))
+              (then (call $throw_type (cstring "TypeError") (cstring "Cannot declare a global variable on a non-extensible global object")) (br $disp)))
+            (call $scope_define_attr (local.get $dvtgt) (local.get $dvnm) (call $v_undef) (if i32 (i32.load (i32.const 996)) (then (i32.const 14)) (else (i32.const 10))))))  ;; eval-configurable
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 10))  ;; PRINT
       (then
