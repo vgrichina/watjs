@@ -5402,6 +5402,7 @@
           (let $ofisvar i32 (i32.const 0))  ;; 1 = `var` (for the annex-B `for(var x=init in E)` sloppy exception)
           (let $ofisconst i32 (call $tok_is_kw (cstring "const")))  ;; 1 = `const` head → immutable per-iteration binding
           (let $ofisusing i32 (i32.const 0))  ;; 1 = `using` head (for-of only; immutable per-iteration; for-in with using is a SyntaxError)
+          (let $ofusingasync i32 (i32.const 0))  ;; 1 = `await using` for-head → async-dispose hint (validated but not yet disposed)
           ;; `for (await using x of E)` — an await-using ForDeclaration (async body, reg 896). Unlike bare
           ;; `using`, `await using of …` is ALWAYS a declaration (there is no `await using` IdentifierReference),
           ;; so `of` is an ordinary binding name and no `[lookahead ≠ using of]` restriction applies. Consume
@@ -5416,7 +5417,7 @@
                     (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (call $tok_is_kw (cstring "instanceof")))))))))
               (call $look_restore)
               (if (local.get $awu)
-                (then (set! $ofdecl (i32.const 1)) (set! $ofisconst (i32.const 1)) (set! $ofisusing (i32.const 1))
+                (then (set! $ofdecl (i32.const 1)) (set! $ofisconst (i32.const 1)) (set! $ofisusing (i32.const 1)) (set! $ofusingasync (i32.const 1))
                   (call $next_token) (call $next_token)))))  ;; consume `await` `using`
           ;; NOTE: extending the `let`-as-IdentifierReference disambiguation into the for-head (so `for(let of E)`
           ;; treats `let` as the loop target) is net-NEGATIVE: it regresses for-of/head-lhs-let and the strict
@@ -5583,7 +5584,9 @@
                   (i32.store (i32.const 676) (local.get $ofsm))
                   (call $cursor_restore (local.get $ofbody)))
                 (else (if (local.get $ofdecl)
-                        (then (call $vm_emit_op (local.get $code) (if i32 (local.get $ofperiter) (then (if i32 (local.get $ofisconst) (then (i32.const 79)) (else (i32.const 114)))) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; per-iter const → DEFCONST (non-writable) / let → LEXDEFINIT; var → DEFINIT (var scope)
+                        (then
+                          (if (local.get $ofisusing) (then (call $vm_emit_op (local.get $code) (i32.const 120)) (call $vm_emit_op (local.get $code) (local.get $ofusingasync))))  ;; CHECKDISPOSE: validate + register the per-iteration `using` resource (disposed at the per-iter LEAVEWITH)
+                          (call $vm_emit_op (local.get $code) (if i32 (local.get $ofperiter) (then (if i32 (local.get $ofisconst) (then (i32.const 79)) (else (i32.const 114)))) (else (i32.const 89)))) (call $vm_emit_op (local.get $code) (local.get $ofvar)))   ;; per-iter const → DEFCONST (non-writable) / let → LEXDEFINIT; var → DEFINIT (var scope)
                         (else (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))))))  ;; STOREVAR x: assignment-target head (`for (x of E)`)
               (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; for-in/of body is a single Statement — no lexical/function decl
               ;; Early Error: a for-in/of ForDeclaration (let/const) bound name may not also be a
@@ -5700,6 +5703,7 @@
                             (call $next_token)  ;; consume '='
                             (if (i32.and (i32.eqz (local.get $fmulti)) (local.get $forlex)) (then (set! $forletname (local.get $fin))))  ;; sole let/const declarator → eligible for the per-iteration copy
                             (call $vm_c_expr (local.get $code))
+                            (if (local.get $forusing) (then (call $vm_emit_op (local.get $code) (i32.const 120)) (call $vm_emit_op (local.get $code) (local.get $forawu))))  ;; CHECKDISPOSE: validate + register the regular-for `using` resource (disposed at the loop-scope LEAVEWITH)
                             (call $vm_emit_op (local.get $code) (if i32 (local.get $forconst) (then (i32.const 79)) (else (if i32 (local.get $forlex) (then (i32.const 114)) (else (i32.const 89)))))) (call $vm_emit_op (local.get $code) (local.get $fin)))  ;; const → DEFCONST (immutable); let → LEXDEFINIT (loop scope); var → DEFINIT (var scope)
                           (else  ;; no initializer: let/const bind undefined in the loop scope; var → DEFVAR
                             (if (local.get $forlex)
