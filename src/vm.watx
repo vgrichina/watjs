@@ -5484,8 +5484,10 @@
                   (call $look_restore)
                   (if (local.get $uofok) (then (set! $ofdecl (i32.const 1)) (set! $ofisconst (i32.const 1)) (set! $ofisusing (i32.const 1)) (call $next_token)))))))))
           (let $ofvar i32 (i32.const 0))
+          (let $ofvar_async_kw i32 (i32.const 0))  ;; the loop var was the literal `async` contextual keyword (not an escaped `async`)
           (if (i32.eq (call $tok_kind) (i32.const 3))
-            (then (set! $ofvar (call $ident_name))
+            (then (set! $ofvar_async_kw (call $tok_is_kw (cstring "async")))
+              (set! $ofvar (call $ident_name))
               (if (local.get $ofdecl) (then (if (call $vm_strict_lhs_check (local.get $ofvar)) (then (return)))))  ;; strict: `for (var eval|arguments ...)` → SyntaxError
               ;; a ReservedWord may not be a for-in/of binding name (`for (var if in {})`).
               (if (i32.and (local.get $ofdecl) (call $is_reserved_word (local.get $ofvar)))
@@ -5548,6 +5550,13 @@
           ;; a `using` declaration is only valid in a for-of / for-await-of head, never for-in.
           (if (i32.and (local.get $ofisusing) (local.get $isin))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'using' declaration is not allowed in a for-in loop")) (return)))
+          ;; for-of LeftHandSideExpression restriction `[lookahead ∉ { async of }]`: a bare literal `async`
+          ;; as the loop target of a (non-await) for-of (`for (async of E)`) is a SyntaxError. It does NOT
+          ;; apply to for-await-of (`for await (async of E)` is valid), to an escaped `async` (a plain
+          ;; identifier, not the keyword), to a declaration head (`for (const async of E)`), or to a member
+          ;; target (`for (async.x of E)`).
+          (if (i32.and (i32.gt_s (local.get $ofvar) (i32.const 0)) (i32.and (local.get $ofvar_async_kw) (i32.and (local.get $isof) (i32.and (i32.eqz (local.get $isawait)) (i32.eqz (local.get $ofdecl))))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'async' is not a valid for-of loop target")) (return)))
           (if (i32.or (local.get $isof) (local.get $isin))
             (then
               (call $next_token)  ;; 'of' / 'in'
