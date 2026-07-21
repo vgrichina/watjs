@@ -4794,8 +4794,12 @@
         (then
           (call $look_save) (call $next_token)
           (let $uk i32 (call $tok_kind)) (let $unl i32 (call $nl_before))
-          (let $isusing i32 (i32.and (i32.eqz (local.get $unl)) (i32.and (i32.eq (local.get $uk) (i32.const 3))
-            (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (i32.or (call $tok_is_kw (cstring "instanceof")) (call $tok_is_kw (cstring "of"))))))))
+          ;; `using {` (same line) is a UsingDeclaration attempt too — no valid ExpressionStatement starts
+          ;; `using {`, and the ObjectBindingPattern is then rejected below (using bindings are identifiers
+          ;; only). `[` is NOT included: `using[0]` is a legal subscript on the identifier `using`.
+          (let $isusing i32 (i32.and (i32.eqz (local.get $unl)) (i32.or (i32.eq (local.get $uk) (i32.const 17))
+            (i32.and (i32.eq (local.get $uk) (i32.const 3))
+              (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (i32.or (call $tok_is_kw (cstring "instanceof")) (call $tok_is_kw (cstring "of")))))))))
           (call $look_restore)
           (if (local.get $isusing)
             (then
