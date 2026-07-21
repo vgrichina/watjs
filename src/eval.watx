@@ -5291,7 +5291,7 @@
       ;; undefined thisArg) coerces to the global object. Run the eval with cur_scope = global.
       (let $fnctorsc i32 (call $cur_scope))
       (call $set_cur_scope (i32.load (i32.const 152)))
-      (let $fnctorres i64 (call $vm_eval_str (local.get $fsrc)))
+      (let $fnctorres i64 (call $vm_eval_str (local.get $fsrc) (i32.const 0)))
       (call $set_cur_scope (local.get $fnctorsc))
       (return (local.get $fnctorres))))
   (if (i32.eq (local.get $id) (i32.const 158))  ;; Function.prototype empty fn: no-op
@@ -5368,13 +5368,13 @@
     (then
       (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (call $is_string (local.get $a))
-        (then (return (call $vm_eval_str (call $val_payload (local.get $a))))))
+        (then (return (call $vm_eval_str (call $val_payload (local.get $a)) (i32.const 1)))))
       (return (local.get $a))))
   (if (i32.eq (local.get $id) (i32.const 511))  ;; $262.evalScript(src) — evaluate src as global Script code
     (then
       (let $esa i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (call $is_string (local.get $esa))
-        (then (return (call $vm_eval_str (call $val_payload (local.get $esa))))))
+        (then (return (call $vm_eval_str (call $val_payload (local.get $esa)) (i32.const 0)))))
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 4))  ;; Number(x) / new Number(x) (incl. super() from a subclass)
     (then

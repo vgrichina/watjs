@@ -7543,7 +7543,7 @@
         ;; absent (a bare redeclare must not reset an already-assigned binding).
         (let $dvtgt i32 (call $scope_var_target (local.get $scope)))
         (if (i32.eqz (call $scope_find_local (local.get $dvtgt) (local.get $dvnm)))
-          (then (call $scope_define_attr (local.get $dvtgt) (local.get $dvnm) (call $v_undef) (i32.const 10))))  ;; E|W; non-configurable (var binding not deletable)
+          (then (call $scope_define_attr (local.get $dvtgt) (local.get $dvnm) (call $v_undef) (if i32 (i32.load (i32.const 996)) (then (i32.const 14)) (else (i32.const 10))))))  ;; eval-configurable
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 10))  ;; PRINT
       (then
@@ -8973,7 +8973,7 @@
 ;; native eval(string): compile the source and run it on the VM in the CURRENT
 ;; scope (direct eval), returning the completion value. Compile-time clobbering of
 ;; lexer/emit registers is safe — the calling VM is executing bytecode, not lexing.
-(func $vm_eval_str (param $s i32) (result i64) (effects)
+(func $vm_eval_str (param $s i32) (param $evalcfg i32) (result i64) (effects)  ;; evalcfg=1: eval() code (new global vars configurable/deletable); 0: Script ($262.evalScript) / Function body
   (let $scope i32 (call $cur_scope))
   (i64.store (i32.const 288) (call $v_undef))  ;; reset completion register
   ;; reg 880 (set by DIRECTEVALMARK just before this call) — bitfield: bit0=direct eval, bit1=caller's
@@ -8995,10 +8995,13 @@
   (i32.store (i32.add (local.get $ctx) (i32.const 28)) (local.get $scope))
   (i32.store (i32.add (local.get $ctx) (i32.const 32)) (i32.const 0))
   (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 0))
+  (let $evsave i32 (i32.load (i32.const 996)))
+  (i32.store (i32.const 996) (local.get $evalcfg))  ;; only eval() code creates deletable global vars; evalScript/Function do not
   (block $e (loop $l
     (drop (call $vm_step (local.get $ctx) (call $v_undef)))
     (br_if $e (call $vm_done (local.get $ctx)))
     (br $l)))
+  (i32.store (i32.const 996) (local.get $evsave))
   (call $set_cur_scope (local.get $scope))  ;; vm_step may have left a nested scope active
   (i64.load (i32.const 288)))  ;; completion value
 
