@@ -4781,6 +4781,7 @@
                 (if (i32.ne (call $tok_kind) (i32.const 24)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration requires an initializer")) (return)))
                 (call $next_token)
                 (call $vm_c_expr (local.get $code))
+                (call $vm_emit_op (local.get $code) (i32.const 120)) (call $vm_emit_op (local.get $code) (i32.const 1))  ;; CHECKDISPOSE async (validate [Symbol.asyncDispose] / [Symbol.dispose])
                 (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $aunm))  ;; DEFCONST
                 (br_if $aud (i32.eqz (call $eat (i32.const 22))))
                 (br $aul)))
@@ -4819,7 +4820,8 @@
                   (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration requires an initializer")) (return)))
                 (call $next_token)  ;; '='
                 (call $vm_c_expr (local.get $code))  ;; init value → [v]
-                (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $unm))  ;; DEFCONST (immutable binding; disposal TBD)
+                (call $vm_emit_op (local.get $code) (i32.const 120)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; CHECKDISPOSE sync (validate [Symbol.dispose])
+                (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $unm))  ;; DEFCONST (immutable binding; disposal-at-scope-exit TBD)
                 (br_if $ud (i32.eqz (call $eat (i32.const 22))))  ;; ',' → next binding
                 (br $ul)))
               (drop (call $eat (i32.const 21)))  ;; ';'
@@ -7419,6 +7421,12 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (call $scope_define_attr (local.get $scope) (local.get $dcnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 18))  ;; E + const-bit(16); non-writable, non-configurable (lexical binding)
         (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 120))  ;; CHECKDISPOSE (operand: hint 0=sync/1=async) — validate a `using` initializer (peek, no pop)
+      (then
+        (let $cdhint i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (call $vm_check_disposable (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))) (local.get $cdhint))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 114))  ;; LEXDEFINIT (operand: name) — `let NAME = e`: writable binding in the
       (then                                        ;; CURRENT scope (block-scoped), unlike DEFINIT which hoists to the var scope
         (let $ldnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
@@ -8048,6 +8056,32 @@
   (if (i32.eqz (local.get $gcs))
     (then (call $throw_type (cstring "TypeError") (cstring "not a generator")) (return (i32.const 0))))
   (i32.trunc_f64_s (call $to_num (i64.load (local.get $gcs)))))
+
+;; CreateDisposableResource validation for a `using` / `await using` initializer (ERM). Per spec
+;; GetDisposeMethod: a nullish value has no dispose (allowed, no-op); any other non-Object throws
+;; TypeError; the value must expose a callable [Symbol.dispose] (sync) or [Symbol.asyncDispose]
+;; with a [Symbol.dispose] fallback (async), else TypeError. Disposal at scope exit is a follow-up;
+;; this enforces the binding-time invariants. hint: 0 = sync-dispose, 1 = async-dispose.
+(func $vm_check_disposable (param $v i64) (param $isasync i32) (effects)
+  (if (i32.or (call $is_null (local.get $v)) (call $is_undefined (local.get $v))) (then (return)))  ;; nullish → no resource
+  (if (i32.eqz (i32.or (call $is_object (local.get $v)) (call $is_function (local.get $v))))
+    (then (call $throw_type (cstring "TypeError") (cstring "using declaration initializer is not an object")) (return)))
+  (let $m i64 (i64.const 0))
+  (if (local.get $isasync)
+    (then
+      (set! $m (call $get_prop (local.get $v) (call $mk_str (cstring "@@asyncDispose"))))
+      (if (call $err) (then (return)))
+      (if (i32.or (call $is_null (local.get $m)) (call $is_undefined (local.get $m)))
+        (then  ;; async-dispose absent → fall back to sync [Symbol.dispose]
+          (set! $m (call $get_prop (local.get $v) (call $mk_str (cstring "@@dispose"))))
+          (if (call $err) (then (return))))))
+    (else
+      (set! $m (call $get_prop (local.get $v) (call $mk_str (cstring "@@dispose"))))
+      (if (call $err) (then (return)))))
+  (if (i32.or (call $is_null (local.get $m)) (call $is_undefined (local.get $m)))
+    (then (call $throw_type (cstring "TypeError") (cstring "using declaration initializer has no dispose method")) (return)))
+  (if (i32.eqz (call $is_function (local.get $m)))
+    (then (call $throw_type (cstring "TypeError") (cstring "using declaration dispose method is not callable")) (return))))
 
 ;; IteratorClose for a yield* delegation (used when .throw() hits an iterator with no `throw`
 ;; method): call the iterator's `return` (if any) and verify it returns an Object, else TypeError.
