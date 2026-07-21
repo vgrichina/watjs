@@ -4636,6 +4636,8 @@
       ;; kind-2 scope-pop so break/continue/return/labeled-break through the block pop it too.
       ;; the immediate function-body block is flagged (reg 856): don't give it its own scope.
       (let $isfnbody i32 (i32.load (i32.const 856))) (i32.store (i32.const 856) (i32.const 0))
+      ;; a Block is one of the containers in which a `using` declaration is allowed (reg 972).
+      (let $blkuok i32 (i32.load (i32.const 972))) (i32.store (i32.const 972) (i32.const 1))
       (let $blkbits i32 (if i32 (local.get $isfnbody) (then (i32.const 0)) (else (call $vm_block_has_lexical))))
       (let $blk i32 (i32.and (local.get $blkbits) (i32.const 1)))  ;; bit0: let/const/class → needs its own scope
       (if (local.get $blk)
@@ -4653,6 +4655,7 @@
         (call $vm_c_stmt (local.get $code))
         (br $bl)))
       (call $next_token)  ;; consume '}'
+      (i32.store (i32.const 972) (local.get $blkuok))  ;; restore the enclosing using-allowed state
       (if (local.get $blk)
         (then (call $vm_finally_pop) (call $vm_emit_op (local.get $code) (i32.const 94))))  ;; LEAVEWITH (normal completion)
       (return)))
@@ -4765,6 +4768,8 @@
           (if (local.get $auok)
             (then
               (if (local.get $nodecl) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "await using declaration not allowed in single-statement context")) (return)))
+              ;; like `using`: not allowed in a switch CaseClause (reg 972) — only in a Block/FunctionBody/for-head
+              (if (i32.eqz (i32.load (i32.const 972))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "await using declaration only allowed in a block, function body, or for-head")) (return)))
               (call $next_token) (call $next_token)  ;; consume 'await' 'using'
               (block $aud (loop $aul
                 (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))
@@ -4795,6 +4800,9 @@
           (if (local.get $isusing)
             (then
               (if (local.get $nodecl) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration not allowed in single-statement context")) (return)))
+              ;; a UsingDeclaration is a SyntaxError at the top level of a Script/eval and in a switch
+              ;; CaseClause — allowed only when directly inside a Block/FunctionBody/for-head (reg 972).
+              (if (i32.eqz (i32.load (i32.const 972))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "using declaration only allowed in a block, function body, or for-head")) (return)))
               (call $next_token)  ;; consume 'using'
               (block $ud (loop $ul
                 (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))  ;; [..]/{..} — no destructuring in a using declaration
@@ -5243,6 +5251,9 @@
           (call $next_token)  ;; ')'
           (if (i32.ne (call $tok_kind) (i32.const 17)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '{' after switch head")) (return)))
           (let $scaselex i32 (i32.and (call $vm_block_has_lexical) (i32.const 1)))  ;; CaseBlock has let/const/class → needs its own lexical scope
+          ;; a switch CaseClause StatementList is NOT a `using`-container (unlike a Block) — a `using` directly
+          ;; in a case/default clause is a SyntaxError; a nested `{ using }` re-enables it via the block handler.
+          (let $swuok i32 (i32.load (i32.const 972))) (i32.store (i32.const 972) (i32.const 0))
           (call $next_token)  ;; '{'
           (call $vm_switch_dup_check (i32.const 0))  ;; Early Error: duplicate LexicallyDeclaredNames in the CaseBlock
           (if (call $err) (then (return)))
@@ -5335,6 +5346,7 @@
           (call $vm_loop_exit (local.get $slsave))
           (i32.store (i32.const 216) (local.get $scont216))
           (i32.store (i32.const 220) (local.get $scont220))
+          (i32.store (i32.const 972) (local.get $swuok))  ;; restore the enclosing using-allowed state
           (call $cursor_restore (local.get $sendlex))  ;; lexer resumes after the switch
           (return)))
       (if (call $tok_is_kw (cstring "do"))  ;; do body while ( cond ) ;
@@ -5931,6 +5943,7 @@
   (i32.store (i32.const 240) (i32.const 0))  ;; typeof-operand depth
   (i32.store (i32.const 912) (i32.const 0))  ;; in-static-block flag (reset per compile; balanced save/restore otherwise)
   (i32.store (i32.const 920) (i32.const 0))  ;; in-function-body flag: 0 for program/eval code (`return` at top level is a SyntaxError)
+  (i32.store (i32.const 972) (i32.const 0))  ;; using-allowed container flag: 0 at the top level of a Script/eval (a `using` there is a SyntaxError; a Block/FunctionBody/for-head sets it to 1)
   (i32.store (i32.const 916) (i32.const 0))  ;; arguments-forbidden flag (static block / field initializer)
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
   (i32.store (i32.const 932) (i32.const 0))  ;; label-find floor (0 = program top; raised at each function boundary)
