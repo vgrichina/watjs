@@ -4624,6 +4624,11 @@
           ;; function — strict mode and generator function declarations are SyntaxErrors.
           (if (call $tok_is_kw (cstring "function"))
             (then
+              ;; the AnnexB B.3.1 labelled-function relaxation does NOT apply when the LabelledStatement is
+              ;; itself in a no-function-declaration slot (an iteration/with body, reg 936 → $nofndecl):
+              ;; `for (…) L: function f(){}` / `while (…) L1: L2: function f(){}` are SyntaxErrors.
+              (if (local.get $nofndecl)
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "function declaration not allowed as a labelled iteration-statement body")) (return)))
               (if (i32.load (i32.const 388))
                 (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "In strict mode code, functions can only be declared at top level or inside a block")) (return)))
               (call $look_save) (call $next_token)
@@ -4640,6 +4645,7 @@
             (else  ;; labeled non-loop (block/if/switch/…) — `break LABEL` jumps past it
               (let $le i32 (call $vm_label_push (local.get $lblnm) (i32.const 0)))  ;; non-loop labeled statement → isloop=0 (not a valid `continue` target)
               (i32.store (i32.const 900) (i32.const 1))  ;; a lexical decl cannot be labelled
+              (if (local.get $nofndecl) (then (i32.store (i32.const 936) (i32.const 1))))  ;; propagate the no-fn-decl slot through nested labels (`L1: L2: function` in a loop body)
               (call $vm_c_stmt (local.get $code))
               (call $vm_patch_entry_list (local.get $le) (i32.const 4) (i32.const 8) (local.get $code) (call $vm_emit_cursor))  ;; break list → here
               (i32.store (i32.const 228) (i32.sub (i32.load (i32.const 228)) (i32.const 1)))))  ;; pop label
