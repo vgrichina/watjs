@@ -4524,8 +4524,8 @@
       (then (set! $depth (i32.sub (local.get $depth) (i32.const 1))) (br_if $e (i32.eqz (local.get $depth)))))  ;; matching '}'
     (if (i32.and (i32.eq (local.get $depth) (i32.const 1)) (i32.eq (local.get $k) (i32.const 3)))
       (then
-        (if (i32.or (call $tok_is_kw (cstring "let")) (i32.or (call $tok_is_kw (cstring "const")) (call $tok_is_kw (cstring "class"))))
-          (then (set! $found (i32.or (local.get $found) (i32.const 1)))))  ;; bit0: needs a block scope (let/const/class)
+        (if (i32.or (call $tok_is_kw (cstring "let")) (i32.or (call $tok_is_kw (cstring "const")) (i32.or (call $tok_is_kw (cstring "class")) (call $tok_is_kw (cstring "using")))))
+          (then (set! $found (i32.or (local.get $found) (i32.const 1)))))  ;; bit0: needs a block scope (let/const/class/using — a using-only block still needs its scope for disposal at exit)
         ;; bit1: a possible block-level FunctionDeclaration (function / generator / async function). A
         ;; false positive (function EXPRESSION) only makes the dup check run harmlessly — that check is
         ;; statement-position-aware. Its LexicallyDeclaredNames still need the duplicate early-error scan.
@@ -7302,6 +7302,7 @@
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 94))  ;; LEAVEWITH — restore the enclosing scope
       (then
+        (call $vm_dispose_scope (local.get $scope))  ;; ERM: dispose sync `using` resources (LIFO) before popping
         (set! $scope (call $scope_parent (local.get $scope)))
         (call $set_cur_scope (local.get $scope))
         (br $disp)))
@@ -7429,7 +7430,12 @@
       (then
         (let $cdhint i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
-        (call $vm_check_disposable (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))) (local.get $cdhint))
+        (let $cdv i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; peek the bound value
+        (let $cdm i64 (call $vm_check_disposable (local.get $cdv) (local.get $cdhint)))
+        ;; register sync resources for disposal at scope exit (async-dispose is validated but not yet
+        ;; disposed — its suspension needs the await machinery).
+        (if (i32.and (i32.eqz (call $err)) (i32.and (i32.eqz (local.get $cdhint)) (call $is_function (local.get $cdm))))
+          (then (call $vm_register_disposable (local.get $scope) (local.get $cdv) (local.get $cdm))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 114))  ;; LEXDEFINIT (operand: name) — `let NAME = e`: writable binding in the
       (then                                        ;; CURRENT scope (block-scoped), unlike DEFINIT which hoists to the var scope
@@ -8061,31 +8067,66 @@
     (then (call $throw_type (cstring "TypeError") (cstring "not a generator")) (return (i32.const 0))))
   (i32.trunc_f64_s (call $to_num (i64.load (local.get $gcs)))))
 
-;; CreateDisposableResource validation for a `using` / `await using` initializer (ERM). Per spec
-;; GetDisposeMethod: a nullish value has no dispose (allowed, no-op); any other non-Object throws
-;; TypeError; the value must expose a callable [Symbol.dispose] (sync) or [Symbol.asyncDispose]
-;; with a [Symbol.dispose] fallback (async), else TypeError. Disposal at scope exit is a follow-up;
-;; this enforces the binding-time invariants. hint: 0 = sync-dispose, 1 = async-dispose.
-(func $vm_check_disposable (param $v i64) (param $isasync i32) (effects)
-  (if (i32.or (call $is_null (local.get $v)) (call $is_undefined (local.get $v))) (then (return)))  ;; nullish → no resource
+;; CreateDisposableResource for a `using` / `await using` initializer (ERM). Per spec GetDisposeMethod:
+;; a nullish value has no dispose (allowed, no-op → returns undefined); any other non-Object throws
+;; TypeError; the value must expose a callable [Symbol.dispose] (sync) or [Symbol.asyncDispose] with a
+;; [Symbol.dispose] fallback (async), else TypeError. Returns the captured dispose method (called ONCE
+;; here per spec), or undefined for a nullish value / on error. hint: 0 = sync-dispose, 1 = async.
+(func $vm_check_disposable (param $v i64) (param $isasync i32) (result i64) (effects)
+  (if (i32.or (call $is_null (local.get $v)) (call $is_undefined (local.get $v))) (then (return (call $v_undef))))  ;; nullish → no resource
   (if (i32.eqz (i32.or (call $is_object (local.get $v)) (call $is_function (local.get $v))))
-    (then (call $throw_type (cstring "TypeError") (cstring "using declaration initializer is not an object")) (return)))
+    (then (call $throw_type (cstring "TypeError") (cstring "using declaration initializer is not an object")) (return (call $v_undef))))
   (let $m i64 (i64.const 0))
   (if (local.get $isasync)
     (then
       (set! $m (call $get_prop (local.get $v) (call $mk_str (cstring "@@asyncDispose"))))
-      (if (call $err) (then (return)))
+      (if (call $err) (then (return (call $v_undef))))
       (if (i32.or (call $is_null (local.get $m)) (call $is_undefined (local.get $m)))
         (then  ;; async-dispose absent → fall back to sync [Symbol.dispose]
           (set! $m (call $get_prop (local.get $v) (call $mk_str (cstring "@@dispose"))))
-          (if (call $err) (then (return))))))
+          (if (call $err) (then (return (call $v_undef)))))))
     (else
       (set! $m (call $get_prop (local.get $v) (call $mk_str (cstring "@@dispose"))))
-      (if (call $err) (then (return)))))
+      (if (call $err) (then (return (call $v_undef))))))
   (if (i32.or (call $is_null (local.get $m)) (call $is_undefined (local.get $m)))
-    (then (call $throw_type (cstring "TypeError") (cstring "using declaration initializer has no dispose method")) (return)))
+    (then (call $throw_type (cstring "TypeError") (cstring "using declaration initializer has no dispose method")) (return (call $v_undef))))
   (if (i32.eqz (call $is_function (local.get $m)))
-    (then (call $throw_type (cstring "TypeError") (cstring "using declaration dispose method is not callable")) (return))))
+    (then (call $throw_type (cstring "TypeError") (cstring "using declaration dispose method is not callable")) (return (call $v_undef))))
+  (local.get $m))
+
+;; Register a validated sync disposable {value, method} on the runtime scope's "@@usingres" list (a
+;; boxed array of alternating value,method pairs in declaration order). Disposed LIFO by $vm_dispose_scope.
+(func $vm_register_disposable (param $scope i32) (param $v i64) (param $method i64) (effects)
+  (let $slot i32 (call $scope_find_local (local.get $scope) (cstring "@@usingres")))
+  (let $ap i32 (i32.const 0))
+  (if (local.get $slot)
+    (then (set! $ap (call $val_payload (i64.load (local.get $slot)))))
+    (else (set! $ap (call $arr_new (i32.const 4))) (call $scope_define (local.get $scope) (cstring "@@usingres") (call $mk_arr (local.get $ap)))))
+  (call $arr_push (local.get $ap) (local.get $v))
+  (call $arr_push (local.get $ap) (local.get $method)))
+
+;; DisposeResources for a scope being popped: call each sync dispose method in REVERSE (LIFO) order
+;; with the resource value as `this`. A throwing dispose sets err → the dispatch loop unwinds (single
+;; error propagates as-is; SuppressedError aggregation for multiple errors is a follow-up). The list is
+;; cleared so a scope popped via more than one path never double-disposes. (Sync only — async-dispose
+;; hint resources are not registered yet, so `await using` disposal is unaffected here.)
+(func $vm_dispose_scope (param $scope i32) (effects)
+  (let $slot i32 (call $scope_find_local (local.get $scope) (cstring "@@usingres")))
+  (if (i32.eqz (local.get $slot)) (then (return)))
+  (let $ap i32 (call $val_payload (i64.load (local.get $slot))))
+  (let $n i32 (call $arr_len (local.get $ap)))
+  (if (i32.eqz (local.get $n)) (then (return)))
+  (let $argv i32 (call $heap_alloc (i32.const 8)))
+  (let $i i32 (i32.sub (local.get $n) (i32.const 2)))
+  (block $de (loop $dl
+    (br_if $de (i32.lt_s (local.get $i) (i32.const 0)))
+    (let $rv i64 (call $arr_get (local.get $ap) (local.get $i)))
+    (let $rm i64 (call $arr_get (local.get $ap) (i32.add (local.get $i) (i32.const 1))))
+    (drop (call $call_val (local.get $rm) (i32.const 0) (local.get $argv) (local.get $rv)))
+    (br_if $de (call $err))  ;; a dispose threw → propagate (dispatch loop unwinds)
+    (set! $i (i32.sub (local.get $i) (i32.const 2)))
+    (br $dl)))
+  (i32.store (local.get $ap) (i32.const 0)))  ;; clear so a scope popped via multiple paths never double-disposes
 
 ;; IteratorClose for a yield* delegation (used when .throw() hits an iterator with no `throw`
 ;; method): call the iterator's `return` (if any) and verify it returns an Object, else TypeError.
