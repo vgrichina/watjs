@@ -4428,6 +4428,12 @@
     (let $mn i32 (if i32 (i32.eq (call $tok_kind) (i32.const 2)) (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)))
       (else (if i32 (i32.eq (call $tok_kind) (i32.const 1)) (then (call $num_to_str (call $tok_num))) (else (call $ident_name))))))
     (call $next_token)
+    ;; auto-accessor: `accessor [no LT] ClassElementName` — `accessor` is a contextual modifier, re-read
+    ;; the real (field) name. (Getter/setter + backing private field semantics TBD; this parse-accepts the
+    ;; grammar so a valid auto-accessor is not mis-split into two members.) Only a BindingIdentifier name is
+    ;; handled; `accessor;`/`accessor = 1`/`accessor(){}` keep `accessor` as the element name.
+    (if (i32.and (call $str_eq (local.get $mn) (cstring "accessor")) (i32.and (i32.eqz (call $nl_before)) (i32.eq (call $tok_kind) (i32.const 3))))
+      (then (set! $mn (call $ident_name)) (call $next_token)))
     (if (i32.ne (call $tok_kind) (i32.const 15))  ;; not '(' → class field → append [name, thunk] to the static or instance array
       (then
         ;; early errors: PropName of a FieldDefinition may not be "constructor" (static or instance);
@@ -4445,7 +4451,10 @@
           (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))))  ;; no init → undefined sentinel
         (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND thunk/undef
         (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP array
-        (drop (call $eat (i32.const 21))))  ;; optional ';'
+        ;; a FieldDefinition must be terminated by ';' or ASI (LineTerminator / '}' / EOF) — no ASI means
+        ;; `x = "s" [0](){}` / `x = 42 *g(){}` / `x = 1 y = 2` are SyntaxErrors, not two members.
+        (if (call $err) (then (return)))
+        (call $vm_eat_stmt_end) (if (call $err) (then (return))))
       (else (if (i32.and (call $str_eq (local.get $mn) (cstring "constructor")) (i32.eqz (local.get $isstatic)))  ;; ONLY a non-static `constructor` is the class ctor; `static constructor` is an ordinary static method
         (then
           (i32.store (i32.const 404) (if i32 (local.get $superT) (then (i32.const 2)) (else (i32.const 1))))  ;; class ctor; 2 = DERIVED (extends) → must call super()
