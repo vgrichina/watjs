@@ -5739,7 +5739,13 @@
           ;; GetMethod: a present-but-non-callable @@iterator → TypeError (not silently array-like)
           (if (i32.and (i32.eqz (i32.or (call $is_undefined (local.get $frifn)) (call $is_null (local.get $frifn)))) (i32.eqz (call $is_function (local.get $frifn))))
             (then (call $throw_type (cstring "TypeError") (cstring "is not a function")) (return (call $v_undef))))
-          (if (call $is_function (local.get $frifn)) (then (set! $frit (call $call_fn0 (local.get $frifn) (local.get $frs)))))
+          (if (call $is_function (local.get $frifn))
+            (then
+              (set! $frit (call $call_fn0 (local.get $frifn) (local.get $frs)))
+              (if (call $err) (then (return (call $v_undef))))
+              ;; GetIterator: the [Symbol.iterator]() result must be an Object, else TypeError
+              (if (i32.eqz (i32.or (call $is_object (local.get $frit)) (call $is_function (local.get $frit))))
+                (then (call $throw_type (cstring "TypeError") (cstring "iterator is not an object")) (return (call $v_undef))))))
           (let $frnx i64 (call $get_prop (local.get $frit) (call $mk_str (cstring "next"))))
           (if (call $is_function (local.get $frnx))
             (then  ;; iterator protocol — apply mapfn inline so a throw CLOSES the iterator
@@ -5748,6 +5754,10 @@
               (block $frie (loop $fril
                 (let $frr i64 (call $call_fn0 (local.get $frnx) (local.get $frit)))
                 (br_if $frie (call $err))  ;; next() threw → propagate (no close)
+                ;; IteratorNext: the result must be an Object, else TypeError (was: read .done off a
+                ;; non-object → truthy(undefined)=false → unbounded loop → OOB)
+                (if (i32.eqz (i32.or (call $is_object (local.get $frr)) (call $is_function (local.get $frr))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (return (call $v_undef))))
                 (br_if $frie (call $truthy (call $get_prop (local.get $frr) (call $mk_str (cstring "done")))))
                 (let $frval i64 (call $get_prop (local.get $frr) (call $mk_str (cstring "value"))))
                 (if (call $err) (then (call $iter_close_throw (local.get $frit)) (return (call $v_undef))))
