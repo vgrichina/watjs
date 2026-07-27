@@ -1422,11 +1422,19 @@
         (then
           (let $iop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
           (call $next_token)
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; LOADVAR
-          (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC (postfix yields ToNumeric(old), BigInt preserved)
-          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP (old numeric value)
-          (call $vm_emit_op (local.get $code) (local.get $iop))  ;; INC/DEC → new value
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR → leaves old
+          ;; Reference-record caching (see compound-assignment): resolve `vn` ONCE; GetValue + PutValue
+          ;; through the same base so a `with`-getter's self-delete can't redirect the write. Postfix
+          ;; yields the OLD value → stash it in a temp (REFSET leaves the new value, which we discard).
+          (let $pio i32 (call $vm_tmpname))
+          (call $vm_emit_op (local.get $code) (i32.const 122)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; RESOLVEREF → [ref]
+          (call $vm_emit_op (local.get $code) (i32.const 123)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; REFGET → [ref, val]
+          (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC → [ref, old]
+          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [ref, old, old]
+          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pio))  ;; STOREVAR @@old → [ref, old]
+          (call $vm_emit_op (local.get $code) (local.get $iop))  ;; INC/DEC → [ref, new]
+          (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; REFSET → [new]
+          (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP → []
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pio))  ;; LOADVAR @@old (result)
           (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (x++) is not an assignment target
           (return)))
       ;; a bare #privateName (only valid as the LHS of `#x in obj`) → push the key
@@ -2017,11 +2025,12 @@
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement")) (return)))
       ;; bare identifier target — strict mode: `++eval` / `--arguments` targets eval/arguments (invalid).
       (if (call $vm_strict_lhs_check (local.get $pvn)) (then (return)))
-      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; LOADVAR
-      (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC (BigInt preserved)
-      (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → new value
-      (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → new value is the result
-      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; STOREVAR
+      ;; Reference-record caching (see compound-assignment): resolve `pvn` ONCE; REFSET leaves the new value.
+      (call $vm_emit_op (local.get $code) (i32.const 122)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; RESOLVEREF → [ref]
+      (call $vm_emit_op (local.get $code) (i32.const 123)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; REFGET → [ref, val]
+      (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC (BigInt preserved) → [ref, old]
+      (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → [ref, new]
+      (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; REFSET → [new] (result)
       (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (++x) is not an assignment target
       (return)))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
