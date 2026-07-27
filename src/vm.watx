@@ -1647,8 +1647,11 @@
                             (else (if i32 (i32.eq (call $tok_kind) (i32.const 60)) (then (i32.const 27)) (else (i32.const 68))))))
             (call $next_token)
             (let $iik i32 (call $vm_tmpname)) (let $iio i32 (call $vm_tmpname))
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $iik))  ;; STOREVAR key → [obj]
+            ;; RequireObjectCoercible(base) after key eval, before ToPropertyKey; then key once, reused for GET+SET.
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $iik))  ;; STOREVAR rawkey → [obj]
+            (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (i32.const 92))  ;; DUP; REQUIRECOERCIBLE(base)
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $iio))  ;; STOREVAR obj → []
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $iik)) (call $vm_emit_op (local.get $code) (i32.const 102)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $iik))  ;; @@k = ToPropertyKey(rawkey)
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $iio))  ;; LOADVAR obj
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $iik))  ;; LOADVAR key
             (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [old]
@@ -1667,7 +1670,12 @@
             (let $icop i32 (call $compound_cop (call $tok_kind)))
             (call $next_token)
             (let $ck i32 (call $vm_tmpname)) (let $cv i32 (call $vm_tmpname))
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; STOREVAR @@k=key → [obj]
+            ;; evaluate the computed key ONCE: RequireObjectCoercible(base) (order: after key eval, before
+            ;; ToPropertyKey — so `null[throwingKey] op= v` throws TypeError, not the key's toString error),
+            ;; then ToPropertyKey once and reuse it for both the GET and the SET below.
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; STOREVAR @@k=rawkey → [obj]
+            (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (i32.const 92))  ;; DUP; REQUIRECOERCIBLE(base)
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ck)) (call $vm_emit_op (local.get $code) (i32.const 102)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; @@k = ToPropertyKey(rawkey)
             (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [obj, obj]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ck))  ;; LOADVAR key → [obj, obj, key]
             (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [obj, old]
@@ -1701,7 +1709,10 @@
             (let $xop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
             (call $next_token)
             (let $xk i32 (call $vm_tmpname)) (let $xo i32 (call $vm_tmpname))
-            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; STOREVAR @@k=key → [obj]
+            ;; RequireObjectCoercible(base) after key eval, before ToPropertyKey; key computed once, reused GET+SET.
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; STOREVAR @@k=rawkey → [obj]
+            (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (i32.const 92))  ;; DUP; REQUIRECOERCIBLE(base)
+            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xk)) (call $vm_emit_op (local.get $code) (i32.const 102)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; @@k = ToPropertyKey(rawkey)
             (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [obj, obj]
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $xk))  ;; LOADVAR key → [obj, obj, key]
             (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [obj, old]
@@ -1948,7 +1959,10 @@
                   (then (call $vm_emit_op (local.get $code) (i32.const 31)) (br $pml))
                   (else  ;; LAST access → indexed RMW
                     (let $pck i32 (call $vm_tmpname)) (let $pcv i32 (call $vm_tmpname))
-                    (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pck))  ;; STOREVAR key → [obj]
+                    ;; RequireObjectCoercible(base) after key eval, before ToPropertyKey; key computed once, reused GET+SET.
+                    (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pck))  ;; STOREVAR rawkey → [obj]
+                    (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (i32.const 92))  ;; DUP; REQUIRECOERCIBLE(base)
+                    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pck)) (call $vm_emit_op (local.get $code) (i32.const 102)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pck))  ;; @@k = ToPropertyKey(rawkey)
                     (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [obj,obj]
                     (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pck))  ;; LOADVAR key → [obj,obj,key]
                     (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [obj, old]
