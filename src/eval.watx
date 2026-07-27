@@ -10250,16 +10250,42 @@
       ;; representation string literals use (this engine's strings are UTF-8 byte sequences, so a
       ;; code unit ≥0x80 must be encoded, not written raw; a raw low-byte broke round-trips, e.g.
       ;; fromCharCode(0x125) wrote a 0x25 '%' byte that decodeURI then mis-decoded).
+      ;; A high surrogate immediately followed by a low surrogate is combined into its astral code
+      ;; point (as UTF-16 code units form a code point), emitted as 4-byte UTF-8 — so
+      ;; fromCharCode(H,L) === the astral character (and === decodeURI of its %-escaped 4-byte form).
+      ;; An unpaired surrogate is emitted as its 3-byte WTF-8. $fcpend carries an already-ToNumber'd
+      ;; code unit so each argument's ToNumber runs exactly once, in order.
       (let $fcp i32 (call $str_alloc (i32.mul (local.get $argc) (i32.const 3))))
       (let $fco i32 (i32.const 0))
       (let $i i32 (i32.const 0))
+      (let $fcpend i32 (i32.const -1))
       (block $fe (loop $fl
-        (br_if $fe (i32.ge_s (local.get $i) (local.get $argc)))
-        (let $fcarg i64 (call $argn (local.get $argv) (local.get $argc) (local.get $i)))
-        (if (call $is_bigint (local.get $fcarg))  ;; ToUint16(ToNumber(BigInt)) → TypeError
-          (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (return (call $v_undef))))
-        (set! $fco (call $utf8_emit (local.get $fcp) (local.get $fco) (i32.and (call $to_int_idx (call $to_num (local.get $fcarg))) (i32.const 65535))))
-        (set! $i (i32.add (local.get $i) (i32.const 1)))
+        (let $cu i32 (i32.const 0))
+        (if (i32.ge_s (local.get $fcpend) (i32.const 0))
+          (then (set! $cu (local.get $fcpend)) (set! $fcpend (i32.const -1)))
+          (else
+            (br_if $fe (i32.ge_s (local.get $i) (local.get $argc)))
+            (let $fcarg i64 (call $argn (local.get $argv) (local.get $argc) (local.get $i)))
+            (if (call $is_bigint (local.get $fcarg))  ;; ToUint16(ToNumber(BigInt)) → TypeError
+              (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (return (call $v_undef))))
+            (set! $cu (i32.and (call $to_int_idx (call $to_num (local.get $fcarg))) (i32.const 65535)))
+            (set! $i (i32.add (local.get $i) (i32.const 1)))))
+        ;; high surrogate D800-DBFF → try to pair with the next code unit
+        (if (i32.and (i32.ge_u (local.get $cu) (i32.const 55296)) (i32.le_u (local.get $cu) (i32.const 56319)))
+          (then
+            (if (i32.lt_s (local.get $i) (local.get $argc))
+              (then
+                (let $fca2 i64 (call $argn (local.get $argv) (local.get $argc) (local.get $i)))
+                (if (call $is_bigint (local.get $fca2))
+                  (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (return (call $v_undef))))
+                (let $cu2 i32 (i32.and (call $to_int_idx (call $to_num (local.get $fca2))) (i32.const 65535)))
+                (set! $i (i32.add (local.get $i) (i32.const 1)))
+                (if (i32.and (i32.ge_u (local.get $cu2) (i32.const 56320)) (i32.le_u (local.get $cu2) (i32.const 57343)))
+                  (then (set! $fco (call $utf8_emit (local.get $fcp) (local.get $fco) (i32.add (i32.const 65536) (i32.add (i32.shl (i32.sub (local.get $cu) (i32.const 55296)) (i32.const 10)) (i32.sub (local.get $cu2) (i32.const 56320)))))))  ;; valid pair → astral
+                  (else (set! $fco (call $utf8_emit (local.get $fcp) (local.get $fco) (local.get $cu))) (set! $fcpend (local.get $cu2))))  ;; lone high; carry cu2
+                (br $fl))
+              (else (set! $fco (call $utf8_emit (local.get $fcp) (local.get $fco) (local.get $cu))) (br $fl)))))  ;; high surrogate at end → lone
+        (set! $fco (call $utf8_emit (local.get $fcp) (local.get $fco) (local.get $cu)))  ;; ordinary unit (incl. lone low surrogate)
         (br $fl)))
       (i32.store (local.get $fcp) (local.get $fco))  ;; fix the byte-length header to what was emitted
       (return (call $mk_str (local.get $fcp)))))
