@@ -10223,16 +10223,22 @@
       (return (call $mk_bool (i32.and (f64.eq (local.get $d) (local.get $d)) (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 87))  ;; String.fromCharCode(...codes)
     (then
-      (let $fcp i32 (call $str_alloc (local.get $argc)))
+      ;; Each arg → ToUint16 code unit, then UTF-8/WTF-8-encoded (≤3 bytes) — the SAME byte
+      ;; representation string literals use (this engine's strings are UTF-8 byte sequences, so a
+      ;; code unit ≥0x80 must be encoded, not written raw; a raw low-byte broke round-trips, e.g.
+      ;; fromCharCode(0x125) wrote a 0x25 '%' byte that decodeURI then mis-decoded).
+      (let $fcp i32 (call $str_alloc (i32.mul (local.get $argc) (i32.const 3))))
+      (let $fco i32 (i32.const 0))
       (let $i i32 (i32.const 0))
       (block $fe (loop $fl
         (br_if $fe (i32.ge_s (local.get $i) (local.get $argc)))
         (let $fcarg i64 (call $argn (local.get $argv) (local.get $argc) (local.get $i)))
         (if (call $is_bigint (local.get $fcarg))  ;; ToUint16(ToNumber(BigInt)) → TypeError
           (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (return (call $v_undef))))
-        (call $str_set_byte (local.get $fcp) (local.get $i) (i32.and (call $to_int_idx (call $to_num (local.get $fcarg))) (i32.const 255)))
+        (set! $fco (call $utf8_emit (local.get $fcp) (local.get $fco) (i32.and (call $to_int_idx (call $to_num (local.get $fcarg))) (i32.const 65535))))
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (br $fl)))
+      (i32.store (local.get $fcp) (local.get $fco))  ;; fix the byte-length header to what was emitted
       (return (call $mk_str (local.get $fcp)))))
   (if (i32.eq (local.get $id) (i32.const 50))  ;; parseInt(s[,radix])
     (then (return (call $num (call $parse_int_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
