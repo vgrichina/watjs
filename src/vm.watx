@@ -5634,6 +5634,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: loop completion starts undefined
               (let $itn i32 (call $vm_tmpname))
               (let $rn i32 (call $vm_tmpname))
+              (let $foinm i32 (call $vm_tmpname))  ;; for-in: unique temp holding the enumerated object (for the per-key still-present check; must be per-loop so NESTED for-in loops don't clobber it)
               ;; the for-in object / for-of iterable is required — `for (x of )` / `for (x in )` → SyntaxError.
               (if (i32.eq (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "for-in/of head requires an expression")) (return)))
               ;; for-in RHS is an Expression (comma allowed); for-of RHS is an AssignmentExpression (no comma)
@@ -5641,7 +5642,11 @@
               ;; the head must close with ')'; a top-level comma after a for-of iterable (`for (x of a, b)`)
               ;; is a SyntaxError since the RHS is an AssignmentExpression, not an Expression.
               (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after for-in/of expression")) (return)))
-              (if (local.get $isin) (then (call $vm_emit_op (local.get $code) (i32.const 56))))  ;; for-in: object → keys array
+              (if (local.get $isin)
+                (then
+                  (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP object (keep it for the per-key still-present check below)
+                  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $foinm))  ;; STOREVAR obj-temp
+                  (call $vm_emit_op (local.get $code) (i32.const 56))))  ;; for-in: object → keys array (snapshot)
               (call $vm_emit_op (local.get $code) (if i32 (local.get $isawait) (then (i32.const 96)) (else (i32.const 45))))  ;; GETAITER (async iterator) / GETITER
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; STOREVAR it
               ;; for-of: register an iterator-close on the finally stack so a `return` through
@@ -5669,6 +5674,16 @@
               (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "value"))  ;; GETPROP value → [val]
               (if (local.get $isawait) (then (call $vm_emit_op (local.get $code) (i32.const 50))))  ;; for-await: await the value (sync iterables wrap each value in a resolved promise)
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@ofval"))  ;; STOREVAR @@ofval
+              ;; for-in: the key set is snapshotted, but a property deleted BEFORE it is reached must NOT
+              ;; be visited (EnumerateObjectProperties). Skip this key (jump back to the loop top for the
+              ;; next one) if it is no longer present on the object. (Runs before the per-iteration handler
+              ;; push, so skipping needs no handler/scope unwind.)
+              (if (local.get $isin)
+                (then
+                  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@ofval"))  ;; LOADVAR key
+                  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $foinm))  ;; LOADVAR obj-temp
+                  (call $vm_emit_op (local.get $code) (i32.const 125))  ;; FORINHAS → [present?] (non-object/proxy source → 1)
+                  (call $vm_emit_op (local.get $code) (i32.const 13)) (call $vm_emit_op (local.get $code) (local.get $oftop))))  ;; JMPF → loop top (key was deleted → skip)
               ;; handler around binding+body: on abrupt completion, IteratorClose then re-throw
               (call $vm_emit_op (local.get $code) (i32.const 48))  ;; PUSHHANDLER
               (let $ofhloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catchIp placeholder
@@ -7201,6 +7216,16 @@
         (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
                    (call $js_in (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))
                                 (i64.load (i32.add (local.get $stack) (local.get $sp)))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 125))  ;; FORINHAS — [key, obj] → bool; for-in still-present check.
+      (then                                       ;; A non-object source (primitive: indices non-deletable) or a Proxy
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))  ;; (its keys come via ownKeys, not HasProperty) → 1 (never skip).
+        (let $fhobj i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (let $fhkey i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
+          (if i64 (i32.and (i32.or (call $is_object (local.get $fhobj)) (i32.or (call $is_array (local.get $fhobj)) (call $is_function (local.get $fhobj)))) (i32.eqz (call $is_proxy (local.get $fhobj))))
+            (then (call $js_in (local.get $fhkey) (local.get $fhobj)))
+            (else (call $mk_bool (i32.const 1)))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 69))  ;; OSPREAD — [obj, src] → copy src's own props into obj, leave [obj]
       (then
