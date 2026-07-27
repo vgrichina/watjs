@@ -532,7 +532,15 @@
   (if (i32.or (call $is_array (local.get $srcv)) (call $is_object (local.get $srcv)))
     (then
       (let $it i64 (call $vm_get_iter (local.get $srcv)))
+      (if (call $err) (then (return)))  ;; @@iterator threw / missing
+      ;; GetIterator: the [Symbol.iterator]() result must be an Object, else TypeError (was: silently
+      ;; skipped because a non-object iterator has no callable `next` → empty spread instead of a throw).
+      (if (i32.eqz (i32.or (call $is_object (local.get $it)) (call $is_function (local.get $it))))
+        (then (call $throw_type (cstring "TypeError") (cstring "iterator is not an object")) (return)))
       (let $nf i64 (call $get_prop (local.get $it) (call $mk_str (cstring "next"))))
+      (if (call $err) (then (return)))
+      (if (i32.eqz (call $is_function (local.get $nf)))
+        (then (call $throw_type (cstring "TypeError") (cstring "iterator.next is not a function")) (return)))
       (if (call $is_function (local.get $nf))
         (then
           (let $nbuf i32 (call $heap_alloc (i32.const 8)))
