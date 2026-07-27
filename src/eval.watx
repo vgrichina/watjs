@@ -6340,6 +6340,10 @@
       (block $pae (loop $pal
         (let $pr i64 (call $call_val (local.get $pnf) (i32.const 0) (local.get $pnbuf) (local.get $pit)))  ;; iter.next()
         (br_if $pae (call $err))
+        ;; IteratorNext result must be an Object; a non-object → TypeError, mark done (no close),
+        ;; propagate to the outer reject (spec IteratorStepValue: abrupt → [[Done]]=true; ReturnIfAbrupt)
+        (if (i32.eqz (i32.or (call $is_object (local.get $pr)) (call $is_function (local.get $pr))))
+          (then (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (br $pae)))
         (let $prdone i64 (call $get_prop (local.get $pr) (call $mk_str (cstring "done"))))
         (br_if $pae (call $err))
         (br_if $pae (call $truthy (local.get $prdone)))
