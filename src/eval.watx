@@ -2014,6 +2014,54 @@
         (then (call $ta_zero (i32.add (local.get $rzdata) (local.get $rzold)) (i32.sub (local.get $rznew) (local.get $rzold)))))
       (i64.store (local.get $rzsl) (call $num (f64.convert_i32_s (local.get $rznew))))
       (return (call $v_undef))))
+  ;; ArrayBuffer.prototype.transfer(530) / transferToFixedLength(531) — ArrayBufferCopyAndDetach:
+  ;; allocate a fresh buffer of newLength, copy min(new,old) bytes, detach the source. transfer
+  ;; preserves resizability (keeps @@abmax); transferToFixedLength always produces a fixed buffer.
+  (if (i32.or (i32.eq (local.get $id) (i32.const 530)) (i32.eq (local.get $id) (i32.const 531)))
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer.prototype.transfer called on incompatible receiver")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@abdata")))
+        (then (call $throw_type (cstring "TypeError") (cstring "transfer called on a non-ArrayBuffer")) (return (call $v_undef))))
+      (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@shared"))
+        (then (call $throw_type (cstring "TypeError") (cstring "transfer called on a SharedArrayBuffer")) (return (call $v_undef))))
+      ;; newByteLength: undefined → current byteLength, else ToIndex(newLength) (observable BEFORE the detached check)
+      (let $tfarg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $tfnew i32 (if i32 (call $is_undefined (local.get $tfarg))
+        (then (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
+        (else (call $to_index (local.get $tfarg)))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.ge_s (local.get $tfnew) (i32.const 2147483640)) (then (call $throw_type (cstring "RangeError") (cstring "Invalid array buffer length")) (return (call $v_undef))))
+      (if (call $is_detached_buf (local.get $thisv))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot transfer a detached ArrayBuffer")) (return (call $v_undef))))
+      ;; preserveResizability: transfer(530) keeps a resizable source's max; transferToFixedLength(531) → fixed
+      (let $tfmax i32 (i32.const -1))
+      (if (i32.eq (local.get $id) (i32.const 530))
+        (then
+          (let $tfmsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@abmax")))
+          (if (local.get $tfmsl) (then (set! $tfmax (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tfmsl)))))))))
+      (if (i32.and (i32.ge_s (local.get $tfmax) (i32.const 0)) (i32.gt_s (local.get $tfnew) (local.get $tfmax)))
+        (then (call $throw_type (cstring "RangeError") (cstring "transfer length exceeds maxByteLength")) (return (call $v_undef))))
+      ;; AllocateArrayBuffer(newByteLength, newMaxByteLength): pre-allocate at max capacity when resizable
+      (let $tfcap i32 (if i32 (i32.ge_s (local.get $tfmax) (i32.const 0)) (then (local.get $tfmax)) (else (local.get $tfnew))))
+      (let $tfd i32 (call $heap_alloc (i32.add (local.get $tfcap) (i32.const 8))))
+      (call $ta_zero (local.get $tfd) (local.get $tfcap))
+      (let $tfo i32 (call $obj_new (i32.const 4)))
+      (if (i32.load (i32.const 524)) (then (i32.store (local.get $tfo) (i32.load (i32.const 524)))))  ;; link ArrayBuffer.prototype
+      (call $scope_define (local.get $tfo) (cstring "@@abdata") (call $num (f64.convert_i32_s (local.get $tfd))))
+      (call $scope_define (local.get $tfo) (cstring "@@ablen") (call $num (f64.convert_i32_s (local.get $tfnew))))
+      (if (i32.ge_s (local.get $tfmax) (i32.const 0)) (then (call $scope_define (local.get $tfo) (cstring "@@abmax") (call $num (f64.convert_i32_s (local.get $tfmax))))))
+      ;; copy min(newByteLength, oldByteLength) bytes from the source's data
+      (let $tfold i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
+      (let $tfsrc i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@abdata"))))))
+      (let $tfcopy i32 (if i32 (i32.lt_s (local.get $tfnew) (local.get $tfold)) (then (local.get $tfnew)) (else (local.get $tfold))))
+      (let $tfi i32 (i32.const 0))
+      (block $tfe (loop $tfl
+        (br_if $tfe (i32.ge_s (local.get $tfi) (local.get $tfcopy)))
+        (i32.store8 (i32.add (local.get $tfd) (local.get $tfi)) (i32.load8_u (i32.add (local.get $tfsrc) (local.get $tfi))))
+        (set! $tfi (i32.add (local.get $tfi) (i32.const 1))) (br $tfl)))
+      (drop (call $detach_arraybuffer (local.get $thisv)))  ;; DetachArrayBuffer(source)
+      (return (call $mk_obj (local.get $tfo)))))
   (if (i32.eq (local.get $id) (i32.const 484))  ;; get ArrayBuffer.prototype.detached
     (then
       (if (i32.eqz (call $is_object (local.get $thisv)))
@@ -2031,6 +2079,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "slice called on a non-ArrayBuffer")) (return (call $v_undef))))
       (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@shared"))  ;; ArrayBuffer.prototype.slice rejects a SharedArrayBuffer
         (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer.prototype.slice called on a SharedArrayBuffer")) (return (call $v_undef))))
+      (if (call $is_detached_buf (local.get $thisv))  ;; slice on a detached buffer → TypeError (spec step 4)
+        (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer.prototype.slice called on a detached ArrayBuffer")) (return (call $v_undef))))
       (let $slen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@ablen"))))))
       (let $sbeg i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.lt_s (local.get $sbeg) (i32.const 0)) (then (set! $sbeg (i32.add (local.get $slen) (local.get $sbeg)))))
@@ -5877,7 +5927,7 @@
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 363)) (i32.le_s (local.get $id) (i32.const 393)))
               (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 396)) (i32.le_s (local.get $id) (i32.const 407)))
                       (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 481)) (i32.le_s (local.get $id) (i32.const 482)))
-                              (i32.or (i32.eq (local.get $id) (i32.const 484)) (i32.and (i32.ge_s (local.get $id) (i32.const 505)) (i32.le_s (local.get $id) (i32.const 507)))))))  ;; DataView/SAB/ArrayBuffer.proto/TA methods + TA length/byteLength + AB detached + AB resize/maxByteLength/resizable
+                              (i32.or (i32.eq (local.get $id) (i32.const 484)) (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 505)) (i32.le_s (local.get $id) (i32.const 507))) (i32.and (i32.ge_s (local.get $id) (i32.const 530)) (i32.le_s (local.get $id) (i32.const 531))))))))  ;; DataView/SAB/ArrayBuffer.proto/TA methods + TA length/byteLength + AB detached + AB resize/maxByteLength/resizable + AB transfer/transferToFixedLength
     (then (return (call $native_dataview (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   (if (i32.eq (local.get $id) (i32.const 329))  ;; get [Symbol.species] → the receiver (this)
     (then (return (local.get $thisv))))
@@ -12415,6 +12465,8 @@
   (call $scope_define_attr (local.get $abproto) (cstring "resize") (call $mk_native (i32.const 505) (cstring "resize")) (i32.const 12))  ;; writable(8)+configurable(4), non-enumerable — standard built-in method attrs
   (call $scope_define_accessor_attr (local.get $abproto) (cstring "detached") (call $mk_native (i32.const 484) (cstring "get detached")) (call $v_undef) (i32.const 5))
   (call $scope_define (local.get $abproto) (cstring "slice") (call $mk_native (i32.const 391) (cstring "slice")))
+  (call $scope_define_attr (local.get $abproto) (cstring "transfer") (call $mk_native (i32.const 530) (cstring "transfer")) (i32.const 12))
+  (call $scope_define_attr (local.get $abproto) (cstring "transferToFixedLength") (call $mk_native (i32.const 531) (cstring "transferToFixedLength")) (i32.const 12))
   (call $scope_define_attr (local.get $abproto) (cstring "@@toStringTag") (call $mk_str (cstring "ArrayBuffer")) (i32.const 4))
   (call $scope_define (local.get $abproto) (cstring "constructor") (local.get $abf))
   (call $scope_clear_enum (local.get $abproto))
