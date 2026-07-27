@@ -584,10 +584,18 @@
       (call $str_set_byte (local.get $p) (local.get $o) (i32.or (i32.const 192) (i32.shr_u (local.get $cp) (i32.const 6))))
       (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 1)) (i32.or (i32.const 128) (i32.and (local.get $cp) (i32.const 63))))
       (return (i32.add (local.get $o) (i32.const 2)))))
-  (call $str_set_byte (local.get $p) (local.get $o) (i32.or (i32.const 224) (i32.shr_u (local.get $cp) (i32.const 12))))
-  (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 1)) (i32.or (i32.const 128) (i32.and (i32.shr_u (local.get $cp) (i32.const 6)) (i32.const 63))))
-  (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 2)) (i32.or (i32.const 128) (i32.and (local.get $cp) (i32.const 63))))
-  (i32.add (local.get $o) (i32.const 3)))
+  (if (i32.lt_s (local.get $cp) (i32.const 65536))
+    (then
+      (call $str_set_byte (local.get $p) (local.get $o) (i32.or (i32.const 224) (i32.shr_u (local.get $cp) (i32.const 12))))
+      (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 1)) (i32.or (i32.const 128) (i32.and (i32.shr_u (local.get $cp) (i32.const 6)) (i32.const 63))))
+      (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 2)) (i32.or (i32.const 128) (i32.and (local.get $cp) (i32.const 63))))
+      (return (i32.add (local.get $o) (i32.const 3)))))
+  ;; 4-byte: cp >= 0x10000 (astral) — was mis-encoded as a garbage 3-byte sequence before
+  (call $str_set_byte (local.get $p) (local.get $o) (i32.or (i32.const 240) (i32.shr_u (local.get $cp) (i32.const 18))))
+  (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 1)) (i32.or (i32.const 128) (i32.and (i32.shr_u (local.get $cp) (i32.const 12)) (i32.const 63))))
+  (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 2)) (i32.or (i32.const 128) (i32.and (i32.shr_u (local.get $cp) (i32.const 6)) (i32.const 63))))
+  (call $str_set_byte (local.get $p) (i32.add (local.get $o) (i32.const 3)) (i32.or (i32.const 128) (i32.and (local.get $cp) (i32.const 63))))
+  (i32.add (local.get $o) (i32.const 4)))
 
 ;; skip a ${ ... } substitution (pos is just after the `${`); advance past the
 ;; matching `}`, correctly tracking nested braces, strings, and nested templates.
