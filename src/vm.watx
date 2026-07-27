@@ -851,6 +851,30 @@
   (if (i32.eq (local.get $tok) (i32.const 67)) (then (return (i32.const 41))))  ;; >>= → SHR
   (i32.const 42))  ;; 68 >>>= → USHR
 
+;; Reference-record caching for identifier compound-assignment (`x op= v`). Resolve the
+;; binding EXACTLY ONCE, returning a heap record (16 bytes) [kind:i32 @0][scopePtr:i32 @4]
+;; [withObj:i64 @8]. kind 0 = ordinary scope slot (scopePtr owns it), 1 = `with` object
+;; (withObj), 2 = unresolvable (compound-assign GetValue → ReferenceError; never PutValue'd).
+;; Mirrors $scope_find's chain walk (incl. `with` HasProperty via with_find_slot).
+(func $vm_resolve_ref (param $scope i32) (param $name i32) (result i32) (effects)
+  (let $rec i32 (call $heap_alloc (i32.const 16)))
+  (i32.store (local.get $rec) (i32.const 2))  ;; default: unresolvable
+  (i32.store (i32.add (local.get $rec) (i32.const 4)) (i32.const 0))
+  (let $cur i32 (local.get $scope))
+  (block $brk (loop $cont
+    (br_if $brk (i32.eqz (local.get $cur)))
+    (if (call $scope_find_local (local.get $cur) (local.get $name))
+      (then (i32.store (local.get $rec) (i32.const 0)) (i32.store (i32.add (local.get $rec) (i32.const 4)) (local.get $cur)) (br $brk)))
+    (let $wo i64 (call $scope_withobj (local.get $cur)))
+    (if (i64.ne (local.get $wo) (i64.const 0))
+      (then
+        (let $ws i32 (call $with_find_slot (local.get $wo) (local.get $name)))
+        (br_if $brk (call $err))  ;; proxy has-trap threw → stop (err propagates; caller treats as abrupt)
+        (if (local.get $ws) (then (i32.store (local.get $rec) (i32.const 1)) (i64.store (i32.add (local.get $rec) (i32.const 8)) (local.get $wo)) (br $brk)))))
+    (set! $cur (call $scope_parent (local.get $cur)))
+    (br $cont)))
+  (local.get $rec))
+
 ;; f64 → i64 with saturation (no trap): NaN → 0, out-of-range clamps to i64 min/max.
 ;; Used where an f64 (possibly beyond i64) is converted to our i64-limited BigInt.
 (func $f64_sat_i64 (param $x f64) (result i64)
@@ -1366,11 +1390,15 @@
         (then
           (let $pcop i32 (call $compound_cop (call $tok_kind)))
           (call $next_token)
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; LOADVAR
-          (call $vm_c_expr (local.get $code))                                                          ;; RHS
-          (call $vm_emit_op (local.get $code) (local.get $pcop))
-          (call $vm_emit_op (local.get $code) (i32.const 32))                                           ;; DUP result
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; STOREVAR
+          ;; Reference-record caching: resolve the identifier reference ONCE (RESOLVEREF), GetValue
+          ;; through it (REFGET), then PutValue through the SAME reference (REFSET) — so a getter that
+          ;; deletes a `with` binding, or a nested eval that creates a nearer binding during the RHS,
+          ;; cannot redirect the write (spec: compound assign resolves lref once, reuses it for PutValue).
+          (call $vm_emit_op (local.get $code) (i32.const 122)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; RESOLVEREF → [ref]
+          (call $vm_emit_op (local.get $code) (i32.const 123)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; REFGET → [ref, lval]
+          (call $vm_c_expr (local.get $code))                                                          ;; RHS → [ref, lval, rval]
+          (call $vm_emit_op (local.get $code) (local.get $pcop))                                        ;; → [ref, result]
+          (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; REFSET → [result]
           (return)))
       (if (i32.and (i32.load (i32.const 956)) (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61))))  ;; NAME ||= &&= ??= (expression form — leaves the resulting value)
         (then
@@ -5919,11 +5947,14 @@
         (then
           (let $cop i32 (call $compound_cop (call $tok_kind)))
           (call $next_token)
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; LOADVAR
+          ;; Reference-record caching (see the expression-form site): resolve `an` ONCE, GetValue and
+          ;; PutValue through the same reference so a `with`-getter's self-delete or a nested eval's
+          ;; new binding cannot redirect the write. REFSET leaves the value → SETCOMPLETION (no DUP).
+          (call $vm_emit_op (local.get $code) (i32.const 122)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; RESOLVEREF
+          (call $vm_emit_op (local.get $code) (i32.const 123)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; REFGET
           (call $vm_c_expr (local.get $code))                                                                       ;; RHS
           (call $vm_emit_op (local.get $code) (local.get $cop))
-          (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → leave the new value as the statement completion
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; STOREVAR (pops)
+          (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; REFSET → leaves value
           (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION
           (drop (call $eat (i32.const 21)))
           (return)))
@@ -7490,6 +7521,62 @@
               (then (call $throw_type (cstring "TypeError") (cstring "Assignment to constant variable.")) (br $disp)))
             (i64.store (local.get $svslot) (i64.load (i32.add (local.get $stack) (local.get $sp)))))
           (else (call $scope_define (local.get $scope) (local.get $nm) (i64.load (i32.add (local.get $stack) (local.get $sp))))))  ;; var-decl/temp: define in the current scope
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 122))  ;; RESOLVEREF (operand: name) — resolve a compound-assign reference ONCE; push the record ptr
+      (then
+        (let $rrnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $rrec i32 (call $vm_resolve_ref (local.get $scope) (local.get $rrnm)))
+        (if (call $err) (then (br $disp)))  ;; `with` has-trap threw during resolution
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (i64.extend_i32_u (local.get $rrec)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 123))  ;; REFGET (operand: name) — GetValue through a cached reference; peek base at TOS, push value
+      (then
+        (let $rgnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $rgrec i32 (i32.wrap_i64 (i64.load (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 8)))))
+        (let $rgkind i32 (i32.load (local.get $rgrec)))
+        (if (i32.eq (local.get $rgkind) (i32.const 2))  ;; unresolvable → ReferenceError (GetValue)
+          (then (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $rgnm) (cstring " is not defined"))) (br $disp)))
+        (if (i32.eq (local.get $rgkind) (i32.const 1))  ;; `with` object → get_prop (invokes any getter)
+          (then
+            (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $get_prop (i64.load (i32.add (local.get $rgrec) (i32.const 8))) (call $mk_str (local.get $rgnm))))
+            (if (call $err) (then (br $disp)))
+            (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+            (br $disp)))
+        ;; kind 0: scope slot — mirror LOADVAR raw-slot read + TDZ
+        (let $rgslot i32 (call $scope_find_local (i32.load (i32.add (local.get $rgrec) (i32.const 4))) (local.get $rgnm)))
+        (if (i32.and (i32.ne (local.get $rgslot) (i32.const 0)) (call $is_tdz (i64.load (local.get $rgslot))))
+          (then (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $rgnm) (cstring " is not initialized (must call super)"))) (br $disp)))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (if i64 (local.get $rgslot) (then (i64.load (local.get $rgslot))) (else (call $v_undef))))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 124))  ;; REFSET (operand: name) — PutValue through a cached reference; [base,value] → [value]
+      (then
+        (let $rsnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $rsval i64 (i64.load (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 8))))    ;; value @ TOS
+        (let $rsrec i32 (i32.wrap_i64 (i64.load (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 16)))))  ;; base beneath it
+        (let $rskind i32 (i32.load (local.get $rsrec)))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))  ;; pop base; value slides down to sp-8 (the result)
+        (if (i32.eq (local.get $rskind) (i32.const 1))  ;; `with` object → set_prop (invokes any setter; recreates a deleted binding)
+          (then
+            (call $set_prop (i64.load (i32.add (local.get $rsrec) (i32.const 8))) (call $mk_str (local.get $rsnm)) (local.get $rsval))
+            (i64.store (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 8)) (local.get $rsval))
+            (br $disp)))
+        ;; kind 0: scope slot — mirror STOREVAR (const-check; recreate if deleted between resolve & put)
+        (let $rsscope i32 (i32.load (i32.add (local.get $rsrec) (i32.const 4))))
+        (if (local.get $rsscope)
+          (then
+            (let $rsslot i32 (call $scope_find_local (local.get $rsscope) (local.get $rsnm)))
+            (if (local.get $rsslot)
+              (then
+                (if (i32.and (i32.eqz (call $entry_writable (local.get $rsslot))) (i32.eqz (call $entry_is_accessor (local.get $rsslot))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "Assignment to constant variable.")) (br $disp)))
+                (i64.store (local.get $rsslot) (local.get $rsval)))
+              (else (call $scope_define (local.get $rsscope) (local.get $rsnm) (local.get $rsval))))))
+        (i64.store (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 8)) (local.get $rsval))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 85))  ;; STOREVAR_ASSIGN — sloppy plain `x=expr`: assign up the chain; undeclared → GLOBAL
       (then
