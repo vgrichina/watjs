@@ -11509,7 +11509,8 @@
   (if (i32.eq (local.get $id) (i32.const 505)) (then (return (i32.const 1))))  ;; ArrayBuffer.prototype.resize length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395))) (then (return (i32.const 3))))  ;; BigInt64Array/BigUint64Array ctor length 3
   (if (i32.eq (local.get $id) (i32.const 478)) (then (return (i32.const 3))))  ;; Float16Array ctor length 3
-  (if (i32.or (i32.eq (local.get $id) (i32.const 396)) (i32.eq (local.get $id) (i32.const 397))) (then (return (i32.const 1))))  ;; TA set/subarray length 1
+  (if (i32.eq (local.get $id) (i32.const 396)) (then (return (i32.const 1))))  ;; TA set(overloaded) length 1
+  (if (i32.eq (local.get $id) (i32.const 397)) (then (return (i32.const 2))))  ;; TA subarray(begin,end) length 2
   (if (i32.eq (local.get $id) (i32.const 398)) (then (return (i32.const 1))))  ;; TypedArray.from length 1
   (if (i32.eq (local.get $id) (i32.const 399)) (then (return (i32.const 0))))  ;; TypedArray.of length 0
   ;; typed map/filter/with(400/401/405)=1, slice(402)=2, toReversed(403)=0, toSorted(404)=1
