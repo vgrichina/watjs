@@ -3123,16 +3123,39 @@
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
     (let $c i32 (call $str_byte (local.get $s) (local.get $i)))
+    ;; Surrogate handling (spec Encode decodes UTF-16 code units to code points): our strings are
+    ;; (W)UTF-8, so a code unit 0xD800-0xDFFF is a 3-byte seq with lead 0xED and 2nd byte >=0xA0
+    ;; (0xED 0x80-0x9F is the valid U+D000-U+D7FF range, NOT a surrogate). A high surrogate must be
+    ;; followed by a low surrogate → combine to an astral code point; anything else → URIError.
+    (if (i32.and (i32.eq (local.get $c) (i32.const 237)) (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 2)) (local.get $n)) (i32.ge_u (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))) (i32.const 160))))
+      (then
+        (let $cp i32 (i32.or (i32.shl (i32.and (local.get $c) (i32.const 15)) (i32.const 12)) (i32.or (i32.shl (i32.and (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 1))) (i32.const 63)) (i32.const 6)) (i32.and (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 2))) (i32.const 63)))))
+        (if (i32.le_u (local.get $cp) (i32.const 56319))  ;; high surrogate D800-DBFF → need a following low surrogate
+          (then
+            (if (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 5)) (local.get $n)) (i32.and (i32.eq (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 3))) (i32.const 237)) (i32.ge_u (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 4))) (i32.const 176))))
+              (then
+                (let $lo i32 (i32.or (i32.shl (i32.and (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 3))) (i32.const 15)) (i32.const 12)) (i32.or (i32.shl (i32.and (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 4))) (i32.const 63)) (i32.const 6)) (i32.and (call $str_byte (local.get $s) (i32.add (local.get $i) (i32.const 5))) (i32.const 63)))))
+                (let $astral i32 (i32.add (i32.const 65536) (i32.add (i32.shl (i32.sub (local.get $cp) (i32.const 55296)) (i32.const 10)) (i32.sub (local.get $lo) (i32.const 56320)))))
+                (set! $o (call $uri_pct (local.get $out) (local.get $o) (i32.or (i32.const 240) (i32.shr_u (local.get $astral) (i32.const 18)))))
+                (set! $o (call $uri_pct (local.get $out) (local.get $o) (i32.or (i32.const 128) (i32.and (i32.shr_u (local.get $astral) (i32.const 12)) (i32.const 63)))))
+                (set! $o (call $uri_pct (local.get $out) (local.get $o) (i32.or (i32.const 128) (i32.and (i32.shr_u (local.get $astral) (i32.const 6)) (i32.const 63)))))
+                (set! $o (call $uri_pct (local.get $out) (local.get $o) (i32.or (i32.const 128) (i32.and (local.get $astral) (i32.const 63)))))
+                (set! $i (i32.add (local.get $i) (i32.const 6))) (br $l))
+              (else (call $throw_type (cstring "URIError") (cstring "URI malformed")) (return (local.get $out)))))
+          (else  ;; lone low surrogate DC00-DFFF → URIError
+            (call $throw_type (cstring "URIError") (cstring "URI malformed")) (return (local.get $out))))))
     (if (i32.or (call $uri_unreserved (local.get $c)) (i32.and (local.get $full) (call $uri_reserved (local.get $c))))
       (then (call $str_set_byte (local.get $out) (local.get $o) (local.get $c)) (set! $o (i32.add (local.get $o) (i32.const 1))))
-      (else
-        (call $str_set_byte (local.get $out) (local.get $o) (i32.const 37))  ;; '%'
-        (call $str_set_byte (local.get $out) (i32.add (local.get $o) (i32.const 1)) (call $hexdig (i32.shr_u (local.get $c) (i32.const 4))))
-        (call $str_set_byte (local.get $out) (i32.add (local.get $o) (i32.const 2)) (call $hexdig (i32.and (local.get $c) (i32.const 15))))
-        (set! $o (i32.add (local.get $o) (i32.const 3)))))
+      (else (set! $o (call $uri_pct (local.get $out) (local.get $o) (local.get $c)))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (i32.store (local.get $out) (local.get $o))
   (local.get $out))
+;; emit %XX (uppercase) for byte $c at offset $o; return the new offset.
+(func $uri_pct (param $out i32) (param $o i32) (param $c i32) (result i32) (effects)
+  (call $str_set_byte (local.get $out) (local.get $o) (i32.const 37))  ;; '%'
+  (call $str_set_byte (local.get $out) (i32.add (local.get $o) (i32.const 1)) (call $hexdig (i32.shr_u (local.get $c) (i32.const 4))))
+  (call $str_set_byte (local.get $out) (i32.add (local.get $o) (i32.const 2)) (call $hexdig (i32.and (local.get $c) (i32.const 15))))
+  (i32.add (local.get $o) (i32.const 3)))
 ;; decode: %XX → byte; if $keepres and the byte is reserved, keep the literal %XX. Malformed % → URIError.
 (func $uri_decode (param $s i32) (param $keepres i32) (result i32) (effects)
   (let $n i32 (call $str_len (local.get $s)))
