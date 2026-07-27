@@ -5611,7 +5611,7 @@
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $rn))  ;; STOREVAR r
               ;; if (r.done) break  → emit (!done); JMPF end
               (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $rn))  ;; LOADVAR r
-              (if (i32.eqz (local.get $isawait)) (then (call $vm_emit_op (local.get $code) (i32.const 121))))  ;; REQUIREITERRESULT: next() result must be an Object (sync; for-await awaits+checks separately)
+              (call $vm_emit_op (local.get $code) (i32.const 121))  ;; REQUIREITERRESULT: the (awaited, for for-await) next() result must be an Object, else TypeError
               (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "done"))  ;; GETPROP done
               (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
               (let $ofpend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end (pops)
