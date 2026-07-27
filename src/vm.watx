@@ -2955,7 +2955,11 @@
   ;; strict" — it may follow other directives, not just be the first statement.
   (block $pe (loop $pl
     (br_if $pe (i32.ne (call $tok_kind) (i32.const 2)))  ;; not a string literal → prologue ended
-    (let $isus i32 (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict")))
+    ;; A Use Strict Directive requires the SOURCE TEXT between the quotes to be exactly `use strict`
+    ;; (no escapes, no line continuation). tok_len is the content byte count (quotes excluded); since
+    ;; the decoded value must be "use strict" (10 bytes) and any escape/LC only lengthens the source,
+    ;; tok_len == 10 ⟺ the source had no escapes.
+    (let $isus i32 (i32.and (i32.eq (call $tok_len) (i32.const 10)) (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict"))))
     (call $next_token)  ;; token after the string literal
     ;; the string is a directive iff a statement boundary follows: ';' / '}' / EOF /
     ;; another string / a newline (ASI). An operator on the same line → it's a larger
@@ -3973,7 +3977,7 @@
       (call $next_token)  ;; '{'
       (block $ape (loop $apl
         (br_if $ape (i32.ne (call $tok_kind) (i32.const 2)))
-        (let $aisus i32 (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict")))
+        (let $aisus i32 (i32.and (i32.eq (call $tok_len) (i32.const 10)) (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict"))))  ;; source text exactly `use strict`, no escapes/LC (see vm_c_fnbody)
         (call $next_token)
         (br_if $ape (i32.eqz (i32.or (call $nl_before)
           (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18))
@@ -6181,7 +6185,7 @@
   ;; scan the whole Directive Prologue (not just the first statement) for "use strict".
   (block $ppe (loop $ppl
     (br_if $ppe (i32.ne (call $tok_kind) (i32.const 2)))  ;; not a string literal → prologue ended
-    (let $pisus i32 (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict")))
+    (let $pisus i32 (i32.and (i32.eq (call $tok_len) (i32.const 10)) (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "use strict"))))  ;; source text exactly `use strict`, no escapes/LC (see vm_c_fnbody)
     (call $next_token)
     (br_if $ppe (i32.eqz (i32.or (call $nl_before)
       (i32.or (i32.eq (call $tok_kind) (i32.const 21))
