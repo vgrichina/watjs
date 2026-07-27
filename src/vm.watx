@@ -1398,7 +1398,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 123)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; REFGET → [ref, lval]
           (call $vm_c_expr (local.get $code))                                                          ;; RHS → [ref, lval, rval]
           (call $vm_emit_op (local.get $code) (local.get $pcop))                                        ;; → [ref, result]
-          (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; REFSET → [result]
+          (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $vn)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388)))  ;; REFSET → [result]
           (return)))
       (if (i32.and (i32.load (i32.const 956)) (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61))))  ;; NAME ||= &&= ??= (expression form — leaves the resulting value)
         (then
@@ -1432,7 +1432,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → [ref, old, old]
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $pio))  ;; STOREVAR @@old → [ref, old]
           (call $vm_emit_op (local.get $code) (local.get $iop))  ;; INC/DEC → [ref, new]
-          (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $vn))  ;; REFSET → [new]
+          (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $vn)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388)))  ;; REFSET → [new]
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP → []
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pio))  ;; LOADVAR @@old (result)
           (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (x++) is not an assignment target
@@ -2030,7 +2030,7 @@
       (call $vm_emit_op (local.get $code) (i32.const 123)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; REFGET → [ref, val]
       (call $vm_emit_op (local.get $code) (i32.const 97))  ;; TONUMERIC (BigInt preserved) → [ref, old]
       (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → [ref, new]
-      (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $pvn))  ;; REFSET → [new] (result)
+      (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $pvn)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388)))  ;; REFSET → [new] (result)
       (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (++x) is not an assignment target
       (return)))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
@@ -5982,7 +5982,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 123)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; REFGET
           (call $vm_c_expr (local.get $code))                                                                       ;; RHS
           (call $vm_emit_op (local.get $code) (local.get $cop))
-          (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $an))  ;; REFSET → leaves value
+          (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $an)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388)))  ;; REFSET → leaves value
           (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION
           (drop (call $eat (i32.const 21)))
           (return)))
@@ -7594,13 +7594,20 @@
       (then
         (let $rsnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (let $rsstrict i32 (i32.load (i32.add (local.get $code) (local.get $ip))))  ;; strict flag (compile-time reg 388)
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (let $rsval i64 (i64.load (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 8))))    ;; value @ TOS
         (let $rsrec i32 (i32.wrap_i64 (i64.load (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 16)))))  ;; base beneath it
         (let $rskind i32 (i32.load (local.get $rsrec)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))  ;; pop base; value slides down to sp-8 (the result)
-        (if (i32.eq (local.get $rskind) (i32.const 1))  ;; `with` object → set_prop (invokes any setter; recreates a deleted binding)
+        (if (i32.eq (local.get $rskind) (i32.const 1))  ;; `with` object → set_prop (invokes any setter)
           (then
-            (call $set_prop (i64.load (i32.add (local.get $rsrec) (i32.const 8))) (call $mk_str (local.get $rsnm)) (local.get $rsval))
+            (let $rswo i64 (i64.load (i32.add (local.get $rsrec) (i32.const 8))))
+            ;; object-env-record SetMutableBinding: if the binding no longer exists (a getter deleted it)
+            ;; and S(strict) is true → ReferenceError (spec: stillExists false ∧ S ⇒ throw; do NOT recreate).
+            (if (i32.and (local.get $rsstrict) (i32.eqz (call $truthy (call $js_in (call $mk_str (local.get $rsnm)) (local.get $rswo)))))
+              (then (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $rsnm) (cstring " is not defined"))) (br $disp)))
+            (call $set_prop (local.get $rswo) (call $mk_str (local.get $rsnm)) (local.get $rsval))  ;; sloppy (or still-present) → set/recreate via any setter
             (i64.store (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 8)) (local.get $rsval))
             (br $disp)))
         ;; kind 0: scope slot — mirror STOREVAR (const-check; recreate if deleted between resolve & put)
