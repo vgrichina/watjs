@@ -6378,6 +6378,21 @@
 ;; apply a flat field-inits array [name, thunk-or-undefined, ...] to a target object:
 ;; for each, the value is thunk.call(target) (or the undefined sentinel) → own prop.
 ;; Used for per-instance fields (target=instance) and static fields (target=constructor).
+;; CreateDataPropertyOrThrow(thisobj, key, value) for a class field on a plain-object receiver:
+;; define an OWN data property {W,E,C} — do NOT invoke an inherited setter, and THROW a TypeError
+;; if the object is non-extensible (new key) or already has a non-configurable own key of that name.
+;; (Fields on a function/array receiver — static fields, exotic subclasses — stay on set_prop.)
+(func $vm_field_define (param $thisobj i64) (param $key i64) (param $value i64) (effects)
+  (let $os i32 (call $val_payload (local.get $thisobj)))
+  (let $ks i32 (call $to_prop_key (local.get $key)))
+  (let $old i32 (call $scope_find_local (local.get $os) (local.get $ks)))
+  (if (i32.eqz (local.get $old))
+    (then (if (call $scope_find_local (local.get $os) (cstring "@@noext"))  ;; new own prop on a non-extensible object → reject
+      (then (call $throw_type (cstring "TypeError") (cstring "Cannot define class field, object is not extensible")) (return))))
+    (else (if (i32.eqz (call $entry_configurable (local.get $old)))  ;; redefining a non-configurable own prop to {W,E,C} → reject
+      (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine non-configurable class field")) (return)))))
+  (call $scope_define_attr (local.get $os) (local.get $ks) (local.get $value) (i32.const 14)))  ;; {W,E,C}
+
 (func $vm_apply_fields (param $thisobj i64) (param $fiv i64) (effects)
   (if (i32.eqz (call $is_array (local.get $fiv))) (then (return)))
   (let $fa i32 (call $val_payload (local.get $fiv)))
@@ -6402,10 +6417,17 @@
     (if (local.get $fisblock)
       (then (drop (call $call_val (local.get $fthunk) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $thisobj))))
       (else
-        (call $set_prop (local.get $thisobj) (local.get $fname)
-          (if i64 (call $is_function (local.get $fthunk))
+        ;; run the initializer FIRST (its side effects, e.g. Object.freeze(this), happen before the
+        ;; field is installed), then CreateDataPropertyOrThrow. A plain-object receiver uses the
+        ;; define path (own {W,E,C}, throws on frozen/non-extensible, ignores an inherited setter);
+        ;; a function/array receiver (static field / exotic subclass) keeps [[Set]].
+        (let $fval i64 (if i64 (call $is_function (local.get $fthunk))
             (then (call $call_val (local.get $fthunk) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $thisobj)))
-            (else (local.get $fthunk))))))  ;; undefined sentinel → undefined
+            (else (local.get $fthunk))))  ;; undefined sentinel → undefined
+        (if (call $err) (then (return)))  ;; initializer threw
+        (if (call $is_object (local.get $thisobj))
+          (then (call $vm_field_define (local.get $thisobj) (local.get $fname) (local.get $fval)))
+          (else (call $set_prop (local.get $thisobj) (local.get $fname) (local.get $fval))))))
     (if (call $err) (then (return)))
     (set! $fi (i32.add (local.get $fi) (i32.const 2)))
     (br $fl)))
