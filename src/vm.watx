@@ -3916,6 +3916,7 @@
   ;; enclosing value (arrows inherit await-context) — but here we always overwrite: an async arrow → 1, and
   ;; a non-async arrow gets the enclosing 896 iff 232==0. So OR the enclosing value in for the non-async case.
   (let $arrasync i32 (i32.load (i32.const 232)))
+  (i32.store (i32.const 232) (i32.const 0))  ;; clear now (before the body) so a nested fn/arrow doesn't inherit or consume our flag; our async-ness is held in $arrasync
   (let $arrsaveinasync i32 (i32.load (i32.const 896)))
   (i32.store (i32.const 896) (i32.or (local.get $arrasync) (local.get $arrsaveinasync)))
   (let $arrsavesb i32 (i32.load (i32.const 912)))  ;; an arrow body has its own return; not the static block itself
@@ -4017,8 +4018,8 @@
   (i32.store (i32.const 360) (local.get $arrlpfin))
   (call $vm_patch (local.get $code) (local.get $pj))
   (let $fn i32 (call $heap_alloc (i32.add (i32.const 52) (i32.mul (local.get $np) (i32.const 4)))))  ;; @(28+np*4) name, @(32+np*4) flags, @(36+np*4) .length, @(40+np*4) srcPtr (0=native form), @(44+np*4) srcLen, @(48+np*4) own-prop scope
-  (i32.store (local.get $fn) (if i32 (i32.load (i32.const 232)) (then (i32.const 1448232528)) (else (i32.const 1448232526))))  ;; ASYNC if flagged, else NORMAL
-  (i32.store (i32.const 232) (i32.const 0))  ;; consume async flag
+  (i32.store (local.get $fn) (if i32 (local.get $arrasync) (then (i32.const 1448232528)) (else (i32.const 1448232526))))  ;; ASYNC if flagged (captured before body — reg 232 may have been consumed by a nested closure), else NORMAL
+  (i32.store (i32.const 232) (i32.const 0))  ;; keep reg 232 cleared for the enclosing scope
   (i32.store (i32.add (local.get $fn) (i32.const 4)) (local.get $entry))
   (i32.store (i32.add (local.get $fn) (i32.const 8)) (local.get $np))
   (i32.store (i32.add (local.get $fn) (i32.const 12)) (local.get $code))
