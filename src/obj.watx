@@ -543,6 +543,46 @@
     (then (return (call $get_super_prop (local.get $ptgt) (local.get $key) (local.get $recv)))))
   (call $get_prop (local.get $ptgt) (local.get $key)))
 
+;; Proxy [[Set]](key, val, Receiver): fire the set trap with $recv as its Receiver arg (the proxy for a
+;; direct `proxy.k=v`, or the inheriting object when the proxy is on its [[Prototype]] chain). Returns 1 if
+;; the trap handled the write (fired, or an invariant threw), 0 if the proxy is TRAPLESS — the caller then
+;; does the default (direct: forward to target; prototype-chain: land an own data prop on the receiver).
+(func $proxy_set_recv (param $px i64) (param $key i64) (param $val i64) (param $recv i64) (result i32) (effects)
+  (let $strap i64 (call $proxy_trap (local.get $px) (cstring "set")))  ;; revoked / non-callable → TypeError
+  (if (call $err) (then (return (i32.const 1))))
+  (if (i32.eqz (call $is_function (local.get $strap))) (then (return (i32.const 0))))  ;; trapless → caller default
+  (let $ptgt i64 (call $proxy_target (local.get $px)))
+  (let $skv i64 (call $to_prop_key_val (local.get $key)))
+  (if (call $err) (then (return (i32.const 1))))
+  (let $sbuf i32 (call $heap_alloc (i32.const 32)))
+  (i64.store (local.get $sbuf) (local.get $ptgt))
+  (i64.store (i32.add (local.get $sbuf) (i32.const 8)) (local.get $skv))
+  (i64.store (i32.add (local.get $sbuf) (i32.const 16)) (local.get $val))
+  (i64.store (i32.add (local.get $sbuf) (i32.const 24)) (local.get $recv))
+  (let $sres i32 (call $truthy (call $call_val (local.get $strap) (i32.const 4) (local.get $sbuf) (call $proxy_handler (local.get $px)))))
+  (if (call $err) (then (return (i32.const 1))))
+  (if (i32.eqz (local.get $sres)) (then (call $set_fail) (return (i32.const 1))))  ;; trap refused → strict throws
+  ;; invariant against a non-configurable own target property
+  (let $sdb i32 (call $heap_alloc (i32.const 16)))
+  (i64.store (local.get $sdb) (local.get $ptgt))
+  (i64.store (i32.add (local.get $sdb) (i32.const 8)) (local.get $skv))
+  (let $sdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $sdb) (call $v_undef)))
+  (if (call $err) (then (return (i32.const 1))))
+  (if (i32.eqz (call $is_undefined (local.get $sdesc)))
+    (then
+      (if (i32.eqz (call $truthy (call $get_prop (local.get $sdesc) (call $mk_str (cstring "configurable")))))
+        (then
+          (if (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $sdesc)))
+            (then
+              (if (i32.eqz (call $truthy (call $get_prop (local.get $sdesc) (call $mk_str (cstring "writable")))))
+                (then
+                  (if (i32.eqz (call $same_value (local.get $val) (call $get_prop (local.get $sdesc) (call $mk_str (cstring "value")))))
+                    (then (call $throw_type (cstring "TypeError") (cstring "proxy set: cannot change non-writable non-configurable data property")) (return (i32.const 1)))))))
+            (else
+              (if (call $is_undefined (call $get_prop (local.get $sdesc) (call $mk_str (cstring "set"))))
+                (then (call $throw_type (cstring "TypeError") (cstring "proxy set: cannot write non-configurable accessor without setter")) (return (i32.const 1))))))))))
+  (i32.const 1))
+
 (func $get_prop (param $cont i64) (param $key i64) (result i64) (effects)
   (if (call $is_array (local.get $cont))
     (then
@@ -1510,49 +1550,11 @@
   (if (call $is_object (local.get $cont))
     (then
       (let $o i32 (call $val_payload (local.get $cont)))
-      ;; Proxy: dispatch to the handler's set trap, else forward to the target
-      (let $phsl i32 (call $scope_find_local (local.get $o) (cstring "@@phandler")))
-      (if (local.get $phsl)
+      ;; Proxy: dispatch to the handler's set trap (receiver = the proxy), else forward to the target
+      (if (call $scope_find_local (local.get $o) (cstring "@@phandler"))
         (then
-          (let $strap i64 (call $proxy_trap (local.get $cont) (cstring "set")))  ;; revoked / non-callable → TypeError
-          (if (call $err) (then (return)))
-          (let $ptgt i64 (call $proxy_target (local.get $cont)))
-          (if (call $is_function (local.get $strap))
-            (then
-              (let $skv i64 (call $to_prop_key_val (local.get $key)))  ;; Symbol key stays a Symbol for the trap
-              (if (call $err) (then (return)))
-              (let $sbuf i32 (call $heap_alloc (i32.const 32)))
-              (i64.store (local.get $sbuf) (local.get $ptgt))
-              (i64.store (i32.add (local.get $sbuf) (i32.const 8)) (local.get $skv))
-              (i64.store (i32.add (local.get $sbuf) (i32.const 16)) (local.get $val))
-              (i64.store (i32.add (local.get $sbuf) (i32.const 24)) (local.get $cont))
-              (let $sres i32 (call $truthy (call $call_val (local.get $strap) (i32.const 4) (local.get $sbuf) (call $proxy_handler (local.get $cont)))))
-              (if (call $err) (then (return)))
-              (if (i32.eqz (local.get $sres))
-                (then (call $set_fail) (return)))  ;; trap refused the write → strict throws
-              ;; trap returned true → invariant against a non-configurable own
-              ;; property of target: a non-writable data property's value must
-              ;; SameValue V, and a setterless accessor cannot be written
-              (let $sdb i32 (call $heap_alloc (i32.const 16)))
-              (i64.store (local.get $sdb) (local.get $ptgt))
-              (i64.store (i32.add (local.get $sdb) (i32.const 8)) (local.get $skv))
-              (let $sdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $sdb) (call $v_undef)))
-              (if (call $err) (then (return)))
-              (if (i32.eqz (call $is_undefined (local.get $sdesc)))
-                (then
-                  (if (i32.eqz (call $truthy (call $get_prop (local.get $sdesc) (call $mk_str (cstring "configurable")))))
-                    (then
-                      (if (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $sdesc)))
-                        (then  ;; data property
-                          (if (i32.eqz (call $truthy (call $get_prop (local.get $sdesc) (call $mk_str (cstring "writable")))))
-                            (then
-                              (if (i32.eqz (call $same_value (local.get $val) (call $get_prop (local.get $sdesc) (call $mk_str (cstring "value")))))
-                                (then (call $throw_type (cstring "TypeError") (cstring "proxy set: cannot change non-writable non-configurable data property")) (return))))))
-                        (else  ;; accessor property
-                          (if (call $is_undefined (call $get_prop (local.get $sdesc) (call $mk_str (cstring "set"))))
-                            (then (call $throw_type (cstring "TypeError") (cstring "proxy set: cannot write non-configurable accessor without setter")) (return)))))))))
-              (return)))
-          (call $set_prop (local.get $ptgt) (local.get $key) (local.get $val))
+          (if (call $proxy_set_recv (local.get $cont) (local.get $key) (local.get $val) (local.get $cont)) (then (return)))
+          (call $set_prop (call $proxy_target (local.get $cont)) (local.get $key) (local.get $val))  ;; trapless → target
           (return)))
       ;; TypedArray: a canonical numeric index (Number or numeric string) → IntegerIndexedElementSet
       ;; (write to the byte buffer, or a no-op for out-of-bounds/detached, never a named property).
@@ -1595,6 +1597,14 @@
               (return)))
           ;; non-writable data property → ignore the assignment (strict: throw)
           (if (i32.eqz (call $entry_writable (local.get $slot))) (then (call $set_fail) (return)))))
+      ;; no own/scope-inherited slot AND the object's [[Prototype]] is a Proxy (@@protoval): its [[Set]]
+      ;; trap intercepts the write with receiver = cont (a trapless proxy falls through to the own-data set)
+      (if (i32.eqz (local.get $slot))
+        (then
+          (let $pvss i32 (call $scope_find_local (local.get $o) (cstring "@@protoval")))
+          (if (local.get $pvss)
+            (then (if (call $is_proxy (i64.load (local.get $pvss)))
+              (then (if (call $proxy_set_recv (i64.load (local.get $pvss)) (local.get $key) (local.get $val) (local.get $cont)) (then (return)))))))))
       ;; adding a NEW own property to a non-extensible object (preventExtensions/
       ;; seal/freeze) is refused (no own slot yet + @@noext marker present); strict: throw.
       (if (i32.and (i32.eqz (call $scope_find_local (local.get $o) (local.get $ks)))
