@@ -633,7 +633,9 @@
   (if (call $is_object (local.get $o))
     (then
       (let $spsc i32 (call $val_payload (local.get $o)))
-      (let $spnewp i32 (if i32 (call $is_object (local.get $proto)) (then (call $val_payload (local.get $proto))) (else (i32.const 0))))
+      ;; scope-parent = the proto's scope for an ORDINARY object proto only; a Proxy is is_object but its
+      ;; raw scope must NOT be walked (its @@phandler slots aren't real props) — it goes to @@protoval below.
+      (let $spnewp i32 (if i32 (i32.and (call $is_object (local.get $proto)) (i32.eqz (call $is_proxy (local.get $proto)))) (then (call $val_payload (local.get $proto))) (else (i32.const 0))))
       ;; a non-extensible object's [[Prototype]] can only be set to its CURRENT value (a no-op);
       ;; changing it to a different prototype fails (Object.setPrototypeOf throws; Reflect → false).
       (if (call $scope_find_local (local.get $spsc) (cstring "@@noext"))
@@ -647,8 +649,8 @@
       ;; an array/function [[Prototype]] can't be a scope-parent (its payload isn't a scope) — keep the
       ;; VALUE in @@protoval (scope_parent stays 0) and let js_get_prototype/get_prop consult + re-dispatch
       ;; on it. An ordinary-object or null proto clears @@protoval and uses scope_parent as usual.
-      (if (i32.or (call $is_array (local.get $proto)) (call $is_function (local.get $proto)))
-        (then (call $scope_define (local.get $spsc) (cstring "@@protoval") (local.get $proto)))
+      (if (i32.or (call $is_array (local.get $proto)) (i32.or (call $is_function (local.get $proto)) (call $is_proxy (local.get $proto))))
+        (then (call $scope_define (local.get $spsc) (cstring "@@protoval") (local.get $proto)))  ;; array/function/PROXY proto → @@protoval (its payload isn't a walkable scope)
         (else (drop (call $scope_delete (local.get $spsc) (cstring "@@protoval")))))
       (i32.store (local.get $spsc) (local.get $spnewp))
       (return (i32.const 1))))
@@ -10274,9 +10276,9 @@
       (if (i32.eqz (i32.or (call $is_object (local.get $crp)) (i32.or (call $is_null (local.get $crp)) (i32.or (call $is_array (local.get $crp)) (call $is_function (local.get $crp))))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
       (let $cro i32 (call $obj_new (i32.const 8)))
-      (if (call $is_object (local.get $crp)) (then (i32.store (local.get $cro) (call $val_payload (local.get $crp))))
+      (if (i32.and (call $is_object (local.get $crp)) (i32.eqz (call $is_proxy (local.get $crp)))) (then (i32.store (local.get $cro) (call $val_payload (local.get $crp))))  ;; ordinary object proto → scope parent
         (else (if (call $is_null (local.get $crp)) (then (i32.store (local.get $cro) (i32.const 0)))  ;; Object.create(null) → no [[Prototype]]
-          (else  ;; array/function proto → keep the value in @@protoval, scope-parent 0 (see setproto_internal)
+          (else  ;; array/function/PROXY proto → keep the value in @@protoval, scope-parent 0 (see setproto_internal)
             (i32.store (local.get $cro) (i32.const 0))
             (call $scope_define (local.get $cro) (cstring "@@protoval") (local.get $crp))))))
       ;; optional 2nd arg: property descriptors (like defineProperties).

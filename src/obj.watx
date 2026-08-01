@@ -496,6 +496,53 @@
   (i64.load (local.get $slot)))
 
 ;; get_prop(container, key) -> value
+;; Proxy [[Get]](key, Receiver): $px is the proxy, $recv is the ORIGINAL receiver (the proxy for a direct
+;; `proxy.k`, or the inheriting object when the proxy sits on its [[Prototype]] chain). The get trap (if
+;; present) is invoked with $recv; a trapless proxy forwards as target.[[Get]](key, $recv) so an accessor
+;; on the target fires with this=$recv. Enforces the non-configurable-own-property trap invariant.
+(func $proxy_get_recv (param $px i64) (param $key i64) (param $recv i64) (result i64) (effects)
+  (let $gtrap i64 (call $proxy_trap (local.get $px) (cstring "get")))  ;; revoked / non-callable → TypeError
+  (if (call $err) (then (return (call $v_undef))))
+  (let $ptgt i64 (call $proxy_target (local.get $px)))
+  (if (call $is_function (local.get $gtrap))
+    (then
+      (let $gkv i64 (call $to_prop_key_val (local.get $key)))  ;; Symbol key stays a Symbol for the trap
+      (if (call $err) (then (return (call $v_undef))))
+      (let $gbuf i32 (call $heap_alloc (i32.const 24)))
+      (i64.store (local.get $gbuf) (local.get $ptgt))
+      (i64.store (i32.add (local.get $gbuf) (i32.const 8)) (local.get $gkv))
+      (i64.store (i32.add (local.get $gbuf) (i32.const 16)) (local.get $recv))
+      (let $gtr i64 (call $call_val (local.get $gtrap) (i32.const 3) (local.get $gbuf) (call $proxy_handler (local.get $px))))
+      (if (call $err) (then (return (call $v_undef))))
+      ;; invariant: against a non-configurable own property of target the trap result must match —
+      ;; SameValue a non-writable data value, or undefined for an accessor whose [[Get]] is undefined
+      (let $gdb i32 (call $heap_alloc (i32.const 16)))
+      (i64.store (local.get $gdb) (local.get $ptgt))
+      (i64.store (i32.add (local.get $gdb) (i32.const 8)) (local.get $gkv))
+      (let $gdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $gdb) (call $v_undef)))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $is_undefined (local.get $gdesc)))
+        (then
+          (if (i32.eqz (call $truthy (call $get_prop (local.get $gdesc) (call $mk_str (cstring "configurable")))))
+            (then
+              (if (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $gdesc)))
+                (then
+                  (if (i32.eqz (call $truthy (call $get_prop (local.get $gdesc) (call $mk_str (cstring "writable")))))
+                    (then
+                      (if (i32.eqz (call $same_value (local.get $gtr) (call $get_prop (local.get $gdesc) (call $mk_str (cstring "value")))))
+                        (then (call $throw_type (cstring "TypeError") (cstring "proxy get: result must match non-writable non-configurable data property")) (return (call $v_undef)))))))
+                (else
+                  (if (call $is_undefined (call $get_prop (local.get $gdesc) (call $mk_str (cstring "get"))))
+                    (then
+                      (if (i32.eqz (call $is_undefined (local.get $gtr)))
+                        (then (call $throw_type (cstring "TypeError") (cstring "proxy get: result must be undefined for non-configurable accessor without getter")) (return (call $v_undef))))))))))))
+      (return (local.get $gtr))))
+  ;; no get trap → target.[[Get]](key, $recv): get_super_prop is [[Get]]-with-receiver for a plain-object
+  ;; target (accessor + proto chain); array/TA/function/nested-proxy targets are receiver-insensitive here.
+  (if (call $is_object (local.get $ptgt))
+    (then (return (call $get_super_prop (local.get $ptgt) (local.get $key) (local.get $recv)))))
+  (call $get_prop (local.get $ptgt) (local.get $key)))
+
 (func $get_prop (param $cont i64) (param $key i64) (result i64) (effects)
   (if (call $is_array (local.get $cont))
     (then
@@ -635,48 +682,9 @@
   (if (call $is_object (local.get $cont))
     (then
       (let $o i32 (call $val_payload (local.get $cont)))
-      ;; Proxy: dispatch to the handler's get trap, else forward to the target
-      (let $phsl i32 (call $scope_find_local (local.get $o) (cstring "@@phandler")))
-      (if (local.get $phsl)
-        (then
-          (let $gtrap i64 (call $proxy_trap (local.get $cont) (cstring "get")))  ;; revoked / non-callable → TypeError
-          (if (call $err) (then (return (call $v_undef))))
-          (let $ptgt i64 (call $proxy_target (local.get $cont)))
-          (if (call $is_function (local.get $gtrap))
-            (then
-              (let $gkv i64 (call $to_prop_key_val (local.get $key)))  ;; Symbol key stays a Symbol for the trap
-              (if (call $err) (then (return (call $v_undef))))
-              (let $gbuf i32 (call $heap_alloc (i32.const 24)))
-              (i64.store (local.get $gbuf) (local.get $ptgt))
-              (i64.store (i32.add (local.get $gbuf) (i32.const 8)) (local.get $gkv))
-              (i64.store (i32.add (local.get $gbuf) (i32.const 16)) (local.get $cont))
-              (let $gtr i64 (call $call_val (local.get $gtrap) (i32.const 3) (local.get $gbuf) (call $proxy_handler (local.get $cont))))
-              (if (call $err) (then (return (call $v_undef))))
-              ;; invariant: against a non-configurable own property of target the
-              ;; trap result must match — SameValue the value of a non-writable data
-              ;; property, or undefined for an accessor whose [[Get]] is undefined
-              (let $gdb i32 (call $heap_alloc (i32.const 16)))
-              (i64.store (local.get $gdb) (local.get $ptgt))
-              (i64.store (i32.add (local.get $gdb) (i32.const 8)) (local.get $gkv))
-              (let $gdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $gdb) (call $v_undef)))
-              (if (call $err) (then (return (call $v_undef))))
-              (if (i32.eqz (call $is_undefined (local.get $gdesc)))
-                (then
-                  (if (i32.eqz (call $truthy (call $get_prop (local.get $gdesc) (call $mk_str (cstring "configurable")))))
-                    (then
-                      (if (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $gdesc)))
-                        (then  ;; data property
-                          (if (i32.eqz (call $truthy (call $get_prop (local.get $gdesc) (call $mk_str (cstring "writable")))))
-                            (then
-                              (if (i32.eqz (call $same_value (local.get $gtr) (call $get_prop (local.get $gdesc) (call $mk_str (cstring "value")))))
-                                (then (call $throw_type (cstring "TypeError") (cstring "proxy get: result must match non-writable non-configurable data property")) (return (call $v_undef)))))))
-                        (else  ;; accessor property
-                          (if (call $is_undefined (call $get_prop (local.get $gdesc) (call $mk_str (cstring "get"))))
-                            (then
-                              (if (i32.eqz (call $is_undefined (local.get $gtr)))
-                                (then (call $throw_type (cstring "TypeError") (cstring "proxy get: result must be undefined for non-configurable accessor without getter")) (return (call $v_undef))))))))))))
-              (return (local.get $gtr))))
-          (return (call $get_prop (local.get $ptgt) (local.get $key)))))
+      ;; Proxy: dispatch to the handler's get trap, else forward to the target — the receiver is the proxy
+      (if (call $scope_find_local (local.get $o) (cstring "@@phandler"))
+        (then (return (call $proxy_get_recv (local.get $cont) (local.get $key) (local.get $cont)))))
       ;; TypedArray: a canonical numeric index (Number or numeric string) → IntegerIndexedElementGet
       ;; (the element, or undefined for out-of-bounds/invalid/detached — NEVER an OrdinaryGet that
       ;; would consult the prototype chain).
@@ -726,10 +734,17 @@
                 (then (call $throw_type (cstring "TypeError") (cstring "'#x' was defined without a getter")) (return (call $v_undef))))
               (return (call $v_undef))))
           (return (i64.load (local.get $slot)))))
-      ;; array/function [[Prototype]] (set via setPrototypeOf) is stored as @@protoval — inherit from it
-      ;; (its payload isn't a scope, so scope_find above couldn't walk it; re-dispatch get_prop on the value)
+      ;; array/function/PROXY [[Prototype]] (set via setPrototypeOf / Object.create) is stored as @@protoval —
+      ;; inherit from it (its payload isn't a scope, so scope_find above couldn't walk it). A Proxy on the
+      ;; [[Prototype]] chain runs its [[Get]] with the ORIGINAL receiver ($cont), so an accessor on the
+      ;; proxy's target fires with this=$cont; array/function re-dispatch get_prop.
       (let $pvslot i32 (call $scope_find_local (local.get $o) (cstring "@@protoval")))
-      (if (local.get $pvslot) (then (return (call $get_prop (i64.load (local.get $pvslot)) (local.get $key)))))
+      (if (local.get $pvslot)
+        (then
+          (let $pvv i64 (i64.load (local.get $pvslot)))
+          (if (call $is_proxy (local.get $pvv))
+            (then (return (call $proxy_get_recv (local.get $pvv) (local.get $key) (local.get $cont)))))
+          (return (call $get_prop (local.get $pvv) (local.get $key)))))
       ;; not found on the object or its prototype chain. A normal object parents to
       ;; Object.prototype (obj_new → scope_new(reg 328)), so hasOwnProperty/toString/…
       ;; are found by the scope_find above. The GLOBAL object (mem 204) inherits
