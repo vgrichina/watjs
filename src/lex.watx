@@ -167,7 +167,11 @@
           (block $eol (loop $sl
             (let $d i32 (call $ch_at (i32.const 0)))
             (br_if $eol (i32.eq (local.get $d) (i32.const -1)))
-            (br_if $eol (i32.eq (local.get $d) (i32.const 10)))
+            (br_if $eol (i32.eq (local.get $d) (i32.const 10)))  ;; LF
+            (br_if $eol (i32.eq (local.get $d) (i32.const 13)))  ;; CR
+            ;; U+2028 LINE SEPARATOR / U+2029 PARAGRAPH SEPARATOR (E2 80 A8/A9) also end a line comment —
+            ;; break WITHOUT consuming so the outer whitespace skip handles it (sets nl_before like LF)
+            (br_if $eol (i32.and (i32.eq (local.get $d) (i32.const 226)) (i32.and (i32.eq (call $ch_at (i32.const 1)) (i32.const 128)) (i32.or (i32.eq (call $ch_at (i32.const 2)) (i32.const 168)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 169))))))
             (call $set_pos (i32.add (call $pos) (i32.const 1)))
             (br $sl)))
           (br $again)))
@@ -635,6 +639,7 @@
             (block $lce (loop $lcl
               (let $lc i32 (call $ch_at (i32.const 0)))
               (br_if $lce (i32.or (i32.eq (local.get $lc) (i32.const -1)) (i32.or (i32.eq (local.get $lc) (i32.const 10)) (i32.eq (local.get $lc) (i32.const 13)))))
+              (br_if $lce (i32.and (i32.eq (local.get $lc) (i32.const 226)) (i32.and (i32.eq (call $ch_at (i32.const 1)) (i32.const 128)) (i32.or (i32.eq (call $ch_at (i32.const 2)) (i32.const 168)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 169))))))  ;; U+2028/U+2029 end the comment
               (call $set_pos (i32.add (call $pos) (i32.const 1))) (br $lcl)))
             (br $l)))
         (if (i32.eq (local.get $c1) (i32.const 42))  ;; /* block comment */
