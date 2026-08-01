@@ -124,20 +124,20 @@
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
   <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
   <div class="meta">
-    <span class="chip">status as of <b>2026-07-13</b></span>
+    <span class="chip">status as of <b>2026-08-01</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>ebd57c6</b></span>
-    <span class="chip"><b>1338</b> commits</span>
+    <span class="chip">@ <b>daa5ea1</b></span>
+    <span class="chip"><b>1512</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">26.4k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">296 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">28.2k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">321 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
-  <div class="card"><div class="n">64.4M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">74.4M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -183,7 +183,7 @@
   <tr><td>4</td><td>threaded-code VM + GC + test262 breadth</td><td><span class="pill wip">in progress</span></td></tr>
 </table>
 
-<h2>Test suites <span class="em">live run · 2026-07-13</span></h2>
+<h2>Test suites <span class="em">live run · 2026-08-01</span></h2>
 <table>
   <tr><th>suite</th><th>files</th><th>pass rate</th></tr>
   <tr><td>self-check <code>test/</code></td><td class="mono">486 / 486</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
@@ -192,8 +192,8 @@
   <tr><td><code>test262/broad2</code></td><td class="mono">30 / 30</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/broad3</code></td><td class="mono">22 / 24</td><td><span class="prate warn"><span style="width:92%"></span></span><span class="rate warn">92%</span></td></tr>
   <tr><td><code>test262/cases</code></td><td class="mono">4 / 4</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
-  <tr><td><code>test262/harness</code></td><td class="mono">31 / 31</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
-  <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">161 / 164</td><td><span class="prate"><span style="width:96%"></span></span><span class="rate good">96%</span></td></tr>
+  <tr><td><code>test262/harness</code></td><td class="mono">29 / 32</td><td><span class="prate warn"><span style="width:91%"></span></span><span class="rate warn">91%</span></td></tr>
+  <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">159 / 165</td><td><span class="prate"><span style="width:96%"></span></span><span class="rate good">96%</span></td></tr>
 </table>
 
 <h2>Full vendored test262 tree <span class="em">~53k files · 2026-07-05</span></h2>
@@ -216,12 +216,12 @@
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
-  <tr><td class="mono">ebd57c6</td><td><code>arguments</code> forbidden in a class field initializer / static block (+30)</td></tr>
-  <tr><td class="mono">520ea57</td><td><code>let</code> is not a valid lexical binding name (+8)</td></tr>
-  <tr><td class="mono">443ecd7</td><td>block-level duplicate <code>LexicallyDeclaredNames</code> early error (+5)</td></tr>
-  <tr><td class="mono">eb28457</td><td><code>try</code> statement: require catch/finally; reject empty catch parens (+13)</td></tr>
-  <tr><td class="mono">d51572f</td><td>class static-block context restrictions: <code>return</code>/<code>await</code>/<code>yield</code>/<code>arguments</code> (+4)</td></tr>
-  <tr><td class="mono">54c7a58</td><td>tooling: parallel worker-pool <code>run-tests.js</code> (~180× faster)</td></tr>
+  <tr><td class="mono">daa5ea1</td><td>TypedArray <code>findLast</code>/<code>findLastIndex</code> do a full <code>ValidateTypedArray</code> on <code>this</code></td></tr>
+  <tr><td class="mono">c1c3cdc</td><td>class field init uses <code>CreateDataPropertyOrThrow</code>, not <code>[[Set]]</code></td></tr>
+  <tr><td class="mono">8e19753</td><td><code>NamedEvaluation</code> for class-field anonymous-function initializers</td></tr>
+  <tr><td class="mono">c358b6c</td><td>async arrow keeps its async-ness when the body contains a closure</td></tr>
+  <tr><td class="mono">43dd376</td><td><code>ArrayBuffer.prototype.transfer</code> / <code>transferToFixedLength</code> (+ slice detached-check)</td></tr>
+  <tr><td class="mono">6118bfc</td><td>surrogate/astral Unicode: <code>String.fromCharCode</code> pairs, <code>encodeURI</code>/<code>escape</code> code points</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -231,7 +231,7 @@
   <tr><td>Object</td><td>named accessors, descriptors, for-in proto-chain enumeration</td></tr>
   <tr><td>Date</td><td>~580 passing (timeclip, toPrimitive hints, UTC/year offsets, setters)</td></tr>
   <tr><td>Collections</td><td>Set/Map proto, ES2024 set methods, WeakMap/WeakSet, groupBy, Symbol.species</td></tr>
-  <tr><td>TypedArrays</td><td>%TypedArray% intrinsic, exotic numeric-index semantics, detached checks, species-create, Float16Array, Uint8Array base64/hex, <b>resizable/length-tracking buffers</b></td></tr>
+  <tr><td>TypedArrays</td><td>%TypedArray% intrinsic, exotic numeric-index semantics, detached checks, species-create, Float16Array, Uint8Array base64/hex, resizable/length-tracking buffers, <b>ArrayBuffer.prototype.transfer</b></td></tr>
   <tr><td>Classes / subclassing <span class="pill done">new</span></td><td>block-scoped class name, static &amp; instance fields, derived-ctor <code>super()</code> + return semantics, <b>subclassing native exotics</b> (Array/TypedArray/Map/Set/Promise/RegExp/Date/Boolean/Number/String)</td></tr>
   <tr><td>Scoping <span class="pill done">new</span></td><td>real nested lexical envs — block scope, per-iteration for-let bindings, TDZ, multi-declarator for-init</td></tr>
   <tr><td>Async / Promises</td><td>microtask job queue, true <code>await</code> suspension, async generators (+<code>.return</code>/<code>.throw</code>), for-await-of, <code>Array.fromAsync</code></td></tr>
@@ -281,7 +281,7 @@
 </ul>
 
 <footer>
-  Generated 2026-07-05 from repo state &amp; session memory. &nbsp;·&nbsp;
+  Last refreshed 2026-08-01 from repo state &amp; session memory. &nbsp;·&nbsp;
   Two test layers: self-checking assertion JS (<code>test/</code>) + tc39 test262 (<code>test262/</code>).
   Chart drawn inline from per-day git activity + dev-session token usage — no external dependencies.
 </footer>
@@ -305,6 +305,11 @@ const DAILY = [
   ["Jul 2", 18, 0], ["Jul 3", 45, 2.77], ["Jul 4", 13, 2.13], ["Jul 5", 45, 1.90],
   ["Jul 6", 59, 2.76], ["Jul 7", 18, 1.44], ["Jul 8", 0, 0], ["Jul 9", 0, 0],
   ["Jul 10", 9, 0.17], ["Jul 11", 38, 0.80], ["Jul 12", 26, 2.24], ["Jul 13", 13, 0.94],
+  ["Jul 14", 27, 1.55], ["Jul 15", 0, 0.01], ["Jul 16", 8, 0.20], ["Jul 17", 8, 1.06],
+  ["Jul 18", 17, 0.55], ["Jul 19", 16, 0.52], ["Jul 20", 58, 1.81], ["Jul 21", 0, 1.35],
+  ["Jul 22", 0, 0], ["Jul 23", 0, 0], ["Jul 24", 0, 0], ["Jul 25", 0, 0],
+  ["Jul 26", 10, 0], ["Jul 27", 9, 2.06], ["Jul 28", 0, 0], ["Jul 29", 0, 0],
+  ["Jul 30", 0, 0], ["Jul 31", 3, 0.59], ["Aug 1", 1, 0.26],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -322,6 +327,11 @@ const GROWTH = [
   ["Jul 2", 22398, 249], ["Jul 3", 23045, 254], ["Jul 4", 23155, 256], ["Jul 5", 23816, 262],
   ["Jul 6", 24575, 269], ["Jul 7", 25029, 274], ["Jul 8", 25029, 274], ["Jul 9", 25029, 274],
   ["Jul 10", 25163, 276], ["Jul 11", 25576, 282], ["Jul 12", 26252, 294], ["Jul 13", 26370, 296],
+  ["Jul 14", 26796, 303], ["Jul 15", 26796, 303], ["Jul 16", 26990, 304], ["Jul 17", 27055, 305],
+  ["Jul 18", 27152, 307], ["Jul 19", 27278, 309], ["Jul 20", 27866, 317], ["Jul 21", 27866, 317],
+  ["Jul 22", 27866, 317], ["Jul 23", 27866, 317], ["Jul 24", 27866, 317], ["Jul 25", 27866, 317],
+  ["Jul 26", 28034, 318], ["Jul 27", 28161, 320], ["Jul 28", 28161, 320], ["Jul 29", 28161, 320],
+  ["Jul 30", 28161, 320], ["Jul 31", 28190, 321], ["Aug 1", 28194, 321],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
@@ -343,6 +353,10 @@ const HUMAN = {
   "Jul 3": { n:23 }, "Jul 4": { n:14 }, "Jul 5": { n:18 }, "Jul 6": { n:24 }, "Jul 7": { n:11 },
   "Jul 8": { n:1 }, "Jul 10": { n:1 }, "Jul 11": { n:8 }, "Jul 12": { n:12 },
   "Jul 13": { i:['"go" — approved building the parallel test runner, delivering the "faster verification" asked for on Jun 20 (~180× worker-pool speedup)'], n:15 },
+  "Jul 14": { n:10 }, "Jul 16": { n:2 }, "Jul 17": { n:6 }, "Jul 18": { n:2 }, "Jul 19": { n:5 },
+  "Jul 20": { n:13 },
+  "Jul 21": { i:["the parallel suite seems stuck — weren't we going to make it parallel and fast? (pushed the run-tests worker pool over the line)"], n:0 },
+  "Jul 27": { n:1 }, "Jul 31": { n:3 }, "Aug 1": { n:2 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
