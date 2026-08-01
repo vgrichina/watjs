@@ -5056,8 +5056,8 @@
       (if (i32.eq (local.get $id) (i32.const 504)) (then (i32.store (i32.const 860) (i32.const 1)) (return (call $call_native (i32.const 25)  (local.get $argc) (local.get $argv) (local.get $thisv)))))))  ;; forEach
   ;; %TypedArray%.prototype.findLast/findLastIndex — ValidateTypedArray then delegate to the generic
   ;; Array natives 33/34 (separate ids so the GENERIC Array.prototype.findLast.call(oobTA) doesn't validate).
-  (if (i32.eq (local.get $id) (i32.const 524)) (then (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef)))) (i32.store (i32.const 860) (i32.const 1)) (return (call $call_native (i32.const 33) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; findLast
-  (if (i32.eq (local.get $id) (i32.const 525)) (then (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef)))) (i32.store (i32.const 860) (i32.const 1)) (return (call $call_native (i32.const 34) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; findLastIndex
+  (if (i32.eq (local.get $id) (i32.const 524)) (then (if (call $ta_validate_brand (local.get $thisv)) (then (return (call $v_undef)))) (i32.store (i32.const 860) (i32.const 1)) (return (call $call_native (i32.const 33) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; findLast
+  (if (i32.eq (local.get $id) (i32.const 525)) (then (if (call $ta_validate_brand (local.get $thisv)) (then (return (call $v_undef)))) (i32.store (i32.const 860) (i32.const 1)) (return (call $call_native (i32.const 34) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; findLastIndex
   ;; Annex B.2.2 String.prototype HTML methods (460-472) + %ThrowTypeError% (510, when actually CALLED,
   ;; e.g. invoking a strict arguments.callee / fn.caller accessor's getter)
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 460)) (i32.le_s (local.get $id) (i32.const 472))) (i32.eq (local.get $id) (i32.const 510)))
