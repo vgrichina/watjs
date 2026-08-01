@@ -777,11 +777,23 @@
 ;; Abstract Relational Comparison a < b (LeftFirst). Returns 0 false, 1 true,
 ;; 2 undefined (a NaN operand). Both operands ToPrimitive(number); two string
 ;; primitives compare lexicographically, otherwise numerically.
-(func $js_less (param $a i64) (param $b i64) (result i32) (effects)
-  (let $pa i64 (call $to_primitive_h (local.get $a) (i32.const 1)))
-  (if (call $err) (then (return (i32.const 0))))
-  (let $pb i64 (call $to_primitive_h (local.get $b) (i32.const 1)))
-  (if (call $err) (then (return (i32.const 0))))
+;; IsLessThan(a, b, LeftFirst): $lf=1 → ToPrimitive(a) before ToPrimitive(b) (natural, for `<`/`<=`);
+;; $lf=0 → ToPrimitive(b) first, so `A > B`/`A >= B` (compiled as js_less(B,A,0)) still runs A's
+;; valueOf before B's — preserving left-to-right operand evaluation.
+(func $js_less (param $a i64) (param $b i64) (param $lf i32) (result i32) (effects)
+  (let $pa i64 (i64.const 0))
+  (let $pb i64 (i64.const 0))
+  (if (local.get $lf)
+    (then
+      (set! $pa (call $to_primitive_h (local.get $a) (i32.const 1)))
+      (if (call $err) (then (return (i32.const 0))))
+      (set! $pb (call $to_primitive_h (local.get $b) (i32.const 1)))
+      (if (call $err) (then (return (i32.const 0)))))
+    (else
+      (set! $pb (call $to_primitive_h (local.get $b) (i32.const 1)))
+      (if (call $err) (then (return (i32.const 0))))
+      (set! $pa (call $to_primitive_h (local.get $a) (i32.const 1)))
+      (if (call $err) (then (return (i32.const 0))))))
   (if (i32.and (call $is_string (local.get $pa)) (call $is_string (local.get $pb)))
     (then (return (call $str_less (call $val_payload (local.get $pa)) (call $val_payload (local.get $pb))))))
   ;; BigInt < BigInt: compare i64 values exactly (f64 loses precision past 2^53)
