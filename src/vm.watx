@@ -280,12 +280,39 @@
     (if (i32.eq (local.get $k) (i32.const 18))
       (then (br_if $done (i32.eqz (local.get $depth)))  ;; the body's closing '}' → done
             (set! $depth (i32.sub (local.get $depth) (i32.const 1))) (call $next_token) (br $lp)))
-    ;; `var NAME` → DEFVAR name (create-if-absent, undefined)
+    ;; `var NAME[, NAME]*` → DEFVAR name (create-if-absent, undefined) for EVERY identifier declarator in the
+    ;; list, not just the first — an un-hoisted 2nd declarator would let `b=2` land on the global before its
+    ;; `var b` runs. Identifier declarators only (patterns are not hoisted here, matching the single form).
     (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "var")))
       (then
-        (call $next_token)
-        (if (i32.eq (call $tok_kind) (i32.const 3))
-          (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))))
+        (call $next_token)  ;; consume 'var'
+        (block $vhdone (loop $vhl
+          (br_if $vhdone (i32.ne (call $tok_kind) (i32.const 3)))  ;; declarator not an identifier (pattern / list end) → stop
+          (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; DEFVAR NAME
+          (call $next_token)  ;; consume NAME
+          (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' initializer → skip it to the next TOP-LEVEL ','
+            (then
+              (call $next_token)  ;; consume '='
+              (let $hd i32 (i32.const 0))
+              (let $fst i32 (i32.const 1))  ;; first initializer token — ASI can't apply right after '='
+              (block $isep (loop $isl
+                (let $ik i32 (call $tok_kind))
+                (br_if $vhdone (i32.eqz (local.get $ik)))  ;; EOF
+                ;; ASI: a LineTerminator before a non-',' token at depth 0 (past the first) ends the statement
+                (br_if $vhdone (i32.and (i32.eqz (local.get $fst)) (i32.and (i32.eqz (local.get $hd)) (i32.and (call $nl_before) (i32.ne (local.get $ik) (i32.const 22))))))
+                (set! $fst (i32.const 0))
+                (if (i32.or (i32.eq (local.get $ik) (i32.const 15)) (i32.or (i32.eq (local.get $ik) (i32.const 19)) (i32.eq (local.get $ik) (i32.const 17))))
+                  (then (set! $hd (i32.add (local.get $hd) (i32.const 1))) (call $next_token) (br $isl)))  ;; ( [ {
+                (if (i32.or (i32.eq (local.get $ik) (i32.const 16)) (i32.or (i32.eq (local.get $ik) (i32.const 20)) (i32.eq (local.get $ik) (i32.const 18))))
+                  (then (br_if $vhdone (i32.eqz (local.get $hd))) (set! $hd (i32.sub (local.get $hd) (i32.const 1))) (call $next_token) (br $isl)))  ;; ) ] } — depth-0 closer ends the stmt
+                (br_if $vhdone (i32.and (i32.eqz (local.get $hd)) (i32.eq (local.get $ik) (i32.const 21))))  ;; ';' → end
+                (if (i32.and (i32.eqz (local.get $hd)) (i32.eq (local.get $ik) (i32.const 22))) (then (call $next_token) (br $isep)))  ;; top-level ',' → next declarator
+                (call $next_token) (br $isl)))
+              (br $vhl))  ;; consumed the ',' → hoist the next declarator
+            (else  ;; no initializer: ',' → next declarator; anything else (';', '}', ASI, EOF) ends the list
+              (br_if $vhdone (i32.ne (call $tok_kind) (i32.const 22)))
+              (call $next_token)  ;; consume ','
+              (br $vhl)))))
         (br $lp)))
     (call $next_token) (br $lp)))
   (call $cursor_restore (local.get $start)))
@@ -6150,7 +6177,37 @@
               ;; CreateGlobalVarBinding semantics: define undefined ONLY if absent (DEFVAR),
               ;; so a `var X` hoist never clobbers an already-hoisted `function X` (or an
               ;; earlier var). STOREVAR (unconditional) overwrote the function with undefined.
-              (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))))))))
+              ;; Hoist EVERY identifier declarator in the list (`var a, b=1, c`), not just the first —
+              ;; else `b=…` before its `var b` runs would create a stray global. (Leaves the list
+              ;; terminator unconsumed and br $scan, so the outer loop tracks its brace/paren depth.)
+              (then
+                (block $phdone (loop $phl
+                  (br_if $phdone (i32.ne (call $tok_kind) (i32.const 3)))  ;; pattern / list end → stop
+                  (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; DEFVAR NAME
+                  (call $next_token)  ;; consume NAME
+                  (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' → skip initializer to the next top-level ','
+                    (then
+                      (call $next_token)
+                      (let $phd i32 (i32.const 0))
+                      (let $pfst i32 (i32.const 1))  ;; first initializer token — ASI can't apply right after '='
+                      (block $psep (loop $psl
+                        (let $pik i32 (call $tok_kind))
+                        (br_if $phdone (i32.eqz (local.get $pik)))  ;; EOF
+                        ;; ASI: a LineTerminator before a non-',' token at depth 0 (past the first) ends the stmt
+                        (br_if $phdone (i32.and (i32.eqz (local.get $pfst)) (i32.and (i32.eqz (local.get $phd)) (i32.and (call $nl_before) (i32.ne (local.get $pik) (i32.const 22))))))
+                        (set! $pfst (i32.const 0))
+                        (if (i32.or (i32.eq (local.get $pik) (i32.const 15)) (i32.or (i32.eq (local.get $pik) (i32.const 19)) (i32.eq (local.get $pik) (i32.const 17))))
+                          (then (set! $phd (i32.add (local.get $phd) (i32.const 1))) (call $next_token) (br $psl)))  ;; ( [ {
+                        (if (i32.or (i32.eq (local.get $pik) (i32.const 16)) (i32.or (i32.eq (local.get $pik) (i32.const 20)) (i32.eq (local.get $pik) (i32.const 18))))
+                          (then (br_if $phdone (i32.eqz (local.get $phd))) (set! $phd (i32.sub (local.get $phd) (i32.const 1))) (call $next_token) (br $psl)))  ;; ) ] } — depth-0 closer ends the stmt
+                        (br_if $phdone (i32.and (i32.eqz (local.get $phd)) (i32.eq (local.get $pik) (i32.const 21))))  ;; ';'
+                        (if (i32.and (i32.eqz (local.get $phd)) (i32.eq (local.get $pik) (i32.const 22))) (then (call $next_token) (br $psep)))  ;; top-level ','
+                        (call $next_token) (br $psl)))
+                      (br $phl))
+                    (else  ;; no initializer: ',' → next declarator; else the list ends
+                      (br_if $phdone (i32.ne (call $tok_kind) (i32.const 22)))
+                      (call $next_token) (br $phl)))))
+                (br $scan)))))))
     (set! $prevelse (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "else"))))
     (set! $prevk (local.get $k))
     (call $next_token)
