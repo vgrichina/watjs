@@ -390,6 +390,63 @@
     (br $l)))
   (local.get $arr))
 
+;; Parse a (already format-validated) integer string EXACTLY into i64 — decimal/0x/0o/0b, optional
+;; sign + surrounding whitespace. Unlike bigint_str_value (str_to_num→f64→i64), this preserves every
+;; digit for values in (2^53, 2^63), which BigInt==String equality needs. Assumes a valid format.
+(func $str_bigint_i64 (param $ks i32) (result i64) (effects)
+  (let $n i32 (call $str_len (local.get $ks)))
+  (let $i i32 (i32.const 0))
+  (block $wse (loop $wsl
+    (br_if $wse (i32.ge_s (local.get $i) (local.get $n)))
+    (let $wc i32 (call $str_byte (local.get $ks) (local.get $i)))
+    (br_if $wse (i32.eqz (i32.or (i32.eq (local.get $wc) (i32.const 32)) (i32.or (i32.eq (local.get $wc) (i32.const 9)) (i32.or (i32.eq (local.get $wc) (i32.const 10)) (i32.or (i32.eq (local.get $wc) (i32.const 13)) (i32.or (i32.eq (local.get $wc) (i32.const 11)) (i32.eq (local.get $wc) (i32.const 12)))))))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $wsl)))
+  (let $neg i32 (i32.const 0))
+  (if (i32.lt_s (local.get $i) (local.get $n))
+    (then
+      (let $sc i32 (call $str_byte (local.get $ks) (local.get $i)))
+      (if (i32.eq (local.get $sc) (i32.const 45)) (then (set! $neg (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1)))))
+      (if (i32.eq (local.get $sc) (i32.const 43)) (then (set! $i (i32.add (local.get $i) (i32.const 1)))))))
+  (let $radix i32 (i32.const 10))
+  (if (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $n))
+    (then (if (i32.eq (call $str_byte (local.get $ks) (local.get $i)) (i32.const 48))
+      (then
+        (let $rc i32 (call $str_byte (local.get $ks) (i32.add (local.get $i) (i32.const 1))))
+        (if (i32.or (i32.eq (local.get $rc) (i32.const 120)) (i32.eq (local.get $rc) (i32.const 88))) (then (set! $radix (i32.const 16)) (set! $i (i32.add (local.get $i) (i32.const 2)))))
+        (if (i32.or (i32.eq (local.get $rc) (i32.const 111)) (i32.eq (local.get $rc) (i32.const 79))) (then (set! $radix (i32.const 8)) (set! $i (i32.add (local.get $i) (i32.const 2)))))
+        (if (i32.or (i32.eq (local.get $rc) (i32.const 98)) (i32.eq (local.get $rc) (i32.const 66))) (then (set! $radix (i32.const 2)) (set! $i (i32.add (local.get $i) (i32.const 2)))))))))
+  (let $val i64 (i64.const 0))
+  (block $de (loop $dl
+    (br_if $de (i32.ge_s (local.get $i) (local.get $n)))
+    (let $dc i32 (call $str_byte (local.get $ks) (local.get $i)))
+    (let $dv i32 (call $hexval (local.get $dc)))
+    (if (i32.or (i32.lt_s (local.get $dv) (i32.const 0)) (i32.ge_s (local.get $dv) (local.get $radix))) (then (br $de)))
+    (set! $val (i64.add (i64.mul (local.get $val) (i64.extend_i32_s (local.get $radix))) (i64.extend_i32_s (local.get $dv))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $dl)))
+  (if (local.get $neg) (then (set! $val (i64.sub (i64.const 0) (local.get $val)))))
+  (local.get $val))
+
+;; IsLooselyEqual between a BigInt (i64 $bv) and a non-BigInt primitive $ov (Number/String/Boolean).
+;; Spec 7.2.15: BigInt==String → StringToBigInt(y) (undefined ⇒ false, no throw); BigInt==Number →
+;; mathematical equality (NOT via f64 coercion of the BigInt, which loses precision past 2^53);
+;; BigInt==Boolean handled by the earlier ToNumber(boolean) then this same path.
+(func $bigint_loose_eq (param $bv i64) (param $ov i64) (result i32) (effects)
+  (if (call $is_boolean (local.get $ov))
+    (then (return (i64.eq (local.get $bv) (i64.extend_i32_u (call $val_payload (local.get $ov)))))))
+  (if (call $is_number (local.get $ov))
+    (then
+      (let $n f64 (call $tonum_raw (local.get $ov)))
+      (if (f64.ne (local.get $n) (f64.trunc (local.get $n))) (then (return (i32.const 0))))  ;; non-integer / NaN ⇒ never equal
+      (return (f64.eq (f64.convert_i64_s (local.get $bv)) (local.get $n)))))  ;; exact within i64/2^53
+  (if (call $is_string (local.get $ov))
+    (then
+      ;; validate the integer-literal format (StringToBigInt); an invalid string ⇒ false, no throw
+      (drop (call $bigint_str_value (call $val_payload (local.get $ov))))
+      (if (call $err) (then (call $set_err (i32.const 0)) (return (i32.const 0))))
+      ;; parse EXACTLY (bigint_str_value's value goes through f64) and compare i64
+      (return (i64.eq (local.get $bv) (call $str_bigint_i64 (call $val_payload (local.get $ov)))))))
+  (i32.const 0))
+
 (func $loose_eq (param $a i64) (param $b i64) (result i32) (effects)
   (if i32 (call $strict_eq (local.get $a) (local.get $b)) (then (i32.const 1))
   (else
@@ -415,9 +472,14 @@
                 (if i32 (i32.and (call $is_bigint (local.get $a)) (call $is_bigint (local.get $b)))
                   ;; BigInt == BigInt: compare i64 values exactly (f64 loses precision past 2^53)
                   (then (i64.eq (call $bigint_val (local.get $a)) (call $bigint_val (local.get $b))))
-                  (else (if i32 (i32.and (local.get $ap) (local.get $bp))
-                    (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
-                    (else (i32.const 0))))))))))))))))
+                  (else (if i32 (call $is_bigint (local.get $a))
+                    ;; BigInt == Number/String/Boolean: exact (StringToBigInt / mathematical), not via f64
+                    (then (call $bigint_loose_eq (call $bigint_val (local.get $a)) (local.get $b)))
+                    (else (if i32 (call $is_bigint (local.get $b))
+                      (then (call $bigint_loose_eq (call $bigint_val (local.get $b)) (local.get $a)))
+                      (else (if i32 (i32.and (local.get $ap) (local.get $bp))
+                        (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
+                        (else (i32.const 0))))))))))))))))))))
 
 ;; relational compare: kind 29 < , 30 > , 31 <= , 32 >=
 
