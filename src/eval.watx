@@ -7206,7 +7206,11 @@
   (if (i32.eq (local.get $id) (i32.const 196))  ;; Symbol([desc]) → fresh unique symbol
     (then
       (let $shasd i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
+      ;; the description is ToString'd (SymbolDescriptiveString) — ToString(Symbol) throws (to_str is lenient, so check here)
+      (if (i32.and (local.get $shasd) (call $is_symbol (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $sdesc i32 (if i32 (local.get $shasd) (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))) (else (cstring ""))))
+      (if (call $err) (then (return (call $v_undef))))  ;; ToString(desc) threw (e.g. a throwing toString on an object)
       (let $scnt i32 (i32.load (i32.const 776)))
       (i32.store (i32.const 776) (i32.add (local.get $scnt) (i32.const 1)))
       (let $symbkey i32 (call $str_concat (call $str_concat (call $str_concat (cstring "@@sym:") (call $num_to_str (f64.convert_i32_s (local.get $scnt)))) (cstring ":")) (local.get $sdesc)))
@@ -7648,6 +7652,9 @@
                   (if (call $is_object (local.get $rcnproto)) (then (i32.store (local.get $rcno) (call $val_payload (local.get $rcnproto)))))
                   (set! $rcnthis (call $mk_obj (local.get $rcno)))
                   (i64.store (i32.const 656) (local.get $rcnt))))))
+          ;; native-construct flag: Reflect.construct invokes [[Construct]], so a dual call/construct
+          ;; native (Date, …) must construct, not call (e.g. Date()→string). Mirrors the NEW op path.
+          (i32.store (i32.const 640) (i32.const 1))
           (return (call $call_native (i32.load (local.get $rcfn)) (local.get $rcn) (local.get $rcbuf) (local.get $rcnthis)))))
       ;; VM-function constructor: fresh object (proto = newTarget.prototype), run body
       (let $rcobj i32 (call $obj_new (i32.const 8)))
@@ -11875,6 +11882,9 @@
     (then
       (if (i32.eqz (call $native_is_ctor (local.get $magic)))
         (then (call $throw_type (cstring "TypeError") (cstring "not a constructor")) (return (call $v_undef))))
+      ;; native-construct flag: invoked via `new` (mirrors the NEW op path) — a dual call/construct
+      ;; native (Date, RegExp, …) must run its [[Construct]] behavior, not [[Call]] (e.g. Date()→string)
+      (i32.store (i32.const 640) (i32.const 1))
       (if (i32.or (i32.eq (local.get $magic) (i32.const 4)) (i32.or (i32.eq (local.get $magic) (i32.const 5)) (i32.eq (local.get $magic) (i32.const 6))))
         (then (return (call $make_wrapper (call $call_native (local.get $magic) (local.get $argc) (local.get $argbuf) (call $v_undef))
           (if i32 (i32.eq (local.get $magic) (i32.const 4)) (then (i32.load (i32.const 164)))
