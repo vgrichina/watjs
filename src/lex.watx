@@ -309,6 +309,16 @@
         (br $el)))
       (if (i32.eqz (local.get $endig)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Missing exponent digits in numeric literal")) (return)))  ;; `1e`, `1e+`
       (set! $exp (i32.add (local.get $exp) (i32.mul (local.get $esign) (local.get $en))))))
+  ;; strip trailing zeros from the f64 mantissa (NOT $ival, the BigInt path) so a zero-padded
+  ;; literal like 1.234500000000000000000000000 reduces to 12345·10^-4 and takes the EXACT fast
+  ;; path below instead of the lossy step-by-10 chain. Must mirror $str_to_num exactly.
+  (block $mze (loop $mzl
+    (br_if $mze (i64.eqz (local.get $mant)))
+    (br_if $mze (i64.ne (i64.rem_u (local.get $mant) (i64.const 10)) (i64.const 0)))
+    (set! $mant (i64.div_u (local.get $mant) (i64.const 10)))
+    (set! $exp (i32.add (local.get $exp) (i32.const 1)))
+    (set! $nd (i32.sub (local.get $nd) (i32.const 1)))
+    (br $mzl)))
   ;; combine
   (set! $val (f64.convert_i64_s (local.get $mant)))
   (if (i32.ne (local.get $exp) (i32.const 0))

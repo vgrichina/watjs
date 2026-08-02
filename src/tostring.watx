@@ -1025,6 +1025,16 @@
   (if (i32.and (local.get $sawE) (i32.eqz (local.get $edig))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
   (if (i32.eqz (call $str_rest_ws (local.get $s) (local.get $i) (local.get $len))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
   (if (i32.eqz (local.get $any)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  ;; strip trailing zeros from the mantissa (12345000000000000·10^-16 → 12345·10^-4) so a value
+  ;; padded with zeros (1.234500000000000000000000000) reduces to few significant digits and takes
+  ;; the EXACT fast path below instead of the lossy step-by-10 chain (which drifts off the nearest f64).
+  (block $mze (loop $mzl
+    (br_if $mze (i64.eqz (local.get $mant)))
+    (br_if $mze (i64.ne (i64.rem_u (local.get $mant) (i64.const 10)) (i64.const 0)))
+    (set! $mant (i64.div_u (local.get $mant) (i64.const 10)))
+    (set! $exp (i32.add (local.get $exp) (i32.const 1)))
+    (set! $nd (i32.sub (local.get $nd) (i32.const 1)))
+    (br $mzl)))
   (let $r f64 (f64.convert_i64_s (local.get $mant)))
   (let $res f64 (local.get $r))
   ;; combine mant·10^exp — MUST match $lex_number's slow path exactly, or a literal
