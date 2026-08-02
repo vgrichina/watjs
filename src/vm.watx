@@ -5685,6 +5685,18 @@
                   (if (local.get $uofok) (then (set! $ofdecl (i32.const 1)) (set! $ofisconst (i32.const 1)) (set! $ofisusing (i32.const 1)) (call $next_token)))))))))
           (let $ofvar i32 (i32.const 0))
           (let $ofvar_async_kw i32 (i32.const 0))  ;; the loop var was the literal `async` contextual keyword (not an escaped `async`)
+          ;; parenthesized lone-identifier assignment target: `for ((x) of E)` — strip the cover parens
+          ;; so the identifier below is read as the loop target (non-declaration only; a parenthesized
+          ;; member `(o.p)` or nested pattern is not handled here, falls through unchanged).
+          (let $ofparen i32 (i32.const 0))
+          (if (i32.and (i32.eqz (local.get $ofdecl)) (i32.eq (call $tok_kind) (i32.const 15)))
+            (then
+              (call $look_save) (call $next_token)  ;; peek past '('
+              (let $lpok i32 (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eqz (call $is_reserved_word (call $ident_name)))))
+              (if (local.get $lpok)
+                (then (call $next_token) (if (i32.ne (call $tok_kind) (i32.const 16)) (then (set! $lpok (i32.const 0))))))  ;; identifier immediately followed by ')'
+              (call $look_restore)
+              (if (local.get $lpok) (then (set! $ofparen (i32.const 1)) (call $next_token)))))  ;; consume '('
           (if (i32.eq (call $tok_kind) (i32.const 3))
             (then (set! $ofvar_async_kw (call $tok_is_kw (cstring "async")))
               (set! $ofvar (call $ident_name))
@@ -5696,6 +5708,7 @@
               (if (i32.and (i32.and (local.get $ofdecl) (i32.eqz (local.get $ofisvar))) (call $str_eq (local.get $ofvar) (cstring "let")))
                 (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'let' is not a valid lexical binding name")) (return)))
               (call $next_token)))
+          (if (local.get $ofparen) (then (if (i32.eq (call $tok_kind) (i32.const 16)) (then (call $next_token)))))  ;; consume the wrapping ')' of `for ((x) of E)`
           ;; member-expression assignment target as the loop head: `for (o.p in E)` / `for (a[i] of E)`.
           ;; Capture the base name + the cursor at the '.'/'[' navigation, skip to `in`/`of`; the per-
           ;; iteration value is assigned to the member via vm_c_dstr_assign_member (from @@dval).
