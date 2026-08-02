@@ -4757,7 +4757,7 @@
   ;; assign the constructor into the inner class-name binding (class scope) BEFORE static
   ;; initializers run, so `static { C.x }` / `static f = C` and method bodies resolve the name.
   (if (local.get $clsname)
-    (then (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; DUP; STOREVAR C (inner) → keeps [ctor]
+    (then (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $clsname))))  ;; DUP; DEFCONST C (inner) → keeps [ctor]; the inner class-name binding is IMMUTABLE (assigning to it inside the body throws)
   ;; run static field initializers on the constructor (this=ctor) — only when present, so SETPROTO/SETNAME stays the terminal op for class-expression name inference
   (if (local.get $hasstatic)
     (then
