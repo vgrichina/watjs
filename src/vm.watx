@@ -206,15 +206,42 @@
   (let $depth i32 (i32.const 0))
   (let $prevk i32 (i32.const 0))
   (let $prevelse i32 (i32.const 0))  ;; previous significant token was the `else` keyword
+  (let $swpend i32 (i32.const 0))    ;; saw `switch` at decldepth → its next '{' opens a CaseBlock
+  (let $swdepth i32 (i32.const -1))  ;; depth of the active function-body-level switch CaseBlock (-1 = none)
+  (let $qdepth i32 (i32.const 0))    ;; open '?' (ternary) count at $swdepth — a ':' while >0 is a ternary colon, not a case label
+  (let $prevlabel i32 (i32.const 0)) ;; previous token was a case/default/label ':' at the CaseBlock level
   (block $he (loop $hl
     (let $k i32 (call $tok_kind))
     (br_if $he (i32.eqz (local.get $k)))  ;; EOF
+    (let $waslabel i32 (local.get $prevlabel))  ;; consume the one-shot label flag (valid only for the token right after ':')
+    (set! $prevlabel (i32.const 0))
     (if (i32.or (i32.eq (local.get $k) (i32.const 17)) (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.eq (local.get $k) (i32.const 19))))
-      (then (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $prevk (local.get $k)) (set! $prevelse (i32.const 0)) (call $next_token) (br $hl)))
+      (then (set! $depth (i32.add (local.get $depth) (i32.const 1)))
+            (if (i32.and (local.get $swpend) (i32.eq (local.get $k) (i32.const 17))) (then (set! $swdepth (local.get $depth)) (set! $swpend (i32.const 0)) (set! $qdepth (i32.const 0))))  ;; switch CaseBlock '{'
+            (set! $prevk (local.get $k)) (set! $prevelse (i32.const 0)) (call $next_token) (br $hl)))
     (if (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.eq (local.get $k) (i32.const 20))))
       (then (set! $depth (i32.sub (local.get $depth) (i32.const 1)))
+            (if (i32.lt_s (local.get $depth) (local.get $swdepth)) (then (set! $swdepth (i32.const -1)) (set! $qdepth (i32.const 0))))  ;; left the switch CaseBlock
             (br_if $he (i32.lt_s (local.get $depth) (local.get $decldepth)))  ;; body closed
             (set! $prevk (local.get $k)) (set! $prevelse (i32.const 0)) (call $next_token) (br $hl)))
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "switch")))
+      (then (if (i32.eq (local.get $depth) (local.get $decldepth)) (then (set! $swpend (i32.const 1))))))  ;; function-body-level switch
+    ;; inside a CaseBlock, track ternary '?' so a case/default label ':' (qdepth==0) is distinguished from a
+    ;; ternary ':' — then a `function` right after a LABEL colon is an AnnexB clause declaration.
+    (if (i32.and (i32.ge_s (local.get $swdepth) (i32.const 0)) (i32.eq (local.get $depth) (local.get $swdepth)))
+      (then
+        (if (i32.eq (local.get $k) (i32.const 36)) (then (set! $qdepth (i32.add (local.get $qdepth) (i32.const 1)))))  ;; '?'
+        (if (i32.eq (local.get $k) (i32.const 37))  ;; ':'
+          (then (if (i32.gt_s (local.get $qdepth) (i32.const 0)) (then (set! $qdepth (i32.sub (local.get $qdepth) (i32.const 1)))) (else (set! $prevlabel (i32.const 1))))))))
+    ;; AnnexB B.3.3: a `function` directly in a switch CaseClause/DefaultClause is hoisted to the
+    ;; enclosing function like an `if`/`else` clause function ($waslabel = right after a label colon).
+    (if (i32.and (i32.and (i32.ge_s (local.get $swdepth) (i32.const 0)) (i32.eq (local.get $depth) (local.get $swdepth)))
+          (i32.and (local.get $waslabel)
+            (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function")))))
+      (then
+        (call $vm_hoist_clause_fn (local.get $code))
+        (call $next_token) (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0))
+        (br $hl)))
     (if (i32.and (i32.eq (local.get $depth) (local.get $decldepth))
           (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function"))))
       (then
