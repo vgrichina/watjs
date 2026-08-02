@@ -1615,7 +1615,11 @@
       (return)))
   (let $j i32 (i32.const 0))
   (block $e3 (loop $l3 (br_if $e3 (i32.ge_s (local.get $j) (local.get $srclen)))
-    (call $ta_store_val (local.get $stbuf) (i32.add (local.get $stoff) (local.get $j)) (local.get $stelem) (call $get_prop (local.get $src) (call $num (f64.convert_i32_s (local.get $j)))))
+    ;; Get(src, k) has an observable getter that may throw — read it FIRST and bail before
+    ;; ta_store_val runs (else the store would fire with the thrown/undefined value).
+    (let $sv i64 (call $get_prop (local.get $src) (call $num (f64.convert_i32_s (local.get $j)))))
+    (if (call $err) (then (return)))
+    (call $ta_store_val (local.get $stbuf) (i32.add (local.get $stoff) (local.get $j)) (local.get $stelem) (local.get $sv))
     (if (call $err) (then (return)))
     (set! $j (i32.add (local.get $j) (i32.const 1))) (br $l3))))
 
@@ -1666,7 +1670,11 @@
       (if (call $err) (then (return)))
       (i64.store (i32.add (local.get $buf) (i32.mul (local.get $idx) (i32.const 8))) (call $bigint_val (local.get $bv)))
       (return)))
-  (call $ta_write (local.get $buf) (local.get $idx) (local.get $elem) (call $to_num (local.get $val))))
+  ;; ToNumber can run user code (valueOf) that throws — convert FIRST, bail on err, THEN write
+  ;; (an abrupt conversion must not clobber the target element).
+  (let $nv f64 (call $to_num (local.get $val)))
+  (if (call $err) (then (return)))
+  (call $ta_write (local.get $buf) (local.get $idx) (local.get $elem) (local.get $nv)))
 
 ;; DataView element-code for a getter/setter index k (Int8,Uint8,Int16,Uint16,Int32,Uint32,Float32,Float64)
 (func $dv_elem (param $k i32) (result i32) (effects)
@@ -2600,7 +2608,11 @@
               (call $ta_zero (local.get $buf) (i32.mul (local.get $len) (local.get $bpe)))
               (let $ti2 i32 (i32.const 0))
               (block $te2 (loop $tl2 (br_if $te2 (i32.ge_s (local.get $ti2) (local.get $len)))
-                (call $ta_store_val (local.get $buf) (local.get $ti2) (local.get $elem) (call $get_prop (local.get $a0) (call $num (f64.convert_i32_s (local.get $ti2)))))
+                ;; Get(src, k) getter / ToNumber(valueOf) may throw — read+bail before the store
+                (let $sv2 i64 (call $get_prop (local.get $a0) (call $num (f64.convert_i32_s (local.get $ti2)))))
+                (if (call $err) (then (return (call $v_undef))))
+                (call $ta_store_val (local.get $buf) (local.get $ti2) (local.get $elem) (local.get $sv2))
+                (if (call $err) (then (return (call $v_undef))))
                 (set! $ti2 (i32.add (local.get $ti2) (i32.const 1))) (br $tl2))))))
         (else (set! $buf (call $heap_alloc (i32.const 8)))))))))
   (let $to i32 (call $obj_new (i32.const 8)))
