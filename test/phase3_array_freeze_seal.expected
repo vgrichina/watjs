@@ -13,5 +13,5 @@ noext-write=8
 noext-noadd=undefined
 push-frozen=TypeError
 push-sealed=TypeError
-push-empty-frozen-ok=1
+push-empty-frozen-throws=TypeError
 push-normal=2
