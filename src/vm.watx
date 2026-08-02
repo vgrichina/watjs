@@ -6516,10 +6516,11 @@
   (let $os i32 (call $val_payload (local.get $thisobj)))
   (let $ks i32 (call $to_prop_key (local.get $key)))
   (let $old i32 (call $scope_find_local (local.get $os) (local.get $ks)))
-  ;; PrivateFieldAdd step 4: adding a private field the receiver already owns is a TypeError
-  ;; (e.g. a derived ctor whose super() returned an instance that already ran this field).
-  (if (i32.and (i32.ne (local.get $old) (i32.const 0)) (call $is_private_key (local.get $ks)))
-    (then (call $throw_type (cstring "TypeError") (cstring "Cannot add private field, already present on object")) (return)))
+  ;; NOTE: PrivateFieldAdd's "already present → TypeError" (spec step 4) is NOT safely enforceable
+  ;; here: private names are keyed by their text ("#x"), so a subclass field `#x` shadowing a base
+  ;; `#x` (two DISTINCT private names, both legitimately on the instance) would false-positive
+  ;; against the base #x already present (regressed privatefieldget-success-2). Needs per-class
+  ;; private-name identity — see [[private-name-reflection-2026-06-20]].
   (if (i32.eqz (local.get $old))
     (then (if (call $scope_find_local (local.get $os) (cstring "@@noext"))  ;; new own prop on a non-extensible object → reject
       (then (call $throw_type (cstring "TypeError") (cstring "Cannot define class field, object is not extensible")) (return))))
