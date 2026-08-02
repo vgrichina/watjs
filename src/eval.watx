@@ -3154,9 +3154,16 @@
   (let $dln i32 (i32.const 0))
   (if (local.get $hasVal)
     (then
-      (let $dlnv f64 (call $to_num (call $get_prop (local.get $de) (call $mk_str (cstring "value")))))
+      (let $dvalr i64 (call $get_prop (local.get $de) (call $mk_str (cstring "value"))))
+      ;; ArraySetLength: newLen = ToUint32(value), then numberLen = ToNumber(value) — ToNumber runs
+      ;; TWICE (an object value's Symbol.toPrimitive/valueOf fires for both), then newLen ≠ numberLen
+      ;; → RangeError. (Was a single ToNumber — under-counted the observable coercion.)
+      (let $dlnv f64 (call $to_num (local.get $dvalr)))  ;; #1 (inside ToUint32)
+      (if (call $err) (then (return)))
       (set! $dln (call $to_int_idx (local.get $dlnv)))
-      (if (i32.or (f64.ne (local.get $dlnv) (f64.convert_i32_s (local.get $dln))) (f64.lt (local.get $dlnv) (f64.const 0)))
+      (let $numLen f64 (call $to_num (local.get $dvalr)))  ;; #2 (numberLen)
+      (if (call $err) (then (return)))
+      (if (i32.or (f64.ne (local.get $dlnv) (f64.convert_i32_s (local.get $dln))) (i32.or (f64.lt (local.get $dlnv) (f64.const 0)) (f64.ne (local.get $dlnv) (local.get $numLen))))
         (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return)))))
   ;; length is permanently non-configurable / non-enumerable
   (if (i32.and (local.get $hasCf) (local.get $wantCf)) (then (call $arr_dp_reject (cstring "Cannot redefine property: length")) (return)))
@@ -7565,8 +7572,10 @@
             (then (if (call $entry_is_accessor (local.get $rsacc))
               (then (if (i32.eqz (call $is_function (i64.load (i32.add (call $val_payload (i64.load (local.get $rsacc))) (i32.const 8)))))
                 (then (return (call $v_false))))))))))
+      (i32.store (i32.const 1004) (i32.const 0))  ;; clear the set-refusal flag; $set_fail records it if the [[Set]] is refused
       (call $set_prop (local.get $rstgt) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (local.get $rsval))
       (if (call $err) (then (return (call $v_undef))))  ;; a setter/proxy trap threw → propagate
+      (if (i32.load (i32.const 1004)) (then (return (call $v_false))))  ;; a refused write (e.g. non-writable array length after coercion) → false
       (return (call $v_true))))
   (if (i32.eq (local.get $id) (i32.const 202))  ;; Reflect.has(target, key)
     (then

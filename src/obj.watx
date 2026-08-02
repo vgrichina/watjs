@@ -1366,6 +1366,7 @@
 ;; refused write (non-writable data, getter-only accessor, add to non-extensible)
 ;; throws a TypeError instead of being silently ignored.
 (func $set_fail (effects)
+  (i32.store (i32.const 1004) (i32.const 1))  ;; record the refusal (reg 1004) so Reflect.set can return false even in sloppy mode
   (if (i32.load (i32.const 392)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property")))))
 ;; a deopted array index (accessor / non-default-attr data) lives in the @12 scope.
 ;; returns 1 if `ks` is such an entry (write handled: setter invoked / data stored /
@@ -1527,11 +1528,20 @@
       ;; a non-integer / negative / out-of-i32-range value → RangeError.
       (if (call $str_eq (local.get $askey) (cstring "length"))
         (then
+          ;; [[Set]] first checks the EXISTING length's writability (OrdinarySetWithOwnDescriptor): an
+          ;; already-non-writable length refuses WITHOUT coercing the value.
           (if (i32.eqz (call $arr_len_writable (local.get $a))) (then (call $set_fail) (return)))
-          (let $lnv f64 (call $to_num (local.get $val)))
+          ;; length is writable → ArraySetLength: coerce FIRST (ToUint32 then ToNumber — both fire the
+          ;; value's toPrimitive; RangeError on mismatch), THEN re-check writability (a toPrimitive may
+          ;; have made length non-writable) → the write then fails.
+          (let $lnv f64 (call $to_num (local.get $val)))  ;; #1 (inside ToUint32)
+          (if (call $err) (then (return)))
           (let $ln i32 (call $to_int_idx (local.get $lnv)))
-          (if (i32.or (f64.ne (local.get $lnv) (f64.convert_i32_s (local.get $ln))) (f64.lt (local.get $lnv) (f64.const 0)))
+          (let $numLen f64 (call $to_num (local.get $val)))  ;; #2 (numberLen)
+          (if (call $err) (then (return)))
+          (if (i32.or (f64.ne (local.get $lnv) (f64.convert_i32_s (local.get $ln))) (i32.or (f64.lt (local.get $lnv) (f64.const 0)) (f64.ne (local.get $lnv) (local.get $numLen))))
             (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return)))
+          (if (i32.eqz (call $arr_len_writable (local.get $a))) (then (call $set_fail) (return)))  ;; writability AFTER coercion
           ;; non-extensible: a length increase would add (hole) indices → refuse
           (if (i32.and (local.get $anoext) (i32.gt_s (local.get $ln) (call $arr_len (local.get $a)))) (then (call $set_fail) (return)))
           (call $arr_set_length (local.get $a) (local.get $ln))
