@@ -1025,6 +1025,7 @@
           (call $vm_c_arrow (local.get $code) (local.get $ap) (local.get $anp) (local.get $apd) (i32.load (i32.const 260)) (local.get $app))
           (return)))
       (call $next_token)  ;; '(' — plain grouping
+      (let $grpemit i32 (call $vm_emit_cursor))  ;; emit pos BEFORE the inner (for the (ident)=RHS rewind)
       (call $vm_c_commaexpr (local.get $code))
       (call $next_token)                                       ;; consume ')'
       ;; `( … ) = RHS`: a ParenthesizedExpression is a valid AssignmentTarget only when it
@@ -1033,13 +1034,35 @@
       (if (call $is_assign_op (call $tok_kind))
         (then
           (let $asc i32 (call $cursor_save))
+          ;; detect a lone-identifier inner `(x)` and capture its name
           (call $cursor_restore (local.get $pc))
           (call $next_token)  ;; re-consume '('
+          (let $innerpos i32 (call $cursor_save))
+          (let $paridname i32 (i32.const 0))
+          (if (i32.eq (call $tok_kind) (i32.const 3))
+            (then (set! $paridname (call $ident_name)) (call $next_token)
+              (if (i32.ne (call $tok_kind) (i32.const 16)) (then (set! $paridname (i32.const 0))))))  ;; only if identifier is immediately followed by ')'
+          (call $cursor_restore (local.get $innerpos))
           (let $simple i32 (call $scan_lhs_target))
           (let $onrp i32 (i32.eq (call $tok_kind) (i32.const 16)))  ;; landed exactly on the wrapping ')'
           (call $cursor_restore (local.get $asc))
           (if (i32.eqz (i32.and (local.get $simple) (local.get $onrp)))
-            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid left-hand side in assignment")) (return)))))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid left-hand side in assignment")) (return)))
+          ;; `(x) = RHS` (plain assign to a parenthesized identifier): the inner already emitted a
+          ;; LOAD; rewind it and compile the assignment as if it were bare `x = RHS`. (Compound/logical
+          ;; ops and member targets fall through unchanged — still unsupported but not regressed.)
+          (if (i32.and (i32.ne (local.get $paridname) (i32.const 0)) (i32.eq (call $tok_kind) (i32.const 24)))
+            (then
+              (if (call $vm_strict_lhs_check (local.get $paridname)) (then (return)))  ;; strict: (eval)/(arguments)/(yield)= → SyntaxError
+              (call $vm_set_emit_cursor (local.get $grpemit))  ;; discard the inner LOAD
+              (call $next_token)  ;; consume '='
+              (let $pafs i32 (call $vm_emit_cursor))
+              (call $vm_c_expr (local.get $code))  ;; RHS (right-assoc)
+              (if (call $vm_is_anon_fn_def (local.get $pafs))  ;; `(x) = <anon fn>` → x.name = "x"
+                (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $paridname))))
+              (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → value is the expression result
+              (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $paridname))  ;; strict 80 / sloppy 85
+              (return)))))
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 3))  ;; identifier / true / false / function-expression
     (then
