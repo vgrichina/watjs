@@ -12605,6 +12605,7 @@
   (let $arrf i64 (call $def_native (local.get $g) (cstring "Array") (i32.const 88)))
   (call $set_prop (local.get $arrf) (call $mk_str (cstring "isArray")) (call $mk_native (i32.const 83) (cstring "isArray")))
   (call $scope_define_attr (call $fn_def_scope (local.get $arrf)) (cstring "prototype") (call $mk_obj (local.get $ap)) (i32.const 0))  ;; Array.prototype
+  (call $scope_define_attr (local.get $ap) (cstring "length") (call $num (f64.const 0)) (i32.const 8))  ;; Array.prototype is an Array exotic object: own length 0 {W:true,E:false,C:false}
   (call $scope_define (local.get $ap) (cstring "constructor") (local.get $arrf))  ;; Array.prototype.constructor === Array
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $arrf))) (cstring "@@species")  ;; Array[Symbol.species] === Array
     (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
