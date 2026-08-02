@@ -3126,6 +3126,14 @@
   (if (local.get $bad) (then (call $throw_type (cstring "TypeError") (cstring "Cannot modify the length of a non-extensible array")) (return (i32.const 1))))
   (i32.const 0))
 
+;; A [[DefineOwnProperty]] invariant rejection on an array (length or index): in soft mode
+;; (reg 664, set by Reflect.defineProperty) record the failure in reg 668 and return; otherwise
+;; (Object.defineProperty / assignment) throw a TypeError. Callers `(return)` right after.
+(func $arr_dp_reject (param $msg i32) (effects)
+  (if (i32.load (i32.const 664))
+    (then (i32.store (i32.const 668) (i32.const 1)))
+    (else (call $throw_type (cstring "TypeError") (local.get $msg)))))
+
 ;; Object.defineProperty(arr, "length", desc) — the ArraySetLength algorithm
 ;; (ES 10.4.2.4 / 22.1.3.2). length is a non-configurable, non-enumerable data
 ;; property; non-writability is tracked with the @@lenNW marker in @12.
@@ -3133,7 +3141,7 @@
   ;; length is a data property — an accessor descriptor is always a TypeError
   (if (i32.or (call $truthy (call $js_in (call $mk_str (cstring "get")) (local.get $de)))
               (call $truthy (call $js_in (call $mk_str (cstring "set")) (local.get $de))))
-    (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: length")) (return)))
+    (then (call $arr_dp_reject (cstring "Cannot redefine property: length")) (return)))
   (let $hasVal i32 (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de))))
   (let $hasWr i32 (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $de))))
   (let $wantWr i32 (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "writable")))))
@@ -3151,11 +3159,11 @@
       (if (i32.or (f64.ne (local.get $dlnv) (f64.convert_i32_s (local.get $dln))) (f64.lt (local.get $dlnv) (f64.const 0)))
         (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return)))))
   ;; length is permanently non-configurable / non-enumerable
-  (if (i32.and (local.get $hasCf) (local.get $wantCf)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: length")) (return)))
-  (if (i32.and (local.get $hasEn) (local.get $wantEn)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: length")) (return)))
+  (if (i32.and (local.get $hasCf) (local.get $wantCf)) (then (call $arr_dp_reject (cstring "Cannot redefine property: length")) (return)))
+  (if (i32.and (local.get $hasEn) (local.get $wantEn)) (then (call $arr_dp_reject (cstring "Cannot redefine property: length")) (return)))
   (let $curW i32 (call $arr_len_writable (local.get $dpa)))
   ;; a non-writable length cannot be made writable again
-  (if (i32.and (i32.eqz (local.get $curW)) (i32.and (local.get $hasWr) (local.get $wantWr))) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: length")) (return)))
+  (if (i32.and (i32.eqz (local.get $curW)) (i32.and (local.get $hasWr) (local.get $wantWr))) (then (call $arr_dp_reject (cstring "Cannot redefine property: length")) (return)))
   (if (i32.eqz (local.get $hasVal))
     (then  ;; attribute-only change
       (if (i32.and (local.get $hasWr) (i32.eqz (local.get $wantWr))) (then (call $scope_define (call $arr_props (local.get $dpa)) (cstring "@@lenNW") (call $v_true))))
@@ -3163,7 +3171,7 @@
   (let $oldLen i32 (call $arr_len (local.get $dpa)))
   (if (i32.eqz (local.get $curW))
     (then  ;; non-writable: only a no-op (same length) is allowed
-      (if (i32.ne (local.get $dln) (local.get $oldLen)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: length")) (return)))
+      (if (i32.ne (local.get $dln) (local.get $oldLen)) (then (call $arr_dp_reject (cstring "Cannot redefine property: length")) (return)))
       (return)))
   (if (i32.lt_s (local.get $dln) (local.get $oldLen))
     (then  ;; shrink: delete indices high→low, stop+throw at a non-configurable one
@@ -3178,7 +3186,7 @@
                 (if (i32.eqz (call $entry_configurable (local.get $sl)))
                   (then (call $arr_set_length (local.get $dpa) (i32.add (local.get $i) (i32.const 1)))
                         (if (i32.and (local.get $hasWr) (i32.eqz (local.get $wantWr))) (then (call $scope_define (call $arr_props (local.get $dpa)) (cstring "@@lenNW") (call $v_true))))
-                        (call $throw_type (cstring "TypeError") (cstring "Cannot delete non-configurable array index")) (return)))
+                        (call $arr_dp_reject (cstring "Cannot delete non-configurable array index")) (return)))
                 (drop (call $scope_delete (local.get $p) (call $num_to_str (f64.convert_i32_s (local.get $i)))))))))
         (set! $i (i32.sub (local.get $i) (i32.const 1)))
         (br $lp)))
@@ -3196,7 +3204,7 @@
     (then
       ;; adding a new index at/after length is refused when length is non-writable
       (if (i32.and (i32.ge_s (local.get $dpidx) (call $arr_len (local.get $dpa))) (i32.eqz (call $arr_len_writable (local.get $dpa))))
-        (then (call $throw_type (cstring "TypeError") (cstring "Cannot add property, length is not writable")) (return)))
+        (then (call $arr_dp_reject (cstring "Cannot add property, length is not writable")) (return)))
       ;; defining a NEW index (not already a dense element nor a deopted @12 entry) on a
       ;; non-extensible array (@@noext) is refused — [[DefineOwnProperty]] on a new key needs extensibility
       (let $dpp0 i32 (i32.load (i32.add (local.get $dpa) (i32.const 12))))
@@ -3204,7 +3212,7 @@
         (then (if (local.get $dpp0)
           (then (if (i32.eqz (call $scope_find_local (local.get $dpp0) (local.get $dpk)))  ;; not a deopted @12 entry → a NEW index
             (then (if (call $scope_find_local (local.get $dpp0) (cstring "@@noext"))
-              (then (call $throw_type (cstring "TypeError") (cstring "Cannot define property, object is not extensible")) (return)))))))))
+              (then (call $arr_dp_reject (cstring "Cannot define property, object is not extensible")) (return)))))))))
       ;; if the index already lives in the @12 scope (previously deopted), redefine it there
       (let $dpp i32 (i32.load (i32.add (local.get $dpa) (i32.const 12))))
       (if (local.get $dpp)
@@ -7671,7 +7679,12 @@
           (i32.store (i32.const 668) (i32.const 0))
           (if (call $is_function (local.get $rpt))
             (then (call $apply_descriptor (call $fn_def_scope (local.get $rpt)) (local.get $rpkey) (local.get $rpd)))
-            (else (call $apply_descriptor (call $val_payload (local.get $rpt)) (local.get $rpkey) (local.get $rpd))))
+            (else (if (i32.and (call $is_array (local.get $rpt)) (call $str_eq (local.get $rpkey) (cstring "length")))
+              ;; array "length" runs ArraySetLength ($arr_define_length), now soft-mode aware via
+              ;; $arr_dp_reject (was mis-handled as an ordinary property → always true). Array INDEX
+              ;; and other keys keep the ordinary apply_descriptor path (unchanged).
+              (then (call $arr_define_length (call $val_payload (local.get $rpt)) (local.get $rpd)))
+              (else (call $apply_descriptor (call $val_payload (local.get $rpt)) (local.get $rpkey) (local.get $rpd))))))
           (i32.store (i32.const 664) (i32.const 0))
           (if (call $err) (then (return (call $v_undef))))  ;; a genuine exception (e.g. a descriptor getter threw) propagates
           (return (call $mk_bool (i32.eqz (i32.load (i32.const 668)))))))
