@@ -4442,9 +4442,14 @@
           (if (i32.gt_s (local.get $thisSize) (local.get $otherSize)) (then (return (call $v_false))))
           (block $sube (loop $subl
             (br_if $sube (i32.ge_s (local.get $i) (local.get $thisSize)))
-            (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (call $arr_get (local.get $osk) (local.get $i))))
-            (if (call $err) (then (return (call $v_undef))))
-            (if (i32.eqz (call $truthy (local.get $shv))) (then (return (call $v_false))))
+            (let $sube_e i64 (call $arr_get (local.get $osk) (local.get $i)))
+            ;; spec iterates O's LIVE [[SetData]]: a `has` call may have deleted elements (empty slots are
+            ;; skipped) — check the snapshot element is still present before testing it against `other`.
+            (if (i32.ge_s (call $map_find (call $coll_arr (local.get $thisv) (cstring "@@sk")) (local.get $sube_e)) (i32.const 0))
+              (then
+                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (local.get $sube_e)))
+                (if (call $err) (then (return (call $v_undef))))
+                (if (i32.eqz (call $truthy (local.get $shv))) (then (return (call $v_false))))))
             (set! $i (i32.add (local.get $i) (i32.const 1))) (br $subl)))
           (return (call $v_true))))
       ;; ----- isSupersetOf (315) -----
@@ -4473,9 +4478,13 @@
             (then
               (block $dje1 (loop $djl1
                 (br_if $dje1 (i32.ge_s (local.get $i) (local.get $thisSize)))
-                (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (call $arr_get (local.get $osk) (local.get $i))))
-                (if (call $err) (then (return (call $v_undef))))
-                (if (call $truthy (local.get $shv)) (then (return (call $v_false))))
+                (let $dje1_e i64 (call $arr_get (local.get $osk) (local.get $i)))
+                ;; iterate O's LIVE [[SetData]]: skip elements a `has` call deleted (spec "e is not empty")
+                (if (i32.ge_s (call $map_find (call $coll_arr (local.get $thisv) (cstring "@@sk")) (local.get $dje1_e)) (i32.const 0))
+                  (then
+                    (let $shv i64 (call $call1 (local.get $hasf) (local.get $other) (local.get $dje1_e)))
+                    (if (call $err) (then (return (call $v_undef))))
+                    (if (call $truthy (local.get $shv)) (then (return (call $v_false))))))
                 (set! $i (i32.add (local.get $i) (i32.const 1))) (br $djl1))))
             (else
               ;; iterate other.keys() LAZILY; at the first element also in `this`,
