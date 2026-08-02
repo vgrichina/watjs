@@ -3240,9 +3240,17 @@
             (else
               (call $arr_set_length (local.get $dpa) (i32.add (local.get $dpidx) (i32.const 1)))
               (i64.store (call $arr_slot (local.get $dpa) (local.get $dpidx)) (call $v_hole))))
-          ;; seed the @12 entry with the dense element's implicit descriptor (value,
-          ;; W|E|C all true) so apply_descriptor preserves attrs the new desc omits
-          (if (local.get $aded) (then (call $scope_define (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $adev))))
+          ;; seed the @12 entry with the dense element's implicit descriptor so apply_descriptor
+          ;; validates the incoming desc against the element's REAL attributes: a normal element is
+          ;; {W,E,C}=14; a SEALED array's element is {W,E}=10 (non-configurable); a FROZEN array's
+          ;; element is {E}=2 (non-writable + non-configurable). Without this, redefining a frozen
+          ;; element (Object.defineProperty(frozen,"0",{value:x})) silently succeeded.
+          (if (local.get $aded)
+            (then
+              (let $seedattr i32 (i32.const 14))
+              (if (call $scope_find_local (call $arr_props (local.get $dpa)) (cstring "@@frozen")) (then (set! $seedattr (i32.const 2)))
+                (else (if (call $scope_find_local (call $arr_props (local.get $dpa)) (cstring "@@sealed")) (then (set! $seedattr (i32.const 10))))))
+              (call $scope_define_attr (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $adev) (local.get $seedattr))))
           (call $apply_descriptor (call $arr_props (local.get $dpa)) (local.get $dpk) (local.get $de))
           (return)))
       (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
