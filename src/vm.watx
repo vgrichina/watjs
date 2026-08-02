@@ -1310,10 +1310,12 @@
               ;; \u-escaped `target` (tok_is_kw compares RAW source, so it rejects `new.target`).
               (if (i32.eqz (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "target"))))
                 (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid meta-property; expected 'new.target'")) (return)))
-              ;; NOTE: top-level `new.target` in a script/eval should be a SyntaxError, but a check on reg 920
-              ;; (in-function-body) wrongly rejects a DIRECT eval nested in a function — its body compiles with
-              ;; reg 920=0 yet new.target IS legal there. Correct rejection needs direct-eval-scope inheritance
-              ;; (architectural); until then op 62 soft-loads undefined, which is at least runtime-harmless.
+              ;; `new.target` is a SyntaxError outside a function: reg 1008 tracks new.target-allowed —
+              ;; set by any non-arrow function body, inherited by arrows, 0 at script/eval top-level, and
+              ;; threaded into a DIRECT eval from its caller (DIRECTEVALMARK bit4) so `function f(){ eval('new.target') }`
+              ;; stays legal while top-level `eval('new.target')` throws.
+              (if (i32.eqz (i32.load (i32.const 1008)))
+                (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "new.target expression is not allowed here")) (return)))
               (call $next_token)  ;; 'target'
               (call $vm_emit_op (local.get $code) (i32.const 62)) (call $vm_emit_op (local.get $code) (cstring "@@newtarget"))  ;; soft load (undefined outside a construct)
               (return)))
@@ -1667,7 +1669,7 @@
   (let $isdeval i32 (i32.load (i32.const 876)))
   (i32.store (i32.const 876) (i32.const 0))
   ;; direct-eval marker bitfield: bit0=is-direct-eval, bit1=super-property-allowed(reg868), bit2=super()-allowed(reg884)
-  (let $devmark i32 (if i32 (local.get $isdeval) (then (i32.or (i32.const 1) (i32.or (if i32 (i32.load (i32.const 868)) (then (i32.const 2)) (else (i32.const 0))) (i32.or (if i32 (i32.load (i32.const 884)) (then (i32.const 4)) (else (i32.const 0))) (if i32 (i32.load (i32.const 388)) (then (i32.const 8)) (else (i32.const 0))))))) (else (i32.const 0))))  ;; bit3 = caller strict (direct eval inherits strictness)
+  (let $devmark i32 (if i32 (local.get $isdeval) (then (i32.or (i32.const 1) (i32.or (if i32 (i32.load (i32.const 868)) (then (i32.const 2)) (else (i32.const 0))) (i32.or (if i32 (i32.load (i32.const 884)) (then (i32.const 4)) (else (i32.const 0))) (i32.or (if i32 (i32.load (i32.const 388)) (then (i32.const 8)) (else (i32.const 0))) (if i32 (i32.load (i32.const 1008)) (then (i32.const 16)) (else (i32.const 0)))))))) (else (i32.const 0))))  ;; bit3 = caller strict; bit4 = caller new.target-allowed (direct eval inherits both)
   (call $next_token)  ;; '('
   (let $spc i32 (call $cursor_save))
   (let $sphas i32 (i32.const 0)) (let $spd i32 (i32.const 0))
@@ -2980,6 +2982,8 @@
   (i32.store (i32.const 912) (i32.const 0))
   (let $saveinfn i32 (i32.load (i32.const 920)))  ;; reg 920 = inside a function body → `return` is allowed
   (i32.store (i32.const 920) (i32.const 1))
+  (let $savent i32 (i32.load (i32.const 1008)))  ;; reg 1008 = new.target allowed (any non-arrow function; arrows inherit)
+  (i32.store (i32.const 1008) (i32.const 1))
   (let $saveargs i32 (i32.load (i32.const 916)))  ;; a nested regular function has its OWN `arguments` — clear the forbidden flag
   (i32.store (i32.const 916) (i32.const 0))
   ;; reg 868: is `super` property access lexically allowed here? True in a method/accessor (reg692) or a
@@ -3192,6 +3196,7 @@
   (i32.store (i32.const 896) (local.get $saveinasync))  ;; restore enclosing in-async-body flag
   (i32.store (i32.const 912) (local.get $savesb))  ;; restore in-static-block flag
   (i32.store (i32.const 920) (local.get $saveinfn))  ;; restore in-function-body flag
+  (i32.store (i32.const 1008) (local.get $savent))  ;; restore new.target-allowed flag
   (i32.store (i32.const 916) (local.get $saveargs))  ;; restore enclosing arguments-forbidden flag
   (i32.store (i32.const 868) (local.get $savesuperhome))  ;; restore enclosing super-property-allowed flag
   (i32.store (i32.const 884) (local.get $savesupercall))  ;; restore enclosing super()-call-allowed flag
@@ -3334,9 +3339,10 @@
   (let $btsb i32 (i32.load (i32.const 912)))
   (let $btargs i32 (i32.load (i32.const 916)))
   (let $btinfn i32 (i32.load (i32.const 920)))  ;; a static block is not a function body — `return` forbidden (also caught by reg 912)
-  (i32.store (i32.const 672) (i32.const 0)) (i32.store (i32.const 896) (i32.const 0)) (i32.store (i32.const 912) (i32.const 1)) (i32.store (i32.const 916) (i32.const 1)) (i32.store (i32.const 920) (i32.const 0))
+  (let $btnt i32 (i32.load (i32.const 1008)))  ;; new.target IS allowed in a class static block (evaluates to undefined)
+  (i32.store (i32.const 672) (i32.const 0)) (i32.store (i32.const 896) (i32.const 0)) (i32.store (i32.const 912) (i32.const 1)) (i32.store (i32.const 916) (i32.const 1)) (i32.store (i32.const 920) (i32.const 0)) (i32.store (i32.const 1008) (i32.const 1))
   (call $vm_c_stmt (local.get $code))  ;; the `{ ... }` block
-  (i32.store (i32.const 672) (local.get $btgen)) (i32.store (i32.const 896) (local.get $btasync)) (i32.store (i32.const 912) (local.get $btsb)) (i32.store (i32.const 916) (local.get $btargs)) (i32.store (i32.const 920) (local.get $btinfn))
+  (i32.store (i32.const 672) (local.get $btgen)) (i32.store (i32.const 896) (local.get $btasync)) (i32.store (i32.const 912) (local.get $btsb)) (i32.store (i32.const 916) (local.get $btargs)) (i32.store (i32.const 920) (local.get $btinfn)) (i32.store (i32.const 1008) (local.get $btnt))
   (i32.store (i32.const 868) (local.get $btsuperhome)) (i32.store (i32.const 884) (local.get $btsupercall))
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; PUSH undefined (no value)
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET
@@ -3363,6 +3369,8 @@
   ;; inherit; a nested regular function resets it in vm_c_fnbody since it has its own `arguments`).
   (let $ftargs i32 (i32.load (i32.const 916)))
   (i32.store (i32.const 916) (i32.const 1))
+  (let $ftnt i32 (i32.load (i32.const 1008)))  ;; a field initializer allows new.target (evaluated during construction)
+  (i32.store (i32.const 1008) (i32.const 1))
   ;; a field initializer `x = <AssignmentExpression>` requires a value — `class C{ x = ; }` → SyntaxError
   (if (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eq (call $tok_kind) (i32.const 0)))))
     (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "class field initializer requires a value")) (return)))
@@ -3374,6 +3382,7 @@
   (if (i32.and (i32.ne (local.get $fieldname) (i32.const 0)) (call $vm_is_anon_fn_def (local.get $ftafs)))  ;; booleanize $fieldname first — it's a pointer, so a raw i32.and with the 0/1 predicate is bitwise-wrong
     (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $fieldname))))
   (i32.store (i32.const 916) (local.get $ftargs))
+  (i32.store (i32.const 1008) (local.get $ftnt))
   (i32.store (i32.const 868) (local.get $ftsuperhome)) (i32.store (i32.const 884) (local.get $ftsupercall))
   (call $vm_emit_op (local.get $code) (i32.const 20))  ;; RET (returns TOS)
   (call $vm_patch (local.get $code) (local.get $pj))
@@ -6339,6 +6348,7 @@
   (i32.store (i32.const 360) (i32.const 0))  ;; innermost loop's finally-base
   (i32.store (i32.const 372) (i32.const 0)) (i32.store (i32.const 376) (call $heap_alloc (i32.const 1024)))  ;; fn-hoist position list
   (i32.store (i32.const 388) (i32.load (i32.const 892))) (i32.store (i32.const 892) (i32.const 0))  ;; compile-time strict flag: seeded from reg 892 (a DIRECT eval inherits its caller's strictness); 0 for a fresh program
+  (i32.store (i32.const 1008) (i32.load (i32.const 1012))) (i32.store (i32.const 1012) (i32.const 0))  ;; new.target-allowed: seeded from reg 1012 (direct eval in a function); 0 for a fresh script → top-level new.target is a SyntaxError
   ;; Size the code buffer to the source: bytecode is bounded by a small multiple
   ;; of source length (densest real case ~5 bytes/char; 16 is a safe ceiling),
   ;; plus a fixed 128 KB base that covers the always-compiled Error prelude. A
@@ -9362,6 +9372,7 @@
   (i32.store (i32.const 872) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 2)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 868 (super property)
   (i32.store (i32.const 888) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 4)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 884 (super call)
   (i32.store (i32.const 892) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 8)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 388 seed (direct eval inherits caller strict); consumed by vm_compile_prog
+  (i32.store (i32.const 1012) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 16)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 1008 seed (direct eval in a function → new.target allowed)
   (i32.store (i32.const 880) (i32.const 0))
   (let $code i32 (call $vm_compile_prog (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)) (i32.const 0)))  ;; nested eval: reuse the caller's existing prelude bindings
   (if (call $err) (then (return (call $v_undef))))  ;; SyntaxError → propagates
