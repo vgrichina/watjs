@@ -6273,12 +6273,30 @@
   (let $bd i32 (i32.const 0))  ;; brace depth (separate from pd; gates AnnexB clause-fn hoisting to the true top level)
   (let $prevk i32 (i32.const 0))
   (let $prevelse i32 (i32.const 0))  ;; previous significant token was the `else` keyword
+  (let $swpend i32 (i32.const 0))    ;; saw `switch` → its next '{' opens a CaseBlock
+  (let $swdepth i32 (i32.const -1))  ;; brace depth of the active switch CaseBlock (-1 = none)
+  (let $qdepth i32 (i32.const 0))    ;; open ternary '?' count at $swdepth
+  (let $prevlabel i32 (i32.const 0)) ;; previous token was a case/default/label ':' at the CaseBlock level
   (call $next_token)
   (block $done (loop $scan
     (let $k i32 (call $tok_kind))
     (br_if $done (i32.eq (local.get $k) (i32.const 0)))
-    (if (i32.eq (local.get $k) (i32.const 17)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1)))))
-    (if (i32.and (i32.eq (local.get $k) (i32.const 18)) (i32.gt_s (local.get $bd) (i32.const 0))) (then (set! $bd (i32.sub (local.get $bd) (i32.const 1)))))
+    (let $waslabel i32 (local.get $prevlabel))  ;; one-shot: valid only for the token right after ':'
+    (set! $prevlabel (i32.const 0))
+    (if (i32.eq (local.get $k) (i32.const 17)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1)))
+      (if (local.get $swpend) (then (set! $swdepth (local.get $bd)) (set! $swpend (i32.const 0)) (set! $qdepth (i32.const 0))))))  ;; switch CaseBlock '{'
+    (if (i32.and (i32.eq (local.get $k) (i32.const 18)) (i32.gt_s (local.get $bd) (i32.const 0))) (then (set! $bd (i32.sub (local.get $bd) (i32.const 1)))
+      (if (i32.lt_s (local.get $bd) (local.get $swdepth)) (then (set! $swdepth (i32.const -1)) (set! $qdepth (i32.const 0))))))  ;; left the CaseBlock
+    (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "switch"))) (then (if (i32.eqz (local.get $bd)) (then (set! $swpend (i32.const 1))))))  ;; only a TRUE top-level switch hoists its clause fns to global; a switch nested in a block/for/try does not
+    (if (i32.and (i32.ge_s (local.get $swdepth) (i32.const 0)) (i32.eq (local.get $bd) (local.get $swdepth)))
+      (then
+        (if (i32.eq (local.get $k) (i32.const 36)) (then (set! $qdepth (i32.add (local.get $qdepth) (i32.const 1)))))  ;; '?'
+        (if (i32.eq (local.get $k) (i32.const 37))  ;; ':'
+          (then (if (i32.gt_s (local.get $qdepth) (i32.const 0)) (then (set! $qdepth (i32.sub (local.get $qdepth) (i32.const 1)))) (else (set! $prevlabel (i32.const 1))))))))
+    ;; AnnexB B.3.3: a `function` right after a case/default LABEL colon → var-hoist (DEFVAR undefined)
+    (if (i32.and (i32.and (i32.ge_s (local.get $swdepth) (i32.const 0)) (i32.eq (local.get $bd) (local.get $swdepth)))
+          (i32.and (local.get $waslabel) (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function")))))
+      (then (call $vm_hoist_clause_fn (local.get $code)) (call $next_token) (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0)) (br $scan)))
     (if (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.eq (local.get $k) (i32.const 19)))
       (then (set! $pd (i32.add (local.get $pd) (i32.const 1)))))
     (if (i32.and (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.eq (local.get $k) (i32.const 20))) (i32.gt_s (local.get $pd) (i32.const 0)))
