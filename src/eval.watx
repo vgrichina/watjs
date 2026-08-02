@@ -4957,10 +4957,14 @@
       (if (local.get $fsl) (then (let $fsv i64 (i64.load (local.get $fsl))) (if (call $is_string (local.get $fsv)) (then (set! $flg (call $val_payload (local.get $fsv))))))))
     (else
       (if (i32.eqz (i32.or (i32.lt_s (local.get $argc) (i32.const 1)) (call $is_undefined (local.get $pa0))))
-        (then (set! $pat (call $to_str (local.get $pa0)))))
+        (then
+          (if (call $is_symbol (local.get $pa0)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))  ;; ToString(pattern) throws for a Symbol
+          (set! $pat (call $to_str (local.get $pa0)))))
       (if (call $err) (then (return (call $v_undef))))
       (if (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
-        (then (set! $flg (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
+        (then
+          (if (call $is_symbol (call $argn (local.get $argv) (local.get $argc) (i32.const 1))) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))  ;; ToString(flags) throws for a Symbol
+          (set! $flg (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))))
       (if (call $err) (then (return (call $v_undef))))))
   ;; validate flags: only d/g/i/m/s/u/v/y, no duplicates → SyntaxError
   (let $fl i32 (call $str_len (local.get $flg)))
@@ -8818,6 +8822,9 @@
       ;; propagates); a real RegExp copies its internal source/flags directly.
       (let $pislike i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (local.get $pa0)))) (then (call $is_regexp_spec (local.get $pa0))) (else (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
+      ;; ToString(pattern) throws for a Symbol (a Symbol is never a RegExp / RegExp-like → falls to to_str)
+      (if (i32.and (i32.eqz (local.get $pislike)) (i32.and (i32.eqz (call $is_regexp (local.get $pa0))) (call $is_symbol (local.get $pa0))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $pat i32 (if i32 (i32.or (i32.lt_s (local.get $argc) (i32.const 1)) (call $is_undefined (local.get $pa0)))
         (then (cstring ""))
         (else (if i32 (call $is_regexp (local.get $pa0)) (then (call $re_pat_of (local.get $pa0)))
@@ -8825,6 +8832,8 @@
       (if (call $err) (then (return (call $v_undef))))  ;; a `source` getter (or ToString) threw
       ;; flags: explicit (non-undefined) → ToString; undefined/absent → the pattern's own flags (a real
       ;; RegExp's [[OriginalFlags]], a RegExp-like's Get(pattern,"flags")), or "" for a plain pattern.
+      (if (i32.and (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (call $is_symbol (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))  ;; ToString(flags) throws for a Symbol
       (let $flg i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
         (then (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
         (else (if i32 (call $is_regexp (local.get $pa0)) (then (call $re_flags_of (local.get $pa0)))
