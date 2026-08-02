@@ -2968,7 +2968,16 @@
           (if (i32.and (local.get $wr) (i32.eqz (local.get $wantWrit))) (then (call $def_reject (cstring "A TypedArray index must be writable")) (return)))
           (if (local.get $vs)
             (then (call $set_prop (call $mk_obj (local.get $os)) (call $num (f64.convert_i32_s (local.get $taidx))) (local.get $vVal))))
-          (return)))))
+          (return)))
+      ;; a CanonicalNumericIndexString that is NOT a valid integer index (0.1, -0, Infinity, NaN, an
+      ;; out-of-i32-range index) → reject per IntegerIndexedExoticObject [[DefineOwnProperty]] step 1;
+      ;; a non-numeric key ("foo") is a normal expando → falls through to the ordinary define below.
+      (if (i32.lt_s (local.get $taidx) (i32.const 0))
+        (then
+          (let $cni i32 (call $str_eq (local.get $ks) (cstring "-0")))
+          (if (i32.eqz (local.get $cni))
+            (then (if (call $str_eq (call $num_to_str (call $str_to_num (local.get $ks))) (local.get $ks)) (then (set! $cni (i32.const 1))))))
+          (if (local.get $cni) (then (call $def_reject (cstring "Cannot define a non-integer canonical numeric index on a TypedArray")) (return)))))))
   (let $old i32 (call $scope_find_local (local.get $os) (local.get $ks)))
   ;; entry_is_accessor derefs old-4, so compute it ONCE guarded (i32.and is not short-circuit)
   (let $oldAcc i32 (if i32 (i32.ne (local.get $old) (i32.const 0)) (then (call $entry_is_accessor (local.get $old))) (else (i32.const 0))))
