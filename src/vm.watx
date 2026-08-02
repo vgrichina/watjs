@@ -1056,10 +1056,9 @@
               (if (call $vm_strict_lhs_check (local.get $paridname)) (then (return)))  ;; strict: (eval)/(arguments)/(yield)= → SyntaxError
               (call $vm_set_emit_cursor (local.get $grpemit))  ;; discard the inner LOAD
               (call $next_token)  ;; consume '='
-              (let $pafs i32 (call $vm_emit_cursor))
               (call $vm_c_expr (local.get $code))  ;; RHS (right-assoc)
-              (if (call $vm_is_anon_fn_def (local.get $pafs))  ;; `(x) = <anon fn>` → x.name = "x"
-                (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $paridname))))
+              ;; NO NamedEvaluation here: a parenthesized `(fn)` is NOT syntactically an
+              ;; IdentifierReference, so `(fn) = function(){}` leaves fn.name = "" (fn-name-lhs-cover).
               (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → value is the expression result
               (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $paridname))  ;; strict 80 / sloppy 85
               (return)))))
@@ -5698,7 +5697,7 @@
               (call $look_restore)
               (if (local.get $lpok) (then (set! $ofparen (i32.const 1)) (call $next_token)))))  ;; consume '('
           (if (i32.eq (call $tok_kind) (i32.const 3))
-            (then (set! $ofvar_async_kw (call $tok_is_kw (cstring "async")))
+            (then (set! $ofvar_async_kw (i32.and (i32.eqz (local.get $ofparen)) (call $tok_is_kw (cstring "async"))))  ;; parenthesized `(async)` is exempt from the bare-async for-of restriction
               (set! $ofvar (call $ident_name))
               (if (local.get $ofdecl) (then (if (call $vm_strict_lhs_check (local.get $ofvar)) (then (return)))))  ;; strict: `for (var eval|arguments ...)` → SyntaxError
               ;; a ReservedWord may not be a for-in/of binding name (`for (var if in {})`).
