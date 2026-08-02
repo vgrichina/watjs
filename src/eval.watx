@@ -9956,11 +9956,15 @@
       (if (i32.eqz (i32.or (call $is_object (local.get $ob)) (i32.or (call $is_array (local.get $ob)) (i32.or (call $is_function (local.get $ob)) (call $is_proxy (local.get $ob))))))
         (then (set! $ob (call $to_object (local.get $ob))) (if (call $err) (then (return (call $v_undef))))))
       (let $r i32 (call $obj_new (i32.const 8)))
-      ;; string keys (indices + names); for a Proxy this fires the ownKeys trap ONCE and already
-      ;; includes symbol keys. For a non-proxy, append the own symbol keys (getOwnPropertySymbols).
+      ;; string keys (indices + names). A Proxy WITH an ownKeys trap already yields symbol keys via
+      ;; own_enum_keys (proxy_own_keys returns the full trap list). For a non-proxy OR a TRAPLESS proxy
+      ;; (own_enum_keys forwards to the target's STRING names only), append the own symbol keys.
       (let $gdkeys i32 (call $own_enum_keys (local.get $ob) (i32.const 1)))
       (if (call $err) (then (return (call $v_undef))))
-      (if (i32.eqz (call $is_proxy (local.get $ob)))
+      (let $gdhastrap i32 (i32.const 0))
+      (if (call $is_proxy (local.get $ob)) (then (if (call $is_function (call $proxy_trap (local.get $ob) (cstring "ownKeys"))) (then (set! $gdhastrap (i32.const 1))))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (local.get $gdhastrap))
         (then
           (let $gdsv i64 (call $call_native (i32.const 248) (local.get $argc) (local.get $argv) (call $v_undef)))  ;; getOwnPropertySymbols
           (if (call $err) (then (return (call $v_undef))))
