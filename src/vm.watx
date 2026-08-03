@@ -9698,15 +9698,19 @@
   (i32.store (i32.const 880) (i32.const 0))
   (let $code i32 (call $vm_compile_prog (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)) (i32.const 0)))  ;; nested eval: reuse the caller's existing prelude bindings
   (if (call $err) (then (return (call $v_undef))))  ;; SyntaxError → propagates
+  ;; STRICT eval gets its OWN variable environment (spec: "If strict is true, let varEnv be a NEW declarative
+  ;; Environment Record") — a var/function it declares must NOT leak to the caller. Run the body in a fresh
+  ;; var scope chained to the caller (reads still resolve up the chain); it is discarded when the eval returns.
+  (let $evscope i32 (if i32 (i32.load (i32.const 388)) (then (call $scope_new (local.get $scope) (i32.const 8))) (else (local.get $scope))))
   (let $ctx i32 (call $heap_alloc (i32.const 48)))
   (i32.store (local.get $ctx) (local.get $code))
   (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.const 0))
   (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 262144)))  ;; operand stack (256 KB — nested eval is shallow; was 1 MB and leaked per call)
   (i32.store (i32.add (local.get $ctx) (i32.const 12)) (i32.const 0))
   (i32.store (i32.add (local.get $ctx) (i32.const 16)) (i32.const 0))
-  (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $scope))   ;; run in caller's scope
+  (i32.store (i32.add (local.get $ctx) (i32.const 20)) (local.get $evscope))   ;; run in the caller's scope (sloppy) or a fresh var scope (strict)
   (i32.store (i32.add (local.get $ctx) (i32.const 24)) (i32.const 0))
-  (i32.store (i32.add (local.get $ctx) (i32.const 28)) (local.get $scope))
+  (i32.store (i32.add (local.get $ctx) (i32.const 28)) (local.get $evscope))
   (i32.store (i32.add (local.get $ctx) (i32.const 32)) (i32.const 0))
   (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 0))
   (let $evsave i32 (i32.load (i32.const 996)))
