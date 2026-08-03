@@ -279,7 +279,21 @@
 ;; function / arrow bodies are skipped (their vars hoist to them). Single-declarator form (matches vm_hoist's
 ;; program-level var pass); tracks only '{'/'}' for the body boundary (object literals net out; parens/brackets
 ;; can't hold a statement-level `var` except via a skipped nested function). Cursor is at the body '{'; restored.
-(func $vm_hoist_vars (param $code i32) (effects)
+;; is $name one of the $pcount parameter names in the $plist array (of name cstring ptrs)?
+(func $vm_param_member (param $name i32) (param $plist i32) (param $pcount i32) (result i32) (effects)
+  (if (i32.eqz (local.get $plist)) (then (return (i32.const 0))))
+  (let $mi i32 (i32.const 0))
+  (block $me (loop $ml
+    (br_if $me (i32.ge_s (local.get $mi) (local.get $pcount)))
+    (if (call $str_eq (local.get $name) (i32.load (i32.add (local.get $plist) (i32.mul (local.get $mi) (i32.const 4))))) (then (return (i32.const 1))))
+    (set! $mi (i32.add (local.get $mi) (i32.const 1))) (br $ml)))
+  (i32.const 0))
+
+;; $plist/$pcount: when non-zero, the function has a non-simple parameter list and the body runs in a
+;; SEPARATE variable scope (ENTERVARSCOPE) — a `var` whose name is ALSO a parameter must be INITIALIZED
+;; to a COPY of the parameter's value (spec FunctionDeclarationInstantiation), so param-default closures
+;; (which capture the parameter scope) don't observe body mutations. Emitted as LOADVAR p; DEFINIT p.
+(func $vm_hoist_vars_p (param $code i32) (param $plist i32) (param $pcount i32) (effects)
   (let $start i32 (call $cursor_save))
   (call $next_token)  ;; consume the body '{'
   (let $depth i32 (i32.const 0))
@@ -315,7 +329,12 @@
         (call $next_token)  ;; consume 'var'
         (block $vhdone (loop $vhl
           (br_if $vhdone (i32.ne (call $tok_kind) (i32.const 3)))  ;; declarator not an identifier (pattern / list end) → stop
-          (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; DEFVAR NAME
+          (let $vhnm i32 (call $ident_name))
+          (if (call $vm_param_member (local.get $vhnm) (local.get $plist) (local.get $pcount))
+            (then  ;; body var shadows a parameter → copy the parameter's value into the body scope
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $vhnm))    ;; LOADVAR NAME (reads the param via the chain)
+              (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $vhnm)))  ;; DEFINIT NAME (define in the body var scope)
+            (else (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (local.get $vhnm))))  ;; DEFVAR NAME
           (call $next_token)  ;; consume NAME
           (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '=' initializer → skip it to the next TOP-LEVEL ','
             (then
@@ -343,6 +362,9 @@
         (br $lp)))
     (call $next_token) (br $lp)))
   (call $cursor_restore (local.get $start)))
+;; simple-param-list (or non-function) hoist: no parameter copy, plain DEFVAR for every var.
+(func $vm_hoist_vars (param $code i32) (effects)
+  (call $vm_hoist_vars_p (local.get $code) (i32.const 0) (i32.const 0)))
 ;; Does `name` appear as a `var NAME` anywhere in the block at the current cursor ('{'), at any nesting
 ;; EXCEPT inside a nested function/arrow body (those vars belong to the nested function)? Cursor restored.
 ;; Used for the for-in/of ForDeclaration-vs-body-VarDeclaredNames early error. Mirrors vm_hoist_vars' skips.
@@ -3192,14 +3214,27 @@
         (call $vm_c_destructure_param (local.get $code) (i32.load (i32.add (local.get $params) (i32.mul (local.get $pti) (i32.const 4)))))))
     (set! $pti (i32.add (local.get $pti) (i32.const 1)))
     (br $ptl)))
+  ;; non-simple parameter list (any default / rest / destructuring) → the body gets a SEPARATE variable
+  ;; environment (spec 10.2.11): a body `var` doesn't leak into the parameter env / param-default closures.
+  (let $nonsimple i32 (i32.ge_s (local.get $restidx) (i32.const 0)))
+  (if (i32.eqz (local.get $nonsimple))
+    (then (let $nsi i32 (i32.const 0))
+      (block $nse (loop $nsl
+        (br_if $nse (i32.ge_s (local.get $nsi) (local.get $np)))
+        (if (i32.or (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $nsi) (i32.const 4)))) (i32.const 0))
+                    (i32.ne (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $nsi) (i32.const 4)))) (i32.const 0)))
+          (then (set! $nonsimple (i32.const 1)) (br $nse)))
+        (set! $nsi (i32.add (local.get $nsi) (i32.const 1))) (br $nsl)))))
   (call $cursor_restore (local.get $bodycur))  ;; back to the body
   ;; generator: suspend after the param prologue (eager param eval per spec — defaults/
   ;; destructuring run when the generator is CALLED, before the body, throwing on call).
   (if (local.get $genf) (then (call $vm_emit_op (local.get $code) (i32.const 77))))  ;; GENPRO_SUSPEND
+  ;; enter the body variable scope AFTER the generator suspend (so it's created when the body resumes)
+  (if (local.get $nonsimple) (then (call $vm_emit_op (local.get $code) (i32.const 126))))  ;; ENTERVARSCOPE
   (if (i32.eq (call $tok_kind) (i32.const 17))
     (then
       (call $vm_hoist_fns (local.get $code) (i32.const 1))  ;; hoist `function NAME` decls (body is a '{...}' block)
-      (call $vm_hoist_vars (local.get $code))  ;; hoist `var` decls → DEFVAR undefined (forward/unreachable refs see undefined, not ReferenceError)
+      (call $vm_hoist_vars_p (local.get $code) (if i32 (local.get $nonsimple) (then (local.get $params)) (else (i32.const 0))) (if i32 (local.get $nonsimple) (then (local.get $np)) (else (i32.const 0))))  ;; hoist `var` decls; copy shadowed params when a separate body scope exists
       (call $vm_hoist_block_fns (local.get $code))  ;; AnnexB B.3.3: block-nested fn decls → var binding = undefined (unless lexically shadowed)
       (call $vm_hoist_lex (local.get $code))  ;; pre-declare body-top-level let/const/class as v_tdz (TDZ: a ref before its decl throws, no leaked global)
       (i32.store (i32.const 856) (i32.const 1))))  ;; the immediate function-body block must NOT get its own lexical scope — the function scope already serves as it (else hoisted inner fn decls, which capture the function scope, can't see the body's let/const)
@@ -7729,6 +7764,11 @@
         (set! $scope (call $scope_new (local.get $scope) (i32.const 4)))
         (call $scope_set_lexical (local.get $scope))  ;; `var` skips past a block/class scope
         (if (local.get $esn) (then (call $scope_define (local.get $scope) (local.get $esn) (call $v_undef))))  ;; name 0 = a nameless block scope
+        (call $set_cur_scope (local.get $scope))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 126))  ;; ENTERVARSCOPE — push a fresh NON-lexical (variable) scope for the
+      (then                                        ;; body of a function with a non-simple parameter list: `var`/hoisted
+        (set! $scope (call $scope_new (local.get $scope) (i32.const 8)))  ;; fn decls bind HERE (scope_var_target stops), so they don't leak into the param environment / param-default closures. No explicit pop (RET abandons it).
         (call $set_cur_scope (local.get $scope))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 95))  ;; DELETEVAR (operand: name) — delete an identifier reference
