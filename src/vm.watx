@@ -3494,6 +3494,64 @@
             (if (i32.eqz (local.get $d)) (then (call $next_token) (br $e)))))
     (call $next_token) (br $l))))
 
+;; ForIn/OfHeadEvaluation TDZ: scan the destructuring pattern at the cursor (on '[' / '{') and emit
+;; `PUSH v_tdz; LEXDEFINIT id` for every BINDING identifier — array elements, object shorthand and
+;; post-':' targets, '...rest' — while SKIPPING property keys (ident followed by ':'), computed keys
+;; ('[expr]:' in object key position), and default-value expressions (after '='). A per-depth container
+;; stack (0=array, 1=object-expecting-key, 2=object-expecting-value) disambiguates. Cursor NOT restored
+;; (the caller saves/restores). Used to put a let/const ForBinding's names in TDZ during head eval.
+(func $vm_emit_pattern_tdz (param $code i32) (effects)
+  (let $stk i32 (call $heap_alloc (i32.const 256)))  ;; 1 byte per open container (max nesting 256)
+  (let $sp i32 (i32.const 0))
+  (block $done (loop $lp
+    (let $k i32 (call $tok_kind))
+    (br_if $done (i32.eqz (local.get $k)))  ;; EOF safety
+    ;; '{' → open object (expecting a key)
+    (if (i32.eq (local.get $k) (i32.const 17))
+      (then (i32.store8 (i32.add (local.get $stk) (local.get $sp)) (i32.const 1)) (set! $sp (i32.add (local.get $sp) (i32.const 1))) (call $next_token) (br $lp)))
+    ;; '[' → a computed key (object, expecting key) or an array-pattern open
+    (if (i32.eq (local.get $k) (i32.const 19))
+      (then
+        (if (i32.and (i32.gt_s (local.get $sp) (i32.const 0)) (i32.eq (i32.load8_u (i32.add (local.get $stk) (i32.sub (local.get $sp) (i32.const 1)))) (i32.const 1)))
+          (then (call $vm_skip_balanced) (i32.store8 (i32.add (local.get $stk) (i32.sub (local.get $sp) (i32.const 1))) (i32.const 2)) (br $lp))  ;; computed key → skip, now expect the value/target
+          (else (i32.store8 (i32.add (local.get $stk) (local.get $sp)) (i32.const 0)) (set! $sp (i32.add (local.get $sp) (i32.const 1))) (call $next_token) (br $lp)))))
+    ;; ']' / '}' → close a container (done when the top-level pattern closes)
+    (if (i32.or (i32.eq (local.get $k) (i32.const 20)) (i32.eq (local.get $k) (i32.const 18)))
+      (then (set! $sp (i32.sub (local.get $sp) (i32.const 1))) (br_if $done (i32.le_s (local.get $sp) (i32.const 0))) (call $next_token) (br $lp)))
+    ;; ':' → now expecting the value/target
+    (if (i32.eq (local.get $k) (i32.const 37))
+      (then (if (i32.gt_s (local.get $sp) (i32.const 0)) (then (i32.store8 (i32.add (local.get $stk) (i32.sub (local.get $sp) (i32.const 1))) (i32.const 2)))) (call $next_token) (br $lp)))
+    ;; ',' → in an object, the next property starts with a key
+    (if (i32.eq (local.get $k) (i32.const 22))
+      (then (if (i32.gt_s (local.get $sp) (i32.const 0)) (then (if (i32.ne (i32.load8_u (i32.add (local.get $stk) (i32.sub (local.get $sp) (i32.const 1)))) (i32.const 0)) (then (i32.store8 (i32.add (local.get $stk) (i32.sub (local.get $sp) (i32.const 1))) (i32.const 1)))))) (call $next_token) (br $lp)))
+    ;; '=' → skip the default-value expression up to a top-level ',' or the container close
+    (if (i32.eq (local.get $k) (i32.const 24))
+      (then
+        (call $next_token)
+        (let $dd i32 (i32.const 0))
+        (block $de (loop $dl
+          (let $dk i32 (call $tok_kind))
+          (br_if $de (i32.eqz (local.get $dk)))
+          (if (i32.or (i32.eq (local.get $dk) (i32.const 15)) (i32.or (i32.eq (local.get $dk) (i32.const 17)) (i32.eq (local.get $dk) (i32.const 19))))
+            (then (set! $dd (i32.add (local.get $dd) (i32.const 1))) (call $next_token) (br $dl)))
+          (if (i32.or (i32.eq (local.get $dk) (i32.const 16)) (i32.or (i32.eq (local.get $dk) (i32.const 18)) (i32.eq (local.get $dk) (i32.const 20))))
+            (then (br_if $de (i32.le_s (local.get $dd) (i32.const 0))) (set! $dd (i32.sub (local.get $dd) (i32.const 1))) (call $next_token) (br $dl)))  ;; a closer at depth 0 belongs to the pattern
+          (br_if $de (i32.and (i32.eq (local.get $dk) (i32.const 22)) (i32.le_s (local.get $dd) (i32.const 0))))  ;; a top-level ',' ends the default
+          (call $next_token) (br $dl)))
+        (br $lp)))
+    ;; identifier → a property KEY (object-expecting-key, followed by ':') or a BINDING
+    (if (i32.eq (local.get $k) (i32.const 3))
+      (then
+        (let $nm i32 (call $ident_name))
+        (let $wasobjkey i32 (i32.and (i32.gt_s (local.get $sp) (i32.const 0)) (i32.eq (i32.load8_u (i32.add (local.get $stk) (i32.sub (local.get $sp) (i32.const 1)))) (i32.const 1))))
+        (call $next_token)
+        (if (i32.and (local.get $wasobjkey) (i32.eq (call $tok_kind) (i32.const 37)))
+          (then)  ;; property key (`name:` …) — not a binding; the ':' handler switches to value position
+          (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_tdz)) (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $nm))))  ;; LEXDEFINIT nm = v_tdz
+        (br $lp)))
+    ;; anything else ('...', string/number-literal key, etc.) — advance
+    (call $next_token) (br $lp))))
+
 ;; A nested pattern element/property may carry a `= default` AFTER its closing
 ;; bracket. We must apply the default to the temp BEFORE destructuring it, so we
 ;; peek past the balanced pattern, emit the default-application onto $nt first,
@@ -5898,12 +5956,18 @@
               ;; fresh TDZ scope while the iterable/object expression is evaluated, so a reference to it there
               ;; (e.g. a closure `() => typeof x`) sees the binding uninitialized → ReferenceError. The scope
               ;; is discarded after head eval (closures still hold it). Destructuring heads ($ofpatcur) TODO.
-              (let $oftdz i32 (i32.and (local.get $ofdecl) (i32.and (i32.eqz (local.get $ofisvar)) (i32.gt_s (local.get $ofvar) (i32.const 0)))))
+              (let $oftdz i32 (i32.and (local.get $ofdecl) (i32.eqz (local.get $ofisvar))))  ;; let/const/using ForDeclaration (simple name OR destructuring pattern)
               (if (local.get $oftdz)
                 (then
                   (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE (head-eval TDZ scope)
-                  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_tdz))
-                  (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))  ;; LEXDEFINIT name = v_tdz
+                  (if (i32.gt_s (local.get $ofvar) (i32.const 0))
+                    (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_tdz)) (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $ofvar)))  ;; simple name = v_tdz
+                    (else (if (local.get $ofpatcur)
+                      (then  ;; destructuring pattern: declare each bound name as v_tdz
+                        (let $svtdz i32 (call $cursor_save))
+                        (call $cursor_restore (local.get $ofpatcur))
+                        (call $vm_emit_pattern_tdz (local.get $code))
+                        (call $cursor_restore (local.get $svtdz))))))))
               ;; for-in RHS is an Expression (comma allowed); for-of RHS is an AssignmentExpression (no comma)
               (if (local.get $isin) (then (call $vm_c_commaexpr (local.get $code))) (else (call $vm_c_expr (local.get $code))))  ;; the iterable / object
               ;; head evaluation is complete (the iterable value is on the stack) → discard the TDZ scope BEFORE
