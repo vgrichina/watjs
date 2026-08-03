@@ -5894,8 +5894,21 @@
               (let $foinm i32 (call $vm_tmpname))  ;; for-in: unique temp holding the enumerated object (for the per-key still-present check; must be per-loop so NESTED for-in loops don't clobber it)
               ;; the for-in object / for-of iterable is required — `for (x of )` / `for (x in )` → SyntaxError.
               (if (i32.eq (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "for-in/of head requires an expression")) (return)))
+              ;; ForIn/OfHeadEvaluation: a let/const ForDeclaration with a SIMPLE name binds that name in a
+              ;; fresh TDZ scope while the iterable/object expression is evaluated, so a reference to it there
+              ;; (e.g. a closure `() => typeof x`) sees the binding uninitialized → ReferenceError. The scope
+              ;; is discarded after head eval (closures still hold it). Destructuring heads ($ofpatcur) TODO.
+              (let $oftdz i32 (i32.and (local.get $ofdecl) (i32.and (i32.eqz (local.get $ofisvar)) (i32.gt_s (local.get $ofvar) (i32.const 0)))))
+              (if (local.get $oftdz)
+                (then
+                  (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE (head-eval TDZ scope)
+                  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_tdz))
+                  (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $ofvar))))  ;; LEXDEFINIT name = v_tdz
               ;; for-in RHS is an Expression (comma allowed); for-of RHS is an AssignmentExpression (no comma)
               (if (local.get $isin) (then (call $vm_c_commaexpr (local.get $code))) (else (call $vm_c_expr (local.get $code))))  ;; the iterable / object
+              ;; head evaluation is complete (the iterable value is on the stack) → discard the TDZ scope BEFORE
+              ;; GetIterator and the loop temporaries, so those bind in the enclosing (not the transient) scope.
+              (if (local.get $oftdz) (then (call $vm_emit_op (local.get $code) (i32.const 94))))  ;; LEAVEWITH
               ;; the head must close with ')'; a top-level comma after a for-of iterable (`for (x of a, b)`)
               ;; is a SyntaxError since the RHS is an AssignmentExpression, not an Expression.
               (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after for-in/of expression")) (return)))
