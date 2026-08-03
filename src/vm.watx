@@ -3564,6 +3564,24 @@
     (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (pop → completion; last wins)
     (br $l))))
 
+;; CreatePerIterationEnvironment for a regular-`for` let/const head: snapshot the current values of all
+;; `count` head names, pop the current loop scope (closures created in it keep it), push a fresh scope, and
+;; re-bind each name to its snapshot. Values are LOADVAR'd in order (stack [v0..vN-1]) then re-bound in
+;; REVERSE (LIFO). const → DEFCONST, let → LEXDEFINIT.
+(func $vm_emit_periter_copy (param $code i32) (param $names i32) (param $count i32) (param $isconst i32) (effects)
+  (let $i i32 (i32.const 0))
+  (block $le (loop $ll
+    (br_if $le (i32.ge_s (local.get $i) (local.get $count)))
+    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $names) (i32.mul (local.get $i) (i32.const 4)))))  ;; LOADVAR name[i]
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ll)))
+  (call $vm_emit_op (local.get $code) (i32.const 94))  ;; LEAVEWITH (pop the current iteration's scope)
+  (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE 0 (fresh)
+  (set! $i (i32.sub (local.get $count) (i32.const 1)))
+  (block $de (loop $dl
+    (br_if $de (i32.lt_s (local.get $i) (i32.const 0)))
+    (call $vm_emit_op (local.get $code) (if i32 (local.get $isconst) (then (i32.const 79)) (else (i32.const 114)))) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $names) (i32.mul (local.get $i) (i32.const 4)))))  ;; DEFCONST/LEXDEFINIT name[i] (pops its snapshot)
+    (set! $i (i32.sub (local.get $i) (i32.const 1))) (br $dl))))
+
 ;; A nested pattern element/property may carry a `= default` AFTER its closing
 ;; bracket. We must apply the default to the temp BEFORE destructuring it, so we
 ;; peek past the balanced pattern, emit the default-application onto $nt first,
@@ -6138,6 +6156,7 @@
           (let $forlex i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (local.get $forusing) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))))
           (let $forconst i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (local.get $forusing) (call $tok_is_kw (cstring "const")))))  ;; const/using head → immutable binding (DEFCONST, reassign throws)
           (let $forletname i32 (i32.const 0))  ;; the single head let/const name → per-iteration fresh binding (0 = none / multi / destructuring: isolation only)
+          (let $fhaspat i32 (i32.const 0))  ;; 1 = the head has a destructuring declarator (whose names aren't in $forlexb → no per-iteration copy)
           (let $forlexb i32 (call $heap_alloc (i32.const 512)))  ;; all head let/const binding names (for the body-var-conflict early error)
           (let $forlexn i32 (i32.const 0))
           (if (local.get $forlex)
@@ -6177,7 +6196,7 @@
                         (call $cursor_restore (local.get $fpatcur))
                         (call $vm_c_destructure_param (local.get $code) (local.get $fvtmp))
                         (call $cursor_restore (local.get $fvpost))
-                        (set! $forletname (i32.const 0)))  ;; destructuring → no per-iteration copy
+                        (set! $forletname (i32.const 0)) (set! $fhaspat (i32.const 1)))  ;; destructuring → no per-iteration copy
                       (else
                         (let $fin i32 (call $ident_name)) (call $next_token)  ;; NAME
                         ;; a ReservedWord may not be a for-head binding name (`for (var if in {})`).
@@ -6218,6 +6237,14 @@
           (if (i32.ne (call $tok_kind) (i32.const 21))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ';' in for-loop header")) (return)))
           (call $next_token)  ;; consume first ';'
+          ;; initial CreatePerIterationEnvironment (ForBodyEvaluation step 1): copy the head bindings into a
+          ;; fresh scope BEFORE the first test, so closures created in the declaration (`let i=…, f=()=>i`)
+          ;; keep the ORIGINAL binding while the loop body works on per-iteration copies. All-simple let/const
+          ;; heads only (a destructuring declarator's names aren't tracked → keep isolation-only behavior).
+          ;; exclude `using` (its LEAVEWITH-driven disposal must fire ONCE at the end of the for statement,
+          ;; not per-iteration — CreatePerIterationEnvironment's copy would dispose it prematurely).
+          (let $fdocopy i32 (i32.and (i32.eqz (local.get $forusing)) (i32.and (local.get $forlex) (i32.and (i32.eqz (local.get $fhaspat)) (i32.gt_s (local.get $forlexn) (i32.const 0))))))
+          (if (local.get $fdocopy) (then (call $vm_emit_periter_copy (local.get $code) (local.get $forlexb) (local.get $forlexn) (local.get $forconst))))
           (let $ftop i32 (call $vm_emit_cursor))
           (if (i32.ne (call $tok_kind) (i32.const 21))
             (then (call $vm_c_commaexpr (local.get $code)))  ;; the condition is a full Expression (comma allowed: `for(;a,b;)`)
@@ -6258,16 +6285,12 @@
           (let $fpost i32 (call $cursor_save))
           ;; continue → the update clause (compiled next)
           (call $vm_patch_conts (local.get $code) (call $vm_emit_cursor))
-          ;; CreatePerIterationEnvironment: a `for (let i…)` gets a FRESH binding each iteration so
-          ;; body closures capture per-iteration values. Both normal fall-through and `continue` reach
-          ;; here (before the update), so: copy i forward → pop the current loop scope → push a fresh one
-          ;; → rebind i; the update then runs in (and mutates) the fresh scope. Single-declarator only.
-          (if (local.get $forletname)
-            (then
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $forletname))  ;; LOADVAR i → [v]
-              (call $vm_emit_op (local.get $code) (i32.const 94))  ;; LEAVEWITH (pop current iteration's scope; body closures keep it)
-              (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE 0 (fresh)
-              (call $vm_emit_op (local.get $code) (if i32 (local.get $forconst) (then (i32.const 79)) (else (i32.const 114)))) (call $vm_emit_op (local.get $code) (local.get $forletname))))  ;; const → DEFCONST / let → LEXDEFINIT i = v (copied forward)
+          ;; CreatePerIterationEnvironment (before the update): a `for (let i…, j…)` gets FRESH bindings each
+          ;; iteration so body closures capture per-iteration values. Both normal fall-through and `continue`
+          ;; reach here: snapshot all head names → pop the loop scope → push a fresh one → rebind; the update
+          ;; then runs in (and mutates) the fresh scope. All-simple let/const heads (single or multi).
+          (if (local.get $fdocopy)
+            (then (call $vm_emit_periter_copy (local.get $code) (local.get $forlexb) (local.get $forlexn) (local.get $forconst))))
           ;; re-scan + compile the update, then loop
           (call $cursor_restore (local.get $fupd))
           (if (i32.ne (call $tok_kind) (i32.const 16))
