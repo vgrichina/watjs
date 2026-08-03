@@ -2927,6 +2927,18 @@
 ;; `function(x=y,y)` → ReferenceError; `function(a,b=a)` reads a). A default-bearing list is non-simple
 ;; (unmapped `arguments`), so rebinding is safe. A destructuring param's own default is applied (no TDZ,
 ;; its names aren't in scope yet); rest + destructuring binding happen in their own later prologues.
+;; IsSimpleParameterList is false when the list has any rest / default / destructuring param.
+(func $vm_params_nonsimple (param $pdef i32) (param $ppat i32) (param $np i32) (param $restidx i32) (result i32) (effects)
+  (if (i32.ge_s (local.get $restidx) (i32.const 0)) (then (return (i32.const 1))))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $np)))
+    (if (i32.or (i32.and (i32.ne (local.get $pdef) (i32.const 0)) (i32.ne (i32.load (i32.add (local.get $pdef) (i32.mul (local.get $i) (i32.const 4)))) (i32.const 0)))
+                (i32.and (i32.ne (local.get $ppat) (i32.const 0)) (i32.ne (i32.load (i32.add (local.get $ppat) (i32.mul (local.get $i) (i32.const 4)))) (i32.const 0))))
+      (then (return (i32.const 1))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i32.const 0))
+
 (func $vm_emit_default_params (param $code i32) (param $params i32) (param $pdef i32) (param $ppat i32) (param $np i32) (param $restidx i32) (effects)
   (let $ptemp i32 (call $heap_alloc (i32.const 256)))
   ;; $ppat is 0 for a single-ident arrow (no destructuring array) — use a zeroed array (all simple).
@@ -3193,6 +3205,9 @@
   ;; regular function RESETS it to its own kind; a nested arrow inherits it — see vm_c_arrow).
   (let $savepa960 i32 (i32.load (i32.const 960)))
   (i32.store (i32.const 960) (local.get $genf))
+  ;; non-simple params → mark the parameter scope as separate before defaults run, so a sloppy direct eval
+  ;; in a param default that `var`-declares a parameter name throws (EvalDeclarationInstantiation).
+  (if (local.get $nsdup) (then (call $vm_emit_op (local.get $code) (i32.const 127))))  ;; MARKPARAMSCOPE
   (call $vm_emit_default_params (local.get $code) (local.get $params) (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))
   (i32.store (i32.const 960) (local.get $savepa960))
   ;; rest parameter: restName = arguments.slice(restidx)
@@ -4140,6 +4155,8 @@
   ;; default-parameter prologue: left-to-right TDZ initialization (see $vm_emit_default_params).
   ;; an arrow INHERITS the generator param `yield`-reservation (reg 960 bit0) — a nested `() => yield`
   ;; inside a generator's parameter default is still forbidden (arrows are never generators themselves).
+  (if (call $vm_params_nonsimple (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))
+    (then (call $vm_emit_op (local.get $code) (i32.const 127))))  ;; MARKPARAMSCOPE (non-simple arrow params — see vm_c_fnbody)
   (if (local.get $pdef)
     (then (call $vm_emit_default_params (local.get $code) (local.get $params) (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))))
   ;; rest-parameter prologue
@@ -7794,6 +7811,10 @@
         (set! $scope (call $scope_new (local.get $scope) (i32.const 8)))  ;; fn decls bind HERE (scope_var_target stops), so they don't leak into the param environment / param-default closures. No explicit pop (RET abandons it).
         (call $set_cur_scope (local.get $scope))
         (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 127))  ;; MARKPARAMSCOPE — mark the current (parameter) scope as the
+      (then                                       ;; separate parameter environment of a non-simple-param fn (see scope_set_paramsep)
+        (call $scope_set_paramsep (local.get $scope))
+        (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 95))  ;; DELETEVAR (operand: name) — delete an identifier reference
       (then
         (let $dvn i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
@@ -8047,8 +8068,10 @@
               (br_if $dvce (i32.eqz (local.get $dvcur)))
               (br_if $dvce (i32.gt_s (local.get $dvn) (i32.const 256)))  ;; safety cap
               (let $dvsl i32 (call $scope_find_local (local.get $dvcur) (local.get $dvnm)))
+              ;; conflict if the name is bound as a lexical (let/const/class — bit 32) OR bound in a SEPARATE
+              ;; parameter environment (a parameter, during a param-default eval — spec 10.2.11 / B.3.3).
               (if (local.get $dvsl)
-                (then (if (i32.and (call $entry_kind (local.get $dvsl)) (i32.const 32))
+                (then (if (i32.or (i32.and (call $entry_kind (local.get $dvsl)) (i32.const 32)) (call $scope_is_paramsep (local.get $dvcur)))
                   (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (br $disp)))))
               (br_if $dvce (i32.eq (local.get $dvcur) (local.get $dvtgt)))
               (set! $dvcur (call $scope_parent (local.get $dvcur)))

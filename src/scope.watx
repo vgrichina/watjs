@@ -26,6 +26,7 @@
   (i32.store (i32.add (local.get $s) (i32.const 12)) (call $heap_alloc (i32.mul (local.get $cp) (i32.const 16))))
   (i64.store (i32.add (local.get $s) (i32.const 16)) (i64.const 0))  ;; not a with-scope
   (i32.store (i32.add (local.get $s) (i32.const 24)) (i32.const 0))  ;; not a lexical (block/class) scope
+  (i32.store (i32.add (local.get $s) (i32.const 28)) (i32.const 0))  ;; not a param-separate scope (see scope_set_paramsep)
   (local.get $s))
 
 ;; mark scope $s as a `with` scope bound to object value $obj (lookups delegate to $obj)
@@ -36,6 +37,11 @@
 ;; nearest function/var scope) but its own let/const/class bindings are found by lookups normally.
 (func $scope_set_lexical (param $s i32) (effects) (i32.store (i32.add (local.get $s) (i32.const 24)) (i32.const 1)))
 (func $scope_is_lexical (param $s i32) (result i32) (effects) (i32.load (i32.add (local.get $s) (i32.const 24))))
+;; mark scope $s as the SEPARATE parameter environment of a non-simple-param function (spec 10.2.11):
+;; the body gets its own varEnv (op 126), so during parameter evaluation a sloppy direct eval's `var NAME`
+;; that collides with a binding HERE (a parameter) is a SyntaxError (EvalDeclarationInstantiation).
+(func $scope_set_paramsep (param $s i32) (effects) (i32.store (i32.add (local.get $s) (i32.const 28)) (i32.const 1)))
+(func $scope_is_paramsep (param $s i32) (result i32) (effects) (i32.load (i32.add (local.get $s) (i32.const 28))))
 
 ;; the nearest var/function scope at or above `s`: skip `with`-scopes (withobj != 0) AND lexical
 ;; block/class scopes. A `var` declaration must bind here, NOT in an enclosing with/block scope
