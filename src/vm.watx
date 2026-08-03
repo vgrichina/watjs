@@ -6482,6 +6482,12 @@
   (let $swdepth i32 (i32.const -1))  ;; brace depth of the active switch CaseBlock (-1 = none)
   (let $qdepth i32 (i32.const 0))    ;; open ternary '?' count at $swdepth
   (let $prevlabel i32 (i32.const 0)) ;; previous token was a case/default/label ':' at the CaseBlock level
+  ;; AnnexB B.3.3: a block-nested function whose name is lexically bound (let/const/class/catch-param) in
+  ;; an ENCLOSING block must NOT be var-hoisted (else it's an early error / creates a stray global). Track
+  ;; active lexical names with the brace level they were declared at (mirrors vm_hoist_block_fns).
+  (let $hlexn i32 (i32.const 0))
+  (let $hlexnm i32 (call $heap_alloc (i32.const 4096)))
+  (let $hlexlv i32 (call $heap_alloc (i32.const 4096)))
   (call $next_token)
   (block $done (loop $scan
     (let $k i32 (call $tok_kind))
@@ -6491,6 +6497,10 @@
     (if (i32.eq (local.get $k) (i32.const 17)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1)))
       (if (local.get $swpend) (then (set! $swdepth (local.get $bd)) (set! $swpend (i32.const 0)) (set! $qdepth (i32.const 0))))))  ;; switch CaseBlock '{'
     (if (i32.and (i32.eq (local.get $k) (i32.const 18)) (i32.gt_s (local.get $bd) (i32.const 0))) (then (set! $bd (i32.sub (local.get $bd) (i32.const 1)))
+      (block $hpe (loop $hpl  ;; pop lexical names declared in the block now closing (level > new $bd)
+        (br_if $hpe (i32.eqz (local.get $hlexn)))
+        (br_if $hpe (i32.le_s (i32.load (i32.add (local.get $hlexlv) (i32.mul (i32.sub (local.get $hlexn) (i32.const 1)) (i32.const 4)))) (local.get $bd)))
+        (set! $hlexn (i32.sub (local.get $hlexn) (i32.const 1))) (br $hpl)))
       (if (i32.lt_s (local.get $bd) (local.get $swdepth)) (then (set! $swdepth (i32.const -1)) (set! $qdepth (i32.const 0))))))  ;; left the CaseBlock
     (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "switch"))) (then (if (i32.eqz (local.get $bd)) (then (set! $swpend (i32.const 1))))))  ;; only a TRUE top-level switch hoists its clause fns to global; a switch nested in a block/for/try does not
     (if (i32.and (i32.ge_s (local.get $swdepth) (i32.const 0)) (i32.eq (local.get $bd) (local.get $swdepth)))
@@ -6526,8 +6536,26 @@
                       (else (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Function statements require a function name")) (return))))  ;; anonymous FunctionDeclaration
 
                   (else  ;; block-nested (AnnexB B.3.3): var-scoped binding = undefined at program entry; the
-                    ;; block's own execution assigns the function value (Get f before the block sees undefined)
-                    (call $vm_hoist_clause_fn (local.get $code)) (call $next_token)))
+                    ;; block's own execution assigns the function value (Get f before the block sees undefined),
+                    ;; UNLESS the name is lexically bound (let/const/class/catch-param) in an ENCLOSING block —
+                    ;; then B.3.3 is not applied (no DEFVAR): just skip the body.
+                    (let $hfsave i32 (call $cursor_save))
+                    (call $next_token) (if (i32.eq (call $tok_kind) (i32.const 12)) (then (call $next_token)))  ;; 'function' '*'?
+                    (let $hbfname i32 (if i32 (i32.eq (call $tok_kind) (i32.const 3)) (then (call $ident_name)) (else (i32.const 0))))
+                    (call $cursor_restore (local.get $hfsave))
+                    (let $hbblocked i32 (i32.const 0))
+                    (if (local.get $hbfname)
+                      (then
+                        (let $hbi i32 (i32.const 0))
+                        (block $hbe (loop $hbl
+                          (br_if $hbe (i32.ge_s (local.get $hbi) (local.get $hlexn)))
+                          (if (call $str_eq (i32.load (i32.add (local.get $hlexnm) (i32.mul (local.get $hbi) (i32.const 4)))) (local.get $hbfname))
+                            (then (set! $hbblocked (i32.const 1)) (br $hbe)))
+                          (set! $hbi (i32.add (local.get $hbi) (i32.const 1))) (br $hbl)))))
+                    (if (i32.eqz (local.get $hbblocked))
+                      (then (call $vm_hoist_clause_fn (local.get $code)))  ;; DEFVAR name + skip
+                      (else (call $hoist_skip_fn)))                        ;; lexically shadowed → skip (no DEFVAR)
+                    (call $next_token)))
                 (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0)))
               (else
                 (if (i32.and (i32.eqz (local.get $bd)) (i32.and (i32.eqz (local.get $pd)) (i32.or (i32.eq (local.get $prevk) (i32.const 16)) (local.get $prevelse))))
@@ -6537,6 +6565,20 @@
                 ;; internally (never seen by this loop) — so advance past it, else the loop mis-decrements $bd.
                 (call $next_token) (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0))))
             (br $scan)))
+        ;; record a lexical binding name (let/const/class simple identifier) at the current brace level
+        (if (i32.or (call $tok_is_kw (cstring "let")) (i32.or (call $tok_is_kw (cstring "const")) (call $tok_is_kw (cstring "class"))))
+          (then
+            (let $hlsave i32 (call $cursor_save))
+            (call $next_token)
+            (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.lt_s (local.get $hlexn) (i32.const 1024)))
+              (then
+                (i32.store (i32.add (local.get $hlexnm) (i32.mul (local.get $hlexn) (i32.const 4))) (call $ident_name))
+                (i32.store (i32.add (local.get $hlexlv) (i32.mul (local.get $hlexn) (i32.const 4))) (local.get $bd))
+                (set! $hlexn (i32.add (local.get $hlexn) (i32.const 1)))))
+            (call $cursor_restore (local.get $hlsave))))
+        ;; NOTE: a catch PARAMETER is deliberately NOT recorded here — AnnexB B.3.5/B.3.3 still var-hoists a
+        ;; same-named block function inside the catch block (the `*-no-skip-try` tests: the extension is
+        ;; observed because the try/catch case would not be an early error). Only let/const/class shadow it.
         (if (call $tok_is_kw (cstring "var"))
           (then
             (call $next_token)
