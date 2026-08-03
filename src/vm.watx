@@ -192,9 +192,10 @@
 (func $vm_hoist_clause_fn (param $code i32) (effects)
   (call $look_save)
   (call $next_token)  ;; past 'function'
-  (if (i32.eq (call $tok_kind) (i32.const 12)) (then (call $next_token)))  ;; '*' (generator)
-  (if (i32.eq (call $tok_kind) (i32.const 3))
-    (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))))  ;; DEFVAR NAME = undefined-if-absent
+  (let $hcgen i32 (i32.eq (call $tok_kind) (i32.const 12)))  ;; '*' → GeneratorDeclaration: LEXICAL (block-scoped), NOT AnnexB var-hoisted
+  (if (local.get $hcgen) (then (call $next_token)))
+  (if (i32.and (i32.eqz (local.get $hcgen)) (i32.eq (call $tok_kind) (i32.const 3)))
+    (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (call $ident_name))))  ;; DEFVAR NAME (plain FunctionDeclaration only)
   (call $look_restore)  ;; back to 'function'
   (call $hoist_skip_fn))  ;; skip the whole decl body
 
@@ -4827,6 +4828,8 @@
   (call $next_token)  ;; past '{'
   (let $depth i32 (i32.const 1))
   (let $found i32 (i32.const 0))
+  (let $prevfn i32 (i32.const 0))     ;; previous top-level token was the `function` keyword
+  (let $prevasync i32 (i32.const 0))  ;; previous top-level token was the `async` keyword
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
     (br_if $e (i32.eq (local.get $k) (i32.const 0)))  ;; EOF
@@ -4834,6 +4837,13 @@
       (then (set! $depth (i32.add (local.get $depth) (i32.const 1)))))
     (if (i32.or (i32.eq (local.get $k) (i32.const 18)) (i32.or (i32.eq (local.get $k) (i32.const 20)) (i32.eq (local.get $k) (i32.const 16))))  ;; } ] )
       (then (set! $depth (i32.sub (local.get $depth) (i32.const 1))) (br_if $e (i32.eqz (local.get $depth)))))  ;; matching '}'
+    ;; bit2: a block-level GeneratorDeclaration (`function *`) or Async(Generator)FunctionDeclaration
+    ;; (`async function`) is a LEXICAL declaration → the block needs its own scope (like let/const/class).
+    ;; Only plain FunctionDeclarations get AnnexB var-hoisting (no scope forced).
+    (if (i32.and (i32.eq (local.get $depth) (i32.const 1))
+          (i32.or (i32.and (i32.eq (local.get $k) (i32.const 12)) (local.get $prevfn))
+                  (i32.and (local.get $prevasync) (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function"))))))
+      (then (set! $found (i32.or (local.get $found) (i32.const 4)))))
     (if (i32.and (i32.eq (local.get $depth) (i32.const 1)) (i32.eq (local.get $k) (i32.const 3)))
       (then
         (if (i32.or (call $tok_is_kw (cstring "let")) (i32.or (call $tok_is_kw (cstring "const")) (i32.or (call $tok_is_kw (cstring "class")) (call $tok_is_kw (cstring "using")))))
@@ -4843,6 +4853,8 @@
         ;; statement-position-aware. Its LexicallyDeclaredNames still need the duplicate early-error scan.
         (if (i32.or (call $tok_is_kw (cstring "function")) (call $tok_is_kw (cstring "async")))
           (then (set! $found (i32.or (local.get $found) (i32.const 2)))))))
+    (set! $prevfn (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function"))))
+    (set! $prevasync (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "async"))))
     (call $next_token) (br $l)))
   (call $cursor_restore (local.get $sv))
   (local.get $found))
@@ -4957,7 +4969,7 @@
       ;; a Block is one of the containers in which a `using` declaration is allowed (reg 972).
       (let $blkuok i32 (i32.load (i32.const 972))) (i32.store (i32.const 972) (i32.const 1))
       (let $blkbits i32 (if i32 (local.get $isfnbody) (then (i32.const 0)) (else (call $vm_block_has_lexical))))
-      (let $blk i32 (i32.and (local.get $blkbits) (i32.const 1)))  ;; bit0: let/const/class → needs its own scope
+      (let $blk i32 (i32.ne (i32.and (local.get $blkbits) (i32.const 5)) (i32.const 0)))  ;; bit0 (let/const/class) OR bit2 (lexical generator/async fn) → needs its own scope
       (if (local.get $blk)
         (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)  ;; ENTERSCOPE 0
               (call $vm_hoist_lex (local.get $code))))  ;; pre-declare the block's let/const/class as v_tdz (TDZ before decl)
@@ -5582,7 +5594,7 @@
           (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after switch discriminant")) (return)))
           (call $next_token)  ;; ')'
           (if (i32.ne (call $tok_kind) (i32.const 17)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '{' after switch head")) (return)))
-          (let $scaselex i32 (i32.and (call $vm_block_has_lexical) (i32.const 1)))  ;; CaseBlock has let/const/class → needs its own lexical scope
+          (let $scaselex i32 (i32.ne (i32.and (call $vm_block_has_lexical) (i32.const 5)) (i32.const 0)))  ;; CaseBlock has let/const/class OR a lexical generator/async fn decl → needs its own scope
           ;; a switch CaseClause StatementList is NOT a `using`-container (unlike a Block) — a `using` directly
           ;; in a case/default clause is a SyntaxError; a nested `{ using }` re-enables it via the block handler.
           (let $swuok i32 (i32.load (i32.const 972))) (i32.store (i32.const 972) (i32.const 0))
