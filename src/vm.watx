@@ -6287,6 +6287,16 @@
           (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → leave the assigned value as the statement completion
           (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $an))  ;; plain assign: strict→80 (ReferenceError if undeclared) / sloppy→85 (implicit global)
           (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (eval/global completion = assigned value)
+          ;; a trailing comma → the whole thing is ONE comma-expression statement (`a=1, b=2`): compile each
+          ;; remaining element (side effects run; its value becomes the completion — the LAST one wins). Without
+          ;; this the fast path stops after `a=1`, leaving `, b=2` to be re-parsed as a separate statement — which
+          ;; silently mis-scopes it in a single-statement context (e.g. an unbraced `for` body → infinite loop).
+          (block $stmtcomma (loop $stmtcommal
+            (br_if $stmtcomma (i32.ne (call $tok_kind) (i32.const 22)))  ;; not ',' → done
+            (call $next_token)  ;; consume ','
+            (call $vm_c_expr (local.get $code))  ;; next AssignmentExpression → [v]
+            (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (pop → completion; last element wins)
+            (br $stmtcommal)))
           (drop (call $eat (i32.const 21)))
           (return)))
       ;; logical assignment a ||= b (59) / a &&= b (60) / a ??= b (61): short-circuit
