@@ -7969,7 +7969,7 @@
         (let $dcnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
-        (call $scope_define_attr (local.get $scope) (local.get $dcnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 18))  ;; E + const-bit(16); non-writable, non-configurable (lexical binding)
+        (call $scope_define_attr (local.get $scope) (local.get $dcnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 50))  ;; E + const(16) + lexical(32); non-writable, non-configurable
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 120))  ;; CHECKDISPOSE (operand: hint 0=sync/1=async) — validate a `using` initializer (peek, no pop)
       (then
@@ -7987,7 +7987,7 @@
         (let $ldnm i32 (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
-        (call $scope_define_attr (local.get $scope) (local.get $ldnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 10))  ;; E|W; non-configurable
+        (call $scope_define_attr (local.get $scope) (local.get $ldnm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 42))  ;; E|W + lexical(32); non-configurable (let/class binding)
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 89))  ;; DEFINIT (operand: name) — `var/let NAME = e`: define a
       (then                                       ;; WRITABLE binding in the CURRENT scope (so it shadows an
@@ -8036,6 +8036,24 @@
         ;; scope is active (direct eval inside a block/catch environment). Define = undefined ONLY if
         ;; absent (a bare redeclare must not reset an already-assigned binding).
         (let $dvtgt i32 (call $scope_var_target (local.get $scope)))
+        ;; sloppy-direct-eval EvalDeclarationInstantiation: a `var` name lexically declared (let/const/class
+        ;; — bit 32) in an enclosing declarative env up to the variable environment is a SyntaxError. Gated
+        ;; on reg 1016 (only a sloppy direct eval shares the caller's varEnv; strict/indirect eval do not).
+        (if (i32.load (i32.const 1016))
+          (then
+            (let $dvcur i32 (local.get $scope))
+            (let $dvn i32 (i32.const 0))
+            (block $dvce (loop $dvcl
+              (br_if $dvce (i32.eqz (local.get $dvcur)))
+              (br_if $dvce (i32.gt_s (local.get $dvn) (i32.const 256)))  ;; safety cap
+              (let $dvsl i32 (call $scope_find_local (local.get $dvcur) (local.get $dvnm)))
+              (if (local.get $dvsl)
+                (then (if (i32.and (call $entry_kind (local.get $dvsl)) (i32.const 32))
+                  (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Identifier has already been declared")) (br $disp)))))
+              (br_if $dvce (i32.eq (local.get $dvcur) (local.get $dvtgt)))
+              (set! $dvcur (call $scope_parent (local.get $dvcur)))
+              (set! $dvn (i32.add (local.get $dvn) (i32.const 1)))
+              (br $dvcl)))))
         (if (i32.eqz (call $scope_find_local (local.get $dvtgt) (local.get $dvnm)))
           (then
             ;; CanDeclareGlobalVar: a NEW `var` binding cannot be created on a NON-EXTENSIBLE global object
@@ -9474,6 +9492,7 @@
 ;; lexer/emit registers is safe — the calling VM is executing bytecode, not lexing.
 (func $vm_eval_str (param $s i32) (param $evalcfg i32) (result i64) (effects)  ;; evalcfg=1: eval() code (new global vars configurable/deletable); 0: Script ($262.evalScript) / Function body
   (let $scope i32 (call $cur_scope))
+  (let $evdirect i32 (i32.and (i32.load (i32.const 880)) (i32.const 1)))  ;; capture direct-eval bit before reg 880 is zeroed
   (i64.store (i32.const 288) (call $v_undef))  ;; reset completion register
   ;; reg 880 (set by DIRECTEVALMARK just before this call) — bitfield: bit0=direct eval, bit1=caller's
   ;; super-property allowed, bit2=caller's super() allowed. A direct eval inherits the caller's context.
@@ -9497,10 +9516,16 @@
   (i32.store (i32.add (local.get $ctx) (i32.const 36)) (i32.const 0))
   (let $evsave i32 (i32.load (i32.const 996)))
   (i32.store (i32.const 996) (local.get $evalcfg))  ;; only eval() code creates deletable global vars; evalScript/Function do not
+  ;; reg 1016 = "sloppy DIRECT eval active": gates the EvalDeclarationInstantiation var/lexical-conflict
+  ;; check in DEFVAR. Only a SLOPPY direct eval shares the caller's variable environment; a STRICT eval
+  ;; (own varEnv) and an INDIRECT eval (global lexEnv) never collide with the caller's lexical bindings.
+  (let $evsave2 i32 (i32.load (i32.const 1016)))
+  (i32.store (i32.const 1016) (i32.and (local.get $evdirect) (i32.eqz (i32.load (i32.const 388)))))
   (block $e (loop $l
     (drop (call $vm_step (local.get $ctx) (call $v_undef)))
     (br_if $e (call $vm_done (local.get $ctx)))
     (br $l)))
+  (i32.store (i32.const 1016) (local.get $evsave2))
   (i32.store (i32.const 996) (local.get $evsave))
   (call $set_cur_scope (local.get $scope))  ;; vm_step may have left a nested scope active
   (i64.load (i32.const 288)))  ;; completion value
