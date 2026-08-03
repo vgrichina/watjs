@@ -4989,6 +4989,12 @@
   ;; sloppy AnnexB function). Read + clear so it governs only this statement.
   (let $nofndecl i32 (i32.load (i32.const 936)))
   (i32.store (i32.const 936) (i32.const 0))
+  ;; a single-statement slot (if/else/while/do/for/for-in/for-of body, per reg 900/936) REQUIRES a
+  ;; Statement — a closer/EOF here means the body is missing (`for(;false;)`, `if(1)}`) → SyntaxError.
+  ;; (An empty `;` body is a valid EmptyStatement, kind 21, and is not caught.)
+  (if (i32.and (i32.or (local.get $nodecl) (local.get $nofndecl))
+               (i32.or (i32.eqz (call $tok_kind)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.or (i32.eq (call $tok_kind) (i32.const 16)) (i32.eq (call $tok_kind) (i32.const 20))))))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token: a statement is required here")) (return)))
   ;; `with` is a reserved word in strict mode → early SyntaxError. Sloppy `with` is supported
   ;; (see the `with` handler below + scope_find's with-object delegation).
   (if (i32.and (i32.load (i32.const 388)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "with"))))
