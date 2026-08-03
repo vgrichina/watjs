@@ -3552,6 +3552,18 @@
     ;; anything else ('...', string/number-literal key, etc.) — advance
     (call $next_token) (br $lp))))
 
+;; After a fast-path assignment statement (NAME = / op= / ||= / …), consume any trailing
+;; `, AssignmentExpression` comma-operator continuation (`a=1, b=2`), emitting SETCOMPLETION for each so
+;; the LAST element is the statement completion (spec comma semantics). The caller then eats the ';'.
+;; Without this the fast path abandons `, b=2`, which mis-scopes it in a single-statement context.
+(func $vm_emit_stmt_comma_tail (param $code i32) (effects)
+  (block $e (loop $l
+    (br_if $e (i32.ne (call $tok_kind) (i32.const 22)))  ;; not ',' → done
+    (call $next_token)  ;; consume ','
+    (call $vm_c_expr (local.get $code))  ;; next AssignmentExpression → [v]
+    (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (pop → completion; last wins)
+    (br $l))))
+
 ;; A nested pattern element/property may carry a `= default` AFTER its closing
 ;; bracket. We must apply the default to the temp BEFORE destructuring it, so we
 ;; peek past the balanced pattern, emit the default-application onto $nt first,
@@ -6287,16 +6299,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP → leave the assigned value as the statement completion
           (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $an))  ;; plain assign: strict→80 (ReferenceError if undeclared) / sloppy→85 (implicit global)
           (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (eval/global completion = assigned value)
-          ;; a trailing comma → the whole thing is ONE comma-expression statement (`a=1, b=2`): compile each
-          ;; remaining element (side effects run; its value becomes the completion — the LAST one wins). Without
-          ;; this the fast path stops after `a=1`, leaving `, b=2` to be re-parsed as a separate statement — which
-          ;; silently mis-scopes it in a single-statement context (e.g. an unbraced `for` body → infinite loop).
-          (block $stmtcomma (loop $stmtcommal
-            (br_if $stmtcomma (i32.ne (call $tok_kind) (i32.const 22)))  ;; not ',' → done
-            (call $next_token)  ;; consume ','
-            (call $vm_c_expr (local.get $code))  ;; next AssignmentExpression → [v]
-            (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (pop → completion; last element wins)
-            (br $stmtcommal)))
+          (call $vm_emit_stmt_comma_tail (local.get $code))  ;; consume a trailing `, expr` comma continuation
           (drop (call $eat (i32.const 21)))
           (return)))
       ;; logical assignment a ||= b (59) / a &&= b (60) / a ??= b (61): short-circuit
@@ -6318,6 +6321,7 @@
           (call $vm_patch (local.get $code) (local.get $p1))   ;; keep-branch: [a] (left on stack as completion)
           (call $vm_patch (local.get $code) (local.get $p2))
           (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION (both branches left the value)
+          (call $vm_emit_stmt_comma_tail (local.get $code))  ;; consume a trailing `, expr` comma continuation
           (drop (call $eat (i32.const 21)))
           (return)))
       (if (call $is_compound_assign (call $tok_kind))  ;; += -= *= /= %= **= &= |= ^= <<= >>= >>>=
@@ -6333,6 +6337,7 @@
           (call $vm_emit_op (local.get $code) (local.get $cop))
           (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $an)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388)))  ;; REFSET → leaves value
           (call $vm_emit_op (local.get $code) (i32.const 71))  ;; SETCOMPLETION
+          (call $vm_emit_stmt_comma_tail (local.get $code))  ;; consume a trailing `, expr` comma continuation
           (drop (call $eat (i32.const 21)))
           (return)))
       (call $look_restore)))
