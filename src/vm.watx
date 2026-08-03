@@ -3707,14 +3707,18 @@
   (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP result
 
 ;; store a destructuring LEAF identifier target. reg 676 distinguishes the form:
-;; 1 = assignment destructuring (`[x]=…`) → assign up the chain (strict: ReferenceError
-;; if undeclared; sloppy: implicit global); 0 = binding (`var [x]=…`) → define-in-current.
+;; 3 = const lexical binding (`for (const [x] of …)`) → DEFCONST in the current (per-iteration) scope;
+;; 2 = let/catch lexical binding → LEXDEFINIT in the current scope; 1 = assignment destructuring
+;; (`[x]=…`) → assign up the chain (strict: ReferenceError if undeclared; sloppy: implicit global);
+;; 0 = var binding (`var [x]=…`) → define-in-nearest-var-scope (DEFINIT).
 (func $vm_emit_dstr_store (param $code i32) (param $name i32) (effects)
-  (if (i32.eq (i32.load (i32.const 676)) (i32.const 2))
-    (then (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $name)))  ;; lexical binding (catch param): LEXDEFINIT binds in the CURRENT (declarative) scope, not the var scope
+  (if (i32.eq (i32.load (i32.const 676)) (i32.const 3))
+    (then (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $name)))  ;; const lexical binding: DEFCONST (non-writable) in the current scope
+  (else (if (i32.eq (i32.load (i32.const 676)) (i32.const 2))
+    (then (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $name)))  ;; lexical binding (catch param / let): LEXDEFINIT binds in the CURRENT (declarative) scope, not the var scope
     (else (if (i32.load (i32.const 676))
       (then (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $name)))
-      (else (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $name)))))))  ;; declarator mode: DEFINIT binds via the nearest var scope
+      (else (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $name)))))))))  ;; declarator mode: DEFINIT binds via the nearest var scope
 
 ;; A destructuring leaf identifier may not be a reserved word: always-reserved (`{if}`, `[function]`)
 ;; in any mode, or eval/arguments/strict-reserved under strict mode. NOTE the caller must gate this on the
@@ -5946,7 +5950,7 @@
               ;; loop body) so body closures capture per-iteration values. Push a per-iteration scope INSIDE
               ;; the handler (throw discards it via the handler's saved scope); kind-2 + raised bases so
               ;; continue-converge/break-handler pop it explicitly and an OUTER labeled break unwinds it.
-              (let $ofperiter i32 (i32.and (local.get $ofdecl) (i32.and (i32.eqz (local.get $ofisvar)) (i32.eqz (local.get $ofpatcur)))))
+              (let $ofperiter i32 (i32.and (local.get $ofdecl) (i32.eqz (local.get $ofisvar))))  ;; let/const head (simple OR destructuring) → per-iteration lexical scope
               (if (local.get $ofperiter)
                 (then
                   (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; ENTERSCOPE 0 (per-iteration)
@@ -5967,7 +5971,12 @@
                   (let $ofbody i32 (call $cursor_save))
                   (call $cursor_restore (local.get $ofpatcur))
                   (let $ofsm i32 (i32.load (i32.const 676)))  ;; no declarator → assignment destructuring (ident targets assign, not define)
-                  (i32.store (i32.const 676) (if i32 (local.get $ofdecl) (then (i32.const 0)) (else (i32.const 1))))
+                  ;; let/const decl → lexical per-iteration binding (mode 2 let / 3 const → LEXDEFINIT/DEFCONST
+                  ;; into the ENTERSCOPE per-iter scope, so it doesn't leak to the var/global scope); `var` decl
+                  ;; → mode 0 (DEFINIT var scope); assignment head → mode 1.
+                  (i32.store (i32.const 676) (if i32 (local.get $ofdecl)
+                    (then (if i32 (local.get $ofperiter) (then (if i32 (local.get $ofisconst) (then (i32.const 3)) (else (i32.const 2)))) (else (i32.const 0))))
+                    (else (i32.const 1))))
                   (call $vm_c_destructure_param (local.get $code) (cstring "@@ofdt"))
                   (i32.store (i32.const 676) (local.get $ofsm))
                   (call $cursor_restore (local.get $ofbody)))
