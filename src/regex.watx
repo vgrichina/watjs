@@ -1027,6 +1027,17 @@
   (if (call $re_byte_in (local.get $c) (i32.const 119)) (then (return (i32.const 1))))  ;; w
   (if (call $re_byte_in (local.get $c) (i32.const 87)) (then (return (i32.const 1))))   ;; W
   (i32.const 0))
+;; CharacterClassEscape: d D s S w W (+ p P property escapes) — NOT a valid endpoint of a class range
+(func $re_is_cce (param $c i32) (result i32) (effects)
+  (if (call $re_byte_in (local.get $c) (i32.const 100)) (then (return (i32.const 1))))  ;; d
+  (if (call $re_byte_in (local.get $c) (i32.const 68)) (then (return (i32.const 1))))   ;; D
+  (if (call $re_byte_in (local.get $c) (i32.const 115)) (then (return (i32.const 1))))  ;; s
+  (if (call $re_byte_in (local.get $c) (i32.const 83)) (then (return (i32.const 1))))   ;; S
+  (if (call $re_byte_in (local.get $c) (i32.const 119)) (then (return (i32.const 1))))  ;; w
+  (if (call $re_byte_in (local.get $c) (i32.const 87)) (then (return (i32.const 1))))   ;; W
+  (if (call $re_byte_in (local.get $c) (i32.const 112)) (then (return (i32.const 1))))  ;; p
+  (if (call $re_byte_in (local.get $c) (i32.const 80)) (then (return (i32.const 1))))   ;; P
+  (i32.const 0))
 ;; SyntaxCharacter identity escape (^ $ \ . * + ? ( ) [ ] { } |) + '/'
 (func $re_esc_syntaxchar (param $c i32) (result i32) (effects)
   (if (call $re_byte_in (local.get $c) (i32.const 94)) (then (return (i32.const 1))))   ;; ^
@@ -1201,20 +1212,44 @@
               (br $pcl)))
             (set! $st (i32.const 1)) (br $l)))
         (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
-    (if (i32.eq (local.get $c) (i32.const 91))  ;; '[' char class → skip to ']', atom
+    (if (i32.eq (local.get $c) (i32.const 91))  ;; '[' char class
       (then
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (let $closed i32 (i32.const 0))
+        (let $prevatom i32 (i32.const 0))  ;; a left class-atom is pending (candidate range LHS)
+        (let $prevcce i32 (i32.const 0))   ;; that pending atom is a CharacterClassEscape
+        (let $penddash i32 (i32.const 0))  ;; a '-' range operator is pending; the next atom is the RHS
+        (let $dashcce i32 (i32.const 0))   ;; the range LHS was a CCE
+        ;; a leading '^' negates the class and is not itself a class-atom
+        (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 94)))
+          (then (set! $i (i32.add (local.get $i) (i32.const 1)))))
         (block $ce (loop $cl
           (br_if $ce (i32.ge_s (local.get $i) (local.get $n)))
           (let $cc i32 (call $str_byte (local.get $pat) (local.get $i)))
-          (if (i32.eq (local.get $cc) (i32.const 92))  ;; '\' inside the class
+          (if (i32.eq (local.get $cc) (i32.const 93)) (then (set! $closed (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ce)))  ;; ']' closes
+          ;; '-' between two atoms is a RANGE operator; otherwise a literal '-'
+          (if (i32.eq (local.get $cc) (i32.const 45))
             (then
+              (if (i32.and (local.get $prevatom) (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $n)) (i32.ne (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 1))) (i32.const 93))))
+                (then (set! $penddash (i32.const 1)) (set! $dashcce (local.get $prevcce)) (set! $prevatom (i32.const 0)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $cl))
+                (else (set! $prevatom (i32.const 1)) (set! $prevcce (i32.const 0)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $cl)))))
+          ;; consume ONE class-atom; $atomcce = whether it is a CharacterClassEscape
+          (let $atomcce i32 (i32.const 0))
+          (if (i32.eq (local.get $cc) (i32.const 92))  ;; '\' escape inside the class
+            (then
+              (if (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $n)) (then (set! $atomcce (call $re_is_cce (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 1)))))))
               (if (local.get $ustrict)
-                (then (set! $i (call $re_uesc_consume (local.get $pat) (local.get $n) (i32.add (local.get $i) (i32.const 1)) (i32.const 1))) (if (call $err) (then (return))) (br $cl))
-                (else (set! $i (i32.add (local.get $i) (i32.const 2))) (br $cl)))))
-          (if (i32.eq (local.get $cc) (i32.const 93)) (then (set! $closed (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ce)))
-          (set! $i (i32.add (local.get $i) (i32.const 1))) (br $cl)))
+                (then (set! $i (call $re_uesc_consume (local.get $pat) (local.get $n) (i32.add (local.get $i) (i32.const 1)) (i32.const 1))) (if (call $err) (then (return))))
+                (else (set! $i (i32.add (local.get $i) (i32.const 2))))))
+            (else (set! $i (i32.add (local.get $i) (i32.const 1)))))  ;; single-character atom
+          ;; if a '-' range was pending, this atom is the RHS endpoint — a CCE on either side is invalid in u-mode
+          (if (local.get $penddash)
+            (then
+              (if (i32.and (local.get $ustrict) (i32.or (local.get $dashcce) (local.get $atomcce)))
+                (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid character class range in unicode pattern")) (return)))
+              (set! $penddash (i32.const 0)) (set! $prevatom (i32.const 0)) (set! $prevcce (i32.const 0)))
+            (else (set! $prevatom (i32.const 1)) (set! $prevcce (local.get $atomcce))))
+          (br $cl)))
         (if (i32.eqz (local.get $closed)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unterminated character class")) (return)))
         (set! $st (i32.const 1)) (br $l)))
     (if (i32.eq (local.get $c) (i32.const 40))  ;; '(' open group (skip (?: (?= (?! (?<= (?<! (?<name>)
