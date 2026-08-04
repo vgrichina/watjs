@@ -946,6 +946,33 @@
 ;; (0 = NUL, 1-9 = backref), or an IdentityEscape of a SyntaxCharacter (^ $ \ . * + ? ( ) [ ] { } |)
 ;; or '/'. Any OTHER char (e.g. \A, \a, \-, \e) is a SyntaxError in u-mode.
 (func $re_byte_in (param $c i32) (param $t i32) (result i32) (effects) (i32.eq (local.get $c) (local.get $t)))
+;; Count CAPTURING groups in a pattern: a `(` outside a char class that is NOT `(?:` / `(?=` / `(?!` /
+;; `(?<=` / `(?<!` / a modifier group `(?flags…:`. A `(?<name>` IS capturing. Escapes and class interiors
+;; are skipped. Used to validate u-mode decimal-escape backreferences (`\n` with n > count → SyntaxError).
+(func $re_count_groups (param $pat i32) (param $n i32) (result i32) (effects)
+  (let $i i32 (i32.const 0))
+  (let $cnt i32 (i32.const 0))
+  (let $inclass i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $pat) (local.get $i)))
+    (if (i32.eq (local.get $c) (i32.const 92)) (then (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))  ;; \X
+    (if (i32.and (i32.eq (local.get $c) (i32.const 91)) (i32.eqz (local.get $inclass))) (then (set! $inclass (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))  ;; [
+    (if (i32.and (i32.eq (local.get $c) (i32.const 93)) (local.get $inclass)) (then (set! $inclass (i32.const 0)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))  ;; ]
+    (if (i32.and (i32.eq (local.get $c) (i32.const 40)) (i32.eqz (local.get $inclass)))  ;; ( outside a class
+      (then
+        (let $iscap i32 (i32.const 1))
+        (if (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 1)) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 1))) (i32.const 63)))  ;; (?
+          (then
+            (let $c2 i32 (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 2))))
+            (if (i32.eq (local.get $c2) (i32.const 60))  ;; (?<
+              (then
+                (let $c3 i32 (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 3))))
+                (if (i32.or (i32.eq (local.get $c3) (i32.const 61)) (i32.eq (local.get $c3) (i32.const 33))) (then (set! $iscap (i32.const 0)))))  ;; (?<= (?<! → non-cap; (?<name> → cap
+              (else (set! $iscap (i32.const 0))))))  ;; (?: (?= (?! or a modifier (?flags: → non-capturing
+        (if (local.get $iscap) (then (set! $cnt (i32.add (local.get $cnt) (i32.const 1)))))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (local.get $cnt))
 ;; Validate a RegExp modifier group `(?<add>:` / `(?<add>-<remove>:` starting at $start (the first char
 ;; after `(?`, known NOT to be `:`/`=`/`!`/`<`). add/remove flags may only be i, m, s; no duplicate
 ;; within a set; no flag in BOTH add and remove; a `-` requires a non-empty remove; the group may not be
@@ -1024,6 +1051,7 @@
   (let $i i32 (i32.const 0))
   (let $st i32 (i32.const 0))
   (let $depth i32 (i32.const 0))  ;; open '(' groups
+  (let $ngroups i32 (if i32 (local.get $ustrict) (then (call $re_count_groups (local.get $pat) (local.get $n))) (else (i32.const 0))))  ;; u-mode: for backref-count validation
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
     (let $c i32 (call $str_byte (local.get $pat) (local.get $i)))
@@ -1036,6 +1064,20 @@
         (if (local.get $ustrict)
           (then (if (i32.eqz (call $re_uesc_ok (local.get $esc1)))
             (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid escape in unicode pattern")) (return)))))
+        ;; u mode: a decimal-escape `\<n>` (n≥1) is a backreference — a SyntaxError if n exceeds the number
+        ;; of capturing groups (sloppy mode treats an out-of-range `\n` as a legacy octal / identity escape).
+        (if (i32.and (local.get $ustrict) (i32.and (i32.ge_s (local.get $esc1) (i32.const 49)) (i32.le_s (local.get $esc1) (i32.const 57))))  ;; 1-9
+          (then
+            (let $bn i32 (i32.const 0))
+            (let $bj i32 (i32.add (local.get $i) (i32.const 1)))
+            (block $bne (loop $bnl
+              (br_if $bne (i32.ge_s (local.get $bj) (local.get $n)))
+              (let $bd i32 (call $str_byte (local.get $pat) (local.get $bj)))
+              (br_if $bne (i32.or (i32.lt_s (local.get $bd) (i32.const 48)) (i32.gt_s (local.get $bd) (i32.const 57))))
+              (set! $bn (i32.add (i32.mul (local.get $bn) (i32.const 10)) (i32.sub (local.get $bd) (i32.const 48))))
+              (set! $bj (i32.add (local.get $bj) (i32.const 1))) (br $bnl)))
+            (if (i32.gt_s (local.get $bn) (local.get $ngroups))
+              (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression: backreference to non-existent group")) (return)))))
         ;; `\p{...}` / `\P{...}` property escape → skip the whole `{...}` so its '{' is not read as a quantifier
         (if (i32.and (i32.or (i32.eq (local.get $esc1) (i32.const 112)) (i32.eq (local.get $esc1) (i32.const 80)))
                      (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 2)) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 2))) (i32.const 123))))
