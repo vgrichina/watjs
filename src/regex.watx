@@ -1006,29 +1006,29 @@
   (if (i32.and (i32.eqz (local.get $nadd)) (i32.eqz (local.get $nrem)))
     (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Empty modifier group")) (return (local.get $start))))
   (i32.add (local.get $i) (i32.const 1)))  ;; position after ':'
-(func $re_uesc_ok (param $c i32) (result i32) (effects)
-  (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))) (then (return (i32.const 1))))  ;; 0-9
-  ;; escape-production letters: b B c d D f k n p P r s S t u v w W x
-  (if (call $re_byte_in (local.get $c) (i32.const 98)) (then (return (i32.const 1))))   ;; b
-  (if (call $re_byte_in (local.get $c) (i32.const 66)) (then (return (i32.const 1))))   ;; B
-  (if (call $re_byte_in (local.get $c) (i32.const 99)) (then (return (i32.const 1))))   ;; c
+(func $re_isletter (param $c i32) (result i32) (effects)  ;; a-z / A-Z
+  (i32.or (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 122)))
+          (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 90)))))
+(func $re_ishex (param $c i32) (result i32) (effects)  ;; 0-9 a-f A-F
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))) (then (return (i32.const 1))))
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 102))) (then (return (i32.const 1))))
+  (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 70))))
+;; single-char escapes valid as CharacterEscape/CharacterClassEscape in BOTH atom and class: f n r t v d D s S w W
+(func $re_esc_simple_ok (param $c i32) (result i32) (effects)
+  (if (call $re_byte_in (local.get $c) (i32.const 102)) (then (return (i32.const 1))))  ;; f
+  (if (call $re_byte_in (local.get $c) (i32.const 110)) (then (return (i32.const 1))))  ;; n
+  (if (call $re_byte_in (local.get $c) (i32.const 114)) (then (return (i32.const 1))))  ;; r
+  (if (call $re_byte_in (local.get $c) (i32.const 116)) (then (return (i32.const 1))))  ;; t
+  (if (call $re_byte_in (local.get $c) (i32.const 118)) (then (return (i32.const 1))))  ;; v
   (if (call $re_byte_in (local.get $c) (i32.const 100)) (then (return (i32.const 1))))  ;; d
   (if (call $re_byte_in (local.get $c) (i32.const 68)) (then (return (i32.const 1))))   ;; D
-  (if (call $re_byte_in (local.get $c) (i32.const 102)) (then (return (i32.const 1))))  ;; f
-  (if (call $re_byte_in (local.get $c) (i32.const 107)) (then (return (i32.const 1))))  ;; k
-  (if (call $re_byte_in (local.get $c) (i32.const 110)) (then (return (i32.const 1))))  ;; n
-  (if (call $re_byte_in (local.get $c) (i32.const 112)) (then (return (i32.const 1))))  ;; p
-  (if (call $re_byte_in (local.get $c) (i32.const 80)) (then (return (i32.const 1))))   ;; P
-  (if (call $re_byte_in (local.get $c) (i32.const 114)) (then (return (i32.const 1))))  ;; r
   (if (call $re_byte_in (local.get $c) (i32.const 115)) (then (return (i32.const 1))))  ;; s
   (if (call $re_byte_in (local.get $c) (i32.const 83)) (then (return (i32.const 1))))   ;; S
-  (if (call $re_byte_in (local.get $c) (i32.const 116)) (then (return (i32.const 1))))  ;; t
-  (if (call $re_byte_in (local.get $c) (i32.const 117)) (then (return (i32.const 1))))  ;; u
-  (if (call $re_byte_in (local.get $c) (i32.const 118)) (then (return (i32.const 1))))  ;; v
   (if (call $re_byte_in (local.get $c) (i32.const 119)) (then (return (i32.const 1))))  ;; w
   (if (call $re_byte_in (local.get $c) (i32.const 87)) (then (return (i32.const 1))))   ;; W
-  (if (call $re_byte_in (local.get $c) (i32.const 120)) (then (return (i32.const 1))))  ;; x
-  ;; SyntaxCharacter identity escape (^ $ \ . * + ? ( ) [ ] { } |) + '/'
+  (i32.const 0))
+;; SyntaxCharacter identity escape (^ $ \ . * + ? ( ) [ ] { } |) + '/'
+(func $re_esc_syntaxchar (param $c i32) (result i32) (effects)
   (if (call $re_byte_in (local.get $c) (i32.const 94)) (then (return (i32.const 1))))   ;; ^
   (if (call $re_byte_in (local.get $c) (i32.const 36)) (then (return (i32.const 1))))   ;; $
   (if (call $re_byte_in (local.get $c) (i32.const 92)) (then (return (i32.const 1))))   ;; backslash
@@ -1045,6 +1045,101 @@
   (if (call $re_byte_in (local.get $c) (i32.const 124)) (then (return (i32.const 1))))  ;; |
   (if (call $re_byte_in (local.get $c) (i32.const 47)) (then (return (i32.const 1))))   ;; /
   (i32.const 0))
+;; u-mode escape consumer. $pos = index of the char right AFTER the backslash; $inclass=1 inside [...].
+;; Returns the index AFTER the whole escape. On an invalid u-mode escape, throws SyntaxError and
+;; returns $pos (caller must check $err). Compound escapes (\c \x \u \p \P \k) require their
+;; continuation — a BARE prefix is a SyntaxError, unlike sloppy mode.
+(func $re_uesc_consume (param $pat i32) (param $n i32) (param $pos i32) (param $inclass i32) (result i32) (effects)
+  (if (i32.ge_s (local.get $pos) (local.get $n))
+    (then (call $throw_type (cstring "SyntaxError") (cstring "\\ at end of pattern")) (return (local.get $pos))))
+  (let $c i32 (call $str_byte (local.get $pat) (local.get $pos)))
+  ;; f n r t v d D s S w W — always valid, one char
+  (if (call $re_esc_simple_ok (local.get $c)) (then (return (i32.add (local.get $pos) (i32.const 1)))))
+  ;; b — valid in both (atom: \b assertion; class: backspace)
+  (if (i32.eq (local.get $c) (i32.const 98)) (then (return (i32.add (local.get $pos) (i32.const 1)))))
+  ;; B — valid only in atom (\B assertion); invalid inside a class
+  (if (i32.eq (local.get $c) (i32.const 66))
+    (then (if (local.get $inclass) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid class escape \\B")) (return (local.get $pos))))
+          (return (i32.add (local.get $pos) (i32.const 1)))))
+  ;; SyntaxCharacter / '/' identity escape — one char
+  (if (call $re_esc_syntaxchar (local.get $c)) (then (return (i32.add (local.get $pos) (i32.const 1)))))
+  ;; '-' — valid ClassEscape only inside a class
+  (if (i32.eq (local.get $c) (i32.const 45))
+    (then (if (local.get $inclass) (then (return (i32.add (local.get $pos) (i32.const 1)))))))
+  ;; digits — decimal/octal escape (backref-range validated separately by the caller for the atom case)
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57)))
+    (then (return (i32.add (local.get $pos) (i32.const 1)))))
+  ;; \c ControlLetter
+  (if (i32.eq (local.get $c) (i32.const 99))
+    (then
+      (if (i32.and (i32.lt_s (i32.add (local.get $pos) (i32.const 1)) (local.get $n))
+                   (call $re_isletter (call $str_byte (local.get $pat) (i32.add (local.get $pos) (i32.const 1)))))
+        (then (return (i32.add (local.get $pos) (i32.const 2)))))
+      (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\c escape")) (return (local.get $pos))))
+  ;; \x HexDigit HexDigit
+  (if (i32.eq (local.get $c) (i32.const 120))
+    (then
+      (if (i32.and (i32.lt_s (i32.add (local.get $pos) (i32.const 2)) (local.get $n))
+                   (i32.and (call $re_ishex (call $str_byte (local.get $pat) (i32.add (local.get $pos) (i32.const 1))))
+                            (call $re_ishex (call $str_byte (local.get $pat) (i32.add (local.get $pos) (i32.const 2))))))
+        (then (return (i32.add (local.get $pos) (i32.const 3)))))
+      (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\x escape")) (return (local.get $pos))))
+  ;; \u RegExpUnicodeEscapeSequence: u{ Hex+ } | u HexHexHexHex
+  (if (i32.eq (local.get $c) (i32.const 117))
+    (then
+      (let $p1 i32 (i32.add (local.get $pos) (i32.const 1)))
+      (if (i32.and (i32.lt_s (local.get $p1) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (local.get $p1)) (i32.const 123)))  ;; u{...}
+        (then
+          (let $uj i32 (i32.add (local.get $p1) (i32.const 1)))
+          (let $uh i32 (i32.const 0))
+          (block $ue (loop $ul
+            (br_if $ue (i32.ge_s (local.get $uj) (local.get $n)))
+            (let $ucc i32 (call $str_byte (local.get $pat) (local.get $uj)))
+            (if (i32.eq (local.get $ucc) (i32.const 125)) (then (br $ue)))  ;; '}'
+            (if (i32.eqz (call $re_ishex (local.get $ucc))) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\u{} escape")) (return (local.get $pos))))
+            (set! $uh (i32.add (local.get $uh) (i32.const 1))) (set! $uj (i32.add (local.get $uj) (i32.const 1))) (br $ul)))
+          (if (i32.or (i32.ge_s (local.get $uj) (local.get $n)) (i32.eqz (local.get $uh)))
+            (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\u{} escape")) (return (local.get $pos))))
+          (return (i32.add (local.get $uj) (i32.const 1)))))  ;; past '}'
+      ;; u HHHH — four hex digits
+      (if (i32.and (i32.lt_s (i32.add (local.get $pos) (i32.const 4)) (local.get $n))
+                   (i32.and (call $re_ishex (call $str_byte (local.get $pat) (i32.add (local.get $pos) (i32.const 1))))
+                   (i32.and (call $re_ishex (call $str_byte (local.get $pat) (i32.add (local.get $pos) (i32.const 2))))
+                   (i32.and (call $re_ishex (call $str_byte (local.get $pat) (i32.add (local.get $pos) (i32.const 3))))
+                            (call $re_ishex (call $str_byte (local.get $pat) (i32.add (local.get $pos) (i32.const 4))))))))
+        (then (return (i32.add (local.get $pos) (i32.const 5)))))
+      (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\u escape")) (return (local.get $pos))))
+  ;; \p{...} / \P{...} — UnicodePropertyValueExpression (invalid inside a class only for lone \p; \p{} is valid in both)
+  (if (i32.or (i32.eq (local.get $c) (i32.const 112)) (i32.eq (local.get $c) (i32.const 80)))
+    (then
+      (let $pp1 i32 (i32.add (local.get $pos) (i32.const 1)))
+      (if (i32.and (i32.lt_s (local.get $pp1) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (local.get $pp1)) (i32.const 123)))
+        (then
+          (let $pj i32 (i32.add (local.get $pp1) (i32.const 1)))
+          (block $ppe (loop $ppl
+            (br_if $ppe (i32.ge_s (local.get $pj) (local.get $n)))
+            (if (i32.eq (call $str_byte (local.get $pat) (local.get $pj)) (i32.const 125)) (then (br $ppe)))
+            (set! $pj (i32.add (local.get $pj) (i32.const 1))) (br $ppl)))
+          (if (i32.ge_s (local.get $pj) (local.get $n)) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\p{} escape")) (return (local.get $pos))))
+          (return (i32.add (local.get $pj) (i32.const 1)))))  ;; past '}'
+      (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\p escape")) (return (local.get $pos))))
+  ;; \k GroupName — named backreference (atom only; invalid inside a class)
+  (if (i32.eq (local.get $c) (i32.const 107))
+    (then
+      (if (local.get $inclass) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid class escape \\k")) (return (local.get $pos))))
+      (let $kp1 i32 (i32.add (local.get $pos) (i32.const 1)))
+      (if (i32.and (i32.lt_s (local.get $kp1) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (local.get $kp1)) (i32.const 60)))  ;; '<'
+        (then
+          (let $kj i32 (i32.add (local.get $kp1) (i32.const 1)))
+          (block $ke (loop $kl
+            (br_if $ke (i32.ge_s (local.get $kj) (local.get $n)))
+            (if (i32.eq (call $str_byte (local.get $pat) (local.get $kj)) (i32.const 62)) (then (br $ke)))  ;; '>'
+            (set! $kj (i32.add (local.get $kj) (i32.const 1))) (br $kl)))
+          (if (i32.ge_s (local.get $kj) (local.get $n)) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\k<> escape")) (return (local.get $pos))))
+          (return (i32.add (local.get $kj) (i32.const 1)))))  ;; past '>'
+      (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\k escape")) (return (local.get $pos))))
+  ;; anything else (incl. an alphabetic char A-Z/a-z not matched above) — invalid u-mode IdentityEscape
+  (call $throw_type (cstring "SyntaxError") (cstring "Invalid escape in unicode pattern")) (local.get $pos))
 
 (func $re_check_quant (param $pat i32) (param $ustrict i32) (effects)  ;; $ustrict=1 for `u`/`v` mode (stricter syntax)
   (let $n i32 (call $str_len (local.get $pat)))
@@ -1058,27 +1153,29 @@
     (if (i32.eq (local.get $c) (i32.const 92))  ;; '\' escaped atom
       (then
         (if (i32.ge_s (i32.add (local.get $i) (i32.const 1)) (local.get $n)) (then (call $throw_type (cstring "SyntaxError") (cstring "\\ at end of pattern")) (return)))  ;; trailing backslash
-        ;; u mode: only a specific set of escapes is valid; a bare `\A` / `\a` / `\-` etc. is a SyntaxError
-        ;; (sloppy mode allows any IdentityEscape). char-class interiors are skipped above, so this is atom-level.
         (let $esc1 i32 (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 1))))
+        ;; u/v mode: validate the escape FORM (compound escapes \c \x \u \p \P \k require their
+        ;; continuation) and advance past the WHOLE escape via $re_uesc_consume. A bare `\A`/`\c`/`\p`
+        ;; etc. is a SyntaxError (sloppy mode allows any IdentityEscape — the fallthrough below).
         (if (local.get $ustrict)
-          (then (if (i32.eqz (call $re_uesc_ok (local.get $esc1)))
-            (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid escape in unicode pattern")) (return)))))
-        ;; u mode: a decimal-escape `\<n>` (n≥1) is a backreference — a SyntaxError if n exceeds the number
-        ;; of capturing groups (sloppy mode treats an out-of-range `\n` as a legacy octal / identity escape).
-        (if (i32.and (local.get $ustrict) (i32.and (i32.ge_s (local.get $esc1) (i32.const 49)) (i32.le_s (local.get $esc1) (i32.const 57))))  ;; 1-9
           (then
-            (let $bn i32 (i32.const 0))
-            (let $bj i32 (i32.add (local.get $i) (i32.const 1)))
-            (block $bne (loop $bnl
-              (br_if $bne (i32.ge_s (local.get $bj) (local.get $n)))
-              (let $bd i32 (call $str_byte (local.get $pat) (local.get $bj)))
-              (br_if $bne (i32.or (i32.lt_s (local.get $bd) (i32.const 48)) (i32.gt_s (local.get $bd) (i32.const 57))))
-              (set! $bn (i32.add (i32.mul (local.get $bn) (i32.const 10)) (i32.sub (local.get $bd) (i32.const 48))))
-              (set! $bj (i32.add (local.get $bj) (i32.const 1))) (br $bnl)))
-            (if (i32.gt_s (local.get $bn) (local.get $ngroups))
-              (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression: backreference to non-existent group")) (return)))))
-        ;; `\p{...}` / `\P{...}` property escape → skip the whole `{...}` so its '{' is not read as a quantifier
+            (let $adv i32 (call $re_uesc_consume (local.get $pat) (local.get $n) (i32.add (local.get $i) (i32.const 1)) (i32.const 0)))
+            (if (call $err) (then (return)))
+            ;; a decimal escape `\<n>` (n≥1) is a backreference — SyntaxError if n exceeds the group count
+            (if (i32.and (i32.ge_s (local.get $esc1) (i32.const 49)) (i32.le_s (local.get $esc1) (i32.const 57)))  ;; 1-9
+              (then
+                (let $bn i32 (i32.const 0))
+                (let $bj i32 (i32.add (local.get $i) (i32.const 1)))
+                (block $bne (loop $bnl
+                  (br_if $bne (i32.ge_s (local.get $bj) (local.get $n)))
+                  (let $bd i32 (call $str_byte (local.get $pat) (local.get $bj)))
+                  (br_if $bne (i32.or (i32.lt_s (local.get $bd) (i32.const 48)) (i32.gt_s (local.get $bd) (i32.const 57))))
+                  (set! $bn (i32.add (i32.mul (local.get $bn) (i32.const 10)) (i32.sub (local.get $bd) (i32.const 48))))
+                  (set! $bj (i32.add (local.get $bj) (i32.const 1))) (br $bnl)))
+                (if (i32.gt_s (local.get $bn) (local.get $ngroups))
+                  (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression: backreference to non-existent group")) (return)))))
+            (set! $st (i32.const 1)) (set! $i (local.get $adv)) (br $l)))
+        ;; sloppy mode: `\p{...}` / `\P{...}` → skip the whole `{...}` so its '{' is not read as a quantifier
         (if (i32.and (i32.or (i32.eq (local.get $esc1) (i32.const 112)) (i32.eq (local.get $esc1) (i32.const 80)))
                      (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 2)) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 2))) (i32.const 123))))
           (then
@@ -1098,7 +1195,11 @@
         (block $ce (loop $cl
           (br_if $ce (i32.ge_s (local.get $i) (local.get $n)))
           (let $cc i32 (call $str_byte (local.get $pat) (local.get $i)))
-          (if (i32.eq (local.get $cc) (i32.const 92)) (then (set! $i (i32.add (local.get $i) (i32.const 2))) (br $cl)))
+          (if (i32.eq (local.get $cc) (i32.const 92))  ;; '\' inside the class
+            (then
+              (if (local.get $ustrict)
+                (then (set! $i (call $re_uesc_consume (local.get $pat) (local.get $n) (i32.add (local.get $i) (i32.const 1)) (i32.const 1))) (if (call $err) (then (return))) (br $cl))
+                (else (set! $i (i32.add (local.get $i) (i32.const 2))) (br $cl)))))
           (if (i32.eq (local.get $cc) (i32.const 93)) (then (set! $closed (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ce)))
           (set! $i (i32.add (local.get $i) (i32.const 1))) (br $cl)))
         (if (i32.eqz (local.get $closed)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unterminated character class")) (return)))
