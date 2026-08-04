@@ -1157,6 +1157,10 @@
           (else
             (if (local.get $ustrict) (then (call $throw_type (cstring "SyntaxError") (cstring "Incomplete quantifier")) (return)))
             (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))))
+    ;; u/v mode: a lone unescaped `}` or `]` (not consumed by a quantifier / char class above) is a
+    ;; SyntaxError (sloppy mode treats it as a literal). `{` is handled by the quantifier branch above.
+    (if (i32.and (local.get $ustrict) (i32.or (i32.eq (local.get $c) (i32.const 125)) (i32.eq (local.get $c) (i32.const 93))))
+      (then (call $throw_type (cstring "SyntaxError") (cstring "Lone quantifier brace or bracket in unicode pattern")) (return)))
     (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (if (i32.gt_s (local.get $depth) (i32.const 0)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unmatched '('")) (return))))
 
