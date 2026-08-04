@@ -5027,7 +5027,7 @@
     (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression flags: u and v cannot be combined")) (return (call $v_undef))))
   ;; validate the PATTERN like the RegExp constructor does — unbalanced groups, bad quantifiers, an
   ;; unterminated character class, a trailing backslash → SyntaxError (compile shared none of this before).
-  (call $re_check_quant (local.get $pat))
+  (call $re_check_quant (local.get $pat) (i32.ne (i32.and (local.get $fseen) (i32.const 16)) (i32.const 0)))
   (if (call $err) (then (return (call $v_undef))))
   ;; re-initialize the regex object in place + reset lastIndex
   (let $rs i32 (call $val_payload (local.get $thisv)))
@@ -8935,7 +8935,7 @@
         (set! $lastatom (if i32 (i32.lt_s (local.get $pb) (i32.const 128)) (then (local.get $pb)) (else (i32.const -1))))
         (set! $pi (i32.add (local.get $pi) (i32.const 1))) (br $pvl)))
       ;; validate quantifier placement (a**, ++a, x{1}{1,} → SyntaxError)
-      (call $re_check_quant (local.get $pat))
+      (call $re_check_quant (local.get $pat) (i32.ne (i32.and (local.get $fseen) (i32.const 16)) (i32.const 0)))
       (if (call $err) (then (return (call $v_undef))))
       (let $ro i32 (call $obj_new (i32.const 8)))
       (i32.store (local.get $ro) (i32.load (i32.const 324)))  ;; scope parent = RegExp.prototype (source/flags/… getters, test, exec)

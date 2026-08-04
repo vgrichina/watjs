@@ -941,7 +941,52 @@
 ;; A trailing lazy `?` (a*?, a??) is allowed. Conservative: assertions ^ $ are treated as atoms
 ;; (lenient, never false-flagged); char classes, escapes, and (?:/(?=/(?!/(?<…> groups are skipped.
 ;; state: 0 = nothing to quantify, 1 = quantifiable atom, 2 = just after a greedy quantifier.
-(func $re_check_quant (param $pat i32) (effects)
+;; Is `c` a valid character right after `\` in a u/v-mode pattern (OUTSIDE a character class)? Valid:
+;; a CharacterClassEscape/CharacterEscape letter (b B c d D f k n p P r s S t u v w W x), a digit
+;; (0 = NUL, 1-9 = backref), or an IdentityEscape of a SyntaxCharacter (^ $ \ . * + ? ( ) [ ] { } |)
+;; or '/'. Any OTHER char (e.g. \A, \a, \-, \e) is a SyntaxError in u-mode.
+(func $re_byte_in (param $c i32) (param $t i32) (result i32) (effects) (i32.eq (local.get $c) (local.get $t)))
+(func $re_uesc_ok (param $c i32) (result i32) (effects)
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))) (then (return (i32.const 1))))  ;; 0-9
+  ;; escape-production letters: b B c d D f k n p P r s S t u v w W x
+  (if (call $re_byte_in (local.get $c) (i32.const 98)) (then (return (i32.const 1))))   ;; b
+  (if (call $re_byte_in (local.get $c) (i32.const 66)) (then (return (i32.const 1))))   ;; B
+  (if (call $re_byte_in (local.get $c) (i32.const 99)) (then (return (i32.const 1))))   ;; c
+  (if (call $re_byte_in (local.get $c) (i32.const 100)) (then (return (i32.const 1))))  ;; d
+  (if (call $re_byte_in (local.get $c) (i32.const 68)) (then (return (i32.const 1))))   ;; D
+  (if (call $re_byte_in (local.get $c) (i32.const 102)) (then (return (i32.const 1))))  ;; f
+  (if (call $re_byte_in (local.get $c) (i32.const 107)) (then (return (i32.const 1))))  ;; k
+  (if (call $re_byte_in (local.get $c) (i32.const 110)) (then (return (i32.const 1))))  ;; n
+  (if (call $re_byte_in (local.get $c) (i32.const 112)) (then (return (i32.const 1))))  ;; p
+  (if (call $re_byte_in (local.get $c) (i32.const 80)) (then (return (i32.const 1))))   ;; P
+  (if (call $re_byte_in (local.get $c) (i32.const 114)) (then (return (i32.const 1))))  ;; r
+  (if (call $re_byte_in (local.get $c) (i32.const 115)) (then (return (i32.const 1))))  ;; s
+  (if (call $re_byte_in (local.get $c) (i32.const 83)) (then (return (i32.const 1))))   ;; S
+  (if (call $re_byte_in (local.get $c) (i32.const 116)) (then (return (i32.const 1))))  ;; t
+  (if (call $re_byte_in (local.get $c) (i32.const 117)) (then (return (i32.const 1))))  ;; u
+  (if (call $re_byte_in (local.get $c) (i32.const 118)) (then (return (i32.const 1))))  ;; v
+  (if (call $re_byte_in (local.get $c) (i32.const 119)) (then (return (i32.const 1))))  ;; w
+  (if (call $re_byte_in (local.get $c) (i32.const 87)) (then (return (i32.const 1))))   ;; W
+  (if (call $re_byte_in (local.get $c) (i32.const 120)) (then (return (i32.const 1))))  ;; x
+  ;; SyntaxCharacter identity escape (^ $ \ . * + ? ( ) [ ] { } |) + '/'
+  (if (call $re_byte_in (local.get $c) (i32.const 94)) (then (return (i32.const 1))))   ;; ^
+  (if (call $re_byte_in (local.get $c) (i32.const 36)) (then (return (i32.const 1))))   ;; $
+  (if (call $re_byte_in (local.get $c) (i32.const 92)) (then (return (i32.const 1))))   ;; backslash
+  (if (call $re_byte_in (local.get $c) (i32.const 46)) (then (return (i32.const 1))))   ;; .
+  (if (call $re_byte_in (local.get $c) (i32.const 42)) (then (return (i32.const 1))))   ;; *
+  (if (call $re_byte_in (local.get $c) (i32.const 43)) (then (return (i32.const 1))))   ;; +
+  (if (call $re_byte_in (local.get $c) (i32.const 63)) (then (return (i32.const 1))))   ;; ?
+  (if (call $re_byte_in (local.get $c) (i32.const 40)) (then (return (i32.const 1))))   ;; (
+  (if (call $re_byte_in (local.get $c) (i32.const 41)) (then (return (i32.const 1))))   ;; )
+  (if (call $re_byte_in (local.get $c) (i32.const 91)) (then (return (i32.const 1))))   ;; [
+  (if (call $re_byte_in (local.get $c) (i32.const 93)) (then (return (i32.const 1))))   ;; ]
+  (if (call $re_byte_in (local.get $c) (i32.const 123)) (then (return (i32.const 1))))  ;; {
+  (if (call $re_byte_in (local.get $c) (i32.const 125)) (then (return (i32.const 1))))  ;; }
+  (if (call $re_byte_in (local.get $c) (i32.const 124)) (then (return (i32.const 1))))  ;; |
+  (if (call $re_byte_in (local.get $c) (i32.const 47)) (then (return (i32.const 1))))   ;; /
+  (i32.const 0))
+
+(func $re_check_quant (param $pat i32) (param $ustrict i32) (effects)  ;; $ustrict=1 for `u`/`v` mode (stricter syntax)
   (let $n i32 (call $str_len (local.get $pat)))
   (let $i i32 (i32.const 0))
   (let $st i32 (i32.const 0))
@@ -952,6 +997,24 @@
     (if (i32.eq (local.get $c) (i32.const 92))  ;; '\' escaped atom
       (then
         (if (i32.ge_s (i32.add (local.get $i) (i32.const 1)) (local.get $n)) (then (call $throw_type (cstring "SyntaxError") (cstring "\\ at end of pattern")) (return)))  ;; trailing backslash
+        ;; u mode: only a specific set of escapes is valid; a bare `\A` / `\a` / `\-` etc. is a SyntaxError
+        ;; (sloppy mode allows any IdentityEscape). char-class interiors are skipped above, so this is atom-level.
+        (let $esc1 i32 (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 1))))
+        (if (local.get $ustrict)
+          (then (if (i32.eqz (call $re_uesc_ok (local.get $esc1)))
+            (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid escape in unicode pattern")) (return)))))
+        ;; `\p{...}` / `\P{...}` property escape → skip the whole `{...}` so its '{' is not read as a quantifier
+        (if (i32.and (i32.or (i32.eq (local.get $esc1) (i32.const 112)) (i32.eq (local.get $esc1) (i32.const 80)))
+                     (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 2)) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 2))) (i32.const 123))))
+          (then
+            (set! $i (i32.add (local.get $i) (i32.const 3)))  ;; past `\p{`
+            (block $pce (loop $pcl
+              (br_if $pce (i32.ge_s (local.get $i) (local.get $n)))
+              (let $pcc i32 (call $str_byte (local.get $pat) (local.get $i)))
+              (set! $i (i32.add (local.get $i) (i32.const 1)))
+              (br_if $pce (i32.eq (local.get $pcc) (i32.const 125)))  ;; '}'
+              (br $pcl)))
+            (set! $st (i32.const 1)) (br $l)))
         (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
     (if (i32.eq (local.get $c) (i32.const 91))  ;; '[' char class → skip to ']', atom
       (then
@@ -1011,7 +1074,11 @@
             (if (i32.and (local.get $hasmax) (i32.and (i32.gt_s (local.get $maxd) (i32.const 0)) (i32.gt_s (local.get $minv) (local.get $maxv))))
               (then (call $throw_type (cstring "SyntaxError") (cstring "numbers out of order in {} quantifier")) (return)))
             (set! $st (i32.const 2)) (set! $i (local.get $j)) (br $l))
-          (else (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))))
+          ;; u/v mode: a `{` that is not a well-formed quantifier is an "incomplete quantifier" SyntaxError
+          ;; (in sloppy mode it is a lenient literal `{`).
+          (else
+            (if (local.get $ustrict) (then (call $throw_type (cstring "SyntaxError") (cstring "Incomplete quantifier")) (return)))
+            (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))))
     (set! $st (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (if (i32.gt_s (local.get $depth) (i32.const 0)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unmatched '('")) (return))))
 
