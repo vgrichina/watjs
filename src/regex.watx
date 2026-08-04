@@ -238,11 +238,14 @@
     (then (return (call $re_is_ws (local.get $ch)))))
   (if (i32.eq (local.get $e) (i32.const 83))   ;; \S
     (then (return (i32.eqz (call $re_is_ws (local.get $ch))))))
-  ;; literal escapes: \n \t \r \<char>
+  ;; literal escapes: \n \t \r \f \v \0(NUL) \<char>
   (let $lit i32 (local.get $e))
   (if (i32.eq (local.get $e) (i32.const 110)) (then (set! $lit (i32.const 10))))
   (if (i32.eq (local.get $e) (i32.const 116)) (then (set! $lit (i32.const 9))))
   (if (i32.eq (local.get $e) (i32.const 114)) (then (set! $lit (i32.const 13))))
+  (if (i32.eq (local.get $e) (i32.const 102)) (then (set! $lit (i32.const 12))))   ;; \f
+  (if (i32.eq (local.get $e) (i32.const 118)) (then (set! $lit (i32.const 11))))   ;; \v
+  (if (i32.eq (local.get $e) (i32.const 48))  (then (set! $lit (i32.const 0))))    ;; \0 → NUL
   (call $re_eqc (local.get $ch) (local.get $lit)))
 
 (func $re_is_word (param $ch i32) (result i32) (effects)
