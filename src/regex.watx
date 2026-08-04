@@ -1066,9 +1066,21 @@
   ;; '-' — valid ClassEscape only inside a class
   (if (i32.eq (local.get $c) (i32.const 45))
     (then (if (local.get $inclass) (then (return (i32.add (local.get $pos) (i32.const 1)))))))
-  ;; digits — decimal/octal escape (backref-range validated separately by the caller for the atom case)
-  (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57)))
-    (then (return (i32.add (local.get $pos) (i32.const 1)))))
+  ;; \0 (not followed by a digit) = NUL, valid in both atom and class. A LegacyOctalEscape (\0 followed
+  ;; by a digit) is invalid in u-mode.
+  (if (i32.eq (local.get $c) (i32.const 48))  ;; '0'
+    (then
+      (let $nx i32 (i32.add (local.get $pos) (i32.const 1)))
+      (if (i32.and (i32.lt_s (local.get $nx) (local.get $n))
+                   (i32.and (i32.ge_s (call $str_byte (local.get $pat) (local.get $nx)) (i32.const 48)) (i32.le_s (call $str_byte (local.get $pat) (local.get $nx)) (i32.const 57))))
+        (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid octal escape in unicode pattern")) (return (local.get $pos))))
+      (return (i32.add (local.get $pos) (i32.const 1)))))
+  ;; \1-\9 : a DecimalEscape (backreference) in an ATOM — valid form here, the caller range-checks it.
+  ;; Inside a class it is NOT a valid ClassEscape (no backrefs / legacy octal) — SyntaxError.
+  (if (i32.and (i32.ge_s (local.get $c) (i32.const 49)) (i32.le_s (local.get $c) (i32.const 57)))
+    (then
+      (if (local.get $inclass) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid class escape: decimal in unicode pattern")) (return (local.get $pos))))
+      (return (i32.add (local.get $pos) (i32.const 1)))))
   ;; \c ControlLetter
   (if (i32.eq (local.get $c) (i32.const 99))
     (then
