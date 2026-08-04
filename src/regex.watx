@@ -946,6 +946,39 @@
 ;; (0 = NUL, 1-9 = backref), or an IdentityEscape of a SyntaxCharacter (^ $ \ . * + ? ( ) [ ] { } |)
 ;; or '/'. Any OTHER char (e.g. \A, \a, \-, \e) is a SyntaxError in u-mode.
 (func $re_byte_in (param $c i32) (param $t i32) (result i32) (effects) (i32.eq (local.get $c) (local.get $t)))
+;; Validate a RegExp modifier group `(?<add>:` / `(?<add>-<remove>:` starting at $start (the first char
+;; after `(?`, known NOT to be `:`/`=`/`!`/`<`). add/remove flags may only be i, m, s; no duplicate
+;; within a set; no flag in BOTH add and remove; a `-` requires a non-empty remove; the group may not be
+;; empty. Throws SyntaxError (sets err) on any violation and returns $start; otherwise returns the
+;; position just after the `:`. (Only validates syntax — the modifiers are not yet applied in matching.)
+(func $re_validate_modifiers (param $pat i32) (param $n i32) (param $start i32) (result i32) (effects)
+  (let $i i32 (local.get $start))
+  (let $ai i32 (i32.const 0)) (let $am i32 (i32.const 0)) (let $as i32 (i32.const 0))  ;; add i/m/s
+  (let $ri i32 (i32.const 0)) (let $rm i32 (i32.const 0)) (let $rs i32 (i32.const 0))  ;; remove i/m/s
+  (let $dash i32 (i32.const 0)) (let $nadd i32 (i32.const 0)) (let $nrem i32 (i32.const 0))
+  (block $e (loop $l
+    (if (i32.ge_s (local.get $i) (local.get $n)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression: unterminated modifier group")) (return (local.get $start))))
+    (let $mc i32 (call $str_byte (local.get $pat) (local.get $i)))
+    (if (i32.eq (local.get $mc) (i32.const 58)) (then (br $e)))  ;; ':'
+    (if (i32.eq (local.get $mc) (i32.const 45))  ;; '-'
+      (then
+        (if (local.get $dash) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid modifier group")) (return (local.get $start))))
+        (set! $dash (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+    (if (i32.eq (local.get $mc) (i32.const 105))  ;; 'i'
+      (then (if (local.get $dash) (then (if (local.get $ri) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate modifier flag")) (return (local.get $start)))) (set! $ri (i32.const 1)) (set! $nrem (i32.add (local.get $nrem) (i32.const 1)))) (else (if (local.get $ai) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate modifier flag")) (return (local.get $start)))) (set! $ai (i32.const 1)) (set! $nadd (i32.add (local.get $nadd) (i32.const 1))))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+    (if (i32.eq (local.get $mc) (i32.const 109))  ;; 'm'
+      (then (if (local.get $dash) (then (if (local.get $rm) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate modifier flag")) (return (local.get $start)))) (set! $rm (i32.const 1)) (set! $nrem (i32.add (local.get $nrem) (i32.const 1)))) (else (if (local.get $am) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate modifier flag")) (return (local.get $start)))) (set! $am (i32.const 1)) (set! $nadd (i32.add (local.get $nadd) (i32.const 1))))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+    (if (i32.eq (local.get $mc) (i32.const 115))  ;; 's'
+      (then (if (local.get $dash) (then (if (local.get $rs) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate modifier flag")) (return (local.get $start)))) (set! $rs (i32.const 1)) (set! $nrem (i32.add (local.get $nrem) (i32.const 1)))) (else (if (local.get $as) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate modifier flag")) (return (local.get $start)))) (set! $as (i32.const 1)) (set! $nadd (i32.add (local.get $nadd) (i32.const 1))))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+    ;; any other char is not a valid modifier flag
+    (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid modifier flag")) (return (local.get $start))))
+  ;; at ':' — final checks
+  (if (i32.or (i32.and (local.get $ai) (local.get $ri)) (i32.or (i32.and (local.get $am) (local.get $rm)) (i32.and (local.get $as) (local.get $rs))))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Modifier added and removed")) (return (local.get $start))))  ;; flag in both add and remove
+  ;; a `-` with an empty remove set is VALID (`(?i-:a)`); only a fully-empty group is an error.
+  (if (i32.and (i32.eqz (local.get $nadd)) (i32.eqz (local.get $nrem)))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Empty modifier group")) (return (local.get $start))))
+  (i32.add (local.get $i) (i32.const 1)))  ;; position after ':'
 (func $re_uesc_ok (param $c i32) (result i32) (effects)
   (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))) (then (return (i32.const 1))))  ;; 0-9
   ;; escape-production letters: b B c d D f k n p P r s S t u v w W x
@@ -1039,7 +1072,10 @@
                 (set! $i (i32.add (local.get $i) (i32.const 1)))
                 (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.eqz (i32.or (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 61)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 33)))))
                   (then (block $ne (loop $nl (br_if $ne (i32.ge_s (local.get $i) (local.get $n))) (if (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 62)) (then (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ne))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $nl))))))
-              (else (set! $i (i32.add (local.get $i) (i32.const 1)))))))
+              ;; not `(?<…` — either `(?:` / `(?=` / `(?!` (consume one char) or a modifier group `(?flags…:` (validate)
+              (else (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.eqz (i32.or (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 58)) (i32.or (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 61)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 33))))))
+                (then (set! $i (call $re_validate_modifiers (local.get $pat) (local.get $n) (local.get $i))) (if (call $err) (then (return))))
+                (else (set! $i (i32.add (local.get $i) (i32.const 1)))))))))
         (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $st (i32.const 0)) (br $l)))
     (if (i32.eq (local.get $c) (i32.const 124)) (then (set! $st (i32.const 0)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))  ;; '|'
     (if (i32.eq (local.get $c) (i32.const 41))  ;; ')'
