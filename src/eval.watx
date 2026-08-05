@@ -636,6 +636,11 @@
       ;; scope-parent = the proto's scope for an ORDINARY object proto only; a Proxy is is_object but its
       ;; raw scope must NOT be walked (its @@phandler slots aren't real props) — it goes to @@protoval below.
       (let $spnewp i32 (if i32 (i32.and (call $is_object (local.get $proto)) (i32.eqz (call $is_proxy (local.get $proto)))) (then (call $val_payload (local.get $proto))) (else (i32.const 0))))
+      ;; %Object.prototype% (reg 328) is an immutable-prototype exotic object: [[SetPrototypeOf]](V)
+      ;; succeeds ONLY when V equals its current [[Prototype]] (null) — a no-op — and returns false for any
+      ;; other value (even a null-[[Prototype]] object, which the cyclic check below would let through).
+      (if (i32.eq (local.get $spsc) (i32.load (i32.const 328)))
+        (then (return (i32.eq (local.get $spnewp) (call $scope_parent (local.get $spsc))))))
       ;; a non-extensible object's [[Prototype]] can only be set to its CURRENT value (a no-op);
       ;; changing it to a different prototype fails (Object.setPrototypeOf throws; Reflect → false).
       (if (call $scope_find_local (local.get $spsc) (cstring "@@noext"))
