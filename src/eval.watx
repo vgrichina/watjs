@@ -5687,6 +5687,11 @@
             (i32.and (f64.ne (local.get $d) (f64.div (f64.const 1) (f64.const 0))) (f64.ne (local.get $d) (f64.div (f64.const -1) (f64.const 0)))))))))
   (if (i32.eq (local.get $id) (i32.const 9))  ;; Object(x) → ToObject(x)
     (then
+      ;; constructed with a NewTarget ≠ Object (Reflect.construct(Object, args, Subclass)): the caller
+      ;; pre-built `this` via OrdinaryCreateFromConstructor(NewTarget, %Object.prototype%) — return it,
+      ;; ignoring value. Gated on reg 640 (native-construct) so a sloppy Object(x) CALL whose `this` is the
+      ;; global object is unaffected.
+      (if (i32.and (i32.load (i32.const 640)) (call $is_object (local.get $thisv))) (then (return (local.get $thisv))))
       (let $a i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       ;; already an object/array/function → returned unchanged
       (if (i32.or (call $is_object (local.get $a)) (i32.or (call $is_array (local.get $a)) (call $is_function (local.get $a))))
