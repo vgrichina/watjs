@@ -1538,10 +1538,11 @@
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $pio))  ;; LOADVAR @@old (result)
           (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (x++) is not an assignment target
           (return)))
-      ;; a bare #privateName (only valid as the LHS of `#x in obj`) → push the key
-      ;; string so the `in` operator becomes a private-brand check
+      ;; a bare #privateName (only valid as the LHS of `#x in obj`) → push the key string and set reg 988
+      ;; so the following `in` compiles to BRANDIN (op 128, a brand check) rather than plain IN (op 60,
+      ;; which hides private keys). `"#x" in obj` (a string literal) never sets 988 → stays op 60 → false.
       (if (i32.eq (call $str_byte (local.get $vn) (i32.const 0)) (i32.const 35))
-        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $vn))) (return)))
+        (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $vn))) (i32.store (i32.const 988) (i32.const 1)) (return)))
       (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 240)) (then (i32.const 62)) (else (i32.const 8))))  ;; LOADVAR_SOFT inside typeof, else LOADVAR
       (call $vm_emit_op (local.get $code) (local.get $vn))
       ;; DIRECT eval detection: the callee is the BARE identifier `eval` immediately followed by `(`.
@@ -2654,6 +2655,7 @@
 ;; (RelationalExpression binds TIGHTER than EqualityExpression: `a in b !== c` is
 ;; `(a in b) !== c`, not `((a in b) !== c) …`).
 (func $vm_c_rel (param $code i32) (effects)
+  (i32.store (i32.const 988) (i32.const 0))  ;; "LHS is a bare #private" flag — set only by the private-id primary
   (call $vm_c_shift (local.get $code))
   (block $e (loop $l
     (let $k i32 (call $tok_kind))
@@ -2663,7 +2665,10 @@
         (if (call $tok_is_kw (cstring "instanceof"))
           (then (call $next_token) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 59)) (br $l)))
         (if (call $tok_is_kw (cstring "in"))
-          (then (call $next_token) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_shift (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 60)) (br $l)))))
+          (then
+            (let $bin i32 (i32.load (i32.const 988)))  ;; was the LHS a bare #privateName? → brand check
+            (call $next_token) (i32.store (i32.const 956) (i32.const 0)) (i32.store (i32.const 988) (i32.const 0)) (call $vm_c_shift (local.get $code))
+            (call $vm_emit_op (local.get $code) (if i32 (local.get $bin) (then (i32.const 128)) (else (i32.const 60)))) (br $l)))))
     ;; < 29 > 30 <= 31 >= 32
     (br_if $e (i32.eqz (i32.or (i32.eq (local.get $k) (i32.const 29)) (i32.or (i32.eq (local.get $k) (i32.const 30))
       (i32.or (i32.eq (local.get $k) (i32.const 31)) (i32.eq (local.get $k) (i32.const 32)))))))
@@ -7735,6 +7740,17 @@
                                         (i64.load (i32.add (local.get $stack) (local.get $sp)))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 60))  ;; IN — [key, obj] → bool
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $inkey i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        ;; a private name ("#x") is never observable via the `in` operator (the private brand check calls
+        ;; js_in directly, bypassing this opcode, so it still sees declared private members)
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
+          (if i64 (i32.and (call $is_string (local.get $inkey)) (call $is_private_key (call $val_payload (local.get $inkey))))
+            (then (call $v_false))
+            (else (call $js_in (local.get $inkey) (i64.load (i32.add (local.get $stack) (local.get $sp)))))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 128))  ;; BRANDIN — [#key, obj] → bool; ergonomic private brand check (#x in obj)
       (then
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
