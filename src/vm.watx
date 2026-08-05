@@ -6878,6 +6878,27 @@
 ;; if the object is non-extensible (new key) or already has a non-configurable own key of that name.
 ;; (Fields on a function/array receiver — static fields, exotic subclasses — stay on set_prop.)
 (func $vm_field_define (param $thisobj i64) (param $key i64) (param $value i64) (effects)
+  ;; PUBLIC field on a Proxy receiver (a base ctor returned `new Proxy(this,…)`): DefineField uses
+  ;; CreateDataPropertyOrThrow → [[DefineOwnProperty]], which must fire the proxy's defineProperty trap.
+  ;; Private fields ("#x") bypass traps (added to [[PrivateElements]] directly), so keep them on the
+  ;; direct scope path below.
+  (if (call $is_proxy (local.get $thisobj))
+    (then (if (i32.eqz (call $is_private_key (call $to_prop_key (local.get $key))))
+      (then
+        (let $nd i32 (call $scope_new (i32.const 0) (i32.const 8)))
+        (call $scope_define (local.get $nd) (cstring "value") (local.get $value))
+        (call $scope_define (local.get $nd) (cstring "writable") (call $v_true))
+        (call $scope_define (local.get $nd) (cstring "enumerable") (call $v_true))
+        (call $scope_define (local.get $nd) (cstring "configurable") (call $v_true))
+        (let $pdb i32 (call $heap_alloc (i32.const 24)))
+        (i64.store (local.get $pdb) (local.get $thisobj))
+        (i64.store (i32.add (local.get $pdb) (i32.const 8)) (local.get $key))
+        (i64.store (i32.add (local.get $pdb) (i32.const 16)) (call $mk_obj (local.get $nd)))
+        (let $pok i64 (call $call_native (i32.const 206) (i32.const 3) (local.get $pdb) (call $v_undef)))  ;; Reflect.defineProperty (fires trap)
+        (if (call $err) (then (return)))
+        (if (i32.eqz (call $truthy (local.get $pok)))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot define class field on proxy receiver")) (return)))
+        (return)))))
   (let $os i32 (call $val_payload (local.get $thisobj)))
   (let $ks i32 (call $to_prop_key (local.get $key)))
   (let $old i32 (call $scope_find_local (local.get $os) (local.get $ks)))
