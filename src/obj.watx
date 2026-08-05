@@ -462,6 +462,21 @@
   (let $anpl i32 (call $scope_find_local (local.get $o) (cstring "@@anp")))
   (if (i32.eqz (local.get $anpl)) (then (return (i32.const 0))))
   (if (i32.ge_s (local.get $idx) (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $anpl))))) (then (return (i32.const 0))))
+  ;; a DUPLICATE parameter name is aliased ONLY at its LAST occurrence (spec CreateMappedArgumentsObject
+  ;; walks parameters right-to-left, skipping names already mapped). If this index's name recurs at a
+  ;; later parameter index, this index is NOT mapped — it keeps its stored initial value.
+  (let $afl i32 (call $scope_find_local (local.get $o) (cstring "@@af")))
+  (if (local.get $afl)
+    (then
+      (let $mfn i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $afl)))))
+      (let $mnp i32 (i32.load (i32.add (local.get $mfn) (i32.const 8))))
+      (let $mynm i32 (i32.load (i32.add (i32.add (local.get $mfn) (i32.const 28)) (i32.mul (local.get $idx) (i32.const 4)))))
+      (let $mj i32 (i32.add (local.get $idx) (i32.const 1)))
+      (block $mde (loop $mdl
+        (br_if $mde (i32.ge_s (local.get $mj) (local.get $mnp)))
+        (if (call $str_eq (i32.load (i32.add (i32.add (local.get $mfn) (i32.const 28)) (i32.mul (local.get $mj) (i32.const 4)))) (local.get $mynm))
+          (then (return (i32.const 0))))
+        (set! $mj (i32.add (local.get $mj) (i32.const 1))) (br $mdl)))))
   (if (call $args_severed (local.get $o) (local.get $idx)) (then (return (i32.const 0))))
   (let $ps i32 (call $scope_find_local (local.get $o) (call $num_to_str (f64.convert_i32_s (local.get $idx)))))
   (if (i32.eqz (local.get $ps)) (then (return (i32.const 0))))
