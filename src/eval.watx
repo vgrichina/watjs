@@ -9762,8 +9762,30 @@
               (if (i32.and (i32.ge_s (i32.load (local.get $dpfn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $dpfn)) (i32.const 1448232528)))
                 (then
                   (let $dpfa i32 (i32.add (i32.add (local.get $dpfn) (i32.const 32)) (i32.mul (i32.load (i32.add (local.get $dpfn) (i32.const 8))) (i32.const 4))))
-                  (if (i32.eqz (i32.and (i32.load (local.get $dpfa)) (i32.const 2)))  ;; not an arrow (has a .prototype)
+                  ;; force the lazy .prototype so @16 is populated for a constructable function. async /
+                  ;; arrow / concise-method functions have NO .prototype (@16 stays a non-object) — for them
+                  ;; "prototype" is an ordinary expando, so fall through to the normal define path below.
+                  (if (i32.eqz (call $is_object (i64.load (i32.add (local.get $dpfn) (i32.const 16)))))
+                    (then (drop (call $get_prop (local.get $ob) (call $mk_str (cstring "prototype"))))))
+                  (if (call $is_object (i64.load (i32.add (local.get $dpfn) (i32.const 16))))  ;; has a real .prototype
                     (then
+                      ;; .prototype is a non-configurable, non-enumerable DATA property. Validate the
+                      ;; redefinition (ValidateAndApplyPropertyDescriptor over a non-configurable current)
+                      ;; BEFORE applying: reject making it configurable/enumerable or a data→accessor switch,
+                      ;; and — when currently non-writable (bit8) — reject writable:true or a value change.
+                      (if (i32.and (call $truthy (call $js_in (call $mk_str (cstring "configurable")) (local.get $de))) (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "configurable")))))
+                        (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: prototype")) (return (call $v_undef))))
+                      (if (i32.and (call $truthy (call $js_in (call $mk_str (cstring "enumerable")) (local.get $de))) (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "enumerable")))))
+                        (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: prototype")) (return (call $v_undef))))
+                      (if (i32.or (call $truthy (call $js_in (call $mk_str (cstring "get")) (local.get $de))) (call $truthy (call $js_in (call $mk_str (cstring "set")) (local.get $de))))
+                        (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: prototype")) (return (call $v_undef))))
+                      (if (i32.and (i32.load (local.get $dpfa)) (i32.const 256))  ;; currently non-writable (bit8)
+                        (then
+                          (if (i32.and (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $de))) (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "writable")))))
+                            (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: prototype")) (return (call $v_undef))))
+                          (if (call $truthy (call $js_in (call $mk_str (cstring "value")) (local.get $de)))
+                            (then (if (i32.eqz (call $same_value (call $get_prop (local.get $de) (call $mk_str (cstring "value"))) (i64.load (i32.add (local.get $dpfn) (i32.const 16)))))
+                              (then (call $throw_type (cstring "TypeError") (cstring "Cannot redefine property: prototype")) (return (call $v_undef))))))))
                       (if (call $truthy (call $js_in (call $mk_str (cstring "writable")) (local.get $de)))
                         (then (if (call $truthy (call $get_prop (local.get $de) (call $mk_str (cstring "writable"))))
                           (then (i32.store (local.get $dpfa) (i32.and (i32.load (local.get $dpfa)) (i32.const -257))))   ;; writable → clear bit8
