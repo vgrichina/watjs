@@ -5491,7 +5491,9 @@
         (set! $fsrc (call $str_concat (local.get $fsrc) (call $to_str (call $argn (local.get $argv) (local.get $argc) (local.get $fi)))))
         (set! $fi (i32.add (local.get $fi) (i32.const 1)))
         (br $ffl)))
-      (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "){\n")))
+      ;; CreateDynamicFunction source form: `… anonymous(<params>\n) {\n<body>\n}` (a LineFeed after the
+      ;; parameter list and a space before `{`, per spec — the fn's toString must match this exactly).
+      (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "\n) {\n")))
       (if (i32.gt_s (local.get $argc) (i32.const 0))
         (then (set! $fsrc (call $str_concat (local.get $fsrc) (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.sub (local.get $argc) (i32.const 1))))))))
       (set! $fsrc (call $str_concat (local.get $fsrc) (cstring "\n})")))
