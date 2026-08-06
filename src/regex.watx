@@ -986,6 +986,55 @@
         (if (local.get $iscap) (then (set! $cnt (i32.add (local.get $cnt) (i32.const 1)))))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (local.get $cnt))
+;; does the pattern contain a capturing NAMED group `(?<name>`? (skips \escapes, char classes, and the
+;; lookbehind `(?<=`/`(?<!` forms)
+(func $re_has_named (param $pat i32) (param $n i32) (result i32) (effects)
+  (let $i i32 (i32.const 0)) (let $inclass i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $pat) (local.get $i)))
+    (if (i32.eq (local.get $c) (i32.const 92)) (then (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+    (if (i32.and (i32.eq (local.get $c) (i32.const 91)) (i32.eqz (local.get $inclass))) (then (set! $inclass (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+    (if (i32.and (i32.eq (local.get $c) (i32.const 93)) (local.get $inclass)) (then (set! $inclass (i32.const 0)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+    (if (i32.and (i32.and (i32.eq (local.get $c) (i32.const 40)) (i32.eqz (local.get $inclass)))
+                 (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 3)) (local.get $n))
+                          (i32.and (i32.eq (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 1))) (i32.const 63))
+                                   (i32.eq (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 2))) (i32.const 60)))))  ;; (?<
+      (then (let $c3 i32 (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 3))))
+            (if (i32.eqz (i32.or (i32.eq (local.get $c3) (i32.const 61)) (i32.eq (local.get $c3) (i32.const 33)))) (then (return (i32.const 1))))))  ;; (?<name> (not (?<= (?<!)
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i32.const 0))
+;; does the pattern contain a capturing named group whose name equals pat[$ns,$ne)? (forward refs valid)
+(func $re_named_group_exists (param $pat i32) (param $n i32) (param $ns i32) (param $ne i32) (result i32) (effects)
+  (let $tlen i32 (i32.sub (local.get $ne) (local.get $ns)))
+  (let $i i32 (i32.const 0)) (let $inclass i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
+    (let $c i32 (call $str_byte (local.get $pat) (local.get $i)))
+    (if (i32.eq (local.get $c) (i32.const 92)) (then (set! $i (i32.add (local.get $i) (i32.const 2))) (br $l)))
+    (if (i32.and (i32.eq (local.get $c) (i32.const 91)) (i32.eqz (local.get $inclass))) (then (set! $inclass (i32.const 1)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+    (if (i32.and (i32.eq (local.get $c) (i32.const 93)) (local.get $inclass)) (then (set! $inclass (i32.const 0)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+    (if (i32.and (i32.and (i32.eq (local.get $c) (i32.const 40)) (i32.eqz (local.get $inclass)))
+                 (i32.and (i32.lt_s (i32.add (local.get $i) (i32.const 3)) (local.get $n))
+                          (i32.and (i32.eq (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 1))) (i32.const 63))
+                                   (i32.eq (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 2))) (i32.const 60)))))
+      (then
+        (let $c3 i32 (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 3))))
+        (if (i32.eqz (i32.or (i32.eq (local.get $c3) (i32.const 61)) (i32.eq (local.get $c3) (i32.const 33))))
+          (then
+            (let $gs i32 (i32.add (local.get $i) (i32.const 3)))
+            (let $ge i32 (local.get $gs))
+            (block $ge2 (loop $gl2 (br_if $ge2 (i32.ge_s (local.get $ge) (local.get $n))) (if (i32.eq (call $str_byte (local.get $pat) (local.get $ge)) (i32.const 62)) (then (br $ge2))) (set! $ge (i32.add (local.get $ge) (i32.const 1))) (br $gl2)))
+            (if (i32.eq (i32.sub (local.get $ge) (local.get $gs)) (local.get $tlen))
+              (then
+                (let $eq i32 (i32.const 1)) (let $k i32 (i32.const 0))
+                (block $ce (loop $cl (br_if $ce (i32.ge_s (local.get $k) (local.get $tlen)))
+                  (if (i32.ne (call $str_byte (local.get $pat) (i32.add (local.get $gs) (local.get $k))) (call $str_byte (local.get $pat) (i32.add (local.get $ns) (local.get $k)))) (then (set! $eq (i32.const 0)) (br $ce)))
+                  (set! $k (i32.add (local.get $k) (i32.const 1))) (br $cl)))
+                (if (local.get $eq) (then (return (i32.const 1))))))
+            (set! $i (i32.add (local.get $ge) (i32.const 1))) (br $l)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i32.const 0))
 ;; Validate a RegExp modifier group `(?<add>:` / `(?<add>-<remove>:` starting at $start (the first char
 ;; after `(?`, known NOT to be `:`/`=`/`!`/`<`). add/remove flags may only be i, m, s; no duplicate
 ;; within a set; no flag in BOTH add and remove; a `-` requires a non-empty remove; the group may not be
@@ -1223,6 +1272,7 @@
   (let $astk i32 (i32.const 0))  ;; bit N set = the group open at level N is a lookahead/lookbehind ASSERTION (up to 32 levels)
   (let $lbstk i32 (i32.const 0))  ;; bit N set = that assertion is a LOOKBEHIND (never quantifiable, any mode)
   (let $ngroups i32 (if i32 (local.get $ustrict) (then (call $re_count_groups (local.get $pat) (local.get $n))) (else (i32.const 0))))  ;; u-mode: for backref-count validation
+  (let $hasnamed i32 (call $re_has_named (local.get $pat) (local.get $n)))  ;; pattern has a named group → `\k` is a mandatory named backref (all modes)
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
     (let $c i32 (call $str_byte (local.get $pat) (local.get $i)))
@@ -1230,6 +1280,23 @@
       (then
         (if (i32.ge_s (i32.add (local.get $i) (i32.const 1)) (local.get $n)) (then (call $throw_type (cstring "SyntaxError") (cstring "\\ at end of pattern")) (return)))  ;; trailing backslash
         (let $esc1 i32 (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 1))))
+        ;; \k named backreference: when the pattern has a named group, `\k` MUST be `\k<name>` referencing
+        ;; an EXISTING group (all modes; forward refs valid). Bare/incomplete `\k` or a dangling/empty name
+        ;; is a SyntaxError. (Without named groups, sloppy `\k` is a literal 'k' — the fallthrough below.)
+        (if (i32.and (i32.eq (local.get $esc1) (i32.const 107)) (local.get $hasnamed))
+          (then
+            (if (i32.or (i32.ge_s (i32.add (local.get $i) (i32.const 2)) (local.get $n)) (i32.ne (call $str_byte (local.get $pat) (i32.add (local.get $i) (i32.const 2))) (i32.const 60)))  ;; not `\k<`
+              (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid \\k named backreference")) (return)))
+            (let $kns i32 (i32.add (local.get $i) (i32.const 3)))
+            (let $kne i32 (local.get $kns))
+            (block $kve (loop $kvl
+              (if (i32.ge_s (local.get $kne) (local.get $n)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unterminated \\k<name>")) (return)))
+              (if (i32.eq (call $str_byte (local.get $pat) (local.get $kne)) (i32.const 62)) (then (br $kve)))
+              (set! $kne (i32.add (local.get $kne) (i32.const 1))) (br $kvl)))
+            (if (i32.eq (local.get $kne) (local.get $kns)) (then (call $throw_type (cstring "SyntaxError") (cstring "Empty \\k<name>")) (return)))
+            (if (i32.eqz (call $re_named_group_exists (local.get $pat) (local.get $n) (local.get $kns) (local.get $kne)))
+              (then (call $throw_type (cstring "SyntaxError") (cstring "\\k reference to a non-existent group")) (return)))
+            (set! $st (i32.const 1)) (set! $i (i32.add (local.get $kne) (i32.const 1))) (br $l)))
         ;; u/v mode: validate the escape FORM (compound escapes \c \x \u \p \P \k require their
         ;; continuation) and advance past the WHOLE escape via $re_uesc_consume. A bare `\A`/`\c`/`\p`
         ;; etc. is a SyntaxError (sloppy mode allows any IdentityEscape — the fallthrough below).
