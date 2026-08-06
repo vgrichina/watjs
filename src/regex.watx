@@ -1194,6 +1194,7 @@
   (let $st i32 (i32.const 0))
   (let $depth i32 (i32.const 0))  ;; open '(' groups
   (let $astk i32 (i32.const 0))  ;; bit N set = the group open at level N is a lookahead/lookbehind ASSERTION (up to 32 levels)
+  (let $lbstk i32 (i32.const 0))  ;; bit N set = that assertion is a LOOKBEHIND (never quantifiable, any mode)
   (let $ngroups i32 (if i32 (local.get $ustrict) (then (call $re_count_groups (local.get $pat) (local.get $n))) (else (i32.const 0))))  ;; u-mode: for backref-count validation
   (block $e (loop $l
     (br_if $e (i32.ge_s (local.get $i) (local.get $n)))
@@ -1280,6 +1281,7 @@
       (then
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (let $isassert i32 (i32.const 0))  ;; 1 if this group is a lookahead/lookbehind assertion
+        (let $islb i32 (i32.const 0))       ;; 1 if this group is a lookbehind assertion specifically
         (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 63)))  ;; '?'
           (then
             (set! $i (i32.add (local.get $i) (i32.const 1)))
@@ -1288,7 +1290,7 @@
                 (set! $i (i32.add (local.get $i) (i32.const 1)))
                 ;; `(?<=` / `(?<!` are lookbehind ASSERTIONS; `(?<name>` is a named capture (the '=' / '!' path is skipped)
                 (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.or (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 61)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 33))))
-                  (then (set! $isassert (i32.const 1))))
+                  (then (set! $isassert (i32.const 1)) (set! $islb (i32.const 1))))
                 (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.eqz (i32.or (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 61)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 33)))))
                   ;; `(?<name>` — validate the RegExpIdentifierName: non-empty, IdentifierStart then
                   ;; IdentifierPart*, terminated by '>'. A '\' begins a RegExpUnicodeEscapeSequence
@@ -1320,18 +1322,25 @@
                 (else (set! $i (i32.add (local.get $i) (i32.const 1)))))))))
         ;; record whether the group at this level is an assertion (only up to 32 nesting levels)
         (if (i32.lt_s (local.get $depth) (i32.const 31))
-          (then (if (local.get $isassert)
+          (then
+            (if (local.get $isassert)
                   (then (set! $astk (i32.or (local.get $astk) (i32.shl (i32.const 1) (local.get $depth)))))
-                  (else (set! $astk (i32.and (local.get $astk) (i32.xor (i32.shl (i32.const 1) (local.get $depth)) (i32.const -1))))))))
+                  (else (set! $astk (i32.and (local.get $astk) (i32.xor (i32.shl (i32.const 1) (local.get $depth)) (i32.const -1))))))
+            (if (local.get $islb)
+                  (then (set! $lbstk (i32.or (local.get $lbstk) (i32.shl (i32.const 1) (local.get $depth)))))
+                  (else (set! $lbstk (i32.and (local.get $lbstk) (i32.xor (i32.shl (i32.const 1) (local.get $depth)) (i32.const -1))))))))
         (set! $depth (i32.add (local.get $depth) (i32.const 1))) (set! $st (i32.const 0)) (br $l)))
     (if (i32.eq (local.get $c) (i32.const 124)) (then (set! $st (i32.const 0)) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))  ;; '|'
     (if (i32.eq (local.get $c) (i32.const 41))  ;; ')'
       (then
         (if (i32.le_s (local.get $depth) (i32.const 0)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unmatched ')'")) (return)))
         (set! $depth (i32.sub (local.get $depth) (i32.const 1)))
-        ;; u/v mode: a lookahead/lookbehind assertion is NOT a QuantifiableAssertion — leave st=0 so a
-        ;; following quantifier throws "Nothing to repeat". Sloppy mode keeps st=1 (Annex B allows `(?=)*`).
-        (if (i32.and (local.get $ustrict) (i32.and (i32.lt_s (local.get $depth) (i32.const 31)) (i32.and (i32.shr_u (local.get $astk) (local.get $depth)) (i32.const 1))))
+        ;; A following quantifier is invalid (leave st=0 → "Nothing to repeat") when the closing group is:
+        ;; a LOOKBEHIND assertion (never a QuantifiableAssertion, ANY mode), or a lookahead assertion in
+        ;; u/v mode (sloppy keeps st=1 — Annex B allows `(?=)*`).
+        (if (i32.and (i32.lt_s (local.get $depth) (i32.const 31))
+              (i32.or (i32.and (i32.shr_u (local.get $lbstk) (local.get $depth)) (i32.const 1))
+                      (i32.and (local.get $ustrict) (i32.and (i32.shr_u (local.get $astk) (local.get $depth)) (i32.const 1)))))
           (then (set! $st (i32.const 0)))
           (else (set! $st (i32.const 1))))
         (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
