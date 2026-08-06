@@ -1013,6 +1013,7 @@
         (then (call $vm_emit_val (local.get $code) (call $mk_bigint (i64.load (i32.const 744)))))  ;; exact i64 from the lexer (mem 744), not via f64 (which loses bits past 2^53)
         (else (call $vm_emit_val (local.get $code) (call $num (call $tok_num)))))
       (call $next_token)
+      (i32.store (i32.const 956) (i32.const 0))  ;; a numeric literal is not a valid AssignmentTarget (also gates postfix ++/--)
       ;; a numeric literal is not a valid AssignmentTarget: `1 = x` / `1 += x` is a SyntaxError.
       (if (call $is_assign_op (call $tok_kind))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
@@ -1057,6 +1058,7 @@
       (call $vm_emit_op (local.get $code) (i32.const 1))      ;; PUSH
       (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
       (call $next_token)
+      (i32.store (i32.const 956) (i32.const 0))  ;; a string literal is not a valid AssignmentTarget (also gates postfix ++/--)
       ;; a string literal is not a valid AssignmentTarget: `"x" = y` is a SyntaxError.
       (if (call $is_assign_op (call $tok_kind))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
@@ -1382,6 +1384,7 @@
                 (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "new.target expression is not allowed here")) (return)))
               (call $next_token)  ;; 'target'
               (call $vm_emit_op (local.get $code) (i32.const 62)) (call $vm_emit_op (local.get $code) (cstring "@@newtarget"))  ;; soft load (undefined outside a construct)
+              (i32.store (i32.const 956) (i32.const 0))  ;; new.target is not a valid AssignmentTarget (gates postfix ++/--)
               (return)))
           (if (i32.eq (call $tok_kind) (i32.const 15))  ;; new (expr)(...) — parenthesized callee
             (then
@@ -2052,7 +2055,13 @@
     (br_if $ocpe (i32.ge_s (local.get $oci) (local.get $ocn)))
     (call $vm_patch (local.get $code) (i32.load (i32.add (local.get $ocpat) (i32.mul (local.get $oci) (i32.const 4)))))
     (set! $oci (i32.add (local.get $oci) (i32.const 1)))
-    (br $ocpl))))
+    (br $ocpl)))
+  ;; a postfix ++/-- (no LineTerminator before it) following a non-assignment-target operand — `0++`,
+  ;; `new.target++`, `(a+b)++` — is an early SyntaxError. Valid simple targets (`x`, `obj.x`) already
+  ;; consumed the operator in the fast-paths above; reaching here with a pending ++/-- and reg 956==0
+  ;; (not a target) means an invalid UpdateExpression. (A parenthesized target like `(x)` keeps reg 956.)
+  (if (i32.and (i32.eqz (call $nl_before)) (i32.and (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))) (i32.eqz (i32.load (i32.const 956)))))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid left-hand side expression in postfix operation")) (return))))
 
 ;; ** exponentiation (right-assoc, binds tighter than unary; left is postfix)
 (func $vm_c_pow (param $code i32) (effects)
@@ -2076,6 +2085,10 @@
     (then
       (let $pop i32 (if i32 (i32.eq (local.get $k) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99))))  ;; INC/DEC (BigInt-aware)
       (call $next_token)
+      ;; a prefix ++/-- operand that is a literal (number / string / template / regex) is not a valid
+      ;; AssignmentTarget → early SyntaxError (`++0`, `--'s'`). The handler below is identifier-rooted.
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 1)) (i32.or (i32.eq (call $tok_kind) (i32.const 2)) (i32.or (i32.eq (call $tok_kind) (i32.const 53)) (i32.eq (call $tok_kind) (i32.const 57)))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement")) (return)))
       (let $pvn i32 (call $ident_name)) (call $next_token)
       ;; prefix `++super.name` / `++super[expr]` (result = new value). super target → SUPERGET/SUPERSET.
       (if (call $str_eq (local.get $pvn) (cstring "super"))
