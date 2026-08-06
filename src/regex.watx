@@ -1022,6 +1022,17 @@
 (func $re_isletter (param $c i32) (result i32) (effects)  ;; a-z / A-Z
   (i32.or (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 122)))
           (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 90)))))
+;; IdentifierStart (permissive, byte-level): ASCII letter / _ / $ ; any non-ASCII byte (part of a UTF-8
+;; unicode identifier char) is accepted so unicode group names like (?<π>…) aren't rejected.
+(func $re_id_start (param $c i32) (result i32) (effects)
+  (if (call $re_isletter (local.get $c)) (then (return (i32.const 1))))
+  (if (i32.eq (local.get $c) (i32.const 95)) (then (return (i32.const 1))))  ;; _
+  (if (i32.eq (local.get $c) (i32.const 36)) (then (return (i32.const 1))))  ;; $
+  (i32.ge_u (local.get $c) (i32.const 128)))
+;; IdentifierPart: IdentifierStart + ASCII digit
+(func $re_id_part (param $c i32) (result i32) (effects)
+  (if (call $re_id_start (local.get $c)) (then (return (i32.const 1))))
+  (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))))
 (func $re_ishex (param $c i32) (result i32) (effects)  ;; 0-9 a-f A-F
   (if (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))) (then (return (i32.const 1))))
   (if (i32.and (i32.ge_s (local.get $c) (i32.const 97)) (i32.le_s (local.get $c) (i32.const 102))) (then (return (i32.const 1))))
@@ -1279,7 +1290,26 @@
                 (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.or (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 61)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 33))))
                   (then (set! $isassert (i32.const 1))))
                 (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.eqz (i32.or (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 61)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 33)))))
-                  (then (block $ne (loop $nl (br_if $ne (i32.ge_s (local.get $i) (local.get $n))) (if (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 62)) (then (set! $i (i32.add (local.get $i) (i32.const 1))) (br $ne))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $nl))))))
+                  ;; `(?<name>` — validate the RegExpIdentifierName: non-empty, IdentifierStart then
+                  ;; IdentifierPart*, terminated by '>'. A '\' begins a RegExpUnicodeEscapeSequence
+                  ;; (accepted permissively). Applies in all modes (GroupSpecifier is not Annex-B-relaxed).
+                  (then
+                    (let $gnst i32 (local.get $i))
+                    (let $gnf i32 (i32.const 1))
+                    (block $gne (loop $gnl
+                      (if (i32.ge_s (local.get $i) (local.get $n)) (then (call $throw_type (cstring "SyntaxError") (cstring "Unterminated group name")) (return)))
+                      (let $gnc i32 (call $str_byte (local.get $pat) (local.get $i)))
+                      (if (i32.eq (local.get $gnc) (i32.const 62))  ;; '>'
+                        (then
+                          (if (i32.eq (local.get $i) (local.get $gnst)) (then (call $throw_type (cstring "SyntaxError") (cstring "Empty group name")) (return)))
+                          (set! $i (i32.add (local.get $i) (i32.const 1))) (br $gne)))
+                      (if (i32.eq (local.get $gnc) (i32.const 92))  ;; '\' RegExpUnicodeEscapeSequence → skip permissively
+                        (then (set! $i (i32.add (local.get $i) (i32.const 2))) (set! $gnf (i32.const 0)) (br $gnl)))
+                      (if (local.get $gnf)
+                        (then (if (i32.eqz (call $re_id_start (local.get $gnc))) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid group name")) (return))))
+                        (else (if (i32.eqz (call $re_id_part (local.get $gnc))) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid group name")) (return)))))
+                      (set! $gnf (i32.const 0))
+                      (set! $i (i32.add (local.get $i) (i32.const 1))) (br $gnl))))))
               ;; not `(?<…` — either `(?:` / `(?=` / `(?!` (consume one char) or a modifier group `(?flags…:` (validate)
               (else
                 ;; `(?=` / `(?!` are lookahead ASSERTIONS
