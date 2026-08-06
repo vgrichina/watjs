@@ -1023,6 +1023,18 @@
     (then
       (let $rpat i32 (call $str_from_src (i32.add (call $src) (call $tok_start)) (call $tok_len)))
       (let $rflg i32 (call $str_from_src (i32.add (call $src) (i32.load (i32.const 264))) (i32.load (i32.const 268))))
+      ;; A RegularExpressionLiteral is validated at PARSE time (spec): compile-check the pattern now so an
+      ;; invalid literal is an early SyntaxError (prevents execution), not a runtime throw when the make-
+      ;; RegExp op runs. u-mode strictness iff the flags contain 'u'. Set the compile-error flag (mem 400)
+      ;; so vm_compile_prog aborts cleanly.
+      (let $rustrict i32 (i32.const 0))
+      (let $rfi i32 (i32.const 0))
+      (block $rfe (loop $rfl
+        (br_if $rfe (i32.ge_s (local.get $rfi) (call $str_len (local.get $rflg))))
+        (if (i32.eq (call $str_byte (local.get $rflg) (local.get $rfi)) (i32.const 117)) (then (set! $rustrict (i32.const 1))))  ;; 'u'
+        (set! $rfi (i32.add (local.get $rfi) (i32.const 1))) (br $rfl)))
+      (call $re_check_quant (local.get $rpat) (local.get $rustrict))
+      (if (call $err) (then (i32.store (i32.const 400) (i32.const 1)) (return)))
       (call $next_token)
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "RegExp"))  ;; LOADVAR RegExp
       (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $rpat)))
