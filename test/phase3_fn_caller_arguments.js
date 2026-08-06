@@ -1,10 +1,11 @@
-// Function.prototype 'caller' and 'arguments' are %ThrowTypeError% accessors:
-// reading them on a function throws a TypeError.
+// Function.prototype 'caller'/'arguments' are %ThrowTypeError% accessors, BUT an ordinary non-strict
+// function has its own null-valued 'caller'/'arguments' that shadow them (legacy web reality:
+// f.caller/f.arguments read as null, no throw). Strict/arrow/generator/async/class/method/bound
+// functions have no such shadow → they inherit the poison pill and throw.
 function f(){}
 var b = f.bind({});
 ["caller","arguments"].forEach(function(p){
-  var t1=false; try { f[p]; } catch(e){ t1 = e instanceof TypeError; }
-  if (!t1) throw "f."+p+" must throw";
+  if (f[p] !== null) throw "non-strict f."+p+" must read as null";
   var t2=false; try { b[p]; } catch(e){ t2 = e instanceof TypeError; }
   if (!t2) throw "bound."+p+" must throw";
 });
