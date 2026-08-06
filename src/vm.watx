@@ -1027,6 +1027,8 @@
       ;; invalid literal is an early SyntaxError (prevents execution), not a runtime throw when the make-
       ;; RegExp op runs. u-mode strictness iff the flags contain 'u'. Set the compile-error flag (mem 400)
       ;; so vm_compile_prog aborts cleanly.
+      (call $re_check_flags (local.get $rflg))
+      (if (call $err) (then (i32.store (i32.const 400) (i32.const 1)) (return)))
       (let $rustrict i32 (i32.const 0))
       (let $rfi i32 (i32.const 0))
       (block $rfe (loop $rfl

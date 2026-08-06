@@ -1188,6 +1188,33 @@
   ;; anything else (incl. an alphabetic char A-Z/a-z not matched above) — invalid u-mode IdentityEscape
   (call $throw_type (cstring "SyntaxError") (cstring "Invalid escape in unicode pattern")) (local.get $pos))
 
+;; validate RegExp flags: each must be one of d/g/i/m/s/u/v/y, no duplicates, and u+v are mutually
+;; exclusive → SyntaxError (throws; mirrors the runtime check in eval.watx). Used at parse time so a
+;; RegularExpressionLiteral with bad flags is an early error.
+(func $re_check_flags (param $flg i32) (effects)
+  (let $fl i32 (call $str_len (local.get $flg)))
+  (let $fi i32 (i32.const 0))
+  (let $fseen i32 (i32.const 0))
+  (block $fve (loop $fvl
+    (br_if $fve (i32.ge_s (local.get $fi) (local.get $fl)))
+    (let $fc i32 (call $str_byte (local.get $flg) (local.get $fi)))
+    (let $fbit i32 (i32.const 0))
+    (if (i32.eq (local.get $fc) (i32.const 103)) (then (set! $fbit (i32.const 1))))    ;; g
+    (if (i32.eq (local.get $fc) (i32.const 105)) (then (set! $fbit (i32.const 2))))    ;; i
+    (if (i32.eq (local.get $fc) (i32.const 109)) (then (set! $fbit (i32.const 4))))    ;; m
+    (if (i32.eq (local.get $fc) (i32.const 115)) (then (set! $fbit (i32.const 8))))    ;; s
+    (if (i32.eq (local.get $fc) (i32.const 117)) (then (set! $fbit (i32.const 16))))   ;; u
+    (if (i32.eq (local.get $fc) (i32.const 121)) (then (set! $fbit (i32.const 32))))   ;; y
+    (if (i32.eq (local.get $fc) (i32.const 100)) (then (set! $fbit (i32.const 64))))   ;; d
+    (if (i32.eq (local.get $fc) (i32.const 118)) (then (set! $fbit (i32.const 128))))  ;; v
+    (if (i32.or (i32.eqz (local.get $fbit)) (i32.and (local.get $fseen) (local.get $fbit)))
+      (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression flags")) (return)))
+    (set! $fseen (i32.or (local.get $fseen) (local.get $fbit)))
+    (set! $fi (i32.add (local.get $fi) (i32.const 1)))
+    (br $fvl)))
+  (if (i32.eq (i32.and (local.get $fseen) (i32.const 144)) (i32.const 144))
+    (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid regular expression flags: u and v cannot be combined")) (return))))
+
 (func $re_check_quant (param $pat i32) (param $ustrict i32) (effects)  ;; $ustrict=1 for `u`/`v` mode (stricter syntax)
   (let $n i32 (call $str_len (local.get $pat)))
   (let $i i32 (i32.const 0))
