@@ -5566,6 +5566,10 @@
             (else (if (i32.eqz (i32.or (call $nl_before) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.eq (call $tok_kind) (i32.const 0)))))
               (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token after throw expression; expected ';'")) (return)))))
           (return)))
+      ;; `catch`/`finally` may appear ONLY as part of a TryStatement (consumed by the try handler below).
+      ;; Reaching them at statement-leading position (`catch{}`, `finally{}`, a bare `catch`) is a SyntaxError.
+      (if (i32.or (call $tok_is_kw (cstring "catch")) (call $tok_is_kw (cstring "finally")))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'catch'/'finally' without 'try'")) (return)))
       (if (call $tok_is_kw (cstring "try"))
         (then
           (call $next_token)  ;; 'try'
@@ -5632,6 +5636,9 @@
                       (i32.store (i32.const 676) (local.get $csdm))
                       (call $next_token))  ;; ')'
                     (else
+                      ;; a CatchParameter is a BindingIdentifier or a pattern — a non-identifier token
+                      ;; (`catch("22")`, `catch(42)`, `catch(=)`) is a SyntaxError.
+                      (if (i32.ne (call $tok_kind) (i32.const 3)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid catch binding")) (return)))
                       ;; a simple CatchParameter may not be eval/arguments (strict) / yield (generator) /
                       ;; await (async), same restriction as a binding identifier.
                       (let $cpn i32 (call $ident_name))
