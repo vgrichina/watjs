@@ -3443,13 +3443,24 @@
       (then (set! $nonsimple (i32.const 1)) (br $nse)))
     (set! $nsi (i32.add (local.get $nsi) (i32.const 1)))
     (br $nsl)))
+  ;; a formal parameter named `arguments` SUPPRESSES the implicit arguments object (spec: `arguments` is
+  ;; only bound if it is not already a parameter/lexical name) → set bit0 (skip own arguments) so the param
+  ;; binding stands. `function f(arguments){ return arguments }` returns the argument, not the args object.
+  (let $argsparam i32 (i32.const 0))
+  (let $api i32 (i32.const 0))
+  (block $ape (loop $apl
+    (br_if $ape (i32.ge_s (local.get $api) (local.get $np)))
+    (if (call $str_eq (i32.load (i32.add (local.get $params) (i32.mul (local.get $api) (i32.const 4)))) (cstring "arguments"))
+      (then (set! $argsparam (i32.const 1)) (br $ape)))
+    (set! $api (i32.add (local.get $api) (i32.const 1))) (br $apl)))
   ;; .name: the declared name (named fn decl/expr), or 0 → "" until inferred
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $np) (i32.const 4))) (local.get $selfname))
   (i32.store (i32.add (i32.add (local.get $fn) (i32.const 32)) (i32.mul (local.get $np) (i32.const 4)))
-    (i32.or (i32.or (i32.or (i32.or (if i32 (local.get $thisstrict) (then (i32.const 4)) (else (i32.const 0)))  ;; bit2 strict
+    (i32.or (i32.or (i32.or (i32.or (i32.or (if i32 (local.get $thisstrict) (then (i32.const 4)) (else (i32.const 0)))  ;; bit2 strict
             (if i32 (local.get $classf) (then (i32.const 8)) (else (i32.const 0))))  ;; bit3 class constructor (no plain call)
             (if i32 (i32.and (local.get $noproto) (i32.eqz (local.get $genf))) (then (i32.const 64)) (else (i32.const 0))))  ;; bit6 method/accessor → no .prototype (generator methods keep theirs)
             (if i32 (i32.and (local.get $genf) (local.get $asyncf)) (then (i32.const 128)) (else (i32.const 0))))  ;; bit7 async generator (its result object's next/return/throw return promises)
+            (if i32 (local.get $argsparam) (then (i32.const 1)) (else (i32.const 0))))  ;; bit0 skip own arguments (a param named `arguments`)
             (if i32 (local.get $nonsimple) (then (i32.const 16)) (else (i32.const 0)))))  ;; bit4 non-simple params → unmapped arguments
   ;; .length = ExpectedArgumentCount: params before the first one with a default or the rest param
   (let $explen i32 (local.get $np))
