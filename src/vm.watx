@@ -2265,7 +2265,13 @@
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP operand
           (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (return)))
   (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "delete")))  ;; delete obj.prop / obj[k]
-    (then (call $next_token) (call $vm_c_delete_operand (local.get $code)) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a delete UnaryExpression is not an assignment target
+    (then (call $next_token) (call $vm_c_delete_operand (local.get $code))
+      (if (call $err) (then (return)))
+      ;; `delete o.p ** 2` — a `delete` UnaryExpression may not be the base of `**` (the base must be an
+      ;; UpdateExpression), like the other unary operators. The member operand parser stops before `**`.
+      (if (i32.eq (call $tok_kind) (i32.const 51))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unary operator used immediately before exponentiation expression; parenthesis must be used")) (return)))
+      (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a delete UnaryExpression is not an assignment target
   (call $vm_c_pow (local.get $code)))
 
 ;; is `name` present in buf[0..n) (array of string pointers)?
