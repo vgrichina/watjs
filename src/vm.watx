@@ -7015,6 +7015,7 @@
   ;; scope_var_target. cur-scope=$glex so closures capture it and SEE top-level lexicals; ctx@28 stays $gs.
   (let $glex i32 (call $scope_new (local.get $gs) (i32.const 16)))
   (call $scope_set_lexical (local.get $glex))
+  (i32.store (i32.const 1160) (local.get $glex))  ;; reg 1160 = the global Declarative env — an INDIRECT eval runs here (its vars → $gs, its lexicals → $glex)
   (i32.store (local.get $ctx) (local.get $code))
   (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.const 0))           ;; ip
   (i32.store (i32.add (local.get $ctx) (i32.const 8)) (call $heap_alloc (i32.const 1048576)))  ;; operand stack (1 MB; heap grows on demand)
@@ -10021,7 +10022,11 @@
   ;; STRICT eval gets its OWN variable environment (spec: "If strict is true, let varEnv be a NEW declarative
   ;; Environment Record") — a var/function it declares must NOT leak to the caller. Run the body in a fresh
   ;; var scope chained to the caller (reads still resolve up the chain); it is discarded when the eval returns.
-  (let $evscope i32 (if i32 (i32.load (i32.const 388)) (then (call $scope_new (local.get $scope) (i32.const 8))) (else (local.get $scope))))
+  ;; STRICT eval → a fresh var scope (its var/function may not leak to the caller). SLOPPY DIRECT eval →
+  ;; the caller's scope (its vars join the caller's var env). SLOPPY INDIRECT eval → the GLOBAL Declarative
+  ;; env (reg 1160): `(0,eval)("var x=1")` creates a GLOBAL var, NOT one in the calling function.
+  (let $evscope i32 (if i32 (i32.load (i32.const 388)) (then (call $scope_new (local.get $scope) (i32.const 8)))
+    (else (if i32 (local.get $evdirect) (then (local.get $scope)) (else (i32.load (i32.const 1160)))))))
   (let $ctx i32 (call $heap_alloc (i32.const 48)))
   (i32.store (local.get $ctx) (local.get $code))
   (i32.store (i32.add (local.get $ctx) (i32.const 4)) (i32.const 0))
