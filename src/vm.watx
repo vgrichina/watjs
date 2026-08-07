@@ -1680,6 +1680,7 @@
                 (call $next_token) (call $next_token) (call $vm_c_expr (local.get $code))  ;; ':' value
                 (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
               (else  ;; identifier-leading: key | get/set accessor | method | shorthand
+                (let $okirawlen i32 (call $tok_len))  ;; RAW source length of the key token (before consuming) — an escape lengthens it past the 3-byte `get`/`set`
                 (let $oki i32 (call $ident_name)) (call $next_token)
                 ;; `get`/`set` followed by `*` is an invalid accessor (an accessor may not be a generator).
                 (if (i32.and (i32.or (call $str_eq (local.get $oki) (cstring "get")) (call $str_eq (local.get $oki) (cstring "set"))) (i32.eq (call $tok_kind) (i32.const 12)))
@@ -1687,6 +1688,10 @@
                 (if (i32.and (i32.or (call $str_eq (local.get $oki) (cstring "get")) (call $str_eq (local.get $oki) (cstring "set")))
                              (i32.or (i32.eq (call $tok_kind) (i32.const 3)) (i32.or (i32.eq (call $tok_kind) (i32.const 2)) (i32.or (i32.eq (call $tok_kind) (i32.const 1)) (i32.eq (call $tok_kind) (i32.const 19))))))  ;; get/set NAME(){} | get/set "str"/NUM | get/set [computed](){}
                   (then
+                    ;; the accessor contextual keyword `get`/`set` may NOT contain a Unicode escape
+                    ;; (`get m(){}` / `set m(v){}` → SyntaxError). Raw source len != 3 ⟺ escaped.
+                    (if (i32.ne (local.get $okirawlen) (i32.const 3))
+                      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'get'/'set' accessor keyword may not contain an escape sequence")) (return)))
                     ;; an accessor may not carry an `async`/`*` modifier (`async get x`, `*get x`).
                     (if (i32.or (local.get $oasync) (local.get $ogen))
                       (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "An accessor may not be async or a generator")) (return)))
