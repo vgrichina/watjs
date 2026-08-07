@@ -5645,7 +5645,16 @@
                       (if (call $vm_strict_lhs_check (local.get $cpn)) (then (return)))
                       (if (call $is_reserved_word (local.get $cpn)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return)))  ;; `catch(if)`
                       (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $cpn))  ;; simple binding
-                      (call $next_token) (call $next_token))))  ;; var ')'
+                      (call $next_token) (call $next_token)  ;; var ')' → cursor at the catch body '{'
+                      ;; Early Error (CatchClause): the catch Block's LexicallyDeclaredNames must not include
+                      ;; the catch parameter name — `catch(x){ let x }`, `catch(e){ class e {} }`,
+                      ;; `catch(e){ function e(){} }`. Seed the param into a 1-element array and run the lexical
+                      ;; dup scan over the body (a var/function aliasing a SIMPLE param is B.3.5-allowed → params
+                      ;; seed varb, only a lexb collision throws). The scan saves/restores the cursor.
+                      (let $cparr i32 (call $heap_alloc (i32.const 4)))
+                      (i32.store (local.get $cparr) (local.get $cpn))
+                      (call $vm_lex_dup_scan (local.get $cparr) (i32.const 1) (i32.const 0))
+                      (if (call $err) (then (return))))))
                 (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (cstring "@@catch"))))  ;; catch {} — bind to a throwaway
               ;; the catch body is a Block — `catch(e) x;` (any non-'{' statement) is a SyntaxError.
               (if (i32.ne (call $tok_kind) (i32.const 17)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '{' for catch block")) (return)))
