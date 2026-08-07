@@ -2141,10 +2141,10 @@
       (if (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 16)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.or (i32.eq (call $tok_kind) (i32.const 20)) (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eqz (call $tok_kind)))))))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement")) (return)))
       (let $pvn i32 (call $ident_name)) (call $next_token)
-      ;; `++f(...)` — the operand is a CallExpression, which is not a valid AssignmentTarget → early
+      ;; `++f(...)` (CallExpression) and `++a?.b` (optional chain) are not valid AssignmentTargets → early
       ;; SyntaxError. (The identifier-rooted handler below only supports simple/member targets.)
-      (if (i32.eq (call $tok_kind) (i32.const 15))
-        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement (call expression)")) (return)))
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.eq (call $tok_kind) (i32.const 55)))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement (call or optional chain)")) (return)))
       ;; prefix `++super.name` / `++super[expr]` (result = new value). super target → SUPERGET/SUPERSET.
       (if (call $str_eq (local.get $pvn) (cstring "super"))
         (then
