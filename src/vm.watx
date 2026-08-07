@@ -1763,6 +1763,10 @@
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token in object literal; expected ',' or '}'")) (return)))
       (call $next_token)  ;; '}'
       (return)))
+  ;; a leading assignment operator at expression position has no left-hand side → SyntaxError
+  ;; (`= 1`, `{} = 1` where `{}` is a Block then a leading `=`, `+= 2`).
+  (if (call $is_assign_op (call $tok_kind))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected assignment operator; missing left-hand side")) (return)))
   ;; unrecognized token at expression position: push undefined and ADVANCE so the
   ;; compiler always makes progress (an unsupported construct errors, never hangs)
   (if (i32.ne (call $tok_kind) (i32.const 0))
