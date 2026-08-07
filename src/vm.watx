@@ -6711,7 +6711,11 @@
                   (then  ;; TRUE top level → value-hoist (function bound to its value at program entry)
                     (let $hfnm i32 (call $vm_c_function (local.get $code)))
                     (if (local.get $hfnm)
-                      (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $hfnm)))
+                      ;; DEFVAR first so the top-level function's global-object property is NON-CONFIGURABLE
+                      ;; {writable, enumerable, configurable:false} — like a `var` (CreateGlobalFunctionBinding),
+                      ;; not the configurable binding STOREVAR's undeclared-create makes; STOREVAR sets the value.
+                      (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (local.get $hfnm))
+                            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $hfnm)))
                       (else (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Function statements require a function name")) (return))))  ;; anonymous FunctionDeclaration
 
                   (else  ;; block-nested (AnnexB B.3.3): var-scoped binding = undefined at program entry; the
