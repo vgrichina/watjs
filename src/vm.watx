@@ -3269,7 +3269,12 @@
   ;; a function with a NON-SIMPLE parameter list may not have a "use strict" directive in its body.
   (if (i32.and (local.get $nsdup) (local.get $ownstrict))
     (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Illegal 'use strict' directive in function with non-simple parameter list")) (return)))
-  (if (i32.or (local.get $thisstrict) (local.get $nsdup))
+  ;; UniqueFormalParameters (dup params ALWAYS an early error, even in sloppy code) also applies to
+  ;; methods/accessors (reg 692), generators, and async functions — not just strict / non-simple. A plain
+  ;; sloppy FunctionDeclaration/Expression with a simple list is the ONLY form that permits duplicates.
+  ;; (Class bodies are always strict, so class methods/constructor are already covered by $thisstrict.)
+  (if (i32.or (i32.or (local.get $thisstrict) (local.get $nsdup))
+              (i32.or (i32.or (local.get $genf) (local.get $asyncf)) (i32.or (local.get $noproto) (i32.ne (local.get $acckind) (i32.const 0)))))
     (then
       (let $spi i32 (i32.const 0))
       (block $spe (loop $spl
