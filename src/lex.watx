@@ -958,7 +958,9 @@
   (if (i32.eq (local.get $c) (i32.const 33)) (then (call $op_tok (i32.const 33) (i32.const 1)) (return)))
   (if (i32.and (i32.eq (local.get $c) (i32.const 63)) (i32.eq (local.get $c1) (i32.const 63)))
     (then (call $op_tok (i32.const 56) (i32.const 2)) (return)))  ;; ??
-  (if (i32.and (i32.eq (local.get $c) (i32.const 63)) (i32.eq (local.get $c1) (i32.const 46)))
+  ;; `?.` is the optional-chaining punctuator ONLY when NOT followed by a decimal digit: `x?.y` is a chain,
+  ;; but `x ?.3 : y` is the conditional `x ? .3 : y` (`.3` a number). So gate on ch_at(2) not being 0-9.
+  (if (i32.and (i32.eq (local.get $c) (i32.const 63)) (i32.and (i32.eq (local.get $c1) (i32.const 46)) (i32.eqz (call $is_digit (call $ch_at (i32.const 2))))))
     (then (call $op_tok (i32.const 55) (i32.const 2)) (return)))  ;; ?.
   (if (i32.eq (local.get $c) (i32.const 63)) (then (call $op_tok (i32.const 36) (i32.const 1)) (return)))
   (if (i32.eq (local.get $c) (i32.const 58)) (then (call $op_tok (i32.const 37) (i32.const 1)) (return)))
