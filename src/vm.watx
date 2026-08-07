@@ -3284,6 +3284,13 @@
         (if (local.get $thisstrict)
           (then (if (i32.or (i32.or (call $str_eq (local.get $spn) (cstring "eval")) (call $str_eq (local.get $spn) (cstring "arguments"))) (call $is_strict_reserved (local.get $spn)))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid parameter name in strict mode"))))))
+        ;; `await` may not name a parameter of an async function, `yield` a parameter of a generator (even
+        ;; sloppy) — this loop only runs for async/generator/method/strict forms, so a plain sloppy
+        ;; `function f(await){}` / `f(yield){}` (gate false → loop skipped) still permits them.
+        (if (i32.and (local.get $asyncf) (call $str_eq (local.get $spn) (cstring "await")))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' may not be a parameter name in an async function"))))
+        (if (i32.and (local.get $genf) (call $str_eq (local.get $spn) (cstring "yield")))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' may not be a parameter name in a generator"))))
         (let $spj i32 (i32.add (local.get $spi) (i32.const 1)))
         (block $sde (loop $sdl
           (br_if $sde (i32.ge_s (local.get $spj) (local.get $np)))
