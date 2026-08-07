@@ -4310,6 +4310,10 @@
     ;; a strict arrow's parameter may not be named `eval`/`arguments` (nor `yield`/`await` in the
     ;; respective contexts) — same BindingIdentifier restriction as ordinary function params.
     (if (call $vm_strict_lhs_check (local.get $adn)) (then (return)))
+    ;; `await` may not name a parameter of an ASYNC arrow (reg 232 still holds the async flag here,
+    ;; cleared just below). `async (await) => …` → SyntaxError.
+    (if (i32.and (i32.load (i32.const 232)) (call $str_eq (local.get $adn) (cstring "await")))
+      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' may not be a parameter name in an async arrow")) (return)))
     (let $adj i32 (i32.add (local.get $adi) (i32.const 1)))
     (block $ade2 (loop $adl2
       (br_if $ade2 (i32.ge_s (local.get $adj) (local.get $np)))
