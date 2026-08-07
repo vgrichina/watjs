@@ -1682,7 +1682,12 @@
               (else  ;; identifier-leading (or numeric): key | get/set accessor | method | shorthand
                 (let $okirawlen i32 (call $tok_len))  ;; RAW source length of the key token (before consuming) — an escape lengthens it past the 3-byte `get`/`set`
                 (let $okikind i32 (call $tok_kind))  ;; key token kind (1 = numeric literal → valid only as `N: v` / `N(){}`, never shorthand)
-                (let $oki i32 (call $ident_name)) (call $next_token)
+                ;; a numeric-literal PropertyName is ToString of its VALUE, not the raw source: `{0x10:v}`→"16",
+                ;; `{1e2:v}`→"100", `{1.0:v}`→"1", `{1n:v}`→"1" (BigInt via mem 304 flag + exact i64 @744).
+                (let $oki i32 (if i32 (i32.eq (local.get $okikind) (i32.const 1))
+                  (then (if i32 (i32.load (i32.const 304)) (then (call $i64_to_str (i64.load (i32.const 744)))) (else (call $num_to_str (call $tok_num)))))
+                  (else (call $ident_name))))
+                (call $next_token)
                 ;; `get`/`set` followed by `*` is an invalid accessor (an accessor may not be a generator).
                 (if (i32.and (i32.or (call $str_eq (local.get $oki) (cstring "get")) (call $str_eq (local.get $oki) (cstring "set"))) (i32.eq (call $tok_kind) (i32.const 12)))
                   (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "An accessor may not be a generator")) (return)))
@@ -4116,7 +4121,11 @@
                 (call $vm_emit_dstr_store (local.get $code) (local.get $cbind))))  ;; store computed-key target
             (br_if $oe (i32.eqz (call $eat (i32.const 22))))
             (br $ol)))
-        (let $key i32 (call $ident_name))
+        ;; a numeric-literal pattern key is ToString of its value (`{0x10: x}`→"16", `{1n: x}`→"1"), same as
+        ;; an object literal — not the raw source. (String/identifier keys stay as read.)
+        (let $key i32 (if i32 (i32.eq (call $tok_kind) (i32.const 1))
+          (then (if i32 (i32.load (i32.const 304)) (then (call $i64_to_str (i64.load (i32.const 744)))) (else (call $num_to_str (call $tok_num)))))
+          (else (call $ident_name))))
         ;; a PrivateName may not be an object-pattern property key: `const {#x: y} = obj` is a SyntaxError.
         (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eq (call $str_byte (local.get $key) (i32.const 0)) (i32.const 35)))
           (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Private names are not allowed in object destructuring patterns")) (return)))
