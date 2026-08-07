@@ -1499,7 +1499,16 @@
           (if (call $is_assign_op (call $tok_kind)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
           (return)))
       (let $vnstart i32 (call $tok_start))  ;; identifier start (for a single-param arrow's source span)
+      (let $vnrawlen i32 (call $tok_len))   ;; raw source length — differs from the decoded length iff an escape is present
       (let $vn i32 (call $ident_name)) (call $next_token)
+      ;; a ReservedWord (incl. the `true`/`false`/`null` literals) written with a Unicode escape is a
+      ;; SyntaxError: tok_is_kw compared the RAW source and missed it, so it reached the generic-identifier
+      ;; path — but the escaped spelling of a keyword is never a valid IdentifierReference. `tr\u{75}e`,
+      ;; `f\u{61}lse`, `n\u{75}ll`, `\u{69}f` → SyntaxError. (`undefined` is a plain global, not reserved.)
+      (if (i32.and (i32.ne (local.get $vnrawlen) (call $str_len (local.get $vn)))
+                   (i32.or (call $is_reserved_word (local.get $vn))
+                     (i32.or (call $str_eq (local.get $vn) (cstring "true")) (i32.or (call $str_eq (local.get $vn) (cstring "false")) (call $str_eq (local.get $vn) (cstring "null"))))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A reserved word may not contain a Unicode escape")) (return)))
       ;; `yield` is a reserved word in strict-mode code — it can never be an IdentifierReference here (a
       ;; generator catches its yield-expression earlier, so reaching primary with `yield` means non-generator).
       (if (i32.and (i32.load (i32.const 388)) (call $str_eq (local.get $vn) (cstring "yield")))
