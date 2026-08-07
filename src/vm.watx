@@ -6919,7 +6919,17 @@
   (call $next_token)
   ;; Early Error: the program/eval top-level LexicallyDeclaredNames must have no duplicates and be
   ;; disjoint from the VarDeclaredNames (`let x; let x`, `let x; var x`). Cursor restored by the scan.
-  (call $vm_lex_dup_scan (i32.const 0) (i32.const 0) (i32.const 1))
+  ;; For a fresh top-level SCRIPT ($prelude), also seed the non-configurable global properties
+  ;; (undefined / NaN / Infinity) as "var" names so a top-level `let/const/class` of the same name is a
+  ;; SyntaxError (CanDeclareGlobalVar is false for them). Configurable globals (Object, Array, …) are fine.
+  (let $rgn i32 (i32.const 0))
+  (if (local.get $prelude)
+    (then
+      (set! $rgn (call $heap_alloc (i32.const 12)))
+      (i32.store (local.get $rgn) (cstring "undefined"))
+      (i32.store (i32.add (local.get $rgn) (i32.const 4)) (cstring "NaN"))
+      (i32.store (i32.add (local.get $rgn) (i32.const 8)) (cstring "Infinity"))))
+  (call $vm_lex_dup_scan (local.get $rgn) (if i32 (local.get $prelude) (then (i32.const 3)) (else (i32.const 0))) (i32.const 1))
   (if (call $err) (then (return (local.get $code))))
   (block $e (loop $l
     (br_if $e (i32.eq (call $tok_kind) (i32.const 0)))
