@@ -2429,9 +2429,9 @@
 ;; declaration later flips v_tdz→value in place (scope_define updates). Does NOT descend into nested
 ;; blocks/functions/for-heads (those bind in their own scope). Cursor at '{'; restored. Mirrors the
 ;; governed-statement + depth scan of vm_lex_dup_scan.
-(func $vm_hoist_lex (param $code i32) (param $isblock i32) (effects)
+(func $vm_hoist_lex (param $code i32) (param $isblock i32) (param $isprog i32) (effects)
   (let $save i32 (call $cursor_save))
-  (call $next_token)  ;; past the '{'
+  (call $next_token)  ;; block/fnbody: past the '{'. program (isprog): the caller left pos at the first token (no pre-lex, so cursor_save captured a clean pre-token state) → this lexes the first token; the loop stops at EOF.
   (let $depth i32 (i32.const 0))
   (let $stmt i32 (i32.const 1))
   (let $govern i32 (i32.const 0))
@@ -3307,7 +3307,7 @@
       (call $vm_hoist_fns (local.get $code) (i32.const 1))  ;; hoist `function NAME` decls (body is a '{...}' block)
       (call $vm_hoist_vars_p (local.get $code) (if i32 (local.get $nonsimple) (then (local.get $params)) (else (i32.const 0))) (if i32 (local.get $nonsimple) (then (local.get $np)) (else (i32.const 0))))  ;; hoist `var` decls; copy shadowed params when a separate body scope exists
       (call $vm_hoist_block_fns (local.get $code))  ;; AnnexB B.3.3: block-nested fn decls → var binding = undefined (unless lexically shadowed)
-      (call $vm_hoist_lex (local.get $code) (i32.const 0))  ;; pre-declare body-top-level let/const/class as v_tdz (TDZ: a ref before its decl throws, no leaked global)
+      (call $vm_hoist_lex (local.get $code) (i32.const 0) (i32.const 0))  ;; pre-declare body-top-level let/const/class as v_tdz (TDZ: a ref before its decl throws, no leaked global)
       (i32.store (i32.const 856) (i32.const 1))))  ;; the immediate function-body block must NOT get its own lexical scope — the function scope already serves as it (else hoisted inner fn decls, which capture the function scope, can't see the body's let/const)
   ;; reg 672 = "compiling inside a generator body" — so `yield` is the yield-expression
   ;; only here; in sloppy non-generator code it is a plain identifier. Saved/restored
@@ -5142,7 +5142,7 @@
       (let $blk i32 (i32.ne (i32.and (local.get $blkbits) (i32.const 5)) (i32.const 0)))  ;; bit0 (let/const/class) OR bit2 (lexical generator/async fn) → needs its own scope
       (if (local.get $blk)
         (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)  ;; ENTERSCOPE 0
-              (call $vm_hoist_lex (local.get $code) (i32.const 1))))  ;; pre-declare the block's let/const/class as v_tdz (TDZ before decl)
+              (call $vm_hoist_lex (local.get $code) (i32.const 1) (i32.const 0))))  ;; pre-declare the block's let/const/class as v_tdz (TDZ before decl)
       (call $next_token)
       ;; Early Error: a block that declares lexical names (incl. block-level function declarations, bit1)
       ;; may not have duplicate LexicallyDeclaredNames or a lexical/var collision (same scan as a switch
@@ -5784,7 +5784,7 @@
               ;; INTO this new scope, so their decl-site CLOSURE+STOREVAR binds here (not via scope_var_target →
               ;; the enclosing var scope → leak). vm_hoist_lex saves/restores the cursor to '{'.
               (call $cursor_restore (local.get $swbrace))
-              (call $vm_hoist_lex (local.get $code) (i32.const 1))
+              (call $vm_hoist_lex (local.get $code) (i32.const 1) (i32.const 0))
               (call $cursor_restore (local.get $swafter))))
           (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: switch completion starts undefined
           (i32.store (i32.const 216) (i32.load (i32.add (local.get $slsave) (i32.const 8))))  ;; continue passes through to enclosing loop
@@ -6782,6 +6782,15 @@
   (call $lex_init)
   (call $set_pos (call $hashbang_len))  ;; skip a leading #! hashbang line
   (call $vm_hoist (local.get $code))
+  ;; PROGRAM-LEVEL TDZ: pre-declare the top-level let/const/class of the program/eval body as v_tdz in
+  ;; the CURRENT scope (top-level program → $glex, the global Declarative env, NOT globalThis; eval → the
+  ;; eval's own scope). A reference before the declaration then throws (TDZ) instead of reading undefined
+  ;; or a leaked global. isblock=0: top-level function/generator/async declarations are var/global (they
+  ;; must NOT be lexically pre-declared here). isprog=1: no wrapping '{' — scan from the first token to EOF.
+  (call $set_src (local.get $ptr) (local.get $len))
+  (call $lex_init)
+  (call $set_pos (call $hashbang_len))
+  (call $vm_hoist_lex (local.get $code) (i32.const 0) (i32.const 1))
   ;; reset the completion register at runtime AFTER the prelude (whose trailing
   ;; expression statements leave a value in mem 288) and BEFORE user code, so a
   ;; user program with no expression statement (e.g. `var x`, ``) completes to undefined.
