@@ -511,8 +511,8 @@
   ;; `await` may not be a binding identifier inside an async body; `yield` may not inside a generator body
   ;; (reg 896 = in-async-body, reg 672 = in-generator-body). Holds even for a \u-escaped spelling since
   ;; ident_name returns the decoded text.
-  (if (i32.and (i32.load (i32.const 896)) (call $str_eq (local.get $name) (cstring "await")))
-    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' is reserved inside an async function")) (return (i32.const 1))))
+  (if (i32.and (i32.or (i32.load (i32.const 896)) (i32.load (i32.const 912))) (call $str_eq (local.get $name) (cstring "await")))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' is reserved inside an async function or class static block")) (return (i32.const 1))))
   (if (i32.and (i32.or (i32.load (i32.const 672)) (i32.load (i32.const 388))) (call $str_eq (local.get $name) (cstring "yield")))
     (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is reserved inside a generator or strict-mode code")) (return (i32.const 1))))
   (if (i32.load (i32.const 388))
