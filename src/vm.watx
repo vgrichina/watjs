@@ -1181,6 +1181,35 @@
         (then (drop (call $vm_c_function (local.get $code))) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a FunctionExpression is not an assignment target
       (if (call $tok_is_kw (cstring "class"))  ;; class expression → pushes the class value
         (then (call $vm_c_class (local.get $code) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a ClassExpression is not an assignment target
+      (if (call $tok_is_kw (cstring "import"))  ;; ImportCall:  import ( AssignmentExpression [, AssignmentExpression] [,] )
+        (then
+          (call $next_token)  ;; 'import'
+          ;; `import.meta` is Module-only and `import.source`/`import.defer` are unsupported proposals; any
+          ;; `import` not immediately followed by '(' is a SyntaxError in Script/eval code.
+          (if (i32.ne (call $tok_kind) (i32.const 15)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected 'import' — expected import(...)")) (return)))
+          (call $next_token)  ;; '('
+          ;; the specifier is REQUIRED (`import()` → error) and may not be a spread (`import(...x)` → error).
+          (if (i32.eq (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "import() requires a specifier")) (return)))
+          (if (i32.eq (call $tok_kind) (i32.const 54)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "import() may not use spread")) (return)))
+          (call $vm_c_expr (local.get $code))  ;; specifier (a single AssignmentExpression) → on stack
+          (if (call $err) (then (return)))
+          ;; optional second argument (import options / attributes, ES2025) — evaluated then discarded by the stub.
+          (if (i32.eq (call $tok_kind) (i32.const 22))  ;; ','
+            (then
+              (call $next_token)  ;; ','
+              (if (i32.ne (call $tok_kind) (i32.const 16))  ;; not just a trailing comma
+                (then
+                  (if (i32.eq (call $tok_kind) (i32.const 54)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "import() may not use spread")) (return)))
+                  (call $vm_c_expr (local.get $code))
+                  (if (call $err) (then (return)))
+                  (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP the options (stub ignores them)
+                  (if (i32.eq (call $tok_kind) (i32.const 22)) (then (call $next_token)))))))  ;; optional trailing comma
+          ;; a third argument (`import(a,b,c)`) is a SyntaxError.
+          (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "import() takes at most two arguments")) (return)))
+          (call $next_token)  ;; ')'
+          (call $vm_emit_op (local.get $code) (i32.const 129))  ;; IMPORTCALL: [specifier] → Promise
+          (i32.store (i32.const 956) (i32.const 0))  ;; an ImportCall is not an assignment target
+          (return)))
       (if (call $tok_is_kw (cstring "super"))  ;; super(args)  |  super.method(args)
         (then
           (call $next_token)
@@ -1386,6 +1415,10 @@
               (call $vm_emit_op (local.get $code) (i32.const 62)) (call $vm_emit_op (local.get $code) (cstring "@@newtarget"))  ;; soft load (undefined outside a construct)
               (i32.store (i32.const 956) (i32.const 0))  ;; new.target is not a valid AssignmentTarget (gates postfix ++/--)
               (return)))
+          ;; an ImportCall / import.meta is a CallExpression / meta-property, NOT a MemberExpression, so it may
+          ;; not be a `new` target: `new import('')`, `new import.source(x)` → SyntaxError.
+          (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "import")))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "import call/meta is not a valid 'new' target")) (return)))
           (if (i32.eq (call $tok_kind) (i32.const 15))  ;; new (expr)(...) — parenthesized callee
             (then
               (call $next_token)  ;; '('
@@ -7873,6 +7906,15 @@
         (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
                    (call $js_in (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))
                                 (i64.load (i32.add (local.get $stack) (local.get $sp)))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 129))  ;; IMPORTCALL — [specifier] → Promise. No module loader (host
+      (then                                        ;; provides only a thin I/O surface): a module can never be
+        ;; resolved, so return a REJECTED promise (TypeError). This satisfies the reject-on-missing-module
+        ;; tests and keeps `import(x)` a thenable (typeof "object", instanceof Promise, `import(x)()`→TypeError).
+        ;; The engine has no unhandled-rejection reporting, so a bare `import(x)` is harmless. The specifier
+        ;; was already evaluated by the preceding code (its side effects / throws ran).
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
+          (call $mk_promise (i32.const 2) (call $make_error (cstring "TypeError") (cstring "dynamic import is not supported: no module loader"))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 125))  ;; FORINHAS — [key, obj] → bool; for-in still-present check.
       (then                                       ;; A non-object source (primitive: indices non-deletable) or a Proxy
