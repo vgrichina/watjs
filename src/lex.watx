@@ -461,6 +461,10 @@
     (let $c i32 (call $ch_at (i32.const 0)))
     (br_if $se (i32.eq (local.get $c) (i32.const -1)))
     (br_if $se (i32.eq (local.get $c) (local.get $quote)))
+    ;; a raw LineTerminator (LF/CR) may not appear in a string literal (only a `\`-continuation, handled
+    ;; by the escape branch below, or LS/PS which are permitted). `'ab<newline>` → SyntaxError.
+    (if (i32.or (i32.eq (local.get $c) (i32.const 10)) (i32.eq (local.get $c) (i32.const 13)))
+      (then (i32.store (i32.const 400) (i32.const 1)) (call $set_tok (i32.const 0) (call $pos) (i32.const 0)) (call $throw_type (cstring "SyntaxError") (cstring "Unterminated string literal (line terminator in string)")) (return)))
     ;; skip escaped char (so \" \\ etc. don't end the string)
     (if (i32.eq (local.get $c) (i32.const 92))
       (then
@@ -471,9 +475,17 @@
               (i32.or (i32.and (i32.ge_s (local.get $e) (i32.const 56)) (i32.le_s (local.get $e) (i32.const 57)))  ;; '8' '9'
                 (i32.and (i32.eq (local.get $e) (i32.const 48)) (call $is_digit (call $ch_at (i32.const 2))))))  ;; '0' + digit
           (then (i32.store (i32.const 928) (i32.const 1))))
+        ;; a `\<CR><LF>` LineContinuation is ONE line terminator sequence — consume the extra LF so the
+        ;; loop's raw-LineTerminator check below doesn't see a stray LF and reject a valid continuation.
+        (if (i32.and (i32.eq (local.get $e) (i32.const 13)) (i32.eq (call $ch_at (i32.const 2)) (i32.const 10)))
+          (then (call $set_pos (i32.add (call $pos) (i32.const 1)))))
         (call $set_pos (i32.add (call $pos) (i32.const 1)))))
     (call $set_pos (i32.add (call $pos) (i32.const 1)))
     (br $sl)))
+  ;; the loop exited on the closing quote or on EOF — if there is no closing quote, the string is
+  ;; unterminated (`'abc`, `"a\` at EOF, the trailing `'` of `'''`) → SyntaxError.
+  (if (i32.ne (call $ch_at (i32.const 0)) (local.get $quote))
+    (then (i32.store (i32.const 400) (i32.const 1)) (call $set_tok (i32.const 0) (call $pos) (i32.const 0)) (call $throw_type (cstring "SyntaxError") (cstring "Unterminated string literal")) (return)))
   (call $set_tok (i32.const 2) (local.get $start) (i32.sub (call $pos) (local.get $start)))
   (call $set_pos (i32.add (call $pos) (i32.const 1))))  ;; skip closing quote
 
