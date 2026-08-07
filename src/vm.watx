@@ -5744,7 +5744,21 @@
                       (let $cpn i32 (call $ident_name))
                       (if (call $vm_strict_lhs_check (local.get $cpn)) (then (return)))
                       (if (call $is_reserved_word (local.get $cpn)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return)))  ;; `catch(if)`
-                      (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $cpn))  ;; simple binding
+                      ;; a SIMPLE catch parameter gets its OWN declarative environment (spec CatchClause): the
+                      ;; unwind binds the thrown value to a temp, then the param binds LEXICALLY in a fresh scope.
+                      ;; This keeps it separate from an outer `var e` of the same name (block-scoped); a body
+                      ;; `var e` (AnnexB B.3.5) hoists to the function var scope but its references resolve to
+                      ;; THIS catch scope (shadowing), so `catch(e){ var e = … }` still targets the param. Only
+                      ;; the no-finally form (keeps the finally-stack simple; the finally form stays unscoped).
+                      (if (i32.eqz (local.get $prefin))
+                        (then
+                          (let $sctmp i32 (call $vm_tmpname))
+                          (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $sctmp))  ;; unwind binds the thrown value to the temp
+                          (set! $catchscope (i32.const 1))
+                          (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)  ;; ENTERSCOPE 0
+                          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sctmp))  ;; LOADVAR temp
+                          (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $cpn)))  ;; LEXDEFINIT cpn into the catch scope
+                        (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $cpn))))  ;; finally form: unscoped (unwind binds the param directly)
                       (call $next_token) (call $next_token)  ;; var ')' → cursor at the catch body '{'
                       ;; Early Error (CatchClause): the catch Block's LexicallyDeclaredNames must not include
                       ;; the catch parameter name — `catch(x){ let x }`, `catch(e){ class e {} }`,
@@ -8482,6 +8496,21 @@
               (then (i64.store (local.get $dislot) (i64.load (i32.add (local.get $stack) (local.get $sp)))))  ;; existing → assign value, preserve attrs
               (else (call $scope_define_attr (local.get $ditgt) (local.get $dinm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 14))))  ;; new → E|W|C
             (br $disp)))
+        ;; AnnexB B.3.5: a shadowing lexical binding of the same name BETWEEN the current scope and the var
+        ;; scope — in legal code this is only a simple catch parameter (`catch(e){ var e = … }`). Assign to
+        ;; it (so the `var` and the catch param remain ONE binding, and the param shadows the function var),
+        ;; instead of writing a divergent binding into the var scope. (Any other var-shadows-lexical form,
+        ;; e.g. `{ let x } { var x }`, is a Syntax Error, so this only ever hits the catch case.)
+        (let $dvcur i32 (local.get $scope))
+        (let $dvtgt2 i32 (call $scope_var_target (local.get $scope)))
+        (block $dvse (loop $dvsl
+          (br_if $dvse (i32.eq (local.get $dvcur) (local.get $dvtgt2)))  ;; reached the var scope → no shadowing lexical
+          (br_if $dvse (i32.eqz (local.get $dvcur)))
+          (let $dvsl2 i32 (call $scope_find_local (local.get $dvcur) (local.get $dinm)))
+          (if (local.get $dvsl2)
+            (then (i64.store (local.get $dvsl2) (i64.load (i32.add (local.get $stack) (local.get $sp)))) (br $disp)))
+          (set! $dvcur (call $scope_parent (local.get $dvcur)))
+          (br $dvsl)))
         (call $scope_define_attr (call $scope_var_target (local.get $scope)) (local.get $dinm) (i64.load (i32.add (local.get $stack) (local.get $sp))) (i32.const 10))  ;; E|W; non-configurable. var binds in the nearest non-with scope
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 80))  ;; STOREVAR_STRICT — strict assignment: ReferenceError if the binding is undeclared
