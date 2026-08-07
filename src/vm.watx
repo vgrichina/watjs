@@ -1509,10 +1509,12 @@
                    (i32.or (call $is_reserved_word (local.get $vn))
                      (i32.or (call $str_eq (local.get $vn) (cstring "true")) (i32.or (call $str_eq (local.get $vn) (cstring "false")) (call $str_eq (local.get $vn) (cstring "null"))))))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A reserved word may not contain a Unicode escape")) (return)))
-      ;; `yield` is a reserved word in strict-mode code — it can never be an IdentifierReference here (a
-      ;; generator catches its yield-expression earlier, so reaching primary with `yield` means non-generator).
-      (if (i32.and (i32.load (i32.const 388)) (call $str_eq (local.get $vn) (cstring "yield")))
-        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is a reserved identifier in strict mode")) (return)))
+      ;; `yield` reaching primary is invalid in strict-mode code (reserved word) OR inside a generator body
+      ;; (reg 672): a generator's yield-expression is parsed at the AssignmentExpression level, so reaching
+      ;; PRIMARY with `yield` means it sat in a higher-precedence operand slot — `void yield`, `1 + yield 2`,
+      ;; `yield 3 + yield 4` — which has no grammar production → SyntaxError.
+      (if (i32.and (i32.or (i32.load (i32.const 388)) (i32.load (i32.const 672))) (call $str_eq (local.get $vn) (cstring "yield")))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' expression is not allowed here")) (return)))
       ;; `await` reaching primary as a plain identifier inside an async body (reg 896) or a class static
       ;; block (reg 912) is a reserved-word reference — catches the \u-escaped spelling too (tok_is_kw
       ;; compares raw source so it misses the await operator).
