@@ -2068,6 +2068,10 @@
         (set! $ocn (i32.add (local.get $ocn) (i32.const 1)))
         (call $vm_patch (local.get $code) (local.get $jacc))  ;; access lands here: [R, R]
         (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP dup → [R]
+        ;; a TemplateLiteral directly after `?.` (`a?.`+template) is a tagged template in an optional chain,
+        ;; which has no production → SyntaxError (mirrors the `a?.b`+template case handled in the member tail).
+        (if (i32.eq (call $tok_kind) (i32.const 53))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Tagged template literals may not be used in an optional chain")) (return)))
         (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ?.(args) — optional call of the receiver (this=undefined)
           (then
             (call $next_token)  ;; '('
