@@ -1679,8 +1679,9 @@
                 (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
                 (call $next_token) (call $next_token) (call $vm_c_expr (local.get $code))  ;; ':' value
                 (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
-              (else  ;; identifier-leading: key | get/set accessor | method | shorthand
+              (else  ;; identifier-leading (or numeric): key | get/set accessor | method | shorthand
                 (let $okirawlen i32 (call $tok_len))  ;; RAW source length of the key token (before consuming) — an escape lengthens it past the 3-byte `get`/`set`
+                (let $okikind i32 (call $tok_kind))  ;; key token kind (1 = numeric literal → valid only as `N: v` / `N(){}`, never shorthand)
                 (let $oki i32 (call $ident_name)) (call $next_token)
                 ;; `get`/`set` followed by `*` is an invalid accessor (an accessor may not be a generator).
                 (if (i32.and (i32.or (call $str_eq (local.get $oki) (cstring "get")) (call $str_eq (local.get $oki) (cstring "set"))) (i32.eq (call $tok_kind) (i32.const 12)))
@@ -1735,6 +1736,10 @@
                             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Missing property value in object literal")) (return)))
                           (call $vm_c_expr (local.get $code)))
                         (else
+                          ;; a numeric (or string) literal PropertyName has no value/method → it can never be a
+                          ;; shorthand: `({0})`, `({1n})` are SyntaxErrors (shorthand requires an IdentifierReference).
+                          (if (i32.eq (local.get $okikind) (i32.const 1))
+                            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected numeric literal in object shorthand")) (return)))
                           ;; `{ a = 1 }` (CoverInitializedName) is only valid when the object literal is
                           ;; refined to a destructuring pattern; in an ordinary object literal it is a SyntaxError.
                           (if (i32.eq (call $tok_kind) (i32.const 24))
