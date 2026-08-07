@@ -10044,7 +10044,10 @@
   ;; check in DEFVAR. Only a SLOPPY direct eval shares the caller's variable environment; a STRICT eval
   ;; (own varEnv) and an INDIRECT eval (global lexEnv) never collide with the caller's lexical bindings.
   (let $evsave2 i32 (i32.load (i32.const 1016)))
-  (i32.store (i32.const 1016) (i32.and (local.get $evdirect) (i32.eqz (i32.load (i32.const 388)))))
+  ;; enable the DEFVAR var/lexical-conflict scan for ANY sloppy eval: a direct eval scans the caller's
+  ;; declarative envs up to its var scope; an indirect eval (now running in $glex) scans the GLOBAL
+  ;; lexical env — `let x; (0,eval)("var x")` is a SyntaxError. Strict eval has its own varEnv (no scan).
+  (i32.store (i32.const 1016) (i32.eqz (i32.load (i32.const 388))))
   (block $e (loop $l
     (drop (call $vm_step (local.get $ctx) (call $v_undef)))
     (br_if $e (call $vm_done (local.get $ctx)))
