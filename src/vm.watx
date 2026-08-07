@@ -2136,6 +2136,10 @@
       ;; AssignmentTarget → early SyntaxError (`++0`, `--'s'`). The handler below is identifier-rooted.
       (if (i32.or (i32.eq (call $tok_kind) (i32.const 1)) (i32.or (i32.eq (call $tok_kind) (i32.const 2)) (i32.or (i32.eq (call $tok_kind) (i32.const 53)) (i32.eq (call $tok_kind) (i32.const 57)))))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement")) (return)))
+      ;; a prefix ++/-- with NO operand — a terminator/closer follows (`++;`, `++)`, `++}`, `++]`, `++,`, `++`<EOF>).
+      ;; This also catches `x <LineTerminator> ++;` after ASI splits it into `x;` then a bare `++;`.
+      (if (i32.or (i32.eq (call $tok_kind) (i32.const 21)) (i32.or (i32.eq (call $tok_kind) (i32.const 16)) (i32.or (i32.eq (call $tok_kind) (i32.const 18)) (i32.or (i32.eq (call $tok_kind) (i32.const 20)) (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.eqz (call $tok_kind)))))))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement")) (return)))
       (let $pvn i32 (call $ident_name)) (call $next_token)
       ;; `++f(...)` — the operand is a CallExpression, which is not a valid AssignmentTarget → early
       ;; SyntaxError. (The identifier-rooted handler below only supports simple/member targets.)
