@@ -6707,21 +6707,17 @@
       (if (i32.or (call $is_undefined (local.get $thisv)) (call $is_null (local.get $thisv)))
         (then (call $throw_type (cstring "TypeError") (cstring "Array.prototype values/keys/entries called on null or undefined")) (return (call $v_undef))))
       (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))  ;; detached TA → TypeError
-      ;; a TypedArray stays LIVE (@@arr = the TA), so a mid-iteration resize/detach is observed; any
-      ;; other array-like is materialized into a real array to iterate.
+      ;; a TypedArray stays LIVE (@@arr = the TA), so a mid-iteration resize/detach is observed. An
+      ;; array-like OBJECT (e.g. a mapped `arguments`) ALSO stays live (@@arr = the object): the spec
+      ;; array iterator reads O.[[Get]](index) and LengthOfArrayLike(O) at each next() step, so a
+      ;; mutation during traversal is observed — do NOT snapshot it into a real array.
       (let $itsrc i64 (local.get $thisv))
-      (let $itisTA i32 (if i32 (call $is_object (local.get $thisv))
-        (then (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0)))
-        (else (i32.const 0))))
-      (if (i32.and (i32.eqz (call $is_array (local.get $thisv))) (i32.eqz (local.get $itisTA)))
-        (then (if (call $is_object (local.get $thisv))
-          (then (set! $itsrc (call $mk_arr (call $alike_arr (local.get $thisv))))))))
       (let $itobj i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 720)) (then (i32.store (local.get $itobj) (i32.load (i32.const 720))))  ;; inherit %ArrayIteratorPrototype% (which inherits %Iterator.prototype%)
         (else (if (i32.load (i32.const 488)) (then (i32.store (local.get $itobj) (i32.load (i32.const 488)))))))
       (call $scope_define (local.get $itobj) (cstring "@@arr") (local.get $itsrc))
       (call $scope_define (local.get $itobj) (cstring "@@i") (call $num (f64.const 0)))
-      (call $scope_define (local.get $itobj) (cstring "@@len") (call $num (f64.convert_i32_s (call $arr_len (call $val_payload (local.get $itsrc))))))  ;; snapshot length
+      (call $scope_define (local.get $itobj) (cstring "@@len") (call $num (f64.convert_i32_s (if i32 (call $is_array (local.get $itsrc)) (then (call $arr_len (call $val_payload (local.get $itsrc)))) (else (i32.const 0))))))  ;; vestigial (next() reads live length)
       (call $scope_define (local.get $itobj) (cstring "@@kind")
         (call $num (f64.convert_i32_s (if i32 (i32.eq (local.get $id) (i32.const 95)) (then (i32.const 2))
           (else (if i32 (i32.eq (local.get $id) (i32.const 96)) (then (i32.const 0)) (else (i32.const 1))))))))
@@ -6751,6 +6747,9 @@
       (let $itIsTA i32 (if i32 (call $is_object (local.get $itarrv))
         (then (i32.ne (call $scope_find_local (local.get $itarr) (cstring "@@taelem")) (i32.const 0)))
         (else (i32.const 0))))
+      ;; a live array-like OBJECT (@@arr is an object that is NOT a TypedArray) — read length and
+      ;; elements via [[Get]] each step (mapped-arguments aliasing, live array-like mutation).
+      (let $itIsObj i32 (i32.and (call $is_object (local.get $itarrv)) (i32.eqz (local.get $itIsTA))))
       ;; a TypedArray iterator re-validates each step (spec: ValidateTypedArray) — if a mid-iteration
       ;; resize took the (fixed) view out of bounds, next() throws a TypeError.
       (if (local.get $itIsTA)
@@ -6758,7 +6757,7 @@
       (let $itix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
       (let $itkind i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@kind"))))))
       (let $itres i32 (call $obj_new (i32.const 2)))
-      (let $itlen i32 (if i32 (local.get $itIsTA) (then (call $ta_live_len (local.get $itarrv))) (else (call $arr_len (local.get $itarr)))))  ;; LIVE length each next()
+      (let $itlen i32 (if i32 (local.get $itIsTA) (then (call $ta_live_len (local.get $itarrv))) (else (if i32 (local.get $itIsObj) (then (call $alike_len (local.get $itarrv))) (else (call $arr_len (local.get $itarr)))))))  ;; LIVE length each next()
       (if (i32.ge_s (local.get $itix) (local.get $itlen))
         (then
           (call $scope_define (local.get $itres) (cstring "value") (call $v_undef))
@@ -6767,12 +6766,12 @@
         (else
           (let $itval i64 (call $v_undef))
           (if (i32.eq (local.get $itkind) (i32.const 0)) (then (set! $itval (call $num (f64.convert_i32_s (local.get $itix))))))
-          (if (i32.eq (local.get $itkind) (i32.const 1)) (then (set! $itval (if i64 (local.get $itIsTA) (then (call $get_prop (local.get $itarrv) (call $num (f64.convert_i32_s (local.get $itix))))) (else (call $arr_get (local.get $itarr) (local.get $itix)))))))
+          (if (i32.eq (local.get $itkind) (i32.const 1)) (then (set! $itval (if i64 (i32.or (local.get $itIsTA) (local.get $itIsObj)) (then (call $get_prop (local.get $itarrv) (call $num (f64.convert_i32_s (local.get $itix))))) (else (call $arr_get (local.get $itarr) (local.get $itix)))))))
           (if (i32.eq (local.get $itkind) (i32.const 2))
             (then
               (let $itpair i32 (call $arr_new (i32.const 2)))
               (call $arr_push (local.get $itpair) (call $num (f64.convert_i32_s (local.get $itix))))
-              (call $arr_push (local.get $itpair) (if i64 (local.get $itIsTA) (then (call $get_prop (local.get $itarrv) (call $num (f64.convert_i32_s (local.get $itix))))) (else (call $arr_get (local.get $itarr) (local.get $itix)))))
+              (call $arr_push (local.get $itpair) (if i64 (i32.or (local.get $itIsTA) (local.get $itIsObj)) (then (call $get_prop (local.get $itarrv) (call $num (f64.convert_i32_s (local.get $itix))))) (else (call $arr_get (local.get $itarr) (local.get $itix)))))
               (set! $itval (call $mk_arr (local.get $itpair)))))
           (call $scope_define (local.get $itres) (cstring "value") (local.get $itval))
           (call $scope_define (local.get $itres) (cstring "done") (call $v_false))
