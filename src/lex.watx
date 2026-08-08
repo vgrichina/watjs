@@ -347,6 +347,11 @@
       ;; (`1.5n`, `1e5n`, `.5n`).
       (if (i32.or (local.get $dot) (i32.or (i32.eq (local.get $c0) (i32.const 101)) (i32.eq (local.get $c0) (i32.const 69))))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid BigInt literal (no decimal point or exponent allowed)")) (return)))
+      ;; a BigInt literal may not have a leading zero (legacy-octal / NonOctalDecimalInteger form): `08n`,
+      ;; `0008n`, `012348n` are SyntaxErrors (only `0n` itself is a valid zero-leading BigInt; reg 928 is
+      ;; set only for `0`+digit, never for a bare `0`).
+      (if (i32.load (i32.const 928))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid BigInt literal (no leading zero)")) (return)))
       (i32.store (i32.const 304) (i32.const 1)) (call $set_pos (i32.add (call $pos) (i32.const 1))))
     (else (i32.store (i32.const 304) (i32.const 0))))
   (call $set_tok (i32.const 1) (local.get $start) (i32.sub (call $pos) (local.get $start)))
