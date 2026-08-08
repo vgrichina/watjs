@@ -744,7 +744,9 @@
   (i32.or (call $str_eq (local.get $w) (cstring "typeof"))
   (i32.or (call $str_eq (local.get $w) (cstring "instanceof"))
   (i32.or (call $str_eq (local.get $w) (cstring "in"))
-  (i32.or (call $str_eq (local.get $w) (cstring "of"))
+  ;; NOTE: `of` is a CONTEXTUAL keyword (a plain IdentifierName outside a for-of head), so `/` after it
+  ;; is DIVISION (`x/of/g`), not a regex — do NOT list it here. (`for (x of /re/)` iterating a regex is
+  ;; not a real construct.)
   (i32.or (call $str_eq (local.get $w) (cstring "new"))
   (i32.or (call $str_eq (local.get $w) (cstring "delete"))
   (i32.or (call $str_eq (local.get $w) (cstring "void"))
@@ -753,7 +755,7 @@
   (i32.or (call $str_eq (local.get $w) (cstring "yield"))
   (i32.or (call $str_eq (local.get $w) (cstring "await"))
   (i32.or (call $str_eq (local.get $w) (cstring "case"))
-          (call $str_eq (local.get $w) (cstring "throw"))))))))))))))))
+          (call $str_eq (local.get $w) (cstring "throw")))))))))))))))
 
 ;; Can a '/' at the current position begin a regex literal? (true unless the
 ;; previous token produced a value.)
