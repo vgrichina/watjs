@@ -124,20 +124,20 @@
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
   <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
   <div class="meta">
-    <span class="chip">status as of <b>2026-08-01</b></span>
+    <span class="chip">status as of <b>2026-08-08</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>daa5ea1</b></span>
-    <span class="chip"><b>1512</b> commits</span>
+    <span class="chip">@ <b>d93f0ca</b></span>
+    <span class="chip"><b>1627</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">28.2k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">321 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">30.1k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">339 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
-  <div class="card"><div class="n">74.4M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">83.1M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -183,17 +183,17 @@
   <tr><td>4</td><td>threaded-code VM + GC + test262 breadth</td><td><span class="pill wip">in progress</span></td></tr>
 </table>
 
-<h2>Test suites <span class="em">live run · 2026-08-01</span></h2>
+<h2>Test suites <span class="em">live run · 2026-08-08</span></h2>
 <table>
   <tr><th>suite</th><th>files</th><th>pass rate</th></tr>
   <tr><td>self-check <code>test/</code></td><td class="mono">486 / 486</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/batch</code></td><td class="mono">39 / 39</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/broad</code></td><td class="mono">35 / 36</td><td><span class="prate"><span style="width:97%"></span></span><span class="rate good">97%</span></td></tr>
   <tr><td><code>test262/broad2</code></td><td class="mono">30 / 30</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
-  <tr><td><code>test262/broad3</code></td><td class="mono">22 / 24</td><td><span class="prate warn"><span style="width:92%"></span></span><span class="rate warn">92%</span></td></tr>
+  <tr><td><code>test262/broad3</code></td><td class="mono">24 / 24</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/cases</code></td><td class="mono">4 / 4</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
   <tr><td><code>test262/harness</code></td><td class="mono">29 / 32</td><td><span class="prate warn"><span style="width:91%"></span></span><span class="rate warn">91%</span></td></tr>
-  <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">159 / 165</td><td><span class="prate"><span style="width:96%"></span></span><span class="rate good">96%</span></td></tr>
+  <tr class="tot"><td>test262 total <span style="color:var(--faint)">(curated dirs)</span></td><td class="mono">161 / 165</td><td><span class="prate"><span style="width:98%"></span></span><span class="rate good">98%</span></td></tr>
 </table>
 
 <h2>Full vendored test262 tree <span class="em">~53k files · 2026-07-05</span></h2>
@@ -216,12 +216,12 @@
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
-  <tr><td class="mono">daa5ea1</td><td>TypedArray <code>findLast</code>/<code>findLastIndex</code> do a full <code>ValidateTypedArray</code> on <code>this</code></td></tr>
-  <tr><td class="mono">c1c3cdc</td><td>class field init uses <code>CreateDataPropertyOrThrow</code>, not <code>[[Set]]</code></td></tr>
-  <tr><td class="mono">8e19753</td><td><code>NamedEvaluation</code> for class-field anonymous-function initializers</td></tr>
-  <tr><td class="mono">c358b6c</td><td>async arrow keeps its async-ness when the body contains a closure</td></tr>
-  <tr><td class="mono">43dd376</td><td><code>ArrayBuffer.prototype.transfer</code> / <code>transferToFixedLength</code> (+ slice detached-check)</td></tr>
-  <tr><td class="mono">6118bfc</td><td>surrogate/astral Unicode: <code>String.fromCharCode</code> pairs, <code>encodeURI</code>/<code>escape</code> code points</td></tr>
+  <tr><td class="mono">d93f0ca</td><td>lexer: a leading-zero BigInt literal (<code>08n</code>) is a <code>SyntaxError</code></td></tr>
+  <tr><td class="mono">df6b0ec</td><td>direct eval via a spread call runs in the caller's scope</td></tr>
+  <tr><td class="mono">dcd1d78</td><td>indirect eval runs in the global environment (vars → global, not the caller)</td></tr>
+  <tr><td class="mono">47de41d</td><td>global lexical env: top-level <code>let</code>/<code>const</code>/<code>class</code> off <code>globalThis</code>, with TDZ</td></tr>
+  <tr><td class="mono">f9258ee</td><td>regex: duplicate named-group backrefs + per-position capture reset</td></tr>
+  <tr><td class="mono">d374438</td><td>regex: scoped inline modifiers <code>(?ims-ims:…)</code> applied at match time</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -234,6 +234,8 @@
   <tr><td>TypedArrays</td><td>%TypedArray% intrinsic, exotic numeric-index semantics, detached checks, species-create, Float16Array, Uint8Array base64/hex, resizable/length-tracking buffers, <b>ArrayBuffer.prototype.transfer</b></td></tr>
   <tr><td>Classes / subclassing <span class="pill done">new</span></td><td>block-scoped class name, static &amp; instance fields, derived-ctor <code>super()</code> + return semantics, <b>subclassing native exotics</b> (Array/TypedArray/Map/Set/Promise/RegExp/Date/Boolean/Number/String)</td></tr>
   <tr><td>Scoping <span class="pill done">new</span></td><td>real nested lexical envs — block scope, per-iteration for-let bindings, TDZ, multi-declarator for-init</td></tr>
+  <tr><td>Eval / global env <span class="pill done">new</span></td><td>direct vs indirect eval, sloppy-eval let/const in a fresh env, indirect eval in the global env, top-level <code>let</code>/<code>const</code>/<code>class</code> off <code>globalThis</code> with TDZ, global-lexical/var conflict &amp; non-configurable shadowing</td></tr>
+  <tr><td>RegExp <span class="pill done">new</span></td><td>duplicate named groups + per-position capture reset, scoped inline modifiers <code>(?ims-ims:…)</code>, <code>u</code>-mode syntax strictness; legacy static accessors (<code>$1</code>–<code>$9</code>)</td></tr>
   <tr><td>Async / Promises</td><td>microtask job queue, true <code>await</code> suspension, async generators (+<code>.return</code>/<code>.throw</code>), for-await-of, <code>Array.fromAsync</code></td></tr>
   <tr><td>Destructuring</td><td>cover-grammar bare <code>{pat}=RHS</code> (+133 assignment), for-of/for-in patterns</td></tr>
   <tr><td>BigInt / Symbol</td><td>exact i64 compare, wrapper valueOf, @@toPrimitive</td></tr>
@@ -249,11 +251,13 @@
 <h2>Open issues &amp; known gaps</h2>
 
 <div class="note ok">
-  <span class="good">✓ Recently resolved</span> (verified 2026-07-05): real nested lexical
+  <span class="good">✓ Recently resolved</span>: real nested lexical
   environments — <b>block scoping</b> + <b>per-iteration for-let bindings</b>;
   <b>multi-declarator for-init</b>; <b>class inner-name binding</b> (named class exprs +
   static self-ref); <b>subclassing native built-ins</b> (super() into Array/TypedArray/
-  Map/Set/Promise/RegExp/Date/…); <b>TypedArrays over resizable buffers</b> (length-tracking).
+  Map/Set/Promise/RegExp/Date/…); <b>TypedArrays over resizable buffers</b> (length-tracking);
+  <b>eval scoping</b> (direct vs indirect, sloppy-eval fresh env) + <b>a global lexical
+  environment</b> (top-level let/const/class off globalThis, with TDZ) <span class="em">— Aug 2026</span>.
 </div>
 
 <div class="note danger">
@@ -266,7 +270,7 @@
 <table>
   <tr><th>issue</th><th>impact</th><th>state</th></tr>
   <tr><td>Array/function can't be a [[Prototype]] — <code>Object.create(arr)</code> doesn't inherit indices (proto stored as scope-parent)</td><td>~12–20 tests; deep object-model fix</td><td><span class="pill todo">open</span></td></tr>
-  <tr><td>Reference Records — direct-eval scope, member-prefix <code>++</code>/<code>--</code> eval order</td><td>architectural</td><td><span class="pill todo">open</span></td></tr>
+  <tr><td>Reference Records — member-prefix <code>++</code>/<code>--</code> eval order (direct/indirect-eval scoping now largely landed)</td><td>architectural</td><td><span class="pill wip">partial</span></td></tr>
   <tr><td><code>Intl</code> unimplemented — <code>intl402</code> ~1%</td><td>large surface; deferred</td><td><span class="pill todo">deferred</span></td></tr>
   <tr><td>Mark-sweep GC — still bump-allocator + <code>heap_reset()</code> per test</td><td>fine for test262; needed for long-running programs</td><td><span class="pill todo">deferred</span></td></tr>
 </table>
@@ -275,13 +279,13 @@
 <ul>
   <li>Fix silent-SyntaxError swallowing so the harness stops false-passing uncompilable files (highest-value correctness trap).</li>
   <li>Object-model fix so arrays/functions can serve as a [[Prototype]].</li>
-  <li>Reference Records → direct-eval scoping + member-prefix increment eval order.</li>
+  <li>Reference Records → member-prefix increment eval order (direct/indirect-eval scoping now largely landed).</li>
   <li>Broaden test262 plumbing (ReferenceError surfacing, prelude/includes).</li>
   <li>Mark-sweep GC once a long-running workload demands it.</li>
 </ul>
 
 <footer>
-  Last refreshed 2026-08-01 from repo state &amp; session memory. &nbsp;·&nbsp;
+  Last refreshed 2026-08-08 from repo state &amp; session memory. &nbsp;·&nbsp;
   Two test layers: self-checking assertion JS (<code>test/</code>) + tc39 test262 (<code>test262/</code>).
   Chart drawn inline from per-day git activity + dev-session token usage — no external dependencies.
 </footer>
@@ -309,7 +313,9 @@ const DAILY = [
   ["Jul 18", 17, 0.55], ["Jul 19", 16, 0.52], ["Jul 20", 58, 1.81], ["Jul 21", 0, 1.35],
   ["Jul 22", 0, 0], ["Jul 23", 0, 0], ["Jul 24", 0, 0], ["Jul 25", 0, 0],
   ["Jul 26", 10, 0], ["Jul 27", 9, 2.06], ["Jul 28", 0, 0], ["Jul 29", 0, 0],
-  ["Jul 30", 0, 0], ["Jul 31", 3, 0.59], ["Aug 1", 1, 0.26],
+  ["Jul 30", 0, 0], ["Jul 31", 3, 0.59], ["Aug 1", 11, 0.87],
+  ["Aug 2", 30, 1.80], ["Aug 3", 13, 1.54], ["Aug 4", 8, 0.98], ["Aug 5", 8, 0.49],
+  ["Aug 6", 26, 1.22], ["Aug 7", 11, 1.51], ["Aug 8", 9, 0.56],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -331,7 +337,9 @@ const GROWTH = [
   ["Jul 18", 27152, 307], ["Jul 19", 27278, 309], ["Jul 20", 27866, 317], ["Jul 21", 27866, 317],
   ["Jul 22", 27866, 317], ["Jul 23", 27866, 317], ["Jul 24", 27866, 317], ["Jul 25", 27866, 317],
   ["Jul 26", 28034, 318], ["Jul 27", 28161, 320], ["Jul 28", 28161, 320], ["Jul 29", 28161, 320],
-  ["Jul 30", 28161, 320], ["Jul 31", 28190, 321], ["Aug 1", 28194, 321],
+  ["Jul 30", 28161, 320], ["Jul 31", 28190, 321], ["Aug 1", 28449, 323],
+  ["Aug 2", 28785, 326], ["Aug 3", 29120, 330], ["Aug 4", 29332, 332], ["Aug 5", 29435, 333],
+  ["Aug 6", 29809, 337], ["Aug 7", 29943, 338], ["Aug 8", 30078, 339],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
@@ -356,7 +364,10 @@ const HUMAN = {
   "Jul 14": { n:10 }, "Jul 16": { n:2 }, "Jul 17": { n:6 }, "Jul 18": { n:2 }, "Jul 19": { n:5 },
   "Jul 20": { n:13 },
   "Jul 21": { i:["the parallel suite seems stuck — weren't we going to make it parallel and fast? (pushed the run-tests worker pool over the line)"], n:0 },
-  "Jul 27": { n:1 }, "Jul 31": { n:3 }, "Aug 1": { n:2 },
+  "Jul 27": { n:1 }, "Jul 31": { n:3 },
+  "Aug 1": { i:["don't get shy of architectural work"], n:3 },
+  "Aug 2": { n:13 }, "Aug 3": { n:10 }, "Aug 4": { n:8 }, "Aug 5": { n:4 },
+  "Aug 6": { n:6 }, "Aug 7": { n:6 }, "Aug 8": { n:4 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
