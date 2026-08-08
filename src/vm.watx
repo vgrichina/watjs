@@ -8706,6 +8706,7 @@
         (let $sthis i64 (call $v_undef))
         (if (local.get $ism) (then (set! $sp (i32.sub (local.get $sp) (i32.const 8))) (set! $sthis (i64.load (i32.add (local.get $stack) (local.get $sp))))))
         (let $sarr i32 (call $val_payload (local.get $argsv)))
+        (call $set_cur_scope (local.get $scope))  ;; so a spread-call to native eval(...args) runs a DIRECT eval in the VM's current scope
         (let $sres i64 (call $call_val (local.get $calleev) (call $arr_len (local.get $sarr)) (call $arr_data (local.get $sarr)) (local.get $sthis)))
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $sres))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
