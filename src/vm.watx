@@ -6230,7 +6230,18 @@
                             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "for-in loop head declaration may not have an initializer")) (return)))))))))
                 (call $next_token) (br $hil)))
               (call $cursor_restore (local.get $hidet))))  ;; restore to '=' so the regular-for init parser runs
-          (let $isof i32 (i32.and (i32.or (i32.ne (local.get $ofvar) (i32.const 0)) (i32.ne (local.get $ofmembase) (i32.const 0))) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of")))))
+          ;; `for (async of => …; …)` is a regular for whose init is the async ARROW `async (of) => …`
+          ;; (`of` is the parameter) — NOT a for-of. When the target is the bare `async` keyword followed by
+          ;; `of =>`, don't treat it as for-of; let the regular-for init parser (which handles `async x => …`)
+          ;; re-parse it.
+          (let $asyncofarrow i32 (i32.const 0))
+          (if (i32.and (local.get $ofvar_async_kw) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of"))))
+            (then
+              (let $aocur i32 (call $cursor_save))
+              (call $next_token)  ;; past 'of'
+              (if (i32.eq (call $tok_kind) (i32.const 52)) (then (set! $asyncofarrow (i32.const 1))))  ;; '=>' → async arrow
+              (call $cursor_restore (local.get $aocur))))
+          (let $isof i32 (i32.and (i32.eqz (local.get $asyncofarrow)) (i32.and (i32.or (i32.ne (local.get $ofvar) (i32.const 0)) (i32.ne (local.get $ofmembase) (i32.const 0))) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "of"))))))
           (let $isin i32 (i32.and (i32.or (i32.ne (local.get $ofvar) (i32.const 0)) (i32.ne (local.get $ofmembase) (i32.const 0))) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "in")))))
           ;; a `using` declaration is only valid in a for-of / for-await-of head, never for-in.
           (if (i32.and (local.get $ofisusing) (local.get $isin))
