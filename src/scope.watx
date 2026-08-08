@@ -192,6 +192,14 @@
       (i64.store (i32.add (local.get $e) (i32.const 8)) (local.get $val))
       (i32.store (i32.add (local.get $s) (i32.const 4)) (i32.add (local.get $i) (i32.const 1))))))
 
+;; bind a formal parameter: like scope_define but the binding is NON-configurable (E|W = 10, no C),
+;; so `delete param` yields false (a declarative-env binding is not deletable). Same shape as
+;; scope_define so param-binding loops can swap the call name directly.
+(func $scope_bind_param (param $s i32) (param $name i32) (param $val i64) (effects)
+  (call $scope_define (local.get $s) (local.get $name) (local.get $val))
+  (let $slot i32 (call $scope_find_local (local.get $s) (local.get $name)))
+  (if (local.get $slot) (then (i32.store (i32.sub (local.get $slot) (i32.const 4)) (i32.const 10)))))  ;; E|W, clear C
+
 ;; define data `name`=`val` with explicit attribute bits (E=2,C=4,W=8) — for
 ;; Object.defineProperty. Always forces a data property with exactly `attrs`.
 (func $scope_define_attr (param $s i32) (param $name i32) (param $val i64) (param $attrs i32) (effects)

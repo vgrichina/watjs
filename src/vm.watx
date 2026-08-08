@@ -257,7 +257,10 @@
             (call $vm_hoist_record (call $pos))
             (let $fnm i32 (call $vm_c_function (local.get $code)))  ;; emits PUSH fn (consumes the whole decl)
             (if (local.get $fnm)
-              (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fnm)))  ;; STOREVAR
+              ;; DEFVAR first so a function-scoped FunctionDeclaration binding is NON-CONFIGURABLE (like a
+              ;; `var`) — STOREVAR's undeclared-create would otherwise make it configurable/deletable.
+              (then (call $vm_emit_op (local.get $code) (i32.const 78)) (call $vm_emit_op (local.get $code) (local.get $fnm))
+                    (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fnm)))  ;; DEFVAR + STOREVAR
               (else (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP (anonymous — shouldn't happen for a decl)
             (set! $prevk (i32.const 21)) (set! $prevelse (i32.const 0))
             (br $hl))
@@ -7605,7 +7608,7 @@
         (let $pi i32 (i32.const 0))
         (block $pe (loop $pl
           (br_if $pe (i32.ge_s (local.get $pi) (local.get $cnp)))
-          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 28)) (i32.mul (local.get $pi) (i32.const 4))))
+          (call $scope_bind_param (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 28)) (i32.mul (local.get $pi) (i32.const 4))))
             (if i64 (i32.lt_s (local.get $pi) (local.get $argc))
               (then (i64.load (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.mul (i32.add (local.get $pi) (i32.const 1)) (i32.const 8))))))
               (else (call $v_undef))))
@@ -7786,7 +7789,7 @@
         (let $pi i32 (i32.const 0))
         (block $pe (loop $pl
           (br_if $pe (i32.ge_s (local.get $pi) (local.get $cnp)))
-          (call $scope_define (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 28)) (i32.mul (local.get $pi) (i32.const 4))))
+          (call $scope_bind_param (local.get $cns) (i32.load (i32.add (i32.add (local.get $cfn) (i32.const 28)) (i32.mul (local.get $pi) (i32.const 4))))
             (if i64 (i32.lt_s (local.get $pi) (local.get $argc))
               (then (i64.load (i32.add (local.get $stack) (i32.add (local.get $cbase) (i32.mul (i32.add (local.get $pi) (i32.const 1)) (i32.const 8))))))
               (else (call $v_undef))))
@@ -7868,7 +7871,7 @@
         (let $nspi i32 (i32.const 0))
         (block $nspe (loop $nspl
           (br_if $nspe (i32.ge_s (local.get $nspi) (local.get $nscnp)))
-          (call $scope_define (local.get $nscns) (i32.load (i32.add (i32.add (local.get $nscfn) (i32.const 28)) (i32.mul (local.get $nspi) (i32.const 4))))
+          (call $scope_bind_param (local.get $nscns) (i32.load (i32.add (i32.add (local.get $nscfn) (i32.const 28)) (i32.mul (local.get $nspi) (i32.const 4))))
             (if i64 (i32.lt_s (local.get $nspi) (local.get $nsargc))
               (then (i64.load (i32.add (local.get $nsdata) (i32.mul (local.get $nspi) (i32.const 8)))))
               (else (call $v_undef))))
@@ -9185,7 +9188,7 @@
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
-    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $i) (i32.const 4))))
+    (call $scope_bind_param (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $i) (i32.const 4))))
       (if i64 (i32.lt_s (local.get $i) (local.get $argc))
         (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
         (else (call $v_undef))))
@@ -9505,7 +9508,7 @@
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
-    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $i) (i32.const 4))))
+    (call $scope_bind_param (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $i) (i32.const 4))))
       (if i64 (i32.lt_s (local.get $i) (local.get $argc))
         (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
         (else (call $v_undef))))
@@ -10006,7 +10009,7 @@
   (let $i i32 (i32.const 0))
   (block $pe (loop $pl
     (br_if $pe (i32.ge_s (local.get $i) (local.get $np)))
-    (call $scope_define (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $i) (i32.const 4))))
+    (call $scope_bind_param (local.get $ns) (i32.load (i32.add (i32.add (local.get $fn) (i32.const 28)) (i32.mul (local.get $i) (i32.const 4))))
       (if i64 (i32.lt_s (local.get $i) (local.get $argc))
         (then (i64.load (i32.add (local.get $argv) (i32.mul (local.get $i) (i32.const 8)))))
         (else (call $v_undef))))
