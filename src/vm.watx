@@ -1686,12 +1686,21 @@
               (call $vm_emit_op (local.get $code) (i32.const 101)))  ;; DEFDATA_OWN — computed key never triggers the __proto__ proto-setter
             (else (if (i32.eq (call $tok_kind) (i32.const 2))  ;; "string": value
               (then
+                (let $strkey i32 (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)))
+                (let $strproto i32 (call $str_eq (local.get $strkey) (cstring "__proto__")))
                 ;; `"__proto__": v` is a [[Prototype]] setter — a second one in the same literal is a SyntaxError.
-                (if (call $str_eq (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)) (cstring "__proto__"))
+                (if (local.get $strproto)
                   (then (set! $oprotocnt (i32.add (local.get $oprotocnt) (i32.const 1)))
                         (if (i32.gt_s (local.get $oprotocnt) (i32.const 1)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Duplicate __proto__ fields are not allowed in object literals")) (return)))))
-                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len))))
-                (call $next_token) (call $next_token) (call $vm_c_expr (local.get $code))  ;; ':' value
+                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $strkey)))
+                (call $next_token) (call $next_token)  ;; consume key, ':'
+                (let $strafs i32 (call $vm_emit_cursor))
+                (call $vm_c_expr (local.get $code))  ;; value
+                ;; NamedEvaluation: `"key": <anon fn def>` names the fn (op 72 with the correct compile-time
+                ;; IsAnonymousFunctionDefinition check) — NOT a `"__proto__"` proto-setter, NOT a sequence/
+                ;; logical result. (Was named unconditionally by DEFDATA's runtime vm_infer_name → bug.)
+                (if (i32.and (i32.eqz (local.get $strproto)) (call $vm_is_anon_fn_def (local.get $strafs)))
+                  (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $strkey))))
                 (call $vm_emit_op (local.get $code) (i32.const 65)))  ;; DEFDATA
               (else  ;; identifier-leading (or numeric): key | get/set accessor | method | shorthand
                 (let $okirawlen i32 (call $tok_len))  ;; RAW source length of the key token (before consuming) — an escape lengthens it past the 3-byte `get`/`set`
@@ -8996,10 +9005,12 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $dk i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (let $dobj i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))  ;; left in place
-        ;; computed-key name inference (no-op for literal keys, already named)
-        (call $vm_infer_name (local.get $dv) (local.get $dk)
-          (if i32 (i32.eq (local.get $op) (i32.const 65)) (then (i32.const 0))
-            (else (if i32 (local.get $disget) (then (cstring "get ")) (else (cstring "set "))))))
+        ;; accessor name inference (getters/setters): DATA properties (op 65) are named at COMPILE time
+        ;; via op 72 with the correct IsAnonymousFunctionDefinition check — the runtime infer here must NOT
+        ;; run for op 65, or it would wrongly name a non-anon-fn-def value (`{k:(0,function(){})}`).
+        (if (i32.ne (local.get $op) (i32.const 65))
+          (then (call $vm_infer_name (local.get $dv) (local.get $dk)
+            (if i32 (local.get $disget) (then (cstring "get ")) (else (cstring "set "))))))
         (if (i32.eq (local.get $op) (i32.const 65))
           ;; literal `__proto__: v` sets [[Prototype]] DIRECTLY (Object/Null only), via the
           ;; internal [[SetPrototypeOf]] — it must NOT invoke an inherited __proto__ setter.
