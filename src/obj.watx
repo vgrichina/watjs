@@ -908,7 +908,12 @@
               (if (local.get $vslot)
                 (then
                   (if (call $entry_is_accessor (local.get $vslot))  ;; a named accessor on a user function → invoke getter (this=fn)
-                    (then (let $vget i64 (i64.load (call $val_payload (i64.load (local.get $vslot))))) (if (call $is_function (local.get $vget)) (then (return (call $call_fn0 (local.get $vget) (local.get $cont))))) (return (call $v_undef))))
+                    (then (let $vget i64 (i64.load (call $val_payload (i64.load (local.get $vslot))))) (if (call $is_function (local.get $vget)) (then (return (call $call_fn0 (local.get $vget) (local.get $cont)))))
+                      ;; a private STATIC accessor with no getter (set-only static #x) → reading it is a TypeError,
+                      ;; not undefined (mirrors the instance-object path). PrivateGet on a get-less accessor.
+                      (if (call $is_private_key (local.get $ks))
+                        (then (call $throw_type (cstring "TypeError") (cstring "'#x' was defined without a getter")) (return (call $v_undef))))
+                      (return (call $v_undef))))
                   (return (i64.load (local.get $vslot)))))))
           (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
           (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
@@ -1684,7 +1689,11 @@
                 (then
                   (let $sset i64 (i64.load (i32.add (call $val_payload (i64.load (local.get $svs))) (i32.const 8))))
                   (if (call $is_function (local.get $sset))
-                    (then (let $sav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $sav) (local.get $val)) (drop (call $call_val (local.get $sset) (i32.const 1) (local.get $sav) (local.get $cont)))))
+                    (then (let $sav i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $sav) (local.get $val)) (drop (call $call_val (local.get $sset) (i32.const 1) (local.get $sav) (local.get $cont))))
+                    ;; a private STATIC accessor with no setter (get-only static #x) → writing it is a TypeError
+                    ;; (PrivateSet on a set-less accessor), not a silent no-op.
+                    (else (if (call $is_private_key (local.get $svk))
+                      (then (call $throw_type (cstring "TypeError") (cstring "'#x' was defined without a setter"))))))
                   (return)))
               (if (i32.eqz (call $entry_writable (local.get $svs))) (then (call $set_fail) (return)))))  ;; non-writable own → strict throws (e.g. a private static method)
           ;; no own prop: an INHERITED accessor from Function.prototype fires its setter (receiver = fn);
