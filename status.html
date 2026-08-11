@@ -156,18 +156,18 @@
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
   <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
   <div class="meta">
-    <span class="chip">status as of <b>2026-08-10</b></span>
+    <span class="chip">status as of <b>2026-08-11</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>6507a0d</b></span>
-    <span class="chip"><b>1645</b> commits</span>
+    <span class="chip">@ <b>163d7a0</b></span>
+    <span class="chip"><b>1664</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
     <a class="chip" href="https://watjs.berrry.app/" style="color:var(--accent);text-decoration:none">↗&nbsp;watjs.berrry.app</a>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">30.2k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">341 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">30.4k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">342 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
   <div class="card"><div class="n">86.2M</div><div class="l">output tokens spent building</div></div>
@@ -216,7 +216,7 @@
   <tr><td>4</td><td>threaded-code VM + GC + test262 breadth</td><td><span class="pill wip">in progress</span></td></tr>
 </table>
 
-<h2>Test suites <span class="em">live run · 2026-08-10</span></h2>
+<h2>Test suites <span class="em">live run · 2026-08-11</span></h2>
 <table>
   <tr><th>suite</th><th>files</th><th>pass rate</th></tr>
   <tr><td>self-check <code>test/</code></td><td class="mono">486 / 486</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
@@ -274,12 +274,12 @@ standing (approximate, machine-dependent):</p>
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
+  <tr><td class="mono">51f8566</td><td>regex: lazy quantified groups <code>(a)*?</code> / <code>(a|b)+?</code> / <code>(x){2,3}?</code></td></tr>
+  <tr><td class="mono">2f23899</td><td>regex: quantified groups give back body characters (RepeatMatcher CPS)</td></tr>
+  <tr><td class="mono">cdd1d42</td><td>regex: continuation-passing group bodies (backtrack into a group)</td></tr>
+  <tr><td class="mono">ca64079</td><td>a reserved word as an assignment target is an early <code>SyntaxError</code></td></tr>
+  <tr><td class="mono">7f312ee</td><td>global accessor variables fire getters/setters on bare-identifier access</td></tr>
   <tr><td class="mono">6507a0d</td><td>prefix <code>++</code>/<code>--new.target</code> is an early <code>SyntaxError</code></td></tr>
-  <tr><td class="mono">b1e8818</td><td><code>with(obj)</code> resolves inherited properties via <code>[[HasProperty]]</code></td></tr>
-  <tr><td class="mono">46f1661</td><td><code>instanceof</code>: a non-object <code>F.prototype</code> is a <code>TypeError</code>, not <code>false</code></td></tr>
-  <tr><td class="mono">563e2ec</td><td><code>$262.IsHTMLDDA</code>: <code>document.all</code> emulation object (<code>[[IsHTMLDDA]]</code>)</td></tr>
-  <tr><td class="mono">d8e7ec5</td><td>own keys: a function's integer-index keys sort before <code>length</code>/<code>name</code>/<code>prototype</code></td></tr>
-  <tr><td class="mono">7b5af7a</td><td>class: fix a private-name-buffer OOB crash; validate only <code>#name</code> references</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -293,7 +293,7 @@ standing (approximate, machine-dependent):</p>
   <tr><td>Classes / subclassing <span class="pill done">new</span></td><td>block-scoped class name, static &amp; instance fields, derived-ctor <code>super()</code> + return semantics, <b>subclassing native exotics</b> (Array/TypedArray/Map/Set/Promise/RegExp/Date/Boolean/Number/String)</td></tr>
   <tr><td>Scoping <span class="pill done">new</span></td><td>real nested lexical envs — block scope, per-iteration for-let bindings, TDZ, multi-declarator for-init</td></tr>
   <tr><td>Eval / global env <span class="pill done">new</span></td><td>direct vs indirect eval, sloppy-eval let/const in a fresh env, indirect eval in the global env, top-level <code>let</code>/<code>const</code>/<code>class</code> off <code>globalThis</code> with TDZ, global-lexical/var conflict &amp; non-configurable shadowing</td></tr>
-  <tr><td>RegExp <span class="pill done">new</span></td><td>duplicate named groups + per-position capture reset, scoped inline modifiers <code>(?ims-ims:…)</code>, <code>u</code>-mode syntax strictness; legacy static accessors (<code>$1</code>–<code>$9</code>)</td></tr>
+  <tr><td>RegExp <span class="pill done">new</span></td><td>duplicate named groups + per-position capture reset, scoped inline modifiers <code>(?ims-ims:…)</code>, <code>u</code>-mode syntax strictness, <b>lazy/greedy quantified groups with proper backtracking (CPS)</b>; legacy static accessors (<code>$1</code>–<code>$9</code>)</td></tr>
   <tr><td>Async / Promises</td><td>microtask job queue, true <code>await</code> suspension, async generators (+<code>.return</code>/<code>.throw</code>), for-await-of, <code>Array.fromAsync</code></td></tr>
   <tr><td>Destructuring</td><td>cover-grammar bare <code>{pat}=RHS</code> (+133 assignment), for-of/for-in patterns</td></tr>
   <tr><td>BigInt / Symbol</td><td>exact within <b>i64</b> (64-bit-bounded — <em>not</em> arbitrary-precision, see below), wrapper valueOf, @@toPrimitive</td></tr>
@@ -370,7 +370,7 @@ standing (approximate, machine-dependent):</p>
 </ul>
 
 <footer>
-  <span>Last refreshed 2026-08-10 from repo state &amp; session memory · self-check <code>test/</code> + tc39 <code>test262/</code> · charts drawn inline, no external deps.</span>
+  <span>Last refreshed 2026-08-11 from repo state &amp; session memory · self-check <code>test/</code> + tc39 <code>test262/</code> · charts drawn inline, no external deps.</span>
   <span><a href="https://watjs.berrry.app/">watjs.berrry.app</a> &nbsp;·&nbsp; <a href="https://github.com/vgrichina/watjs" target="_blank" rel="noopener">github ↗</a></span>
 </footer>
 
@@ -400,7 +400,7 @@ const DAILY = [
   ["Jul 30", 0, 0], ["Jul 31", 3, 0.59], ["Aug 1", 11, 0.87],
   ["Aug 2", 30, 1.80], ["Aug 3", 13, 1.54], ["Aug 4", 8, 0.98], ["Aug 5", 8, 0.49],
   ["Aug 6", 26, 1.22], ["Aug 7", 11, 1.51], ["Aug 8", 10, 0.71],
-  ["Aug 9", 2, 0.26], ["Aug 10", 15, 1.08],
+  ["Aug 9", 2, 0.26], ["Aug 10", 17, 0.25], ["Aug 11", 17, 2.45],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -425,7 +425,7 @@ const GROWTH = [
   ["Jul 30", 28161, 320], ["Jul 31", 28190, 321], ["Aug 1", 28449, 323],
   ["Aug 2", 28785, 326], ["Aug 3", 29120, 330], ["Aug 4", 29332, 332], ["Aug 5", 29435, 333],
   ["Aug 6", 29809, 337], ["Aug 7", 29943, 338], ["Aug 8", 30078, 339],
-  ["Aug 9", 30110, 339], ["Aug 10", 30235, 341],
+  ["Aug 9", 30110, 339], ["Aug 10", 30235, 341], ["Aug 11", 30387, 342],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
@@ -453,7 +453,8 @@ const HUMAN = {
   "Jul 27": { n:1 }, "Jul 31": { n:3 },
   "Aug 1": { i:["don't get shy of architectural work"], n:3 },
   "Aug 2": { n:13 }, "Aug 3": { n:10 }, "Aug 4": { n:8 }, "Aug 5": { n:4 },
-  "Aug 6": { n:6 }, "Aug 7": { n:6 }, "Aug 8": { n:4 }, "Aug 9": { n:3 }, "Aug 10": { n:8 },
+  "Aug 6": { n:6 }, "Aug 7": { n:6 }, "Aug 8": { n:4 }, "Aug 9": { n:3 }, "Aug 10": { n:2 },
+  "Aug 11": { i:["don't get shy of architectural work"], n:10 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
