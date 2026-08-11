@@ -452,6 +452,10 @@
   (else
     (let $an i32 (i32.or (call $is_null (local.get $a)) (call $is_undefined (local.get $a))))
     (let $bn i32 (i32.or (call $is_null (local.get $b)) (call $is_undefined (local.get $b))))
+    ;; [[IsHTMLDDA]] == null / undefined (either order) → true (abstract-equality special case)
+    (if i32 (i32.or (i32.and (local.get $an) (call $is_htmldda (local.get $b))) (i32.and (local.get $bn) (call $is_htmldda (local.get $a))))
+      (then (i32.const 1))
+    (else
     (if i32 (i32.or (local.get $an) (local.get $bn))
       (then (i32.and (local.get $an) (local.get $bn)))
       (else
@@ -479,7 +483,7 @@
                       (then (call $bigint_loose_eq (call $bigint_val (local.get $b)) (local.get $a)))
                       (else (if i32 (i32.and (local.get $ap) (local.get $bp))
                         (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
-                        (else (i32.const 0))))))))))))))))))))
+                        (else (i32.const 0))))))))))))))))))))))
 
 ;; relational compare: kind 29 < , 30 > , 31 <= , 32 >=
 
@@ -12136,6 +12140,7 @@
     (then  ;; read the internal @@pcallable slot directly (get_prop would route through the get trap)
       (let $pcs i32 (call $scope_find_local (call $val_payload (local.get $v)) (cstring "@@pcallable")))
       (if (local.get $pcs) (then (if (call $truthy (i64.load (local.get $pcs))) (then (return (call $mk_str (cstring "function")))))))))
+  (if (call $is_htmldda (local.get $v)) (then (return (call $mk_str (cstring "undefined")))))  ;; [[IsHTMLDDA]] → "undefined"
   (call $mk_str (cstring "object")))  ;; null, object, array
 
 ;; ── primary ──
@@ -13094,6 +13099,12 @@
   (call $scope_define (local.get $262o) (cstring "detachArrayBuffer") (call $mk_native (i32.const 479) (cstring "detachArrayBuffer")))
   (call $scope_define (local.get $262o) (cstring "evalScript") (call $mk_native (i32.const 511) (cstring "evalScript")))
   (call $scope_define (local.get $262o) (cstring "global") (call $mk_obj (local.get $g)))
+  ;; $262.IsHTMLDDA — the `document.all` [[IsHTMLDDA]] emulation object. A real object (defineProperty /
+  ;; GetMethod work) that typeof→"undefined", ToBoolean→false, and ==null/undefined→true. Identified by
+  ;; pointer in reg 1180 (see $is_htmldda). It is also callable (native 480 → returns undefined).
+  (let $hddao i32 (call $obj_new (i32.const 4)))
+  (i32.store (i32.const 1180) (local.get $hddao))
+  (call $scope_define_attr (local.get $262o) (cstring "IsHTMLDDA") (call $mk_obj (local.get $hddao)) (i32.const 6))
   (call $scope_define (local.get $g) (cstring "$262") (call $mk_obj (local.get $262o)))
   (call $scope_define_attr (local.get $g) (cstring "undefined") (call $v_undef) (i32.const 0))
   ;; built-ins are non-enumerable (spec: DontEnum) — clear enum on every builtin
