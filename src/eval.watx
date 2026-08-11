@@ -8255,11 +8255,12 @@
               (let $r i32 (call $arr_new (i32.const 4)))
               (let $pos i32 (i32.const 0))
               (let $sln i32 (call $str_len (local.get $s)))
-              (if (i32.eqz (call $str_len (local.get $pat)))  ;; empty regex → one element per char
+              (if (i32.eqz (call $str_len (local.get $pat)))  ;; empty regex → one element per UTF-16 code unit
                 (then
+                  (let $ecculen i32 (call $str_cu_len (local.get $s)))
                   (block $ece (loop $ecl
-                    (br_if $ece (i32.ge_s (local.get $pos) (local.get $sln)))
-                    (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $s) (local.get $pos) (i32.const 1))))
+                    (br_if $ece (i32.ge_s (local.get $pos) (local.get $ecculen)))
+                    (call $arr_push (local.get $r) (call $str_char_at (local.get $s) (local.get $pos)))
                     (set! $pos (i32.add (local.get $pos) (i32.const 1)))
                     (br $ecl)))
                   (call $split_truncate (local.get $r) (local.get $shas) (local.get $slim))
