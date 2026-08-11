@@ -40,14 +40,19 @@
             (then (if (call $truthy (call $get_prop (local.get $puns) (call $mk_str (local.get $name)))) (then (return (i32.const 0))))))
           (return (call $val_payload (local.get $objval)))))  ;; non-zero sentinel (never dereferenced; reg-492 routes)
       (return (i32.const 0))))
-  (let $os i32 (call $val_payload (local.get $objval)))
-  (let $slot i32 (call $scope_find_local (local.get $os) (local.get $name)))
-  (if (i32.eqz (local.get $slot)) (then (return (i32.const 0))))
+  ;; ordinary `with` object: binding presence is [[HasProperty]] (OWN *or inherited* — the object
+  ;; environment record's HasBinding walks the prototype chain), not just own props. Return the
+  ;; val_payload sentinel (never dereferenced) so reg-492 routing does Get/Set via get_prop/set_prop —
+  ;; which also fires inherited accessors correctly. Mirrors the proxy path above.
+  (let $ph2 i64 (call $js_in (call $mk_str (local.get $name)) (local.get $objval)))
+  (if (call $err) (then (return (i32.const 0))))
+  (if (i32.eqz (call $truthy (local.get $ph2))) (then (return (i32.const 0))))
   ;; @@unscopables: if obj[@@unscopables][name] is truthy, hide the binding
   (let $uns i64 (call $get_prop (local.get $objval) (call $mk_str (cstring "@@unscopables"))))
+  (if (call $err) (then (return (i32.const 0))))
   (if (call $is_object (local.get $uns))
     (then (if (call $truthy (call $get_prop (local.get $uns) (call $mk_str (local.get $name)))) (then (return (i32.const 0))))))
-  (local.get $slot))
+  (call $val_payload (local.get $objval)))
 
 ;; construct an error object of the named type (looked up in the global scope)
 ;; with the given message Str; falls back to a plain string if the type is absent.
