@@ -124,3 +124,14 @@ per-area breakdown.
   `[[Prototype]]`; member-prefix `++`/`--` evaluation order).
 
 See [DESIGN.md](./DESIGN.md) for the architecture and the phasing plan.
+
+## License
+
+watjs is released under the [MIT License](./LICENSE) — this includes the engine
+(`src/`) and the build/test tooling and vendored+extended WATX compiler (`tools/`),
+all of which are the author's own work.
+
+The one exception is [`test262/`](./test262/), which vendors curated files from
+[tc39/test262](https://github.com/tc39/test262). Those remain the work of Ecma
+International under the test262 BSD license — see
+[`test262/LICENSE`](./test262/LICENSE) and [`test262/README.md`](./test262/README.md).
