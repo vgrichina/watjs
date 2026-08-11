@@ -8047,11 +8047,17 @@
       (return (call $mk_str (call $date_fmt (local.get $ftm) (local.get $fmode))))))
   (if (i32.eq (local.get $id) (i32.const 260))  ;; getYear() → getFullYear - 1900
     (then
+      ;; thisTimeValue brand check (spec 21.4.4 / B.2.4.1): the receiver must be a Date (own [[DateValue]])
+      (if (i32.eqz (call $is_object (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time"))) (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
       (let $gytm f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
       (if (f64.ne (local.get $gytm) (local.get $gytm)) (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
       (return (call $num (f64.convert_i32_s (i32.sub (call $date_field (local.get $gytm) (i32.const 0)) (i32.const 1900)))))))
   (if (i32.eq (local.get $id) (i32.const 261))  ;; setYear(y): 0..99 → 1900+y
     (then
+      ;; thisTimeValue brand check (spec B.2.4.2): the receiver must be a Date (own [[DateValue]])
+      (if (i32.eqz (call $is_object (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@time"))) (then (call $throw_type (cstring "TypeError") (cstring "this is not a Date object")) (return (call $v_undef))))
       (let $sytm f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@time")))))
       (if (f64.ne (local.get $sytm) (local.get $sytm)) (then (set! $sytm (f64.const 0))))
       (let $syvf f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
