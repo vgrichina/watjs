@@ -116,6 +116,18 @@
     (br $cont)))
   (local.get $slot))
 
+;; the SCOPE that owns `name` (walking the chain over ordinary/lexical scopes; a `with` object is not a
+;; scope), or 0 if unbound. Used to fire an accessor binding's getter/setter with this = the owner-as-object
+;; (a global accessor property defined via Object.defineProperty(globalThis, …)).
+(func $scope_find_owner (param $s i32) (param $name i32) (result i32) (effects)
+  (let $cur i32 (local.get $s))
+  (block $brk (loop $cont
+    (br_if $brk (i32.eqz (local.get $cur)))
+    (if (call $scope_find_local (local.get $cur) (local.get $name)) (then (return (local.get $cur))))
+    (set! $cur (call $scope_parent (local.get $cur)))
+    (br $cont)))
+  (i32.const 0))
+
 ;; set just the getter (isGet=1) or setter (isGet=0) of `name`, merging with an
 ;; existing accessor (so separate get/set definitions combine). Default attrs ACC|E|C.
 (func $scope_set_accessor (param $s i32) (param $name i32) (param $isGet i32) (param $fn i64) (effects)

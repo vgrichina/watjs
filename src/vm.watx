@@ -8537,6 +8537,16 @@
         ;; (a soft load for typeof still throws for the this-TDZ; matches "must call super" behavior).
         (if (i32.and (i32.ne (local.get $slot) (i32.const 0)) (call $is_tdz (i64.load (local.get $slot))))
           (then (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $nm) (cstring " is not initialized (must call super)"))) (br $disp)))
+        ;; an ACCESSOR binding (a global property defined via Object.defineProperty(globalThis,…) with a
+        ;; getter): raw-loading the slot yields the accessor cell, not the value — fire the getter via
+        ;; get_prop on the owning scope-as-object (this = the owner).
+        (if (i32.ne (local.get $slot) (i32.const 0))
+          (then (if (call $entry_is_accessor (local.get $slot))
+            (then
+              (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $get_prop (call $mk_obj (call $scope_find_owner (local.get $scope) (local.get $nm))) (call $mk_str (local.get $nm))))
+              (if (call $err) (then (br $disp)))
+              (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+              (br $disp)))))
         (i64.store (i32.add (local.get $stack) (local.get $sp))
                    (if i64 (local.get $slot) (then (i64.load (local.get $slot))) (else (call $v_undef))))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
@@ -8554,8 +8564,12 @@
           (then (call $set_prop (local.get $swo) (call $mk_str (local.get $nm)) (i64.load (i32.add (local.get $stack) (local.get $sp)))) (br $disp)))
         (if (local.get $svslot)
           (then
+            ;; an ACCESSOR binding → fire its setter (or silently no-op if getter-only) via set_prop on the
+            ;; owning scope-as-object; never overwrite the accessor cell with the raw value.
+            (if (call $entry_is_accessor (local.get $svslot))
+              (then (call $set_prop (call $mk_obj (call $scope_find_owner (local.get $scope) (local.get $nm))) (call $mk_str (local.get $nm)) (i64.load (i32.add (local.get $stack) (local.get $sp)))) (br $disp)))
             ;; const binding (the only non-writable, non-accessor scope slot) → TypeError
-            (if (i32.and (i32.eqz (call $entry_writable (local.get $svslot))) (i32.eqz (call $entry_is_accessor (local.get $svslot))))
+            (if (i32.eqz (call $entry_writable (local.get $svslot)))
               (then (call $throw_type (cstring "TypeError") (cstring "Assignment to constant variable.")) (br $disp)))
             (i64.store (local.get $svslot) (i64.load (i32.add (local.get $stack) (local.get $sp)))))
           (else (call $scope_define (call $scope_var_target (local.get $scope)) (local.get $nm) (i64.load (i32.add (local.get $stack) (local.get $sp))))))  ;; var-decl / implicit global / fn decl: define in the VAR scope (not a lexical/with scope)
@@ -8584,9 +8598,18 @@
             (set! $sp (i32.add (local.get $sp) (i32.const 8)))
             (br $disp)))
         ;; kind 0: scope slot — mirror LOADVAR raw-slot read + TDZ
-        (let $rgslot i32 (call $scope_find_local (i32.load (i32.add (local.get $rgrec) (i32.const 4))) (local.get $rgnm)))
+        (let $rgscope i32 (i32.load (i32.add (local.get $rgrec) (i32.const 4))))
+        (let $rgslot i32 (call $scope_find_local (local.get $rgscope) (local.get $rgnm)))
         (if (i32.and (i32.ne (local.get $rgslot) (i32.const 0)) (call $is_tdz (i64.load (local.get $rgslot))))
           (then (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $rgnm) (cstring " is not initialized (must call super)"))) (br $disp)))
+        ;; ACCESSOR binding → GetValue fires the getter (this = owner-object)
+        (if (i32.ne (local.get $rgslot) (i32.const 0))
+          (then (if (call $entry_is_accessor (local.get $rgslot))
+            (then
+              (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $get_prop (call $mk_obj (local.get $rgscope)) (call $mk_str (local.get $rgnm))))
+              (if (call $err) (then (br $disp)))
+              (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+              (br $disp)))))
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (if i64 (local.get $rgslot) (then (i64.load (local.get $rgslot))) (else (call $v_undef))))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
@@ -8617,10 +8640,18 @@
             (let $rsslot i32 (call $scope_find_local (local.get $rsscope) (local.get $rsnm)))
             (if (local.get $rsslot)
               (then
-                (if (i32.and (i32.eqz (call $entry_writable (local.get $rsslot))) (i32.eqz (call $entry_is_accessor (local.get $rsslot))))
+                ;; ACCESSOR binding → fire its setter via set_prop on the owner-object
+                (if (call $entry_is_accessor (local.get $rsslot))
+                  (then (call $set_prop (call $mk_obj (local.get $rsscope)) (call $mk_str (local.get $rsnm)) (local.get $rsval))
+                        (i64.store (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 8)) (local.get $rsval)) (br $disp)))
+                (if (i32.eqz (call $entry_writable (local.get $rsslot)))
                   (then (call $throw_type (cstring "TypeError") (cstring "Assignment to constant variable.")) (br $disp)))
                 (i64.store (local.get $rsslot) (local.get $rsval)))
-              (else (call $scope_define (local.get $rsscope) (local.get $rsnm) (local.get $rsval))))))
+              ;; binding was DELETED between resolve and put (a getter did `delete`): strict → ReferenceError
+              ;; (object env-record SetMutableBinding, stillExists=false ∧ S=true); sloppy recreates.
+              (else (if (local.get $rsstrict)
+                (then (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $rsnm) (cstring " is not defined"))) (br $disp))
+                (else (call $scope_define (local.get $rsscope) (local.get $rsnm) (local.get $rsval))))))))
         (i64.store (i32.sub (i32.add (local.get $stack) (local.get $sp)) (i32.const 8)) (local.get $rsval))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 85))  ;; STOREVAR_ASSIGN — sloppy plain `x=expr`: assign up the chain; undeclared → GLOBAL
@@ -8641,8 +8672,11 @@
             ;; const lexical binding (const-bit 16) → TypeError in ALL modes
             (if (i32.and (call $entry_kind (local.get $saslot)) (i32.const 16))
               (then (call $throw_type (cstring "TypeError") (cstring "Assignment to constant variable.")) (br $disp)))
+            ;; ACCESSOR binding (global accessor property) → fire its setter via set_prop on the owner-object
+            (if (call $entry_is_accessor (local.get $saslot))
+              (then (call $set_prop (call $mk_obj (call $scope_find_owner (local.get $scope) (local.get $sanm))) (call $mk_str (local.get $sanm)) (i64.load (i32.add (local.get $stack) (local.get $sp)))) (br $disp)))
             ;; non-writable data property (e.g. NaN/Infinity/undefined) → sloppy no-op
-            (if (i32.and (i32.eqz (call $entry_writable (local.get $saslot))) (i32.eqz (call $entry_is_accessor (local.get $saslot))))
+            (if (i32.eqz (call $entry_writable (local.get $saslot)))
               (then (br $disp)))
             (i64.store (local.get $saslot) (i64.load (i32.add (local.get $stack) (local.get $sp)))))
           (else (call $scope_define (local.get $gscope) (local.get $sanm) (i64.load (i32.add (local.get $stack) (local.get $sp))))))  ;; undeclared → implicit global
@@ -8721,7 +8755,10 @@
         ;; TDZ: assigning to a let/const before its initialization → ReferenceError
         (if (call $is_tdz (i64.load (local.get $ssslot)))
           (then (call $throw_type (cstring "ReferenceError") (call $str_concat (local.get $ssnm) (cstring " is not initialized"))) (br $disp)))
-        (if (i32.and (i32.eqz (call $entry_writable (local.get $ssslot))) (i32.eqz (call $entry_is_accessor (local.get $ssslot))))
+        ;; ACCESSOR binding → fire its setter (strict: a getter-only accessor throws via set_prop/reg392)
+        (if (call $entry_is_accessor (local.get $ssslot))
+          (then (call $set_prop (call $mk_obj (call $scope_find_owner (local.get $scope) (local.get $ssnm))) (call $mk_str (local.get $ssnm)) (i64.load (i32.add (local.get $stack) (local.get $sp)))) (br $disp)))
+        (if (i32.eqz (call $entry_writable (local.get $ssslot)))
           (then (call $throw_type (cstring "TypeError") (cstring "Assignment to constant variable.")) (br $disp)))
         (i64.store (local.get $ssslot) (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (br $disp)))
