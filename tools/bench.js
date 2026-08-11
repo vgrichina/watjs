@@ -140,6 +140,31 @@ function runQjs(tag, script) {
 }
 function haveQjs() { try { cp.execFileSync('qjs', ['-e', ''], { stdio: 'ignore' }); return true; } catch (_) { return false; } }
 
+// QuickJS compiled to WebAssembly (via quickjs-emscripten) — an interpreter-in-wasm,
+// the apples-to-apples peer for watjs (both sandboxed, neither JIT-compiled).
+let _QJSW = null;
+async function qjsWasmInit() {
+  if (_QJSW !== null) return _QJSW;
+  try { const { getQuickJS } = require('quickjs-emscripten'); _QJSW = await getQuickJS(); }
+  catch (_) { _QJSW = false; }
+  return _QJSW;
+}
+async function runQjsWasm(script) {
+  const vm = _QJSW.newContext();
+  let out = '';
+  const p = vm.newFunction('print', (...args) => {
+    out += args.map(a => { const v = vm.dump(a); return typeof v === 'string' ? v : String(v); }).join(' ') + '\n';
+  });
+  vm.setProp(vm.global, 'print', p); p.dispose();
+  try {
+    const r = vm.evalCode(script);
+    if (r.error) { out += '__THROW ' + String(vm.dump(r.error)) + '\n'; r.error.dispose(); }
+    else r.value.dispose();
+  } catch (e) { vm.dispose(); return { error: String((e && e.message) || e) }; }
+  vm.dispose();
+  return parseOutput(out);
+}
+
 // ---- main --------------------------------------------------------------------
 (async () => {
   const argv = process.argv.slice(2);
@@ -148,9 +173,13 @@ function haveQjs() { try { cp.execFileSync('qjs', ['-e', ''], { stdio: 'ignore' 
   const want = n => !only.length || only.includes(n);
 
   const qjs = haveQjs();
+  const qjsw = !!(await qjsWasmInit());
   console.log('watjs benchmarks — CLBG macros + Are We Fast Yet');
-  console.log('engines: watjs, node' + (qjs ? ', qjs' : '   (install QuickJS to add a qjs column)'));
-  console.log('timing: internal Date.now, auto-calibrated; ms per iteration, lower is better\n');
+  console.log('engines: watjs, node' + (qjs ? ', qjs (native)' : '') + (qjsw ? ', qjs-wasm' : ''));
+  if (!qjs) console.log('  (install QuickJS for a native-qjs column)');
+  if (!qjsw) console.log('  (npm i quickjs-emscripten for a qjs-in-wasm column)');
+  console.log('timing: internal Date.now, auto-calibrated; ms per iteration, lower is better');
+  console.log('watjs and qjs-wasm are both interpreters running inside WebAssembly — the fair peer comparison.\n');
 
   // build the task list
   const tasks = [];
@@ -163,29 +192,36 @@ function haveQjs() { try { cp.execFileSync('qjs', ['-e', ''], { stdio: 'ignore' 
     r.watjs = await runWatjs(t.build(false));
     r.node = runNode(t.build(true));
     if (qjs) r.qjs = runQjs(t.suite + '-' + t.name, t.build(false));
+    if (qjsw) r.qjsw = await runQjsWasm(t.build(false));
     rows.push(r);
   }
 
   // table
   const pad = (s, n) => (String(s) + ' '.repeat(n)).slice(0, n);
   const num = v => (v && v.ms != null) ? (v.ms < 10 ? v.ms.toFixed(3) : v.ms.toFixed(1)) : (v && v.error ? 'ERR' : '—');
-  const cols = ['bench', 'watjs ms', 'node ms'].concat(qjs ? ['qjs ms'] : []).concat(['watjs/node', 'verify']);
-  const w = [16, 11, 11].concat(qjs ? [11] : []).concat([11, 8]);
+  const ratioLabel = qjsw ? 'watjs/qjsw' : 'watjs/node';
+  const cols = ['bench', 'watjs ms', 'node ms']
+    .concat(qjs ? ['qjs ms'] : []).concat(qjsw ? ['qjs-wasm'] : []).concat([ratioLabel, 'verify']);
+  const w = [16, 11, 11].concat(qjs ? [11] : []).concat(qjsw ? [11] : []).concat([11, 8]);
   const line = () => console.log(w.map(x => '─'.repeat(x - 1) + ' ').join(''));
   let curSuite = '';
   console.log(cols.map((c, i) => pad(c, w[i])).join('')); line();
   for (const r of rows) {
     if (r.suite !== curSuite) { curSuite = r.suite; console.log(curSuite); }
-    const engs = [r.watjs, r.node].concat(qjs ? [r.qjs] : []);
+    const engs = [r.watjs, r.node].concat(qjs ? [r.qjs] : []).concat(qjsw ? [r.qjsw] : []);
     const cksums = engs.map(e => e && e.cksum).filter(x => x != null);
     const verify = r.watjs.error ? '—' : (cksums.length && cksums.every(c => c === cksums[0]) ? 'match' : 'DIFF');
-    const ratio = (r.watjs.ms != null && r.node.ms > 0) ? (r.watjs.ms / r.node.ms).toFixed(0) + '×' : '—';
+    const denom = qjsw ? r.qjsw : r.node;
+    const ratio = (r.watjs.ms != null && denom && denom.ms > 0) ? (r.watjs.ms / denom.ms).toFixed(0) + '×' : '—';
     const cells = ['  ' + pad(r.name, w[0] - 2), pad(num(r.watjs), w[1]), pad(num(r.node), w[2])];
-    let k = 3; if (qjs) cells.push(pad(num(r.qjs), w[k++]));
+    let k = 3;
+    if (qjs) cells.push(pad(num(r.qjs), w[k++]));
+    if (qjsw) cells.push(pad(num(r.qjsw), w[k++]));
     cells.push(pad(ratio, w[k++]), pad(verify, w[k]));
     console.log(cells.join(''));
     if (r.watjs.error) console.log('      watjs: ' + r.watjs.error);
   }
   console.log('\nwatjs is a WAT interpreter with no JIT — it optimizes for correctness/size, not speed.');
+  if (qjsw) console.log('vs qjs-wasm (interpreter-in-wasm peer): the watjs/qjsw column isolates the interpreter gap, not the JIT gap.');
   if (jsonOut) { fs.writeFileSync(jsonOut, JSON.stringify(rows, null, 2)); console.log('wrote ' + jsonOut); }
 })();

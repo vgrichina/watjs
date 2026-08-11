@@ -9,11 +9,25 @@ node tools/bench.js awfy               # only the Are We Fast Yet suite
 node tools/bench.js --json out.json    # also emit machine-readable results
 ```
 
-The runner executes each program under **watjs**, **Node**, and **QuickJS**
-(`qjs`, if installed — `brew install quickjs`). Timing is **internal**
-(`Date.now`, auto-calibrated to ~300 ms), so engine start-up is excluded and every
-engine runs the same problem size. Each program's output/result is cross-checked
-across engines (`verify: match`), so a faster run can't be a wrong run.
+The runner executes each program under up to four engines:
+
+| engine | what it is | enable |
+|--------|------------|--------|
+| **watjs** | this project — interpreter in WAT, no JIT | always |
+| **node** | V8, JIT-compiled | always |
+| **qjs** | QuickJS, native interpreter in C | `brew install quickjs` |
+| **qjs-wasm** | QuickJS compiled to WebAssembly | `npm install` (optional dep) |
+
+Timing is **internal** (`Date.now`, auto-calibrated to ~300 ms), so engine start-up
+is excluded and every engine runs the same problem size. Each program's output/result
+is cross-checked across engines (`verify: match`), so a faster run can't be a wrong run.
+
+**The fair comparison is `watjs` vs `qjs-wasm`** — both are interpreters running
+*inside* WebAssembly, so the ratio (the `watjs/qjsw` column) isolates the
+interpreter-quality gap without V8's JIT or native-code advantage muddying it.
+Measured so far: watjs is roughly **20–60× slower than QuickJS-in-wasm** (vs
+thousands× against Node's JIT). QuickJS-wasm itself runs within ~1–2× of native
+`qjs`, so wasm sandboxing is a minor factor.
 
 ## Suites
 

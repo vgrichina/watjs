@@ -1,0 +1,16 @@
+{
+  "name": "watjs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A JavaScript interpreter hand-written in WebAssembly Text (WAT).",
+  "license": "MIT",
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node tools/run-tests.js test/",
+    "bench": "node tools/bench.js"
+  },
+  "comment": "quickjs-emscripten is optional: it only adds the 'qjs-wasm' comparison column to tools/bench.js. The engine itself has no runtime dependencies.",
+  "optionalDependencies": {
+    "quickjs-emscripten": "^0.32.0"
+  }
+}

@@ -13,3 +13,6 @@ node_modules/
 
 # machine-specific benchmark output
 bench/baseline*.json
+
+# npm lockfile (quickjs-emscripten is an optional bench-only dep)
+package-lock.json
