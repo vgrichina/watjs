@@ -29,6 +29,39 @@ Measured so far: watjs is roughly **20–60× slower than QuickJS-in-wasm** (vs
 thousands× against Node's JIT). QuickJS-wasm itself runs within ~1–2× of native
 `qjs`, so wasm sandboxing is a minor factor.
 
+## Parse throughput (a separate axis)
+
+`node tools/bench.js` measures **steady-state execution** and excludes parsing (the
+source is parsed once, before the timed loop). To measure the *other* half — how fast
+the engine turns source into a callable — run the dedicated front-end benchmark:
+
+```sh
+node tools/bench-parse.js            # ~200 KB corpus (default)
+node tools/bench-parse.js 400        # larger corpus
+npm run bench:parse
+```
+
+It times `new Function(SRC)` on a large **straight-line** body that is constructed but
+**never called**, so the number is lex + parse + front-end compile with *zero*
+execution in it. (Straight-line matters: V8/QuickJS lazily skip *nested* function
+bodies at construction, which would understate their work — a flat statement body
+forces every engine to process all of it.)
+
+Two engine-specific details make the comparison honest:
+
+- **watjs has no garbage collector** (bump allocator), so it can't re-parse in a tight
+  loop — memory only grows. The runner does **one parse per fresh wasm instance** and
+  takes the min over several instances. A single ~200 KB parse fits comfortably.
+- **V8 caches compilation keyed by source text**, so re-parsing the *same* string would
+  measure a cache hit, not parsing. The runner feeds the loop **distinct source
+  variants** (a unique leading declaration each) to defeat that.
+
+**Result:** watjs parses at roughly **½ the rate of QuickJS-in-wasm** and within ~2× of
+*native* QuickJS — i.e. its front-end is competitive; the ~20–60× gap in `tools/bench.js`
+is the **interpreter/execution** side, not parsing. As with the compute suite, the
+*absolute* MB/s is machine- and load-dependent (both engines scale together), so the
+**ratio to the qjs-wasm peer is the stable, meaningful number**.
+
 ## Suites
 
 ### CLBG — Computer Language Benchmarks Game (`bench/*.js`)
