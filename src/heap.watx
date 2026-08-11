@@ -93,6 +93,73 @@
 (func $str_set_byte (param $ptr i32) (param $i i32) (param $b i32) (effects)
   (i32.store8 (i32.add (i32.add (local.get $ptr) (i32.const 4)) (local.get $i)) (local.get $b)))
 
+;; ── UTF-16 code-unit view over the UTF-8 storage ────────────────────────────────────────────────
+;; byte length of the UTF-8 sequence whose lead byte is $b0 (a continuation byte / malformed lead → 1).
+(func $utf8_seqlen (param $b0 i32) (result i32) (effects)
+  (if i32 (i32.lt_s (local.get $b0) (i32.const 0x80)) (then (i32.const 1))
+    (else (if i32 (i32.lt_s (local.get $b0) (i32.const 0xC0)) (then (i32.const 1))
+      (else (if i32 (i32.lt_s (local.get $b0) (i32.const 0xE0)) (then (i32.const 2))
+        (else (if i32 (i32.lt_s (local.get $b0) (i32.const 0xF0)) (then (i32.const 3)) (else (i32.const 4))))))))))
+;; decode the code point of the UTF-8 sequence at byte offset $off (assumes a valid lead byte).
+(func $utf8_cp (param $ptr i32) (param $off i32) (result i32) (effects)
+  (let $b0 i32 (call $str_byte (local.get $ptr) (local.get $off)))
+  (if i32 (i32.lt_s (local.get $b0) (i32.const 0x80)) (then (local.get $b0))
+    (else (if i32 (i32.lt_s (local.get $b0) (i32.const 0xE0))
+      (then (i32.or (i32.shl (i32.and (local.get $b0) (i32.const 0x1F)) (i32.const 6))
+                    (i32.and (call $str_byte (local.get $ptr) (i32.add (local.get $off) (i32.const 1))) (i32.const 0x3F))))
+      (else (if i32 (i32.lt_s (local.get $b0) (i32.const 0xF0))
+        (then (i32.or (i32.or (i32.shl (i32.and (local.get $b0) (i32.const 0x0F)) (i32.const 12))
+                              (i32.shl (i32.and (call $str_byte (local.get $ptr) (i32.add (local.get $off) (i32.const 1))) (i32.const 0x3F)) (i32.const 6)))
+                      (i32.and (call $str_byte (local.get $ptr) (i32.add (local.get $off) (i32.const 2))) (i32.const 0x3F))))
+        (else (i32.or (i32.or (i32.or (i32.shl (i32.and (local.get $b0) (i32.const 0x07)) (i32.const 18))
+                                      (i32.shl (i32.and (call $str_byte (local.get $ptr) (i32.add (local.get $off) (i32.const 1))) (i32.const 0x3F)) (i32.const 12)))
+                              (i32.shl (i32.and (call $str_byte (local.get $ptr) (i32.add (local.get $off) (i32.const 2))) (i32.const 0x3F)) (i32.const 6)))
+                      (i32.and (call $str_byte (local.get $ptr) (i32.add (local.get $off) (i32.const 3))) (i32.const 0x3F))))))))))
+;; number of UTF-16 code units (BMP char = 1, astral = 2). O(n) scan; ASCII strings still scan byte-by-byte.
+(func $str_cu_len (param $ptr i32) (result i32) (effects)
+  (let $blen i32 (call $str_len (local.get $ptr)))
+  (let $off i32 (i32.const 0)) (let $cu i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $off) (local.get $blen)))
+    (let $sl i32 (call $utf8_seqlen (call $str_byte (local.get $ptr) (local.get $off))))
+    (set! $cu (i32.add (local.get $cu) (if i32 (i32.eq (local.get $sl) (i32.const 4)) (then (i32.const 2)) (else (i32.const 1)))))
+    (set! $off (i32.add (local.get $off) (local.get $sl)))
+    (br $l)))
+  (local.get $cu))
+;; the byte offset where code-unit index $cui begins (or the low-surrogate half of an astral char:
+;; returns that char's byte offset with reg 596 = 1 for "this cu is the LOW surrogate"). reg 596=0 otherwise.
+;; Returns blen if $cui is past the end.
+(func $str_cu_to_byte (param $ptr i32) (param $cui i32) (result i32) (effects)
+  (i32.store (i32.const 1200) (i32.const 0))
+  (let $blen i32 (call $str_len (local.get $ptr)))
+  (let $off i32 (i32.const 0)) (let $cu i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $off) (local.get $blen)))
+    (let $sl i32 (call $utf8_seqlen (call $str_byte (local.get $ptr) (local.get $off))))
+    (if (i32.eq (local.get $sl) (i32.const 4))
+      (then
+        (if (i32.eq (local.get $cui) (local.get $cu)) (then (return (local.get $off))))                   ;; high surrogate
+        (if (i32.eq (local.get $cui) (i32.add (local.get $cu) (i32.const 1))) (then (i32.store (i32.const 1200) (i32.const 1)) (return (local.get $off))))  ;; low surrogate
+        (set! $cu (i32.add (local.get $cu) (i32.const 2))))
+      (else
+        (if (i32.eq (local.get $cui) (local.get $cu)) (then (return (local.get $off))))
+        (set! $cu (i32.add (local.get $cu) (i32.const 1)))))
+    (set! $off (i32.add (local.get $off) (local.get $sl)))
+    (br $l)))
+  (local.get $blen))
+;; the UTF-16 code unit at code-unit index $cui (-1 if out of range). Astral chars yield surrogate halves.
+(func $str_cu_at (param $ptr i32) (param $cui i32) (result i32) (effects)
+  (if (i32.lt_s (local.get $cui) (i32.const 0)) (then (return (i32.const -1))))
+  (let $off i32 (call $str_cu_to_byte (local.get $ptr) (local.get $cui)))
+  (if (i32.ge_s (local.get $off) (call $str_len (local.get $ptr))) (then (return (i32.const -1))))
+  (let $cp i32 (call $utf8_cp (local.get $ptr) (local.get $off)))
+  (if (i32.lt_s (local.get $cp) (i32.const 0x10000)) (then (return (local.get $cp))))  ;; BMP: the code unit IS the code point
+  ;; astral: reg 596 (set by str_cu_to_byte) says whether this cu is the LOW or HIGH surrogate half
+  (let $x i32 (i32.sub (local.get $cp) (i32.const 0x10000)))
+  (if i32 (i32.load (i32.const 1200))
+    (then (i32.or (i32.const 0xDC00) (i32.and (local.get $x) (i32.const 0x3FF))))       ;; low surrogate
+    (else (i32.or (i32.const 0xD800) (i32.shr_u (local.get $x) (i32.const 10))))))       ;; high surrogate
+
 ;; Allocate an uninitialized string of `len` bytes; stores length header.
 (func $str_alloc (param $len i32) (result i32) (effects)
   (let $p i32 (call $heap_alloc (i32.add (local.get $len) (i32.const 4))))

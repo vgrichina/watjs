@@ -202,13 +202,22 @@
   (if (i32.gt_s (i32.add (local.get $i) (local.get $cl)) (call $str_len (local.get $s)))
     (then (set! $cl (i32.sub (call $str_len (local.get $s)) (local.get $i)))))  ;; clamp a truncated trailing sequence
   (call $mk_str (call $substr (local.get $s) (local.get $i) (local.get $cl))))
+;; the code-unit at UTF-16 index $i as a 1-code-unit string (v_undef if out of range). A BMP unit → its
+;; UTF-8 bytes; an astral char's surrogate half → a lone surrogate WTF-8-encoded (3 bytes).
 (func $str_char_at (param $s i32) (param $i i32) (result i64) (effects)
-  (if i64 (i32.and (i32.ge_s (local.get $i) (i32.const 0)) (i32.lt_s (local.get $i) (call $str_len (local.get $s))))
-    (then
-      (let $c i32 (call $str_alloc (i32.const 1)))
-      (call $str_set_byte (local.get $c) (i32.const 0) (call $str_byte (local.get $s) (local.get $i)))
-      (call $mk_str (local.get $c)))
-    (else (call $v_undef))))
+  (if (i32.lt_s (local.get $i) (i32.const 0)) (then (return (call $v_undef))))
+  (let $off i32 (call $str_cu_to_byte (local.get $s) (local.get $i)))
+  (if (i32.ge_s (local.get $off) (call $str_len (local.get $s))) (then (return (call $v_undef))))
+  (let $sl i32 (call $utf8_seqlen (call $str_byte (local.get $s) (local.get $off))))
+  (if (i32.ne (local.get $sl) (i32.const 4))
+    (then (return (call $mk_str (call $substr (local.get $s) (local.get $off) (local.get $sl))))))  ;; BMP: whole sequence
+  ;; astral: this cu is a surrogate half — encode that surrogate as WTF-8 (ED A0-BF 80-BF)
+  (let $cu i32 (call $str_cu_at (local.get $s) (local.get $i)))
+  (let $c3 i32 (call $str_alloc (i32.const 3)))
+  (call $str_set_byte (local.get $c3) (i32.const 0) (i32.or (i32.const 0xE0) (i32.shr_u (local.get $cu) (i32.const 12))))
+  (call $str_set_byte (local.get $c3) (i32.const 1) (i32.or (i32.const 0x80) (i32.and (i32.shr_u (local.get $cu) (i32.const 6)) (i32.const 0x3F))))
+  (call $str_set_byte (local.get $c3) (i32.const 2) (i32.or (i32.const 0x80) (i32.and (local.get $cu) (i32.const 0x3F))))
+  (call $mk_str (local.get $c3)))
 
 ;; substring: copy `len` bytes of string `s` starting at byte `start`
 (func $substr (param $s i32) (param $start i32) (param $len i32) (result i32) (effects)
@@ -709,7 +718,7 @@
   (if (call $is_string (local.get $cont))
     (then
       (if (call $key_is_length (local.get $key))
-        (then (return (call $num (f64.convert_i32_s (call $str_len (call $val_payload (local.get $cont))))))))
+        (then (return (call $num (f64.convert_i32_s (call $str_cu_len (call $val_payload (local.get $cont))))))))  ;; UTF-16 code-unit length
       (if (call $is_number (local.get $key))
         (then
           ;; only a finite in-range integer indexes a character; NaN / >=2^31 /
@@ -725,7 +734,7 @@
       (if (call $is_string (local.get $key))
         (then
           (let $skidx i32 (call $str_array_index (call $val_payload (local.get $key))))
-          (if (i32.and (i32.ge_s (local.get $skidx) (i32.const 0)) (i32.lt_s (local.get $skidx) (call $str_len (call $val_payload (local.get $cont)))))
+          (if (i32.and (i32.ge_s (local.get $skidx) (i32.const 0)) (i32.lt_s (local.get $skidx) (call $str_cu_len (call $val_payload (local.get $cont)))))
             (then (return (call $str_char_at (call $val_payload (local.get $cont)) (local.get $skidx)))))))
       ;; methods / constructor from String.prototype (reg 156)
       (let $sp i32 (i32.load (i32.const 156)))
