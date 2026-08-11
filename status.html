@@ -271,7 +271,26 @@
   <tr><td>RegExp <span class="pill done">new</span></td><td>duplicate named groups + per-position capture reset, scoped inline modifiers <code>(?ims-ims:…)</code>, <code>u</code>-mode syntax strictness; legacy static accessors (<code>$1</code>–<code>$9</code>)</td></tr>
   <tr><td>Async / Promises</td><td>microtask job queue, true <code>await</code> suspension, async generators (+<code>.return</code>/<code>.throw</code>), for-await-of, <code>Array.fromAsync</code></td></tr>
   <tr><td>Destructuring</td><td>cover-grammar bare <code>{pat}=RHS</code> (+133 assignment), for-of/for-in patterns</td></tr>
-  <tr><td>BigInt / Symbol</td><td>exact within <b>i64</b> (64-bit-bounded — <em>not</em> arbitrary-precision, see gaps below), wrapper valueOf, @@toPrimitive</td></tr>
+  <tr><td>BigInt / Symbol</td><td>exact within <b>i64</b> (64-bit-bounded — <em>not</em> arbitrary-precision, see below), wrapper valueOf, @@toPrimitive</td></tr>
+</table>
+
+<h2>Not implemented <span class="em">missing / partial features — the honest gaps</span></h2>
+<div class="note danger" style="border-left-color:var(--warn); background:linear-gradient(180deg, rgba(245,182,91,.07), var(--panel));">
+  <b>BigInt is 64-bit-backed, not arbitrary-precision.</b> Every <code>BigInt</code> is a single
+  <code>i64</code>, so values past <b>2^63 (~9.2e18)</b> overflow silently — <code>2n ** 128n</code>
+  and <code>30n!</code> give wrong answers. It is exact <em>beyond</em> <code>Number</code>'s 2^53 limit,
+  but it is <b>not a bignum</b>.
+</div>
+<p class="say" style="color:var(--muted); font-size:13.5px; margin:6px 0 4px">Notable ECMAScript features watjs does <b>not</b> implement yet (or only partially):</p>
+<table>
+  <tr><th>feature</th><th>state</th><th>notes</th></tr>
+  <tr><td><b>BigInt</b> — arbitrary precision</td><td><span class="pill todo">not implemented</span></td><td>backed by one <code>i64</code>; overflows past 2^63. Needs heap-allocated bignum limbs</td></tr>
+  <tr><td><b>ES modules</b> — <code>import</code> / <code>export</code> linking</td><td><span class="pill todo">not implemented</span></td><td>only a dynamic <code>import()</code> parse + Promise stub; no module graph</td></tr>
+  <tr><td><b><code>Intl</code></b> — internationalization</td><td><span class="pill todo">not implemented</span></td><td><code>intl402</code> ~1%; very large surface, deferred</td></tr>
+  <tr><td><b><code>Temporal</code></b> — date/time API</td><td><span class="pill todo">not implemented</span></td><td>large surface, deferred</td></tr>
+  <tr><td><b><code>Atomics</code> / <code>SharedArrayBuffer</code></b>, cross-realm</td><td><span class="pill todo">not implemented</span></td><td>headless, single-realm host</td></tr>
+  <tr><td>Full <b>UTF-16 strings</b></td><td><span class="pill wip">partial</span></td><td>UTF-8 internally; lone surrogates aren't single code units → blocks <code>isWellFormed</code>/<code>toWellFormed</code> and some astral-plane edge cases</td></tr>
+  <tr><td>Mark-sweep <b>garbage collector</b></td><td><span class="pill wip">deferred</span></td><td>bump allocator + <code>heap_reset()</code> per test — fine for test262, needed for long-running programs</td></tr>
 </table>
 
 <h2>Stability</h2>
@@ -300,25 +319,10 @@
   tests false-pass. <span class="bad">Highest-priority correctness trap.</span>
 </div>
 
-<div class="note danger" style="border-left-color:var(--warn); background:linear-gradient(180deg, rgba(245,182,91,.07), var(--panel));">
-  <b>BigInt is 64-bit-backed, not arbitrary-precision.</b> Every <code>BigInt</code> is a single
-  <code>i64</code>, so values past <b>2^63 (~9.2e18)</b> overflow silently — <code>2n ** 128n</code>
-  and <code>30n!</code> give wrong answers. It's exact <em>beyond</em> <code>Number</code>'s 2^53 limit,
-  but it is <b>not a bignum</b>. A real arbitrary-precision implementation (heap-allocated limbs) is
-  not yet done.
-</div>
-
-<p class="say" style="color:var(--muted); font-size:13.5px; margin:4px 0 2px">Beyond the correctness trap above, these are the notable things that are <b>not implemented</b> (or only partial):</p>
 <table>
-  <tr><th>feature</th><th>state</th><th>notes</th></tr>
-  <tr><td><b>BigInt</b> — arbitrary precision</td><td><span class="pill todo">not implemented</span></td><td>backed by one <code>i64</code>; overflows past 2^63. Needs heap-allocated bignum limbs</td></tr>
-  <tr><td><b>ES modules</b> — <code>import</code>/<code>export</code> linking</td><td><span class="pill todo">not implemented</span></td><td>only a dynamic <code>import()</code> parse + Promise stub; no module graph</td></tr>
-  <tr><td><code>Intl</code> &amp; <code>Temporal</code></td><td><span class="pill todo">not implemented</span></td><td><code>intl402</code> ~1%; large surfaces, deferred</td></tr>
-  <tr><td><code>Atomics</code> / <code>SharedArrayBuffer</code>, cross-realm</td><td><span class="pill todo">not implemented</span></td><td>headless single-realm host</td></tr>
-  <tr><td>Full <b>UTF-16</b> strings</td><td><span class="pill wip">partial</span></td><td>strings are UTF-8 internally; lone surrogates aren't single code units (blocks <code>isWellFormed</code>/<code>toWellFormed</code>)</td></tr>
-  <tr><td>Mark-sweep <b>GC</b></td><td><span class="pill todo">deferred</span></td><td>bump allocator + <code>heap_reset()</code> per test — fine for test262, needed for long-running programs</td></tr>
-  <tr><td>Array/function as a <code>[[Prototype]]</code></td><td><span class="pill todo">open</span></td><td><code>Object.create(arr)</code> doesn't inherit indices; deep object-model fix</td></tr>
-  <tr><td>Reference Records — member-prefix <code>++</code>/<code>--</code> eval order</td><td><span class="pill wip">partial</span></td><td>direct/indirect-eval scoping largely landed</td></tr>
+  <tr><th>bug / correctness gap</th><th>impact</th><th>state</th></tr>
+  <tr><td>Array/function can't be a <code>[[Prototype]]</code> — <code>Object.create(arr)</code> doesn't inherit indices (proto stored as scope-parent)</td><td>~12–20 tests; deep object-model fix</td><td><span class="pill todo">open</span></td></tr>
+  <tr><td>Reference Records — member-prefix <code>++</code>/<code>--</code> evaluation order</td><td>architectural; direct/indirect-eval scoping largely landed</td><td><span class="pill wip">partial</span></td></tr>
 </table>
 
 <h2>Next up</h2>
