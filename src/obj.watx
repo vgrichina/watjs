@@ -1212,6 +1212,15 @@
   ;; bound function: follows [[BoundTargetFunction]] → x instanceof target
   (if (i32.eq (i32.load (call $val_payload (local.get $f))) (i32.const 1448232540))
     (then (return (call $js_instanceof (local.get $x) (i64.load (i32.add (call $val_payload (local.get $f)) (i32.const 24)))))))
+  ;; OrdinaryHasInstance step 5: P = Get(F, "prototype"); if Type(P) is not Object, throw TypeError.
+  ;; Use [[Get]] (not fn_get_prototype, which lazily MATERIALIZES an object for a fn whose .prototype is
+  ;; the never-assigned sentinel) so `[] instanceof Function.prototype` (its .prototype is undefined) and
+  ;; a fn/arrow with a non-object .prototype throw rather than returning false. Checked for ALL operand
+  ;; types (including a function x, whose special-case branch below would otherwise return false first).
+  (let $ihp i64 (call $get_prop (local.get $f) (call $mk_str (cstring "prototype"))))
+  (if (call $err) (then (return (call $v_false))))
+  (if (i32.eqz (i32.or (call $is_object (local.get $ihp)) (i32.or (call $is_array (local.get $ihp)) (call $is_function (local.get $ihp)))))
+    (then (call $throw_type (cstring "TypeError") (cstring "Function has non-object prototype in instanceof check")) (return (call $v_false))))
   ;; functions: [[Prototype]] chain is Function.prototype → Object.prototype, so
   ;; `fn instanceof f` holds when f.prototype is one of those.
   (if (call $is_function (local.get $x))

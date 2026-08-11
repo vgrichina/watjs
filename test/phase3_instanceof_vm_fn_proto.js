@@ -3,7 +3,10 @@
 function* g() {}
 async function a() {}
 assert(({}) instanceof g === false, "object instanceof generator");
-assert(({}) instanceof a === false, "object instanceof async");
+// an async function has NO .prototype (undefined) → OrdinaryHasInstance throws TypeError (spec/V8).
+var asyncThrew = false;
+try { ({}) instanceof a; } catch (e) { asyncThrew = e instanceof TypeError; }
+assert(asyncThrew, "object instanceof async throws TypeError (async fn has no .prototype)");
 assert((function () {}) instanceof g === false, "function instanceof generator");
 assert(g instanceof g === false, "generator instanceof itself");
 g() instanceof g;  // generator instance instanceof its function — must not crash
