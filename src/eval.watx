@@ -12939,7 +12939,8 @@
   (call $scope_define (local.get $dproto) (cstring "toDateString") (call $mk_native (i32.const 262) (cstring "toDateString")))
   (call $scope_define (local.get $dproto) (cstring "toTimeString") (call $mk_native (i32.const 263) (cstring "toTimeString")))
   (call $scope_define (local.get $dproto) (cstring "toUTCString") (call $mk_native (i32.const 264) (cstring "toUTCString")))
-  (call $scope_define (local.get $dproto) (cstring "toGMTString") (call $mk_native (i32.const 264) (cstring "toGMTString")))
+  ;; Annex B: Date.prototype.toGMTString IS the SAME function object as toUTCString (name "toUTCString").
+  (call $scope_define (local.get $dproto) (cstring "toGMTString") (call $get_prop (call $mk_obj (local.get $dproto)) (call $mk_str (cstring "toUTCString"))))
   (call $scope_define (local.get $dproto) (cstring "toLocaleString") (call $mk_native (i32.const 265) (cstring "toLocaleString")))
   (call $scope_define (local.get $dproto) (cstring "toLocaleDateString") (call $mk_native (i32.const 266) (cstring "toLocaleDateString")))
   (call $scope_define (local.get $dproto) (cstring "toLocaleTimeString") (call $mk_native (i32.const 267) (cstring "toLocaleTimeString")))
