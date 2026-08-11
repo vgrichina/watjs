@@ -271,6 +271,26 @@ standing (approximate, machine-dependent):</p>
   polymorphic-dispatch-heavy code (e.g. <code>richards</code>) and best on tight arithmetic loops.
 </div>
 
+<h3 style="margin:1.6em 0 .3em">Parsing is a separate axis <span class="em">and watjs is competitive here</span></h3>
+<p class="say">The table above is <b>execution</b> speed. Turning source <em>into</em> a running program is
+a different cost — measured on its own with <code>node tools/bench-parse.js</code>, which times
+<code>new Function(src)</code> on a large body that is built but never called (lex + parse + front-end
+compile, <b>no execution</b>). watjs has no GC, so it parses once per fresh wasm instance; the fast
+engines get distinct source variants to defeat V8's compilation cache.</p>
+<table>
+  <tr><th>engine</th><th>parse rate vs watjs</th></tr>
+  <tr><td>Node (V8)</td><td class="mono">~18× faster</td></tr>
+  <tr><td>QuickJS <span style="color:var(--faint)">native</span></td><td class="mono">~2× faster</td></tr>
+  <tr><td><b>QuickJS in wasm</b> &nbsp;<span class="pill done">fair peer</span></td><td class="mono">~2× faster</td></tr>
+  <tr class="tot"><td><b>watjs</b></td><td class="mono">1× (baseline)</td></tr>
+</table>
+<div class="note ok">
+  <span class="good">✓</span> On the <b>front-end</b> watjs runs within ~2× of QuickJS (native <em>and</em> in-wasm) —
+  its parser is competitive. The 20–60× gap is entirely the <b>interpreter/execution</b> side, not parsing.
+  As with the compute suite, absolute throughput is machine-dependent; the stable number is the
+  <b>ratio to the qjs-wasm peer</b> (~2×).
+</div>
+
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
