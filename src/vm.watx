@@ -2214,6 +2214,11 @@
       ;; SyntaxError. (The identifier-rooted handler below only supports simple/member targets.)
       (if (i32.or (i32.eq (call $tok_kind) (i32.const 15)) (i32.eq (call $tok_kind) (i32.const 55)))
         (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement (call or optional chain)")) (return)))
+      ;; `++new.target` / `++new Foo()` — `new` is reserved, so a NewExpression / new.target meta-property
+      ;; is never a valid AssignmentTarget → early SyntaxError (the identifier-rooted handler would else
+      ;; treat `new.target` as member access on an identifier `new` and throw a runtime ReferenceError).
+      (if (call $str_eq (local.get $pvn) (cstring "new"))
+        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement")) (return)))
       ;; prefix `++super.name` / `++super[expr]` (result = new value). super target → SUPERGET/SUPERSET.
       (if (call $str_eq (local.get $pvn) (cstring "super"))
         (then
