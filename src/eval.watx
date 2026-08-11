@@ -11784,6 +11784,8 @@
   (if (i32.eq (local.get $id) (i32.const 505)) (then (return (i32.const 1))))  ;; ArrayBuffer.prototype.resize length 1
   (if (i32.or (i32.eq (local.get $id) (i32.const 394)) (i32.eq (local.get $id) (i32.const 395))) (then (return (i32.const 3))))  ;; BigInt64Array/BigUint64Array ctor length 3
   (if (i32.eq (local.get $id) (i32.const 478)) (then (return (i32.const 3))))  ;; Float16Array ctor length 3
+  (if (i32.and (i32.ge_s (local.get $id) (i32.const 210)) (i32.le_s (local.get $id) (i32.const 218))) (then (return (i32.const 3))))  ;; Int8Array..Float64Array ctors — length 3 (buffer, byteOffset, length)
+  (if (i32.eq (local.get $id) (i32.const 219)) (then (return (i32.const 1))))  ;; ArrayBuffer(length) — length 1
   (if (i32.eq (local.get $id) (i32.const 396)) (then (return (i32.const 1))))  ;; TA set(overloaded) length 1
   (if (i32.eq (local.get $id) (i32.const 397)) (then (return (i32.const 2))))  ;; TA subarray(begin,end) length 2
   (if (i32.eq (local.get $id) (i32.const 398)) (then (return (i32.const 1))))  ;; TypedArray.from length 1
