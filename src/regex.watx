@@ -996,11 +996,19 @@
     (br $cl)))
   (block $be (loop $bl
     (br_if $be (i32.lt_s (local.get $count) (local.get $min)))
-    (let $bp i32 (i32.load (i32.add (local.get $positions) (i32.mul (local.get $count) (i32.const 4)))))
     (if (i32.gt_s (local.get $count) (i32.const 0))
-      (then (call $re_set_cap (local.get $gidx) (i32.load (i32.add (local.get $positions) (i32.mul (i32.sub (local.get $count) (i32.const 1)) (i32.const 4)))) (local.get $bp))))
-    (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (local.get $bp)))
-    (if (i32.ge_s (local.get $r) (i32.const 0)) (then (return (local.get $r))))
+      (then
+        ;; the last KEPT iteration: re-match its body from its start against the continuation, so the body's
+        ;; internal quantifiers can GIVE BACK characters (e.g. `([a-z]+)*x`, nested `(([a-z]+)*([a-z])\.)+`).
+        ;; re_group_once tries the maximal body first (subsumes the old fixed-end behaviour), then shorter,
+        ;; and sets this group's capture (last-iteration-wins) at the body→continuation transition.
+        (let $istart i32 (i32.load (i32.add (local.get $positions) (i32.mul (i32.sub (local.get $count) (i32.const 1)) (i32.const 4)))))
+        (let $r2 i32 (call $re_group_once (local.get $p) (local.get $plen) (local.get $gstart) (local.get $gend) (local.get $qend) (local.get $s) (local.get $slen) (local.get $istart) (local.get $gidx)))
+        (if (i32.ge_s (local.get $r2) (i32.const 0)) (then (return (local.get $r2)))))
+      (else
+        ;; zero iterations kept → just the continuation from the start position
+        (let $r0 i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (i32.load (local.get $positions))))
+        (if (i32.ge_s (local.get $r0) (i32.const 0)) (then (return (local.get $r0))))))
     (set! $count (i32.sub (local.get $count) (i32.const 1)))
     (br $bl)))
   (i32.const -1))
