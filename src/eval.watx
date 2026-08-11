@@ -5425,7 +5425,9 @@
           (block $ale (loop $all
             (br_if $ale (i32.ge_s (local.get $ali) (local.get $aln)))
             (if (i32.gt_s (local.get $ali) (i32.const 0)) (then (set! $alr (call $str_concat (local.get $alr) (cstring ",")))))
-            (let $ael i64 (call $arr_get (local.get $altp) (local.get $ali)))
+            ;; spec does Get(array, ToString(k)) — a hole falls through to an inherited index
+            ;; (Array.prototype[k]); dense_get gives the inherited value, or undefined for a true hole.
+            (let $ael i64 (call $dense_get (local.get $thisv) (local.get $altp) (local.get $ali)))
             (if (i32.eqz (i32.or (call $is_null (local.get $ael)) (call $is_undefined (local.get $ael))))
               (then
                 (let $aem i64 (call $get_prop (local.get $ael) (call $mk_str (cstring "toLocaleString"))))
