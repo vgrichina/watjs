@@ -7,3 +7,6 @@ node_modules/
 
 # local scratch for test probes (shared-/tmp corruption workaround)
 .tmptest/
+
+# Claude Code local session/agent state
+.claude/

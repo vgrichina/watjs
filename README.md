@@ -21,90 +21,63 @@ node tools/run-tests.js test/assertions.js   # run one test
 src/        the engine, in WATX (compiled to watjs.wasm)
   value.watx     NaN-boxed JSValue (i64): number = f64; boxed tag+payload otherwise
   heap.watx      VM registers, bump allocator, Str objects
-  lex.watx       tokenizer + lexer-cursor save/restore
-  scope.watx     lexical environments (variable bindings)
-  tostring.watx  ToString / ToNumber
-  obj.watx       objects (property map) + arrays + get/set_prop
-  eval.watx      precedence-climbing parse-and-evaluate + statements
-  main.watx      imports, eval()/alloc_input() exports
+  lex.watx       tokenizer / lexer
+  scope.watx     lexical environments (variable bindings, TDZ)
+  tostring.watx  ToString / ToNumber / ToPrimitive
+  obj.watx       objects (property map) + arrays + get/set_prop, descriptors
+  eval.watx      shared parse helpers / AST front-end
+  vm.watx        the bytecode VM — compiles the AST to threaded code and runs it
+  regex.watx     backtracking regular-expression engine
+  json.watx      JSON.stringify / JSON.parse
+  main.watx      imports + exports (eval/alloc_input/heap_reset/generator glue)
 tools/      WATX compiler (vendored from watx.berrry.app, canvas runtime removed)
-            + Node build/test harness
+            + Node build/test harness (build.js, run-tests.js, test262.js)
 test/       *.watx unit probes (t_* return 1) and *.js end-to-end tests
+test262/    curated slices of the tc39 test262 suite + its harness
 ```
 
 ## Execution model
 
-Parse-and-evaluate over the token stream (no separate AST). Because the lexer is a
-cursor into source, control flow that re-executes code (loops, function bodies) works
-by **saving and restoring the lexer cursor** and re-scanning. A `SUPPRESS` counter
-gates observable side effects (print, variable mutation, returns) so untaken branches
-and skip-scans parse without executing. Functions capture their body's cursor + params
-+ defining scope (closures); `return`/`throw` unwind via register flags.
+Source is **lexed → parsed to an AST → compiled to threaded bytecode → executed**,
+all inside the wasm module. The bytecode is *data* (an array of function indices in
+linear memory) dispatched through `call_indirect` — no runtime WASM emission, which
+is impossible in-sandbox (see [DESIGN.md §1](./DESIGN.md)). An earlier tree-walk
+re-scan interpreter was retired in favour of this single VM; the savable VM stack is
+what makes **generators and `async`/`await`** (suspend/resume mid-execution) possible.
 
-Values use **NaN-boxing in i64**: any non-NaN f64 bit pattern is a number; the
-negative-quiet-NaN prefix `0xFFF8…` marks a boxed value with a 3-bit tag
-(undefined/null/bool/string/object/function/array) and 48-bit payload.
+Values use **NaN-boxing in i64**: any non-NaN f64 bit pattern is a number; a
+quiet-NaN prefix + 3-bit tag + 48-bit payload encodes everything else
+(undefined/null/bool/int32/string/object/symbol). pack/unpack lives in `value.watx`;
+the rest of the engine treats a JSValue as opaque.
 
 ## Implemented
 
-- Numbers (f64), strings, booleans, null, undefined, NaN, Infinity
-- Operators: `+ - * / %`, comparisons, `=== !== == !=`, `&& || !`, ternary,
-  unary `- + ! ~ typeof void`, `++ -- += -= *= /=`, bitwise `& | ^ << >> >>>`,
-  `instanceof`
-- Number literals: decimal, exponent, `0x`/`0b`/`0o`
-- `var` (with hoisting)/`let`/`const`, assignment, lexical scope, blocks
-- `if`/`else`, `while`, `do`/`while`, `for`, `for`-`in`, `for`-`of`, `switch`
-  (fall-through), `break`, `continue`, labelled statements (`label:`,
-  `break label`, `continue label`)
-- functions, parameters, `return`, recursion, closures, function expressions,
-  `.name`/`.length`, `arguments` object
-- arrow functions (`x=>e`, `(a,b)=>e`, `()=>{...}`), template literals
-  `` `...${e}...` ``, spread (`[...a]`, `f(...args)`)
-- `this`, method calls, `new`, prototypes (chain lookup), `.prototype`,
-  `.constructor`, `instanceof`, `in`, `delete`
-- getters/setters: object-literal `{ get x(){}, set x(v){} }` and
-  `Object.defineProperty(obj, key, {get,set}|{value})`
-- classes: declarations/expressions, methods, `static`, `get`/`set`, `extends`,
-  `super()`/`super.m()` (single-level inheritance)
-- regex (backtracking): `RegExp`/`.test()`, `String` `match`/`replace`/`search` —
-  literals, `.`, classes `[..]`/`[^..]`, `\d\w\s`+negations, anchors, `* + ? {n,m}`
-- `throw`, `try`/`catch`; typed errors (engine throws `ReferenceError`/`TypeError`)
-- objects (literals, `.`/`[]` get/set, nested, prototype chain), arrays (literals,
-  indexing, `.length`, push idiom), string `.length` and char indexing
-- builtins: `print`, `assert`, `eval`, `parseInt`/`parseFloat`, `isNaN`/`isFinite`;
-  `Number` (+`NaN`/`Infinity`/`MAX_SAFE_INTEGER`, `isNaN`/`isInteger`/`isFinite`),
-  `String`/`fromCharCode`, `Boolean`, `Array`/`isArray`,
-  `Object` (`keys`/`assign`/`create`/`getPrototypeOf`/`defineProperty`),
-  `Math` (abs/floor/ceil/round/sqrt/max/min/pow/trunc/sign + PI/E); error
-  constructors via a JS prelude
-- `String.prototype`: charAt/charCodeAt/indexOf/slice/substring/toUpperCase/
-  toLowerCase/split/trim/trimStart/trimEnd/repeat/includes/startsWith/endsWith/
-  padStart/padEnd/at/replaceAll/toString/valueOf/constructor
-- `Array.prototype` (growable): push/pop/indexOf/lastIndexOf/join/slice/forEach/
-  map/filter/reduce/concat/reverse/includes/find/findIndex/findLast/
-  findLastIndex/some/every/sort/at/fill/flat/flatMap
-- `Object.prototype.hasOwnProperty`; `Object.values`/`Object.entries`/
-  `getOwnPropertyNames`/`fromEntries`; `Array.of`/`Array.from` (arrays, strings,
-  iterators, array-likes, optional map)
-- optional chaining (`a?.b`, `a?.[i]`, `a?.()`, short-circuiting) and nullish
-  coalescing (`a ?? b`)
-- `Map` and `Set` (set/get/has/delete/add/forEach/clear/size, chaining)
-- `Number.isSafeInteger` + `MIN/MAX_SAFE_INTEGER`/`EPSILON`/`MAX_VALUE`/
-  `POSITIVE/NEGATIVE_INFINITY`; `Math.hypot`
-- default (`b = expr`) and rest (`...args`) parameters; object spread (`{ ...o }`)
-- destructuring (`let [a,b] = …`, `let {x,y} = …`)
-- iterator protocol: `for-of` over iterables (objects with `next()` /
-  `Symbol.iterator`), `Array.prototype.entries`/`keys`/`values`, array elision
-- `++`/`--` (prefix & postfix) and `+= -= *= /=` on identifiers *and*
-  member/index targets (`obj.x++`, `arr[i] += n`)
-- function-scoped `var` (hoisted out of blocks/loops) vs block-scoped `let`/`const`
-- `this` is the global object at top level and in plain (sloppy) calls;
-  error construction (`new TypeError("m").toString() === "TypeError: m"`)
-- functions carry their source buffer, so prelude- and `eval`-defined functions
-  are callable from any context
-- `JSON.stringify`/`JSON.parse`; `**` exponentiation (NaN/Inf-correct)
-- number→string incl. exponential notation for very large/small magnitudes
-- ToPrimitive (`valueOf`/`toString`); comma operator
+A large, spec-tracking subset of ECMAScript — enough that the tc39 test262 harness
+runs and passes the majority of the core-language and built-ins suites.
+
+- **Language:** full operator set (arithmetic/relational/equality/logical/bitwise,
+  `** ?? ?.`, compound + `++`/`--` on identifier & member targets), all literal
+  forms, template literals, spread/rest, destructuring (array/object, nested,
+  defaults, patterns in params / `for`-heads / `catch`), optional chaining
+- **Control flow:** `if`/`while`/`do`/`for`/`for-in`/`for-of`/`for-await-of`/
+  `switch`, labelled statements, `break`/`continue`, `try`/`catch`/`finally`,
+  `throw`, `with`
+- **Scoping:** real nested lexical environments — block scope, per-iteration
+  `for`-`let` bindings, TDZ, `var` hoisting, a global lexical environment
+  (`let`/`const`/`class` off `globalThis`), and direct-vs-indirect `eval` scoping
+- **Functions:** closures, arrow functions, default/rest params, mapped/unmapped
+  `arguments`, `.name`/`.length`, generators (`function*`, `yield`/`yield*`),
+  `async`/`await`, async generators, `new.target`, `Function.prototype` methods
+- **Objects & classes:** prototype chains, getters/setters, property descriptors,
+  classes (fields, private `#members`, static blocks, `extends`/`super`,
+  **subclassing native built-ins**)
+- **Built-ins:** `Object`, `Array`, `String`, `Number`, `Boolean`, `Math`, `JSON`,
+  `Map`/`Set`/`WeakMap`/`WeakSet`, `Symbol`, `BigInt`, `Date`, `RegExp` (named
+  groups, inline modifiers, `u`-mode, legacy statics), `Promise` (microtask job
+  queue), `Proxy`/`Reflect`, **TypedArrays / `ArrayBuffer`** (incl. resizable /
+  length-tracking buffers, base64/hex), iterators & iterator helpers
+- Strict mode, spec-precise `ToPrimitive`/coercion, and a broad sweep of syntactic
+  early-errors (`SyntaxError` before execution)
 
 ## Testing
 
@@ -124,39 +97,30 @@ write source via `alloc_input`, call `eval`, and check the result.
 
 ## test262 status
 
-The full tc39 harness (`sta.js` + `assert.js`) loads and runs, and real test262
-cases pass at a solid rate on the curated sample sets in `test262/`:
+The full tc39 harness (`sta.js` + `assert.js`) loads and runs. On the curated
+slices in `test262/` the engine passes **161 / 165** files (batch 39/39, broad
+35/36, broad2 30/30, broad3 24/24, cases 4/4, harness 29/32).
 
-- `batch`: **39/39**, `cases`: **4/4**
-- `broad`: **35/36**, `broad2`: **29/30**, `broad3`: **23/24**
-- combined ≈ **98%** of these ~133 curated core-language + ES5/ES6 samples.
+Against the **entire** vendored tc39 tree (~53k files, fresh wasm instance per test,
+1 s timeout) the last full sweep passed **~34k / 47k** run files (≈72%, excluding
+skips) with **0 crashes / 0 hangs**. `language` sits around 92%; `intl402` is near
+zero because `Intl` is unimplemented. Live metrics and history:
+[status.html](./status.html).
 
-The 3 remaining failures are genuine architectural/precision walls: tail-call
-optimization (would overflow the WAT call stack — needs a bytecode VM),
-shortest-round-trip / denormal number formatting, and mapped-`arguments`
-aliasing (a deprecated sloppy-mode behavior).
+Passing the entire suite to spec precision is a long-tail effort; the remaining
+failures are correctness/architectural, not stability. See the dashboard for the
+per-area breakdown.
 
-Passing the **entire** suite (50,000+ files) is a person-years effort — it requires
-essentially all of ECMAScript to spec precision (regex, generators, async, classes,
-Proxy, TypedArrays, BigInt, modules, full Unicode, …). This is a real, growing
-core-language subset on a steady trajectory, not the finished suite.
+## Known limitations
 
-## Known limitations / next increments
+- **`Intl`** unimplemented (`intl402` ≈ 1%), and **`Temporal`** not implemented.
+- **ES modules**: only a `import()` parsing + Promise-returning stub; no real module
+  linking. No `Atomics`/`SharedArrayBuffer`, no cross-realm.
+- **Strings are UTF-8 internally**, so lone surrogates aren't single UTF-16 code
+  units — blocks `isWellFormed`/`toWellFormed` and some astral-plane edge cases.
+- **Memory** is a bump allocator with `heap_reset()` between tests; a mark-sweep GC
+  is deferred until a long-running workload needs it.
+- Some deep object-model corners remain (e.g. an array/function serving as a
+  `[[Prototype]]`; member-prefix `++`/`--` evaluation order).
 
-Implemented this round: the iterator protocol — `for-of` over any object with a
-`next()` method (or an `@@iterator`/`Symbol.iterator` method returning one),
-`Array.prototype.entries/keys/values`, `Symbol.iterator` (as a sentinel key),
-and array elision (holes).
-
-Not implemented: **generators**/**async** (need continuation capture — a
-bytecode-VM rewrite), tail-call optimization, regex groups/alternation/
-backrefs/flags, BigInt, modules, `Proxy`/`Reflect`,
-TypedArrays, full Unicode (identifiers, property escapes), strict-mode
-semantics, spec-exact (shortest round-trip) number-to-string and denormals,
-regex literals (`/.../`), named-function-expression name binding,
-mapped-`arguments` aliasing, transcendental `Math` (sin/cos/log/exp).
-
-**Generators and `async`/`await`** need continuation capture (suspend/resume a
-call mid-execution). The re-scan/parse-and-evaluate interpreter cannot suspend a
-WAT call stack, so these require re-architecting around an explicit bytecode VM
-with a savable stack — a different engine, not an incremental feature.
+See [DESIGN.md](./DESIGN.md) for the architecture and the phasing plan.
