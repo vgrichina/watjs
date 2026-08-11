@@ -11109,13 +11109,18 @@
               ;; len + argCount must not exceed 2^53-1 (indices addressed as f64)
               (if (f64.gt (f64.add (local.get $glenf) (f64.convert_i32_s (local.get $argc))) (f64.const 9007199254740991))
                 (then (call $throw_type (cstring "TypeError") (cstring "Invalid array length")) (return (call $v_undef))))
+              ;; spec push does Set(O, key, E, Throw=true): a refused [[Set]] (non-writable index
+              ;; on the array-like) MUST throw regardless of caller strictness → force reg 392.
+              (let $gpsave i32 (i32.load (i32.const 392)))
+              (i32.store (i32.const 392) (i32.const 1))
               (let $gk i32 (i32.const 0))
               (block $gpe (loop $gpl (br_if $gpe (i32.ge_s (local.get $gk) (local.get $argc)))
                 (call $set_prop (local.get $thisv) (call $num (f64.add (local.get $glenf) (f64.convert_i32_s (local.get $gk)))) (call $argn (local.get $argv) (local.get $argc) (local.get $gk)))
-                (if (call $err) (then (return (call $v_undef))))
+                (if (call $err) (then (i32.store (i32.const 392) (local.get $gpsave)) (return (call $v_undef))))
                 (set! $gk (i32.add (local.get $gk) (i32.const 1))) (br $gpl)))
               (let $gnlf f64 (f64.add (local.get $glenf) (f64.convert_i32_s (local.get $argc))))
               (call $set_length_throwing (local.get $thisv) (local.get $gnlf))
+              (i32.store (i32.const 392) (local.get $gpsave))
               (if (call $err) (then (return (call $v_undef))))
               (return (call $num (local.get $gnlf)))))
           ;; adding indices needs a writable length + extensibility
