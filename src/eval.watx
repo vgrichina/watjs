@@ -5785,7 +5785,7 @@
           ;; d. replacer not undefined/null → must be callable → Call(replacer, searchValue, « O, replaceValue ») with O unstringified
           (if (i32.eqz (i32.or (call $is_undefined (local.get $rarep)) (call $is_null (local.get $rarep))))
             (then
-              (if (i32.eqz (call $is_function (local.get $rarep)))
+              (if (i32.eqz (i32.or (call $is_function (local.get $rarep)) (call $is_htmldda (local.get $rarep))))
                 (then (call $throw_type (cstring "TypeError") (cstring "[Symbol.replace] is not a function")) (return (call $v_undef))))
               (let $rcb i32 (call $heap_alloc (i32.const 16)))
               (i64.store (local.get $rcb) (local.get $thisv))
@@ -8130,7 +8130,7 @@
             (then
               (let $spm0 i64 (call $get_prop (local.get $spa0) (call $mk_str (cstring "@@split"))))
               (if (call $err) (then (return (call $v_undef))))
-              (if (call $is_function (local.get $spm0))
+              (if (i32.or (call $is_function (local.get $spm0)) (call $is_htmldda (local.get $spm0)))
                 (then
                   (let $spa i32 (call $heap_alloc (i32.const 16)))
                   (i64.store (local.get $spa) (local.get $thisv))  ;; O (raw receiver), NOT ToString(O)
@@ -9144,7 +9144,7 @@
                 (then (call $throw_type (cstring "TypeError") (cstring "matchAll must be called with a global RegExp")) (return (call $v_undef))))))
           (let $mamatcher i64 (call $get_prop (local.get $maa) (call $mk_str (cstring "@@matchAll"))))
           (if (call $err) (then (return (call $v_undef))))
-          (if (call $is_function (local.get $mamatcher))
+          (if (i32.or (call $is_function (local.get $mamatcher)) (call $is_htmldda (local.get $mamatcher)))
             (then
               (let $maargs i32 (call $heap_alloc (i32.const 8)))
               (i64.store (local.get $maargs) (call $mk_str (call $to_str (local.get $thisv))))
@@ -11969,6 +11969,15 @@
 
 ;; call a function value with args + this
 (func $call_val (param $fnval i64) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
+  ;; [[IsHTMLDDA]] is callable: its [[Call]] returns null when called with 0 args or a first arg that is
+  ;; undefined or the empty string, else undefined (HTML `document.all(...)` semantics).
+  (if (call $is_htmldda (local.get $fnval))
+    (then
+      (if (i32.eqz (local.get $argc)) (then (return (call $v_null))))
+      (let $hda0 i64 (i64.load (local.get $argv)))
+      (if (call $is_undefined (local.get $hda0)) (then (return (call $v_null))))
+      (if (i32.and (call $is_string (local.get $hda0)) (i32.eqz (call $str_len (call $val_payload (local.get $hda0))))) (then (return (call $v_null))))
+      (return (call $v_undef))))
   ;; function Proxy: apply trap (target, thisArg, argsArray) else call the target
   (if (call $is_proxy (local.get $fnval))
     (then
