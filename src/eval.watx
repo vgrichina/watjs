@@ -8352,7 +8352,7 @@
         (then
           (let $padt i32 (call $to_int_idx (call $tonum_fmtarg (local.get $a0))))  ;; ToLength(maxLength); BigInt/Symbol→TypeError
           (if (call $err) (then (return (call $v_undef))))
-          (let $padsl i32 (call $str_len (local.get $s)))
+          (let $padsl i32 (call $str_cu_len (local.get $s)))  ;; code-unit length (maxLength is measured in code units)
           ;; maxLength ≤ length → return S WITHOUT coercing fillString (spec order)
           (if (i32.ge_s (local.get $padsl) (local.get $padt)) (then (return (call $mk_str (local.get $s)))))
           ;; a result exceeding the string-length cap (2^24, fits the 32 MB memory) → RangeError (avoids OOM)
