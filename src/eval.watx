@@ -6955,7 +6955,8 @@
             (then
               (let $cf i32 (call $to_int_idx (local.get $clfn)))
               (if (i32.lt_s (local.get $cf) (i32.const 0)) (then (set! $cf (i32.const 0))))
-              (if (i32.lt_s (local.get $cf) (local.get $clmax)) (then (set! $clmax (local.get $cf))))))))
+              (let $bcf i32 (call $str_cu_to_byte (local.get $scs) (local.get $cf)))  ;; code-unit position → byte offset
+              (if (i32.lt_s (local.get $bcf) (local.get $clmax)) (then (set! $clmax (local.get $bcf))))))))
       (let $clres i32 (i32.const -1))
       (let $clp i32 (i32.const 0))
       (block $cle (loop $cll
@@ -6968,7 +6969,7 @@
           (set! $clj (i32.add (local.get $clj) (i32.const 1))) (br $cml)))
         (if (local.get $clok) (then (set! $clres (local.get $clp))))
         (set! $clp (i32.add (local.get $clp) (i32.const 1))) (br $cll)))
-      (return (call $num (f64.convert_i32_s (local.get $clres))))))
+      (return (call $num (f64.convert_i32_s (if i32 (i32.lt_s (local.get $clres) (i32.const 0)) (then (i32.const -1)) (else (call $str_byte_to_cu (local.get $scs) (local.get $clres)))))))))
   (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 11)) (i32.le_s (local.get $id) (i32.const 18))) (i32.eq (local.get $id) (i32.const 447)))  ;; +codePointAt
     (then
       ;; unwrap a String wrapper's boxed primitive directly — to_str(wrapper)
@@ -8191,35 +8192,39 @@
       (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 63)) (i32.le_s (local.get $id) (i32.const 65))) (call $is_symbol (local.get $a0)))
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 61)) (then (return (call $mk_str (call $str_trim (local.get $s))))))
-      (if (i32.eq (local.get $id) (i32.const 63))  ;; includes(sub[, fromIndex])
+      (if (i32.eq (local.get $id) (i32.const 63))  ;; includes(sub[, fromIndex]) — fromIndex is a code-unit index
         (then
           (let $ipos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (if (i32.lt_s (local.get $ipos) (i32.const 0)) (then (set! $ipos (i32.const 0))))
-          (let $ihay i32 (if i32 (i32.gt_s (local.get $ipos) (i32.const 0)) (then (call $substr (local.get $s) (local.get $ipos) (i32.sub (call $str_len (local.get $s)) (local.get $ipos)))) (else (local.get $s))))
+          (let $iicu i32 (call $str_cu_len (local.get $s)))
+          (if (i32.gt_s (local.get $ipos) (local.get $iicu)) (then (set! $ipos (local.get $iicu))))
+          (let $bipos i32 (call $str_cu_to_byte (local.get $s) (local.get $ipos)))
+          (let $ihay i32 (if i32 (i32.gt_s (local.get $bipos) (i32.const 0)) (then (call $substr (local.get $s) (local.get $bipos) (i32.sub (call $str_len (local.get $s)) (local.get $bipos)))) (else (local.get $s))))
           (return (call $mk_bool (i32.ge_s (call $str_indexof (local.get $ihay) (call $to_str (local.get $a0))) (i32.const 0))))))
-      (if (i32.eq (local.get $id) (i32.const 64))  ;; startsWith(p[, pos])
+      (if (i32.eq (local.get $id) (i32.const 64))  ;; startsWith(p[, pos]) — pos is a code-unit index
         (then
           (let $sp2 i32 (call $to_str (local.get $a0)))
-          (let $sslen i32 (call $str_len (local.get $s)))
+          (let $sscu i32 (call $str_cu_len (local.get $s)))
           (let $spos i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (if (call $err) (then (return (call $v_undef))))  ;; ToInteger(position) threw (e.g. Symbol)
           (if (i32.lt_s (local.get $spos) (i32.const 0)) (then (set! $spos (i32.const 0))))
-          (if (i32.gt_s (local.get $spos) (local.get $sslen)) (then (set! $spos (local.get $sslen))))  ;; start = min(max(pos,0),len)
-          (if (i32.gt_s (i32.add (local.get $spos) (call $str_len (local.get $sp2))) (local.get $sslen)) (then (return (call $v_false))))  ;; searchLength+start > len → false (also avoids an OOB substr for pos=Infinity)
-          (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (local.get $spos) (call $str_len (local.get $sp2))) (local.get $sp2))))))
-      (if (i32.eq (local.get $id) (i32.const 65))  ;; endsWith(searchString[, endPosition])
+          (if (i32.gt_s (local.get $spos) (local.get $sscu)) (then (set! $spos (local.get $sscu))))  ;; start = min(max(pos,0),cu-len)
+          (let $bspos i32 (call $str_cu_to_byte (local.get $s) (local.get $spos)))
+          (if (i32.gt_s (i32.add (local.get $bspos) (call $str_len (local.get $sp2))) (call $str_len (local.get $s))) (then (return (call $v_false))))  ;; searchLength+start > len → false
+          (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (local.get $bspos) (call $str_len (local.get $sp2))) (local.get $sp2))))))
+      (if (i32.eq (local.get $id) (i32.const 65))  ;; endsWith(searchString[, endPosition]) — endPosition is code-unit
         (then
           (let $ewp i32 (call $to_str (local.get $a0)))
           (let $ewpl i32 (call $str_len (local.get $ewp)))
-          (let $ewsl i32 (call $str_len (local.get $s)))
-          ;; endPosition: undefined → length; else ToIntegerOrInfinity, clamped to [0,len]
+          (let $ewcu i32 (call $str_cu_len (local.get $s)))
+          ;; endPosition: undefined → length; else ToIntegerOrInfinity, clamped to [0,cu-len]
           (let $ewend i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
                             (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
-                            (else (local.get $ewsl))))
+                            (else (local.get $ewcu))))
           (if (call $err) (then (return (call $v_undef))))  ;; ToInteger(endPosition) threw (e.g. Symbol)
           (if (i32.lt_s (local.get $ewend) (i32.const 0)) (then (set! $ewend (i32.const 0))))
-          (if (i32.gt_s (local.get $ewend) (local.get $ewsl)) (then (set! $ewend (local.get $ewsl))))
-          (let $ewstart i32 (i32.sub (local.get $ewend) (local.get $ewpl)))
+          (if (i32.gt_s (local.get $ewend) (local.get $ewcu)) (then (set! $ewend (local.get $ewcu))))
+          (let $ewstart i32 (i32.sub (call $str_cu_to_byte (local.get $s) (local.get $ewend)) (local.get $ewpl)))  ;; byte offset of endPosition, minus the search byte length
           (if (i32.lt_s (local.get $ewstart) (i32.const 0)) (then (return (call $v_false))))
           (return (call $mk_bool (call $str_eq (call $substr (local.get $s) (local.get $ewstart) (local.get $ewpl)) (local.get $ewp))))))
       (if (i32.eq (local.get $id) (i32.const 60))  ;; split(sep) — string or regex separator
