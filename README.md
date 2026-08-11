@@ -5,6 +5,10 @@ A **JavaScript interpreter written in WAT** (WebAssembly Text), compiled to a si
 source is lexed, parsed, and executed entirely inside WebAssembly; the host (Node)
 provides only a thin I/O surface.
 
+**[watjs.berrry.app](https://watjs.berrry.app)** — live in-browser playground running
+the real `watjs.wasm`, plus a **[live status dashboard](https://watjs.berrry.app/status.html)**
+(metrics, test262 progress, and history).
+
 See [DESIGN.md](./DESIGN.md) for architecture and [CLAUDE.md](./CLAUDE.md) for
 working notes.
 
@@ -106,7 +110,7 @@ Against the **entire** vendored tc39 tree (~53k files, fresh wasm instance per t
 1 s timeout) the last full sweep passed **~34k / 47k** run files (≈72%, excluding
 skips) with **0 crashes / 0 hangs**. `language` sits around 92%; `intl402` is near
 zero because `Intl` is unimplemented. Live metrics and history:
-[status.html](./status.html).
+**[status dashboard](https://watjs.berrry.app/status.html)**.
 
 Passing the entire suite to spec precision is a long-tail effort; the remaining
 failures are correctness/architectural, not stability. See the dashboard for the
