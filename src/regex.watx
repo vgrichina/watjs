@@ -411,7 +411,40 @@
 
 ;; match pattern[ppos..] against subject starting at spos; return END spos or -1
 (func $re_match (param $p i32) (param $plen i32) (param $ppos i32) (param $s i32) (param $slen i32) (param $spos i32) (result i32) (effects)
-  (if (i32.ge_s (local.get $ppos) (local.get $plen)) (then (return (local.get $spos))))
+  (if (i32.ge_s (local.get $ppos) (local.get $plen))
+    (then
+      ;; reached the end of this (sub)pattern. If a continuation frame is pending (we are inside a group
+      ;; body), pop it and match the pattern AFTER the group — so the body's greedy quantifiers backtrack
+      ;; against the continuation (real CPS). Else the whole match is done → return spos.
+      (let $mcn i32 (i32.load (i32.const 620)))
+      (if (i32.le_s (local.get $mcn) (i32.load (i32.const 632))) (then (return (local.get $spos))))
+      (let $mfn i32 (i32.sub (local.get $mcn) (i32.const 1)))
+      (let $mfb i32 (i32.add (i32.load (i32.const 616)) (i32.mul (local.get $mfn) (i32.const 16))))
+      (let $mcs i32 (i32.load (local.get $mfb)))                        ;; continuation pattern start
+      (let $mce i32 (i32.load (i32.add (local.get $mfb) (i32.const 4)))) ;; continuation pattern end
+      (let $mgi i32 (i32.load (i32.add (local.get $mfb) (i32.const 8)))) ;; this group's gidx (0 = non-capturing)
+      (let $mgs i32 (i32.load (i32.add (local.get $mfb) (i32.const 12)))) ;; group's start spos
+      (i32.store (i32.const 620) (local.get $mfn))  ;; pop
+      ;; set this group's capture over [gstart, current spos]; remember old for rollback on failure
+      (let $mos i32 (i32.const -1)) (let $moe i32 (i32.const -1)) (let $mslot i32 (i32.const 0))
+      (if (i32.gt_s (local.get $mgi) (i32.const 0))
+        (then
+          (set! $mslot (i32.add (i32.load (i32.const 280)) (i32.mul (i32.sub (local.get $mgi) (i32.const 1)) (i32.const 8))))
+          (set! $mos (i32.load (local.get $mslot)))
+          (set! $moe (i32.load (i32.add (local.get $mslot) (i32.const 4))))
+          (i32.store (local.get $mslot) (local.get $mgs))
+          (i32.store (i32.add (local.get $mslot) (i32.const 4)) (local.get $spos))))
+      (let $mrr i32 (call $re_match (local.get $p) (local.get $mce) (local.get $mcs) (local.get $s) (local.get $slen) (local.get $spos)))
+      ;; a nested match may have reused frame slot mfn — rewrite our frame data and push the count back
+      (i32.store (local.get $mfb) (local.get $mcs))
+      (i32.store (i32.add (local.get $mfb) (i32.const 4)) (local.get $mce))
+      (i32.store (i32.add (local.get $mfb) (i32.const 8)) (local.get $mgi))
+      (i32.store (i32.add (local.get $mfb) (i32.const 12)) (local.get $mgs))
+      (i32.store (i32.const 620) (local.get $mcn))
+      ;; continuation failed → roll back this group's capture so a sibling backtrack isn't polluted
+      (if (i32.and (i32.lt_s (local.get $mrr) (i32.const 0)) (i32.gt_s (local.get $mgi) (i32.const 0)))
+        (then (i32.store (local.get $mslot) (local.get $mos)) (i32.store (i32.add (local.get $mslot) (i32.const 4)) (local.get $moe))))
+      (return (local.get $mrr))))
   (let $c i32 (i32.load8_u (i32.add (local.get $p) (local.get $ppos))))
   (if (i32.eq (local.get $c) (i32.const 94))  ;; ^ — start of input, or (multiline) just after a \n/\r
     (then (if (i32.eqz (local.get $spos))
@@ -679,6 +712,11 @@
   (if (i32.eqz (i32.load (i32.const 280))) (then (i32.store (i32.const 280) (call $heap_alloc (i32.const 512)))))
   (if (i32.eqz (i32.load (i32.const 600))) (then (i32.store (i32.const 600) (call $heap_alloc (i32.const 512)))))  ;; group-name table (Str ptr per group, 0 = unnamed)
   (i32.store (i32.const 604) (i32.const 0))  ;; hasNamed flag
+  ;; continuation-frame stack: reg 616 = base ptr (256 frames × 16 bytes: patstart,patend,gidx,gstartspos),
+  ;; reg 620 = depth. Lets a group body backtrack against the pattern AFTER the group (real CPS matching).
+  (if (i32.eqz (i32.load (i32.const 616))) (then (i32.store (i32.const 616) (call $heap_alloc (i32.const 4096)))))
+  (i32.store (i32.const 620) (i32.const 0))  ;; continuation depth
+  (i32.store (i32.const 632) (i32.const 0))  ;; continuation FLOOR — base case stops chaining once depth<=floor
   (let $i i32 (i32.const 0))
   (block $e (loop $l (br_if $e (i32.ge_s (local.get $i) (i32.const 128)))
     (i32.store (i32.add (i32.load (i32.const 280)) (i32.mul (local.get $i) (i32.const 4))) (i32.const -1))
@@ -846,19 +884,28 @@
 ;; `(a|ab)c` on "abc" must try `a` then, when `c` fails, retry `ab`. (re_match_alt alone returns only
 ;; the first matching alternative, so `re_group_rep` committed to it and could not backtrack the choice.)
 (func $re_group_once (param $p i32) (param $plen i32) (param $gstart i32) (param $gend i32) (param $qend i32) (param $s i32) (param $slen i32) (param $spos i32) (param $gidx i32) (result i32) (effects)
+  ;; push a continuation frame: after the body ends, match [qend, plen) and capture gidx over
+  ;; [spos, body-end]. The body (per alternative) then backtracks against this continuation via re_match's
+  ;; base case — so `(a*)a`, `(\d*)\d(\d+)`, and nested-quantifier groups give up characters as needed.
+  (let $gfn i32 (i32.load (i32.const 620)))
+  (let $gfb i32 (i32.add (i32.load (i32.const 616)) (i32.mul (local.get $gfn) (i32.const 16))))
+  (i32.store (local.get $gfb) (local.get $qend))
+  (i32.store (i32.add (local.get $gfb) (i32.const 4)) (local.get $plen))
+  (i32.store (i32.add (local.get $gfb) (i32.const 8)) (local.get $gidx))
+  (i32.store (i32.add (local.get $gfb) (i32.const 12)) (local.get $spos))
+  (i32.store (i32.const 620) (i32.add (local.get $gfn) (i32.const 1)))
+  (let $gret i32 (i32.const -1))
   (let $segstart i32 (local.get $gstart))
   (block $e (loop $l
     (let $segend i32 (call $re_find_pipe (local.get $p) (local.get $segstart) (local.get $gend)))
-    (let $me i32 (call $re_match (local.get $p) (local.get $segend) (local.get $segstart) (local.get $s) (local.get $slen) (local.get $spos)))  ;; this alternative
-    (if (i32.ge_s (local.get $me) (i32.const 0))
-      (then
-        (call $re_set_cap (local.get $gidx) (local.get $spos) (local.get $me))
-        (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (local.get $me)))  ;; continuation
-        (if (i32.ge_s (local.get $r) (i32.const 0)) (then (return (local.get $r))))))
+    ;; match this alternative [segstart, segend); its base case (at segend) chains the pushed continuation
+    (let $me i32 (call $re_match (local.get $p) (local.get $segend) (local.get $segstart) (local.get $s) (local.get $slen) (local.get $spos)))
+    (if (i32.ge_s (local.get $me) (i32.const 0)) (then (set! $gret (local.get $me)) (br $e)))
     (br_if $e (i32.ge_s (local.get $segend) (local.get $gend)))
     (set! $segstart (i32.add (local.get $segend) (i32.const 1)))
     (br $l)))
-  (i32.const -1))
+  (i32.store (i32.const 620) (local.get $gfn))  ;; pop the frame
+  (local.get $gret))
 
 ;; scoped modifier group `(?add-remove:body)` — non-capturing. Applies i/m/s flag adds/removes
 ;; (regs 272/652/660) for the BODY match only, restoring them for the continuation. Nesting works
@@ -896,7 +943,12 @@
     (if (i32.and (local.get $rem) (i32.const 2)) (then (i32.store (i32.const 652) (i32.const 0))))
     (if (i32.and (local.get $add) (i32.const 4)) (then (i32.store (i32.const 660) (i32.const 1))))
     (if (i32.and (local.get $rem) (i32.const 4)) (then (i32.store (i32.const 660) (i32.const 0))))
+    ;; the modifier-group body is matched BOUNDED (its own continuation is handled explicitly below), so
+    ;; raise the floor for the body match — don't let it chain an outer group's continuation.
+    (let $modfloor i32 (i32.load (i32.const 632)))
+    (i32.store (i32.const 632) (i32.load (i32.const 620)))
     (let $me i32 (call $re_match (local.get $p) (local.get $segend) (local.get $segstart) (local.get $s) (local.get $slen) (local.get $spos)))
+    (i32.store (i32.const 632) (local.get $modfloor))
     ;; restore flags before the continuation
     (i32.store (i32.const 272) (local.get $o272))
     (i32.store (i32.const 652) (local.get $o652))
@@ -982,14 +1034,23 @@
 
 ;; match at spos, trying each top-level alternative in [from,to) left-to-right
 (func $re_match_alt (param $p i32) (param $from i32) (param $to i32) (param $s i32) (param $slen i32) (param $spos i32) (result i32) (effects)
+  ;; a BOUNDED sub-match (lookahead/lookbehind, a quantified-group iteration, or the top-level): its result
+  ;; is a local end position, so it must NOT chain the OUTER continuation. Raise the FLOOR to the current
+  ;; depth: nested groups push their frames ABOVE it (never overwriting outer frames), and the base case
+  ;; returns spos once depth drops back to the floor. Restore floor+depth after.
+  (let $altfloor i32 (i32.load (i32.const 632)))
+  (let $altdepth i32 (i32.load (i32.const 620)))
+  (i32.store (i32.const 632) (local.get $altdepth))
   (let $segstart i32 (local.get $from))
   (block $e (loop $l
     (let $segend i32 (call $re_find_pipe (local.get $p) (local.get $segstart) (local.get $to)))
     (let $r i32 (call $re_match (local.get $p) (local.get $segend) (local.get $segstart) (local.get $s) (local.get $slen) (local.get $spos)))
-    (if (i32.ge_s (local.get $r) (i32.const 0)) (then (return (local.get $r))))
+    (if (i32.ge_s (local.get $r) (i32.const 0)) (then (i32.store (i32.const 632) (local.get $altfloor)) (i32.store (i32.const 620) (local.get $altdepth)) (return (local.get $r))))
     (br_if $e (i32.ge_s (local.get $segend) (local.get $to)))
     (set! $segstart (i32.add (local.get $segend) (i32.const 1)))
     (br $l)))
+  (i32.store (i32.const 632) (local.get $altfloor))
+  (i32.store (i32.const 620) (local.get $altdepth))
   (i32.const -1))
 
 ;; search subject for first match; return START offset (or -1), END in reg 168
