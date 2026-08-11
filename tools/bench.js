@@ -1,33 +1,43 @@
 #!/usr/bin/env node
-// bench.js — run the Benchmarks-Game macro programs in bench/ under watjs and,
-// for comparison, Node and QuickJS (if installed). Prints a ratio table.
+// bench.js — run JavaScript benchmarks under watjs and, for comparison, Node and
+// QuickJS (if installed). Prints a per-engine timing table.
 //
-// The programs in bench/ are VERBATIM from the Computer Language Benchmarks Game
-// (see each file's header). We don't edit the algorithms: each program is wrapped
-// in a function that receives a fake `process`/`console`, so its `process.argv[2]`
-// (the size N) and its output are captured by the harness. Timing is INTERNAL
-// (Date.now, with auto-calibration) so engine start-up cost is excluded and the
-// comparison is fair.
+// Two suites:
+//   * CLBG  — verbatim Computer Language Benchmarks Game programs (bench/*.js).
+//             Each is wrapped in a function that receives a fake process/console,
+//             so its argv/output are captured without editing the algorithm.
+//   * AWFY  — "Are We Fast Yet" (bench/awfy/*.js, MIT). CommonJS modules, bundled
+//             in-script with a tiny `require` loader so the same code runs on every
+//             engine. Each benchmark self-verifies its result.
+//
+// Timing is INTERNAL (Date.now, auto-calibrated to ~300ms), so engine start-up is
+// excluded. Every engine runs the same problem size; output/verify is cross-checked.
 //
 // Usage:
-//   node tools/bench.js                 # all benches, all available engines
-//   node tools/bench.js nbody           # one bench
+//   node tools/bench.js                 # everything, every available engine
+//   node tools/bench.js nbody queens    # only these
 //   node tools/bench.js --json out.json # also write machine-readable results
 
 const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
+const os = require('os');
 
 const ROOT = path.resolve(__dirname, '..');
 const BENCH_DIR = path.join(ROOT, 'bench');
+const AWFY_DIR = path.join(BENCH_DIR, 'awfy');
 const WASM = path.join(ROOT, 'watjs.wasm');
 
-// size N per program — chosen so watjs runs ~0.3–1.5s/iteration (it has no JIT).
-// Same N is used for every engine, so the comparison is apples-to-apples.
-const SIZES = { nbody: 3000, spectralnorm: 40, fasta: 2000 };
+// ---- suite config ------------------------------------------------------------
+// CLBG compute programs: size N (watjs ~0.3–1.5s/iter, no JIT).
+const CLBG_COMPUTE = { nbody: 3000, spectralnorm: 40, fasta: 2000 };
 
-// ---- the shared, engine-agnostic harness (prepended to every program) --------
-// `print` must exist (watjs & qjs: native; node: we shim it per-engine below).
+const AWFY = ['queens', 'bounce', 'list', 'permute', 'sieve', 'storage', 'towers', 'richards', 'json', 'deltablue'];
+const AWFY_SOM = new Set(['bounce', 'storage', 'deltablue', 'json']);
+const AWFY_K = { deltablue: 50 }; // innerBenchmarkLoop arg; default 1 (calibrator repeats)
+
+// ---- shared harness (prepended to every assembled script) --------------------
+// `print` must exist: watjs & qjs native; Node gets a shim prepended per-engine.
 const HARNESS = `
 var __SUP = false, __H = 0;
 function __hash(s){ for (var i = 0; i < s.length; i++) __H = (((__H<<5)-__H) + s.charCodeAt(i)) | 0; }
@@ -36,128 +46,146 @@ var __console = {
   log: function(){ var a=[]; for (var i=0;i<arguments.length;i++) a.push(""+arguments[i]); __emit(a.join(" ")); },
   error: function(){}, warn: function(){}, info: function(){}, debug: function(){}
 };
-function __mkproc(n){ return { argv: [null, null, ""+n], stdout: { write: function(s){ __emit(s); return true; } }, exit: function(){} }; }
 function __capPrint(s){ __emit(s); }
 function bench(name, fn){
-  __SUP = false; __H = 0; fn();                 // correctness pass — hash the output
+  __SUP = false; __H = 0; fn();
   print("__CKSUM " + name + " " + (__H|0));
-  __SUP = true;                                 // timed passes — output suppressed
+  __SUP = true;
   var reps = 1, ms = 0, t0;
   for (;;) {
     t0 = Date.now();
     for (var r = 0; r < reps; r++) fn();
     ms = Date.now() - t0;
-    if (ms >= 300 || reps >= (1<<22)) break;
+    if (ms >= 300 || reps >= (1<<24)) break;
     reps *= 2;
   }
   print("__BENCH " + name + " " + (ms / reps) + " " + reps);
 }
 `;
 
-// assemble the full script for one program (verbatim program wrapped, then run)
-function buildScript(name, src, forNode) {
-  const N = SIZES[name] != null ? SIZES[name] : 1000;
-  const printShim = forNode ? 'var print = function(s){ process.stdout.write(String(s) + "\\n"); };\n' : '';
-  return printShim + HARNESS +
-    '\nfunction __PROG(process, console, print){\n' + src + '\n}\n' +
-    'bench(' + JSON.stringify(name) + ', function(){ __PROG(__mkproc(' + N + '), __console, __capPrint); });\n';
+const nodePrintShim = forNode => forNode ? 'var print=function(s){process.stdout.write(String(s)+"\\n");};\n' : '';
+
+// ---- script builders ---------------------------------------------------------
+function clbgComputeScript(name, forNode) {
+  const src = fs.readFileSync(path.join(BENCH_DIR, name + '.js'), 'utf8');
+  const N = CLBG_COMPUTE[name];
+  return nodePrintShim(forNode) + HARNESS +
+    '\nfunction __PROG(process, console, print, require){\n' + src + '\n}\n' +
+    'function __mkproc(n){ return { argv:[null,null,""+n], stdout:{write:function(s){__emit(s);return true;}}, exit:function(){} }; }\n' +
+    'bench(' + JSON.stringify(name) + ', function(){ __PROG(__mkproc(' + N + '), __console, __capPrint, function(){return{};}); });\n';
 }
 
+function awfyScript(name, forNode) {
+  const read = f => fs.readFileSync(path.join(AWFY_DIR, f + '.js'), 'utf8');
+  const K = AWFY_K[name] || 1;
+  let mods = "__def('benchmark', function(module, exports, require){\n" + read('benchmark') + "\n});\n";
+  if (AWFY_SOM.has(name)) mods += "__def('som', function(module, exports, require){\n" + read('som') + "\n});\n";
+  mods += "__def(" + JSON.stringify(name) + ", function(module, exports, require){\n" + read(name) + "\n});\n";
+  return nodePrintShim(forNode) + '(function(){\n' + HARNESS + `
+var __mods = {};
+function __def(n, f){ __mods[n] = { f: f, e: null, loaded: false }; }
+function require(n){ n = (""+n).replace(/^\\.\\//, ""); var m = __mods[n]; if (!m.loaded){ m.loaded = true; var module = { exports: {} }; m.f(module, module.exports, require); m.e = module.exports; } return m.e; }
+` + mods + `
+var __b = require(${JSON.stringify(name)}).newInstance();
+bench(${JSON.stringify('awfy:' + name)}, function(){ if (!__b.innerBenchmarkLoop(${K})) throw new Error("verify failed"); });
+})();
+`;
+}
+
+// ---- output parsing + engine drivers -----------------------------------------
 function parseOutput(out) {
-  const res = { ms: null, reps: null, cksum: null };
+  const r = { ms: null, reps: null, cksum: null };
   for (const line of out.split('\n')) {
     let m;
-    if ((m = line.match(/^__BENCH \S+ (\S+) (\d+)/))) { res.ms = parseFloat(m[1]); res.reps = parseInt(m[2], 10); }
-    else if ((m = line.match(/^__CKSUM \S+ (-?\d+)/))) { res.cksum = m[1]; }
+    if ((m = line.match(/^__BENCH \S+ (\S+) (\d+)/))) { r.ms = parseFloat(m[1]); r.reps = parseInt(m[2], 10); }
+    else if ((m = line.match(/^__CKSUM \S+ (-?\d+)/))) { r.cksum = m[1]; }
+    else if (/^__THROW|^__PANIC/.test(line)) r.error = line.slice(2).trim();
   }
-  return res;
+  if (r.ms == null && !r.error) r.error = 'no result';
+  return r;
 }
 
-// ---- engine drivers ----------------------------------------------------------
-async function runWatjs(name, src) {
-  const bytes = fs.readFileSync(WASM);
-  const mod = await WebAssembly.compile(bytes);
+let _wasmMod = null;
+async function runWatjs(script) {
+  if (!_wasmMod) _wasmMod = await WebAssembly.compile(fs.readFileSync(WASM));
   const dec = new TextDecoder();
   let out = '', mem;
-  const inst = await WebAssembly.instantiate(mod, { env: {
+  const inst = await WebAssembly.instantiate(_wasmMod, { env: {
     print: (p, l) => { out += dec.decode(new Uint8Array(mem.buffer, p, l)) + '\n'; },
     host_throw: (p, l) => { out += '__THROW ' + dec.decode(new Uint8Array(mem.buffer, p, l)) + '\n'; },
     host_panic: (p, l) => { out += '__PANIC ' + dec.decode(new Uint8Array(mem.buffer, p, l)) + '\n'; },
     now_ms: () => Date.now(),
   }});
   const ex = inst.exports; mem = ex.memory;
-  const script = buildScript(name, src, false);
   const enc = new TextEncoder().encode(script);
   const ptr = ex.alloc_input(enc.length);
   new Uint8Array(mem.buffer, ptr, enc.length).set(enc);
   const rc = ex.eval(ptr, enc.length);
-  if (rc !== 0 || /__THROW|__PANIC/.test(out)) return { error: (out.match(/__(THROW|PANIC) .*/) || ['non-zero eval'])[0] };
-  return parseOutput(out);
+  const r = parseOutput(out);
+  if (rc !== 0 && !r.error && r.ms == null) r.error = 'eval rc=' + rc;
+  return r;
 }
 
 function runSub(cmd, args, script) {
   try {
-    const out = cp.execFileSync(cmd, args, { input: script, encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'ignore'] });
+    const out = cp.execFileSync(cmd, args, { input: script, encoding: 'utf8', timeout: 180000, maxBuffer: 64 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'] });
     return parseOutput(out);
   } catch (e) { return { error: (e.message || 'failed').split('\n')[0] }; }
 }
-const runNode = (name, src) => runSub(process.execPath, ['-e', buildScript(name, src, true)], '');
-function runQjs(name, src) {
-  const tmp = path.join(require('os').tmpdir(), 'watjs-bench-' + name + '.js');
-  fs.writeFileSync(tmp, buildScript(name, src, false));
+const runNode = script => runSub(process.execPath, ['-e', script], '');
+function runQjs(tag, script) {
+  const tmp = path.join(os.tmpdir(), 'watjs-bench-' + tag + '.js');
+  fs.writeFileSync(tmp, script);
   try { return runSub('qjs', [tmp]); } finally { try { fs.unlinkSync(tmp); } catch (_) {} }
 }
+function haveQjs() { try { cp.execFileSync('qjs', ['-e', ''], { stdio: 'ignore' }); return true; } catch (_) { return false; } }
 
 // ---- main --------------------------------------------------------------------
 (async () => {
   const argv = process.argv.slice(2);
-  let jsonOut = null;
-  const only = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--json') jsonOut = argv[++i];
-    else only.push(argv[i]);
-  }
-
-  const files = fs.readdirSync(BENCH_DIR).filter(f => f.endsWith('.js'))
-    .filter(f => !only.length || only.includes(f.replace(/\.js$/, '')));
-  if (!files.length) { console.error('no bench files match'); process.exit(1); }
+  let jsonOut = null; const only = [];
+  for (let i = 0; i < argv.length; i++) { if (argv[i] === '--json') jsonOut = argv[++i]; else only.push(argv[i]); }
+  const want = n => !only.length || only.includes(n);
 
   const qjs = haveQjs();
-  const engines = ['watjs', 'node'].concat(qjs ? ['qjs'] : []);
-  console.log('watjs benchmarks — Computer Language Benchmarks Game macros');
-  console.log('engines: ' + engines.join(', ') + (qjs ? '' : '   (qjs not found — install QuickJS to compare)'));
-  console.log('timing: internal Date.now, auto-calibrated; ms per iteration (lower is better)\n');
+  console.log('watjs benchmarks — CLBG macros + Are We Fast Yet');
+  console.log('engines: watjs, node' + (qjs ? ', qjs' : '   (install QuickJS to add a qjs column)'));
+  console.log('timing: internal Date.now, auto-calibrated; ms per iteration, lower is better\n');
+
+  // build the task list
+  const tasks = [];
+  for (const n of Object.keys(CLBG_COMPUTE)) if (want(n)) tasks.push({ suite: 'CLBG', name: n, build: forNode => clbgComputeScript(n, forNode) });
+  for (const n of AWFY) if (want(n) || want('awfy')) tasks.push({ suite: 'AWFY', name: n, build: forNode => awfyScript(n, forNode) });
 
   const rows = [];
-  for (const file of files) {
-    const name = file.replace(/\.js$/, '');
-    const src = fs.readFileSync(path.join(BENCH_DIR, file), 'utf8');
-    const r = { name, N: SIZES[name], watjs: await runWatjs(name, src), node: runNode(name, src) };
-    if (qjs) r.qjs = runQjs(name, src);
+  for (const t of tasks) {
+    const r = { suite: t.suite, name: t.name };
+    r.watjs = await runWatjs(t.build(false));
+    r.node = runNode(t.build(true));
+    if (qjs) r.qjs = runQjs(t.suite + '-' + t.name, t.build(false));
     rows.push(r);
   }
 
   // table
-  const pad = (s, n) => (s + ' '.repeat(n)).slice(0, n);
-  const num = v => (v && v.ms != null) ? v.ms.toFixed(3) : (v && v.error ? 'ERR' : '—');
-  const head = ['bench', 'N', 'watjs ms', 'node ms'].concat(qjs ? ['qjs ms'] : []).concat(['watjs/node', 'output']);
-  const widths = [14, 7, 11, 11].concat(qjs ? [11] : []).concat([11, 8]);
-  console.log(head.map((h, i) => pad(h, widths[i])).join(''));
-  console.log(widths.map(w => '─'.repeat(w - 1) + ' ').join(''));
+  const pad = (s, n) => (String(s) + ' '.repeat(n)).slice(0, n);
+  const num = v => (v && v.ms != null) ? (v.ms < 10 ? v.ms.toFixed(3) : v.ms.toFixed(1)) : (v && v.error ? 'ERR' : '—');
+  const cols = ['bench', 'watjs ms', 'node ms'].concat(qjs ? ['qjs ms'] : []).concat(['watjs/node', 'verify']);
+  const w = [16, 11, 11].concat(qjs ? [11] : []).concat([11, 8]);
+  const line = () => console.log(w.map(x => '─'.repeat(x - 1) + ' ').join(''));
+  let curSuite = '';
+  console.log(cols.map((c, i) => pad(c, w[i])).join('')); line();
   for (const r of rows) {
-    const agree = (r.watjs.cksum != null && r.node.cksum != null && r.watjs.cksum === r.node.cksum
-      && (!qjs || r.qjs.cksum === r.watjs.cksum)) ? 'match' : (r.watjs.error ? '—' : 'DIFF');
-    const ratio = (r.watjs.ms != null && r.node.ms != null && r.node.ms > 0) ? (r.watjs.ms / r.node.ms).toFixed(0) + '×' : '—';
-    const cells = [pad(r.name, widths[0]), pad(String(r.N), widths[1]), pad(num(r.watjs), widths[2]), pad(num(r.node), widths[3])];
-    let k = 4;
-    if (qjs) cells.push(pad(num(r.qjs), widths[k++]));
-    cells.push(pad(ratio, widths[k++]), pad(agree, widths[k]));
+    if (r.suite !== curSuite) { curSuite = r.suite; console.log(curSuite); }
+    const engs = [r.watjs, r.node].concat(qjs ? [r.qjs] : []);
+    const cksums = engs.map(e => e && e.cksum).filter(x => x != null);
+    const verify = r.watjs.error ? '—' : (cksums.length && cksums.every(c => c === cksums[0]) ? 'match' : 'DIFF');
+    const ratio = (r.watjs.ms != null && r.node.ms > 0) ? (r.watjs.ms / r.node.ms).toFixed(0) + '×' : '—';
+    const cells = ['  ' + pad(r.name, w[0] - 2), pad(num(r.watjs), w[1]), pad(num(r.node), w[2])];
+    let k = 3; if (qjs) cells.push(pad(num(r.qjs), w[k++]));
+    cells.push(pad(ratio, w[k++]), pad(verify, w[k]));
     console.log(cells.join(''));
-    if (r.watjs.error) console.log('    watjs: ' + r.watjs.error);
+    if (r.watjs.error) console.log('      watjs: ' + r.watjs.error);
   }
-  console.log('\nnote: watjs is a WAT interpreter with no JIT — it optimizes for correctness/size, not speed.');
-
-  if (jsonOut) { fs.writeFileSync(jsonOut, JSON.stringify(rows, null, 2)); console.log('\nwrote ' + jsonOut); }
+  console.log('\nwatjs is a WAT interpreter with no JIT — it optimizes for correctness/size, not speed.');
+  if (jsonOut) { fs.writeFileSync(jsonOut, JSON.stringify(rows, null, 2)); console.log('wrote ' + jsonOut); }
 })();
-
-function haveQjs() { try { cp.execFileSync('qjs', ['-e', ''], { stdio: 'ignore' }); return true; } catch (_) { return false; } }
