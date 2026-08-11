@@ -281,6 +281,15 @@
   and <code>30n!</code> give wrong answers. It is exact <em>beyond</em> <code>Number</code>'s 2^53 limit,
   but it is <b>not a bignum</b>.
 </div>
+<div class="note danger" style="border-left-color:var(--warn); background:linear-gradient(180deg, rgba(245,182,91,.07), var(--panel));">
+  <b>No garbage collector — memory only grows within a run.</b> watjs uses a <b>bump allocator</b>:
+  <code>heap_reset()</code> frees everything <em>between</em> tests, but <em>during</em> a single
+  program run <b>nothing is ever reclaimed</b>. So allocation-heavy or long-running code climbs
+  monotonically toward the linear-memory ceiling and then <b>traps</b> (<code>memory access out of
+  bounds</code>). Concretely, regex over a <b>large input (&gt;~50&nbsp;KB) traps</b> today, and any
+  long-lived workload that churns objects/strings will too. A real <b>mark-sweep GC</b> is the
+  planned fix; it is <b>not implemented yet</b>.
+</div>
 <p class="say" style="color:var(--muted); font-size:13.5px; margin:6px 0 4px">Notable ECMAScript features watjs does <b>not</b> implement yet (or only partially):</p>
 <table>
   <tr><th>feature</th><th>state</th><th>notes</th></tr>
@@ -290,7 +299,8 @@
   <tr><td><b><code>Temporal</code></b> — date/time API</td><td><span class="pill todo">not implemented</span></td><td>large surface, deferred</td></tr>
   <tr><td><b><code>Atomics</code> / <code>SharedArrayBuffer</code></b>, cross-realm</td><td><span class="pill todo">not implemented</span></td><td>headless, single-realm host</td></tr>
   <tr><td>Full <b>UTF-16 strings</b></td><td><span class="pill wip">partial</span></td><td>UTF-8 internally; lone surrogates aren't single code units → blocks <code>isWellFormed</code>/<code>toWellFormed</code> and some astral-plane edge cases</td></tr>
-  <tr><td>Mark-sweep <b>garbage collector</b></td><td><span class="pill wip">deferred</span></td><td>bump allocator + <code>heap_reset()</code> per test — fine for test262, needed for long-running programs</td></tr>
+  <tr><td>Mark-sweep <b>garbage collector</b></td><td><span class="pill todo">not implemented</span></td><td>bump allocator only; memory is never freed <em>within</em> a run (just <code>heap_reset()</code> between tests). Long-running / allocation-heavy programs grow until they trap</td></tr>
+  <tr><td>Large-input <b>regex</b> &amp; big allocations</td><td><span class="pill wip">partial</span></td><td>correct at small/medium scale; regex over <b>&gt;~50&nbsp;KB</b> of input runs out of the bump region and traps (a symptom of the missing GC above)</td></tr>
 </table>
 
 <h2>Stability</h2>
