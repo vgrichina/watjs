@@ -286,7 +286,8 @@
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         (br $l)))
       (return (i32.add (local.get $i) (i32.const 1)))))  ;; past ]
-  (i32.add (local.get $ppos) (i32.const 1)))
+  ;; plain literal: consume the whole UTF-8 sequence so a non-ASCII char is ONE atom (not one byte per atom)
+  (i32.add (local.get $ppos) (call $utf8_seqlen (local.get $c))))
 
 ;; is `e` a character-class escape letter (\d \D \w \W \s \S)? these are sets, not single chars.
 (func $re_is_classesc (param $e i32) (result i32) (effects)
@@ -393,6 +394,32 @@
   (if i32 (local.get $neg) (then (i32.eqz (local.get $found))) (else (local.get $found))))
 
 ;; does the atom [astart,aend) match char `ch`?
+;; decode the code point of the UTF-8 sequence at RAW byte offset $off in $ptr (the matcher passes RAW
+;; byte pointers — pattern/subject past the Str header — so we can't use the Str-based heap.watx utf8_cp).
+(func $re_utf8_cp (param $ptr i32) (param $off i32) (result i32) (effects)
+  (let $b0 i32 (i32.load8_u (i32.add (local.get $ptr) (local.get $off))))
+  (if i32 (i32.lt_s (local.get $b0) (i32.const 0x80)) (then (local.get $b0))
+    (else (if i32 (i32.lt_s (local.get $b0) (i32.const 0xE0))
+      (then (i32.or (i32.shl (i32.and (local.get $b0) (i32.const 0x1F)) (i32.const 6))
+                    (i32.and (i32.load8_u (i32.add (local.get $ptr) (i32.add (local.get $off) (i32.const 1)))) (i32.const 0x3F))))
+      (else (if i32 (i32.lt_s (local.get $b0) (i32.const 0xF0))
+        (then (i32.or (i32.or (i32.shl (i32.and (local.get $b0) (i32.const 0x0F)) (i32.const 12))
+                              (i32.shl (i32.and (i32.load8_u (i32.add (local.get $ptr) (i32.add (local.get $off) (i32.const 1)))) (i32.const 0x3F)) (i32.const 6)))
+                      (i32.and (i32.load8_u (i32.add (local.get $ptr) (i32.add (local.get $off) (i32.const 2)))) (i32.const 0x3F))))
+        (else (i32.or (i32.or (i32.or (i32.shl (i32.and (local.get $b0) (i32.const 0x07)) (i32.const 18))
+                                      (i32.shl (i32.and (i32.load8_u (i32.add (local.get $ptr) (i32.add (local.get $off) (i32.const 1)))) (i32.const 0x3F)) (i32.const 12)))
+                              (i32.shl (i32.and (i32.load8_u (i32.add (local.get $ptr) (i32.add (local.get $off) (i32.const 2)))) (i32.const 0x3F)) (i32.const 6)))
+                      (i32.and (i32.load8_u (i32.add (local.get $ptr) (i32.add (local.get $off) (i32.const 3)))) (i32.const 0x3F))))))))))
+;; byte offset from $spos after advancing $k code points, bounded by $slen. Raw byte reads (see above).
+(func $re_cp_boff (param $s i32) (param $spos i32) (param $k i32) (param $slen i32) (result i32) (effects)
+  (let $bo i32 (i32.const 0)) (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $k)))
+    (br_if $e (i32.ge_s (i32.add (local.get $spos) (local.get $bo)) (local.get $slen)))
+    (set! $bo (i32.add (local.get $bo) (call $utf8_seqlen (i32.load8_u (i32.add (local.get $s) (i32.add (local.get $spos) (local.get $bo)))))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (local.get $bo))
+
 (func $re_atom_match (param $p i32) (param $astart i32) (param $aend i32) (param $ch i32) (result i32) (effects)
   (if (i32.lt_s (local.get $ch) (i32.const 0)) (then (return (i32.const 0))))
   (let $c i32 (i32.load8_u (i32.add (local.get $p) (local.get $astart))))
@@ -407,7 +434,8 @@
         (then (return (call $re_eqc (local.get $ch) (i32.and (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $astart) (i32.const 2)))) (i32.const 31))))))
       (return (call $re_esc_match (local.get $e1) (local.get $ch)))))
   (if (i32.eq (local.get $c) (i32.const 91)) (then (return (call $re_class_match (local.get $p) (i32.add (local.get $astart) (i32.const 1)) (i32.sub (local.get $aend) (i32.const 1)) (local.get $ch)))))  ;; [..]
-  (call $re_eqc (local.get $ch) (local.get $c)))
+  ;; literal char: compare the atom's full CODE POINT (a non-ASCII pattern literal is multi-byte UTF-8) to ch
+  (call $re_eqc (local.get $ch) (call $re_utf8_cp (local.get $p) (local.get $astart))))
 
 ;; match pattern[ppos..] against subject starting at spos; return END spos or -1
 (func $re_match (param $p i32) (param $plen i32) (param $ppos i32) (param $s i32) (param $slen i32) (param $spos i32) (result i32) (effects)
@@ -593,12 +621,16 @@
   (if (i32.or (i32.eq (local.get $q) (i32.const 42)) (i32.or (i32.eq (local.get $q) (i32.const 43)) (i32.or (i32.eq (local.get $q) (i32.const 63)) (i32.eq (local.get $q) (i32.const 123)))))
     (then (if (i32.eq (call $re_pb (local.get $p) (local.get $plen) (local.get $qend)) (i32.const 63))
       (then (set! $lazy (i32.const 1)) (set! $qend (i32.add (local.get $qend) (i32.const 1)))))))
-  ;; count consecutive atom matches up to max
+  ;; count consecutive atom matches up to max — advance by CODE POINTS (so `.`/`.{n}`/literal quantifiers
+  ;; count code points, not UTF-8 bytes). $cbo = byte offset consumed while counting; the backtrack maps a
+  ;; match count back to a byte offset via re_cp_boff. ASCII is unchanged (seqlen 1, cp == byte).
   (let $count i32 (i32.const 0))
+  (let $cbo i32 (i32.const 0))
   (block $ce (loop $cl
     (br_if $ce (i32.ge_s (local.get $count) (local.get $max)))
-    (br_if $ce (i32.ge_s (i32.add (local.get $spos) (local.get $count)) (local.get $slen)))
-    (br_if $ce (i32.eqz (call $re_atom_match (local.get $p) (local.get $ppos) (local.get $aend) (i32.load8_u (i32.add (local.get $s) (i32.add (local.get $spos) (local.get $count)))))))
+    (br_if $ce (i32.ge_s (i32.add (local.get $spos) (local.get $cbo)) (local.get $slen)))
+    (br_if $ce (i32.eqz (call $re_atom_match (local.get $p) (local.get $ppos) (local.get $aend) (call $re_utf8_cp (local.get $s) (i32.add (local.get $spos) (local.get $cbo))))))
+    (set! $cbo (i32.add (local.get $cbo) (call $utf8_seqlen (i32.load8_u (i32.add (local.get $s) (i32.add (local.get $spos) (local.get $cbo)))))))
     (set! $count (i32.add (local.get $count) (i32.const 1)))
     (br $cl)))
   (if (local.get $lazy)
@@ -606,7 +638,7 @@
       (let $tc i32 (local.get $min))
       (block $le (loop $ll
         (br_if $le (i32.gt_s (local.get $tc) (local.get $count)))
-        (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (i32.add (local.get $spos) (local.get $tc))))
+        (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (i32.add (local.get $spos) (call $re_cp_boff (local.get $s) (local.get $spos) (local.get $tc) (local.get $slen)))))
         (if (i32.ge_s (local.get $r) (i32.const 0)) (then (return (local.get $r))))
         (set! $tc (i32.add (local.get $tc) (i32.const 1)))
         (br $ll)))
@@ -614,7 +646,7 @@
   ;; greedy: backtrack from count down to min
   (block $be (loop $bl
     (br_if $be (i32.lt_s (local.get $count) (local.get $min)))
-    (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (i32.add (local.get $spos) (local.get $count))))
+    (let $r i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (i32.add (local.get $spos) (call $re_cp_boff (local.get $s) (local.get $spos) (local.get $count) (local.get $slen)))))
     (if (i32.ge_s (local.get $r) (i32.const 0)) (then (return (local.get $r))))
     (set! $count (i32.sub (local.get $count) (i32.const 1)))
     (br $bl)))
