@@ -246,6 +246,31 @@
   <tr class="tot"><td>TOTAL</td><td class="mono">33978</td><td class="mono">13080</td><td class="mono">6346</td><td class="mono">57</td><td><span class="prate warn"><span style="width:72%"></span></span><span class="rate warn">72%</span></td></tr>
 </table>
 
+<h2>Performance <span class="em">watjs vs QuickJS — both in wasm</span></h2>
+<div class="note">
+  Benchmarked with <code>node tools/bench.js</code> — 3 Computer Language Benchmarks Game macros
+  (n-body, spectral-norm, fasta) plus the 10-program <b>Are We Fast Yet</b> suite. Each is self-timed
+  (<code>Date.now</code>, auto-calibrated) and its result is <b>verified identical across every engine</b>,
+  so a faster run can't be a wrong run. watjs has <b>no JIT</b> — it's a handler-threaded interpreter,
+  benchmarked honestly against other interpreters.
+</div>
+<p class="say">The fair peer is <b>QuickJS compiled to WebAssembly</b>: like watjs it runs <em>inside</em> the wasm
+sandbox with no native code, so the gap reflects interpreter design — not V8's JIT. Order-of-magnitude
+standing (approximate, machine-dependent):</p>
+<table>
+  <tr><th>engine</th><th>kind</th><th>speed vs watjs</th></tr>
+  <tr><td>Node (V8)</td><td>JIT-compiled to native</td><td class="mono">~1000× faster</td></tr>
+  <tr><td>QuickJS <span style="color:var(--faint)">native</span></td><td>bytecode interpreter in C</td><td class="mono">~30–80× faster</td></tr>
+  <tr><td><b>QuickJS in wasm</b> &nbsp;<span class="pill done">fair peer</span></td><td>same interpreter, inside WebAssembly</td><td class="mono">~20–60× faster</td></tr>
+  <tr class="tot"><td><b>watjs</b></td><td>handler-threaded interpreter in WAT</td><td class="mono">1× (baseline)</td></tr>
+</table>
+<div class="note ok">
+  <span class="good">✓</span> All <b>13 benchmarks</b> produce byte-identical, verified output on watjs, Node,
+  and QuickJS-in-wasm. QuickJS-wasm runs within ~1–2× of <em>native</em> QuickJS, so the wasm boundary
+  itself costs little — the ~20–60× gap to watjs is interpreter design. watjs is weakest on
+  polymorphic-dispatch-heavy code (e.g. <code>richards</code>) and best on tight arithmetic loops.
+</div>
+
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
