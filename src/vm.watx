@@ -6702,9 +6702,11 @@
       (let $an i32 (call $ident_name)) (call $next_token)
       (if (i32.or (i32.eq (call $tok_kind) (i32.const 24)) (i32.or (call $is_compound_assign (call $tok_kind)) (i32.or (i32.and (i32.ge_s (call $tok_kind) (i32.const 59)) (i32.le_s (call $tok_kind) (i32.const 61))) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))))  ;; = / op= / ||= / ++ / --
         (then
-          ;; a keyword literal (true/false/null) or `this` is not a valid AssignmentTarget — reject before
-          ;; the fast-path treats it as an assignable identifier name (`true = 1` / `this += 1`).
-          (if (i32.or (call $str_eq (local.get $an) (cstring "true")) (i32.or (call $str_eq (local.get $an) (cstring "false")) (i32.or (call $str_eq (local.get $an) (cstring "null")) (call $str_eq (local.get $an) (cstring "this")))))
+          ;; a ReservedWord (typeof/void/delete/new/in/instanceof/case/else/default/true/false/null/this/…)
+          ;; is not an IdentifierReference and cannot be an AssignmentTarget — reject before the fast-path
+          ;; treats it as an assignable name (`typeof = 1` / `in = 1` / `this += 1`). Contextual keywords
+          ;; (async/yield/let/of) are NOT reserved words, so `async = 1` (sloppy) still works.
+          (if (call $is_reserved_word (local.get $an))
             (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "invalid assignment target")) (return)))
           (if (call $vm_strict_lhs_check (local.get $an)) (then (return)))))  ;; strict: eval/arguments target → SyntaxError
       (if (i32.eq (call $tok_kind) (i32.const 24))  ;; '='
