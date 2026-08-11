@@ -4,27 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>watjs — project status</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0c10; --bg2: #0e1117; --panel: #14181f; --panel2: #181d26;
-    --border: #232a35; --border2: #2c3543;
-    --fg: #e9eef5; --muted: #8a94a6; --faint: #5b6577;
-    --accent: #6ea8fe; --accent2: #a78bfa; --cyan: #5fd3c4;
-    --good: #4ade80; --warn: #fbbf24; --bad: #fb7185;
-    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+    --bg: #0a0c10; --bg2: #0e1117; --panel: #0f131b; --panel2: #131922;
+    --border: #1b2230; --border2: #283040;
+    --fg: #e9efe6; --muted: #7f8b99; --faint: #4b5563;
+    --accent: #b6ff3d; --accent2: #f5b65b; --cyan: #6fe0d6;
+    --good: #b6ff3d; --warn: #f5b65b; --bad: #ff6b6b;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --disp: "Bricolage Grotesque", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     margin: 0; color: var(--fg); font: 15px/1.6 var(--sans);
+    font-weight: 400;
     background:
-      radial-gradient(1100px 520px at 78% -8%, rgba(110,168,254,.10), transparent 60%),
-      radial-gradient(900px 480px at 8% 4%, rgba(167,139,250,.10), transparent 55%),
+      radial-gradient(1000px 520px at 78% -8%, rgba(182,255,61,.10), transparent 60%),
+      radial-gradient(820px 480px at 8% 4%, rgba(111,224,214,.06), transparent 55%),
       var(--bg);
     -webkit-font-smoothing: antialiased;
   }
   .wrap { max-width: 1000px; margin: 0 auto; padding: 40px 24px 96px; }
+  /* faint scanline texture, matching the landing page */
+  body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.35;
+    background: repeating-linear-gradient(to bottom, rgba(255,255,255,.014) 0 1px, transparent 1px 3px);
+    mix-blend-mode: overlay; }
+  .wrap { position: relative; z-index: 1; }
 
   /* ---- header ---- */
   header { position: relative; padding: 28px 30px; margin-bottom: 30px;
@@ -37,10 +47,10 @@
   header::after { content:""; position:absolute; inset:0; pointer-events:none;
     background: linear-gradient(90deg, var(--accent), var(--accent2), var(--cyan));
     height: 3px; top: 0; bottom: auto; opacity:.9; }
-  h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -.6px; font-weight: 700; }
-  h1 .v { background: linear-gradient(90deg, var(--accent), var(--accent2));
+  h1 { margin: 0 0 8px; font-family: var(--disp); font-size: 34px; letter-spacing: -1px; font-weight: 800; }
+  h1 .v { font-family: var(--mono); background: linear-gradient(90deg, var(--accent), var(--accent2));
     -webkit-background-clip: text; background-clip: text; color: transparent;
-    font-size: 17px; font-weight: 500; }
+    font-size: 16px; font-weight: 500; }
   .tag { color: var(--muted); font-size: 14.5px; max-width: 72ch; }
   .meta { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; }
   .chip { font-family: var(--mono); font-size: 12px; color: var(--muted);
@@ -56,14 +66,14 @@
   .card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
     background: linear-gradient(var(--accent), var(--accent2)); opacity:.7; }
   .card:hover { border-color: var(--border2); transform: translateY(-2px); }
-  .card .n { font-size: 28px; font-weight: 700; font-family: var(--mono); letter-spacing: -.5px; }
+  .card .n { font-size: 30px; font-weight: 800; font-family: var(--disp); letter-spacing: -1px; }
   .card .l { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
 
   /* ---- sections ---- */
-  h2 { font-size: 18px; margin: 40px 0 16px; padding-bottom: 10px; font-weight: 650;
+  h2 { font-family: var(--disp); font-size: 21px; margin: 40px 0 16px; padding-bottom: 10px; font-weight: 700; letter-spacing: -.3px;
     border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 10px; }
-  h2::before { content:""; width: 9px; height: 9px; border-radius: 3px;
-    background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 0 12px rgba(110,168,254,.5); }
+  h2::before { content:""; width: 9px; height: 9px; border-radius: 3px; align-self: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 0 12px rgba(182,255,61,.5); }
   h2 .em { margin-left: auto; font-size: 12.5px; color: var(--faint); font-weight: 400; }
 
   /* ---- chart ---- */
@@ -107,18 +117,40 @@
   ul { margin: 12px 0; padding-left: 22px; }
   li { margin: 6px 0; }
   .bad { color: var(--bad); } .good { color: var(--good); } .warn { color: var(--warn); }
-  code { font-family: var(--mono); background: rgba(110,168,254,.10); color: #cdd9ee;
+  code { font-family: var(--mono); background: rgba(111,224,214,.10); color: #a7e6dd;
     padding: 1.5px 6px; border-radius: 5px; font-size: 12px; }
   .note { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--border);
     border-left: 3px solid var(--accent); border-radius: 10px; padding: 14px 18px; margin: 16px 0; font-size: 13.5px; }
   .note.danger { border-left-color: var(--bad); background: linear-gradient(180deg, rgba(251,113,133,.06), var(--panel)); }
   .note.ok { border-left-color: var(--good); }
-  footer { margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--faint); font-size: 12px; }
+  /* ---- shared navbar (matches the landing page) ---- */
+  nav.topnav { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 26px; }
+  .brand { font-family: var(--mono); font-weight: 700; letter-spacing: -.02em; color: var(--fg); font-size: 16px; text-decoration: none; }
+  .brand b { color: var(--accent); }
+  .navlinks { display: flex; gap: 20px; font-size: 13px; }
+  .navlinks a { color: var(--muted); text-decoration: none; }
+  .navlinks a:hover { color: var(--accent); }
+  .navlinks a.active { color: var(--accent); }
+  @media (max-width: 640px) { .navlinks { gap: 14px; font-size: 12px; } }
+  footer { margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--faint); font-size: 12px;
+    display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; }
+  footer a { color: var(--muted); }
   a { color: var(--accent); text-decoration: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
+
+<nav class="topnav">
+  <a class="brand" href="https://watjs.berrry.app/"><b>wat</b>js</a>
+  <div class="navlinks">
+    <a href="https://watjs.berrry.app/#how">how</a>
+    <a href="https://watjs.berrry.app/#works">what works</a>
+    <a class="active" href="/status.html">status</a>
+    <a href="https://watx.berrry.app" target="_blank" rel="noopener">watx</a>
+    <a href="https://github.com/vgrichina/watjs" target="_blank" rel="noopener">github ↗</a>
+  </div>
+</nav>
 
 <header>
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
@@ -146,7 +178,7 @@
   <h3>Commits &amp; tokens per day</h3>
   <div class="sub">
     <span style="color:var(--accent)">▮&nbsp;commits / day</span> &nbsp;
-    <span style="color:var(--accent2)">●&nbsp;output tokens / day (M)</span> &nbsp;
+    <span style="color:var(--cyan)">●&nbsp;output tokens / day (M)</span> &nbsp;
     <span style="color:#f5b65b">◆&nbsp;human intervention</span> &nbsp;
     <span style="color:#f5b65b">12&nbsp;= nudges that day</span>
     <br>amber diamonds mark days a human steered the <b>engine</b> work (hover for the prompts); the number is repeated "keep going"-style nudges. Status-dashboard prompts are excluded.
@@ -239,7 +271,7 @@
   <tr><td>RegExp <span class="pill done">new</span></td><td>duplicate named groups + per-position capture reset, scoped inline modifiers <code>(?ims-ims:…)</code>, <code>u</code>-mode syntax strictness; legacy static accessors (<code>$1</code>–<code>$9</code>)</td></tr>
   <tr><td>Async / Promises</td><td>microtask job queue, true <code>await</code> suspension, async generators (+<code>.return</code>/<code>.throw</code>), for-await-of, <code>Array.fromAsync</code></td></tr>
   <tr><td>Destructuring</td><td>cover-grammar bare <code>{pat}=RHS</code> (+133 assignment), for-of/for-in patterns</td></tr>
-  <tr><td>BigInt / Symbol</td><td>exact i64 compare, wrapper valueOf, @@toPrimitive</td></tr>
+  <tr><td>BigInt / Symbol</td><td>exact within <b>i64</b> (64-bit-bounded — <em>not</em> arbitrary-precision, see gaps below), wrapper valueOf, @@toPrimitive</td></tr>
 </table>
 
 <h2>Stability</h2>
@@ -268,12 +300,25 @@
   tests false-pass. <span class="bad">Highest-priority correctness trap.</span>
 </div>
 
+<div class="note danger" style="border-left-color:var(--warn); background:linear-gradient(180deg, rgba(245,182,91,.07), var(--panel));">
+  <b>BigInt is 64-bit-backed, not arbitrary-precision.</b> Every <code>BigInt</code> is a single
+  <code>i64</code>, so values past <b>2^63 (~9.2e18)</b> overflow silently — <code>2n ** 128n</code>
+  and <code>30n!</code> give wrong answers. It's exact <em>beyond</em> <code>Number</code>'s 2^53 limit,
+  but it is <b>not a bignum</b>. A real arbitrary-precision implementation (heap-allocated limbs) is
+  not yet done.
+</div>
+
+<p class="say" style="color:var(--muted); font-size:13.5px; margin:4px 0 2px">Beyond the correctness trap above, these are the notable things that are <b>not implemented</b> (or only partial):</p>
 <table>
-  <tr><th>issue</th><th>impact</th><th>state</th></tr>
-  <tr><td>Array/function can't be a [[Prototype]] — <code>Object.create(arr)</code> doesn't inherit indices (proto stored as scope-parent)</td><td>~12–20 tests; deep object-model fix</td><td><span class="pill todo">open</span></td></tr>
-  <tr><td>Reference Records — member-prefix <code>++</code>/<code>--</code> eval order (direct/indirect-eval scoping now largely landed)</td><td>architectural</td><td><span class="pill wip">partial</span></td></tr>
-  <tr><td><code>Intl</code> unimplemented — <code>intl402</code> ~1%</td><td>large surface; deferred</td><td><span class="pill todo">deferred</span></td></tr>
-  <tr><td>Mark-sweep GC — still bump-allocator + <code>heap_reset()</code> per test</td><td>fine for test262; needed for long-running programs</td><td><span class="pill todo">deferred</span></td></tr>
+  <tr><th>feature</th><th>state</th><th>notes</th></tr>
+  <tr><td><b>BigInt</b> — arbitrary precision</td><td><span class="pill todo">not implemented</span></td><td>backed by one <code>i64</code>; overflows past 2^63. Needs heap-allocated bignum limbs</td></tr>
+  <tr><td><b>ES modules</b> — <code>import</code>/<code>export</code> linking</td><td><span class="pill todo">not implemented</span></td><td>only a dynamic <code>import()</code> parse + Promise stub; no module graph</td></tr>
+  <tr><td><code>Intl</code> &amp; <code>Temporal</code></td><td><span class="pill todo">not implemented</span></td><td><code>intl402</code> ~1%; large surfaces, deferred</td></tr>
+  <tr><td><code>Atomics</code> / <code>SharedArrayBuffer</code>, cross-realm</td><td><span class="pill todo">not implemented</span></td><td>headless single-realm host</td></tr>
+  <tr><td>Full <b>UTF-16</b> strings</td><td><span class="pill wip">partial</span></td><td>strings are UTF-8 internally; lone surrogates aren't single code units (blocks <code>isWellFormed</code>/<code>toWellFormed</code>)</td></tr>
+  <tr><td>Mark-sweep <b>GC</b></td><td><span class="pill todo">deferred</span></td><td>bump allocator + <code>heap_reset()</code> per test — fine for test262, needed for long-running programs</td></tr>
+  <tr><td>Array/function as a <code>[[Prototype]]</code></td><td><span class="pill todo">open</span></td><td><code>Object.create(arr)</code> doesn't inherit indices; deep object-model fix</td></tr>
+  <tr><td>Reference Records — member-prefix <code>++</code>/<code>--</code> eval order</td><td><span class="pill wip">partial</span></td><td>direct/indirect-eval scoping largely landed</td></tr>
 </table>
 
 <h2>Next up</h2>
@@ -286,9 +331,8 @@
 </ul>
 
 <footer>
-  Last refreshed 2026-08-10 from repo state &amp; session memory. &nbsp;·&nbsp;
-  Two test layers: self-checking assertion JS (<code>test/</code>) + tc39 test262 (<code>test262/</code>).
-  Chart drawn inline from per-day git activity + dev-session token usage — no external dependencies.
+  <span>Last refreshed 2026-08-10 from repo state &amp; session memory · self-check <code>test/</code> + tc39 <code>test262/</code> · charts drawn inline, no external deps.</span>
+  <span><a href="https://watjs.berrry.app/">watjs.berrry.app</a> &nbsp;·&nbsp; <a href="https://github.com/vgrichina/watjs" target="_blank" rel="noopener">github ↗</a></span>
 </footer>
 
 </div>
@@ -381,7 +425,7 @@ function el(name, attrs) { const e = document.createElementNS(NS, name);
 function barLineChart(svgId, data) {
   const svg = document.getElementById(svgId); if (!svg) return;
   const W = 920, H = 240, pad = { l: 42, r: 52, t: 40, b: 30 };
-  const BLUE = "#6ea8fe", PURP = "#a78bfa", AMBER = "#f5b65b";
+  const BLUE = "#b6ff3d", PURP = "#6fe0d6", AMBER = "#f5b65b";
   // bar gradient
   const def = el("defs", {});
   const g = el("linearGradient", { id: svgId+"-bar", x1:0, y1:0, x2:0, y2:1 });
@@ -464,7 +508,7 @@ function hideTip() { if (_tip) _tip.classList.remove("on"); }
 function dualLineChart(svgId, data) {
   const svg = document.getElementById(svgId); if (!svg) return;
   const W = 920, H = 240, pad = { l: 46, r: 54, t: 16, b: 30 };
-  const CY = "#5fd3c4", PURP = "#a78bfa";
+  const CY = "#6fe0d6", PURP = "#f5b65b";
   const def = el("defs", {});
   const g = el("linearGradient", { id: svgId+"-loc", x1:0, y1:0, x2:0, y2:1 });
   g.appendChild(el("stop", { offset:"0%",  "stop-color":CY, "stop-opacity":.22 }));
