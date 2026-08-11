@@ -7017,12 +7017,16 @@
           (if (call $is_symbol (local.get $a0)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
           (let $ndl i32 (call $to_str (local.get $a0)))  ;; ToString(searchString) — @@toPrimitive/toString/valueOf
           (if (call $err) (then (return (call $v_undef))))
+          ;; position is a code-unit index; clamp against the code-unit length, then map to a byte offset for
+          ;; the (byte-level) substring search, and map the resulting byte offset back to a code-unit index.
+          (let $iculen i32 (call $str_cu_len (local.get $s)))
           (let $from i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $tonum_fmtarg (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (if (call $err) (then (return (call $v_undef))))  ;; ToInteger(position) threw (Symbol/BigInt)
           (if (i32.lt_s (local.get $from) (i32.const 0)) (then (set! $from (i32.const 0))))
-          (if (i32.gt_s (local.get $from) (local.get $slen)) (then (set! $from (local.get $slen))))
-          (let $idr i32 (call $str_indexof (call $substr (local.get $s) (local.get $from) (i32.sub (local.get $slen) (local.get $from))) (local.get $ndl)))
-          (return (call $num (f64.convert_i32_s (if i32 (i32.lt_s (local.get $idr) (i32.const 0)) (then (i32.const -1)) (else (i32.add (local.get $idr) (local.get $from)))))))))
+          (if (i32.gt_s (local.get $from) (local.get $iculen)) (then (set! $from (local.get $iculen))))
+          (let $bfrom i32 (call $str_cu_to_byte (local.get $s) (local.get $from)))
+          (let $idr i32 (call $str_indexof (call $substr (local.get $s) (local.get $bfrom) (i32.sub (local.get $slen) (local.get $bfrom))) (local.get $ndl)))
+          (return (call $num (f64.convert_i32_s (if i32 (i32.lt_s (local.get $idr) (i32.const 0)) (then (i32.const -1)) (else (call $str_byte_to_cu (local.get $s) (i32.add (local.get $idr) (local.get $bfrom))))))))))
       (if (i32.eq (local.get $id) (i32.const 16))  ;; toUpperCase
         (then (return (call $mk_str (call $str_case (local.get $s) (i32.const 1))))))
       (if (i32.eq (local.get $id) (i32.const 17))  ;; toLowerCase
@@ -7038,24 +7042,28 @@
       ;; slice(14) / substring(15)
       (if (i32.or (i32.eq (local.get $id) (i32.const 14)) (i32.eq (local.get $id) (i32.const 15)))
         (then
+          ;; start/end are UTF-16 code-unit indices; clamp against the code-unit length, then map to bytes.
+          (let $culen i32 (call $str_cu_len (local.get $s)))
           (let $start i32 (call $to_int_idx (call $to_num (local.get $a0))))
-          (let $end i32 (local.get $slen))
+          (let $end i32 (local.get $culen))
           ;; an absent OR explicitly-undefined end argument → length
           (if (i32.and (i32.ge_s (local.get $argc) (i32.const 2)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
             (then (set! $end (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))))
           (if (i32.eq (local.get $id) (i32.const 14))  ;; slice: negatives from end
             (then
-              (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.add (local.get $slen) (local.get $start)))))
-              (if (i32.lt_s (local.get $end) (i32.const 0)) (then (set! $end (i32.add (local.get $slen) (local.get $end)))))))
+              (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.add (local.get $culen) (local.get $start)))))
+              (if (i32.lt_s (local.get $end) (i32.const 0)) (then (set! $end (i32.add (local.get $culen) (local.get $end)))))))
           (if (i32.lt_s (local.get $start) (i32.const 0)) (then (set! $start (i32.const 0))))
-          (if (i32.gt_s (local.get $start) (local.get $slen)) (then (set! $start (local.get $slen))))
+          (if (i32.gt_s (local.get $start) (local.get $culen)) (then (set! $start (local.get $culen))))
           (if (i32.lt_s (local.get $end) (i32.const 0)) (then (set! $end (i32.const 0))))
-          (if (i32.gt_s (local.get $end) (local.get $slen)) (then (set! $end (local.get $slen))))
+          (if (i32.gt_s (local.get $end) (local.get $culen)) (then (set! $end (local.get $culen))))
           ;; substring (15) uses min(start,end)..max(start,end) — swap if reversed (slice does not)
           (if (i32.eq (local.get $id) (i32.const 15))
             (then (if (i32.gt_s (local.get $start) (local.get $end))
               (then (let $tmp i32 (local.get $start)) (set! $start (local.get $end)) (set! $end (local.get $tmp))))))
-          (return (call $mk_str (call $substr (local.get $s) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))))
+          (let $bstart i32 (call $str_cu_to_byte (local.get $s) (local.get $start)))
+          (let $bend i32 (call $str_cu_to_byte (local.get $s) (local.get $end)))
+          (return (call $mk_str (call $substr (local.get $s) (local.get $bstart) (i32.sub (local.get $bend) (local.get $bstart)))))))
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 139))  ;; Object.freeze(o) → mark @@frozen, return o
     (then
@@ -8130,7 +8138,7 @@
   (if (i32.eq (local.get $id) (i32.const 138))  ;; substr(start, length) — legacy
     (then
       (let $s2 i32 (call $to_str (local.get $thisv)))
-      (let $sl2 i32 (call $str_len (local.get $s2)))
+      (let $sl2 i32 (call $str_cu_len (local.get $s2)))  ;; code-unit length
       (let $st i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.lt_s (local.get $st) (i32.const 0))
         (then (set! $st (i32.add (local.get $sl2) (local.get $st))) (if (i32.lt_s (local.get $st) (i32.const 0)) (then (set! $st (i32.const 0))))))
@@ -8142,7 +8150,10 @@
         (then (set! $ln (call $to_int_idx (call $to_num (local.get $lenarg))))))
       (if (i32.lt_s (local.get $ln) (i32.const 0)) (then (set! $ln (i32.const 0))))
       (if (i32.gt_s (local.get $ln) (i32.sub (local.get $sl2) (local.get $st))) (then (set! $ln (i32.sub (local.get $sl2) (local.get $st)))))
-      (return (call $mk_str (call $substr (local.get $s2) (local.get $st) (local.get $ln))))))
+      ;; code-unit [st, st+ln) → byte range
+      (let $bst i32 (call $str_cu_to_byte (local.get $s2) (local.get $st)))
+      (let $ben i32 (call $str_cu_to_byte (local.get $s2) (i32.add (local.get $st) (local.get $ln))))
+      (return (call $mk_str (call $substr (local.get $s2) (local.get $bst) (i32.sub (local.get $ben) (local.get $bst)))))))
   ;; --- string2 methods (this = string): 60 split,61 trim,62 repeat,63 includes,64 startsWith,65 endsWith,66 padStart,67 padEnd,68 at ---
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 60)) (i32.le_s (local.get $id) (i32.const 68)))
     (then
@@ -8368,7 +8379,7 @@
       (if (i32.eq (local.get $id) (i32.const 68))  ;; at(i) — supports negative index
         (then
           (let $atix i32 (call $to_int_idx (call $to_num (local.get $a0))))
-          (let $atsl i32 (call $str_len (local.get $s)))
+          (let $atsl i32 (call $str_cu_len (local.get $s)))  ;; code-unit length
           (if (i32.lt_s (local.get $atix) (i32.const 0)) (then (set! $atix (i32.add (local.get $atix) (local.get $atsl)))))
           (if (i32.or (i32.lt_s (local.get $atix) (i32.const 0)) (i32.ge_s (local.get $atix) (local.get $atsl))) (then (return (call $v_undef))))
           (return (call $str_char_at (local.get $s) (local.get $atix)))))

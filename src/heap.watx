@@ -147,6 +147,16 @@
     (set! $off (i32.add (local.get $off) (local.get $sl)))
     (br $l)))
   (local.get $blen))
+;; code-unit index at (or before) byte offset $boff — the inverse of str_cu_to_byte for a lead-byte offset.
+(func $str_byte_to_cu (param $ptr i32) (param $boff i32) (result i32) (effects)
+  (let $off i32 (i32.const 0)) (let $cu i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $off) (local.get $boff)))
+    (let $sl i32 (call $utf8_seqlen (call $str_byte (local.get $ptr) (local.get $off))))
+    (set! $cu (i32.add (local.get $cu) (if i32 (i32.eq (local.get $sl) (i32.const 4)) (then (i32.const 2)) (else (i32.const 1)))))
+    (set! $off (i32.add (local.get $off) (local.get $sl)))
+    (br $l)))
+  (local.get $cu))
 ;; the UTF-16 code unit at code-unit index $cui (-1 if out of range). Astral chars yield surrogate halves.
 (func $str_cu_at (param $ptr i32) (param $cui i32) (result i32) (effects)
   (if (i32.lt_s (local.get $cui) (i32.const 0)) (then (return (i32.const -1))))
