@@ -9548,7 +9548,7 @@
         (then
           (let $ssm i64 (call $get_prop (local.get $a0) (call $mk_str (if i32 (i32.eq (local.get $id) (i32.const 104)) (then (cstring "@@search")) (else (cstring "@@match"))))))
           (if (call $err) (then (return (call $v_undef))))
-          (if (call $is_function (local.get $ssm))
+          (if (i32.or (call $is_function (local.get $ssm)) (call $is_htmldda (local.get $ssm)))
             (then
               (let $ssargs i32 (call $heap_alloc (i32.const 8)))
               (i64.store (local.get $ssargs) (call $mk_str (local.get $sub)))
@@ -9559,7 +9559,7 @@
         (then
           (let $srm i64 (call $get_prop (local.get $a0) (call $mk_str (cstring "@@replace"))))
           (if (call $err) (then (return (call $v_undef))))
-          (if (call $is_function (local.get $srm))
+          (if (i32.or (call $is_function (local.get $srm)) (call $is_htmldda (local.get $srm)))
             (then
               (let $srargs i32 (call $heap_alloc (i32.const 16)))
               (i64.store (local.get $srargs) (call $mk_str (local.get $sub)))
