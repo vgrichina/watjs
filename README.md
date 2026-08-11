@@ -1,8 +1,9 @@
 # watjs
 
 A **JavaScript interpreter written in WAT** (WebAssembly Text), compiled to a single
-`.wasm` module by a vendored+extended WATX compiler. JS source is lexed, parsed, and
-executed entirely inside WebAssembly; the host (Node) provides only a thin I/O surface.
+`.wasm` module by a vendored+extended [WATX compiler](https://watx.berrry.app). JS
+source is lexed, parsed, and executed entirely inside WebAssembly; the host (Node)
+provides only a thin I/O surface.
 
 See [DESIGN.md](./DESIGN.md) for architecture and [CLAUDE.md](./CLAUDE.md) for
 working notes.
@@ -30,7 +31,7 @@ src/        the engine, in WATX (compiled to watjs.wasm)
   regex.watx     backtracking regular-expression engine
   json.watx      JSON.stringify / JSON.parse
   main.watx      imports + exports (eval/alloc_input/heap_reset/generator glue)
-tools/      WATX compiler (vendored from watx.berrry.app, canvas runtime removed)
+tools/      WATX compiler (from https://watx.berrry.app, canvas runtime removed)
             + Node build/test harness (build.js, run-tests.js, test262.js)
 test/       *.watx unit probes (t_* return 1) and *.js end-to-end tests
 test262/    curated slices of the tc39 test262 suite + its harness
