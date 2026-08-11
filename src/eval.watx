@@ -491,12 +491,17 @@
 ;; unless $allNames); skips @@ internal/symbol keys.
 ;; $skipfnmeta: when 1 (a function's own-prop scope), omit length/name/prototype here — the caller emits
 ;; them first in their canonical creation-order position (they exist since function creation).
-(func $push_scope_keys (param $out i32) (param $sc i32) (param $allNames i32) (param $skipfnmeta i32) (effects)
+;; $phase: 0 = both passes; 1 = integer-index keys only; 2 = string keys only. Splitting lets the function
+;; key builder interleave the synthetic length/name/prototype between the integer and string keys (spec
+;; OrdinaryOwnPropertyKeys: integer indices ascending FIRST, then all string keys in insertion order —
+;; and length/name/prototype are string keys created at fn creation, so they follow the integer keys).
+(func $push_scope_keys_ph (param $out i32) (param $sc i32) (param $allNames i32) (param $skipfnmeta i32) (param $phase i32) (effects)
   (if (i32.eqz (local.get $sc)) (then (return)))
   (let $cnt i32 (call $scope_count (local.get $sc)))
   ;; spec OwnPropertyKeys order: integer-index keys ascending, THEN string keys in
   ;; insertion order. Pass 1 emits integer indices ascending (min-find, n is small).
   (let $last f64 (f64.const -1))  ;; f64 so indices up to 2^32-2 sort correctly (i32 would overflow past 2^31)
+  (if (i32.ne (local.get $phase) (i32.const 2)) (then
   (block $p1e (loop $p1l
     (let $best f64 (f64.const -1))
     (let $bestkey i32 (i32.const 0))
@@ -516,8 +521,9 @@
     (br_if $p1e (f64.eq (local.get $best) (f64.const -1)))
     (call $arr_push (local.get $out) (call $mk_str (local.get $bestkey)))
     (set! $last (local.get $best))
-    (br $p1l)))
+    (br $p1l)))))
   ;; pass 2: non-integer string keys in insertion order
+  (if (i32.ne (local.get $phase) (i32.const 1)) (then
   (let $i i32 (i32.const 0))
   (block $ke (loop $kl
     (br_if $ke (i32.ge_s (local.get $i) (local.get $cnt)))
@@ -528,7 +534,11 @@
             (i32.and (i32.or (local.get $allNames) (i32.ne (call $entry_enumerable (i32.add (local.get $e2) (i32.const 8))) (i32.const 0)))
               (i32.eqz (i32.and (local.get $skipfnmeta) (i32.or (call $str_eq (local.get $kp2) (cstring "length")) (i32.or (call $str_eq (local.get $kp2) (cstring "name")) (call $str_eq (local.get $kp2) (cstring "prototype")))))))))
       (then (call $arr_push (local.get $out) (call $mk_str (local.get $kp2)))))
-    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $kl))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $kl))))))
+
+;; back-compat wrapper: both passes (integer then string).
+(func $push_scope_keys (param $out i32) (param $sc i32) (param $allNames i32) (param $skipfnmeta i32) (effects)
+  (call $push_scope_keys_ph (local.get $out) (local.get $sc) (local.get $allNames) (local.get $skipfnmeta) (i32.const 0)))
 
 ;; membership test by SameValue over a key array
 (func $key_in_arr (param $arr i32) (param $k i64) (result i32) (effects)
@@ -890,10 +900,14 @@
       ;; order (length, name, prototype), BEFORE user props, even after defineProperty materializes them
       ;; into the scope. push_scope_keys then SKIPS these three (skipfnmeta=1) to avoid re-emitting them at
       ;; their scope-insertion position.
+      ;; integer-index keys come FIRST (spec OrdinaryOwnPropertyKeys), THEN the synthetic length/name/
+      ;; prototype, THEN the other string keys — so `Object.getOwnPropertyNames(fn)` with numeric own keys
+      ;; orders e.g. [1, 2, length, name, prototype, a], matching objects/class-prototypes.
+      (if (local.get $fsc) (then (call $push_scope_keys_ph (local.get $out) (local.get $fsc) (local.get $allNames) (i32.const 1) (i32.const 1))))  ;; integers only
       (call $push_fnmeta_key (local.get $out) (local.get $fp) (local.get $fsc) (cstring "length") (local.get $allNames))
       (call $push_fnmeta_key (local.get $out) (local.get $fp) (local.get $fsc) (cstring "name") (local.get $allNames))
       (call $push_fnmeta_key (local.get $out) (local.get $fp) (local.get $fsc) (cstring "prototype") (local.get $allNames))
-      (if (local.get $fsc) (then (call $push_scope_keys (local.get $out) (local.get $fsc) (local.get $allNames) (i32.const 1))))))
+      (if (local.get $fsc) (then (call $push_scope_keys_ph (local.get $out) (local.get $fsc) (local.get $allNames) (i32.const 1) (i32.const 2))))))  ;; strings only
   (local.get $out))
 
 ;; emit a function's synthetic meta key (length/name/prototype) in canonical position iff it's an own
