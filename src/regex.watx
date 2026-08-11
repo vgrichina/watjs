@@ -571,7 +571,13 @@
       (if (i32.eq (local.get $gq) (i32.const 43)) (then (set! $gmin (i32.const 1)) (set! $gmax (i32.add (local.get $slen) (i32.const 1))) (set! $gqend (i32.add (local.get $after) (i32.const 1)))))
       (if (i32.eq (local.get $gq) (i32.const 63)) (then (set! $gmin (i32.const 0)) (set! $gmax (i32.const 1)) (set! $gqend (i32.add (local.get $after) (i32.const 1)))))
       (if (i32.eq (local.get $gq) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $after)) (set! $gmin (i32.load (i32.const 172))) (set! $gmax (i32.load (i32.const 176))) (set! $gqend (i32.load (i32.const 180)))))
-      (return (call $re_group_rep (local.get $p) (local.get $plen) (local.get $gstart) (local.get $gend) (local.get $gqend) (local.get $gmin) (local.get $gmax) (local.get $s) (local.get $slen) (local.get $spos) (local.get $gidx)))))
+      ;; a trailing `?` right after a group quantifier (`(ab)*?`, `(a|b)+?`, `(x){2,3}?`) makes the REPETITION
+      ;; lazy (fewest reps first). Consume it and flip greedy off; without this the `?` corrupts the continuation.
+      (let $ggreedy i32 (i32.const 1))
+      (if (i32.or (i32.eq (local.get $gq) (i32.const 42)) (i32.or (i32.eq (local.get $gq) (i32.const 43)) (i32.or (i32.eq (local.get $gq) (i32.const 63)) (i32.eq (local.get $gq) (i32.const 123)))))
+        (then (if (i32.eq (call $re_pb (local.get $p) (local.get $plen) (local.get $gqend)) (i32.const 63))
+          (then (set! $ggreedy (i32.const 0)) (set! $gqend (i32.add (local.get $gqend) (i32.const 1)))))))
+      (return (call $re_group_rep (local.get $p) (local.get $plen) (local.get $gstart) (local.get $gend) (local.get $gqend) (local.get $gmin) (local.get $gmax) (local.get $s) (local.get $slen) (local.get $spos) (local.get $gidx) (local.get $ggreedy)))))
   (let $aend i32 (call $re_atom_end (local.get $p) (local.get $plen) (local.get $ppos)))
   (let $q i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $aend)))
   (let $min i32 (i32.const 1))
@@ -963,10 +969,36 @@
   (i32.const -1))
 
 ;; variable-length repetition (greedy, backtracking on the rep count).
-(func $re_group_rep (param $p i32) (param $plen i32) (param $gstart i32) (param $gend i32) (param $qend i32) (param $min i32) (param $max i32) (param $s i32) (param $slen i32) (param $spos i32) (param $gidx i32) (result i32) (effects)
+(func $re_group_rep (param $p i32) (param $plen i32) (param $gstart i32) (param $gend i32) (param $qend i32) (param $min i32) (param $max i32) (param $s i32) (param $slen i32) (param $spos i32) (param $gidx i32) (param $greedy i32) (result i32) (effects)
   ;; exactly-once group → try each alternative against the continuation (real backtracking).
   (if (i32.and (i32.eq (local.get $min) (i32.const 1)) (i32.eq (local.get $max) (i32.const 1)))
     (then (return (call $re_group_once (local.get $p) (local.get $plen) (local.get $gstart) (local.get $gend) (local.get $qend) (local.get $s) (local.get $slen) (local.get $spos) (local.get $gidx)))))
+  ;; LAZY repetition (`(ab)*?`, `(a|b)+?c`): try the FEWEST reps first — match the `min` required reps, then
+  ;; repeatedly try the continuation BEFORE consuming another rep, up to `max`.
+  (if (i32.eqz (local.get $greedy))
+    (then
+      (let $lcp i32 (local.get $spos))
+      (let $lcount i32 (i32.const 0))
+      (let $lprev i32 (local.get $spos))
+      (block $lme (loop $lml
+        (br_if $lme (i32.ge_s (local.get $lcount) (local.get $min)))
+        (call $re_clear_caps_in (local.get $p) (local.get $gstart) (local.get $gend))
+        (let $le i32 (call $re_match_alt (local.get $p) (local.get $gstart) (local.get $gend) (local.get $s) (local.get $slen) (local.get $lcp)))
+        (if (i32.lt_s (local.get $le) (i32.const 0)) (then (return (i32.const -1))))  ;; can't satisfy min → fail
+        (set! $lprev (local.get $lcp)) (set! $lcp (local.get $le)) (set! $lcount (i32.add (local.get $lcount) (i32.const 1)))
+        (br $lml)))
+      (block $lde (loop $ldl
+        (if (i32.gt_s (local.get $lcount) (i32.const 0)) (then (call $re_set_cap (local.get $gidx) (local.get $lprev) (local.get $lcp))))
+        (let $lr i32 (call $re_match (local.get $p) (local.get $plen) (local.get $qend) (local.get $s) (local.get $slen) (local.get $lcp)))
+        (if (i32.ge_s (local.get $lr) (i32.const 0)) (then (return (local.get $lr))))
+        (br_if $lde (i32.ge_s (local.get $lcount) (local.get $max)))  ;; no more reps allowed
+        (call $re_clear_caps_in (local.get $p) (local.get $gstart) (local.get $gend))
+        (let $le2 i32 (call $re_match_alt (local.get $p) (local.get $gstart) (local.get $gend) (local.get $s) (local.get $slen) (local.get $lcp)))
+        (if (i32.lt_s (local.get $le2) (i32.const 0)) (then (br $lde)))  ;; body can't match → no more reps
+        (if (i32.le_s (local.get $le2) (local.get $lcp)) (then (br $lde)))  ;; empty rep → no progress, stop
+        (set! $lprev (local.get $lcp)) (set! $lcp (local.get $le2)) (set! $lcount (i32.add (local.get $lcount) (i32.const 1)))
+        (br $ldl)))
+      (return (i32.const -1))))
   (let $positions i32 (call $heap_alloc (i32.const 1024)))
   (i32.store (local.get $positions) (local.get $spos))
   (let $count i32 (i32.const 0))
