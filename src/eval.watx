@@ -1216,6 +1216,17 @@
   (if (i32.eqz (call $truthy (local.get $cwok)))
     (then (call $throw_type (cstring "TypeError") (cstring "Cannot delete property")))))
 
+;; DeletePropertyOrThrow(O, keyf) with an f64 index key — routes through Reflect.deleteProperty
+;; (native 203, proxy-trap aware) and throws a TypeError on a falsy result. For array-like OBJECT
+;; receivers whose index can exceed the i32 range.
+(func $del_or_throw_f64 (param $thisv i64) (param $keyf f64) (effects)
+  (let $db i32 (call $heap_alloc (i32.const 16)))
+  (i64.store (local.get $db) (local.get $thisv))
+  (i64.store (i32.add (local.get $db) (i32.const 8)) (call $mk_str (call $num_to_str (local.get $keyf))))
+  (let $ok i64 (call $call_native (i32.const 203) (i32.const 2) (local.get $db) (call $v_undef)))
+  (if (call $err) (then (return)))
+  (if (i32.eqz (call $truthy (local.get $ok))) (then (call $throw_type (cstring "TypeError") (cstring "Cannot delete property")))))
+
 ;; Append one concat item to result `A` starting at index `n`; returns the next
 ;; index. Spreads the item if IsConcatSpreadable (an array, or an object whose
 ;; IsArray(v) per spec: sees through Proxies to the target (throws on a revoked proxy).
@@ -8659,6 +8670,41 @@
         (if (call $err) (then (return (call $v_undef))))
         (set! $flgi (i32.add (local.get $flgi) (i32.const 1))) (br $flgl)))
       (return (local.get $flgA))))
+  ;; reverse(71) on an array-like OBJECT — live f64 (no alike_arr snapshot). Nested-if gate (see fill).
+  (if (i32.and (i32.eq (local.get $id) (i32.const 71)) (i32.and (i32.eqz (call $is_array (local.get $thisv))) (call $is_object (local.get $thisv))))
+    (then
+    (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
+    (then
+      (let $rvn f64 (call $alike_len_f64 (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $rvlo f64 (f64.const 0))
+      (let $rvmid f64 (f64.floor (f64.div (local.get $rvn) (f64.const 2))))
+      (block $rve (loop $rvl
+        (br_if $rve (f64.ge (local.get $rvlo) (local.get $rvmid)))
+        (let $rvup f64 (f64.sub (f64.sub (local.get $rvn) (local.get $rvlo)) (f64.const 1)))
+        ;; spec order: HasProperty(lower), Get(lower), HasProperty(upper), Get(upper)
+        (let $rvlex i32 (call $truthy (call $js_in (call $num (local.get $rvlo)) (local.get $thisv))))
+        (if (call $err) (then (return (call $v_undef))))
+        (let $rvlv i64 (if i64 (local.get $rvlex) (then (call $get_prop (local.get $thisv) (call $num (local.get $rvlo)))) (else (call $v_undef))))
+        (if (call $err) (then (return (call $v_undef))))
+        (let $rvuex i32 (call $truthy (call $js_in (call $num (local.get $rvup)) (local.get $thisv))))
+        (if (call $err) (then (return (call $v_undef))))
+        (let $rvuv i64 (if i64 (local.get $rvuex) (then (call $get_prop (local.get $thisv) (call $num (local.get $rvup)))) (else (call $v_undef))))
+        (if (call $err) (then (return (call $v_undef))))
+        (if (i32.and (local.get $rvlex) (local.get $rvuex))
+          (then (call $set_prop (local.get $thisv) (call $num (local.get $rvlo)) (local.get $rvuv))
+                (call $set_prop (local.get $thisv) (call $num (local.get $rvup)) (local.get $rvlv)))
+          (else (if (i32.and (i32.eqz (local.get $rvlex)) (local.get $rvuex))
+            (then (call $set_prop (local.get $thisv) (call $num (local.get $rvlo)) (local.get $rvuv))
+                  (call $del_or_throw_f64 (local.get $thisv) (local.get $rvup)))
+            (else (if (i32.and (local.get $rvlex) (i32.eqz (local.get $rvuex)))
+              (then (call $del_or_throw_f64 (local.get $thisv) (local.get $rvlo))
+                    (call $set_prop (local.get $thisv) (call $num (local.get $rvup)) (local.get $rvlv)))
+              (else))))))  ;; both absent → nothing
+        (if (call $err) (then (return (call $v_undef))))
+        (set! $rvlo (f64.add (local.get $rvlo) (f64.const 1)))
+        (br $rvl)))
+      (return (local.get $thisv))))))
   (if (i32.and (i32.and (i32.ge_s (local.get $id) (i32.const 70)) (i32.le_s (local.get $id) (i32.const 73)))
         (i32.or (call $is_array (local.get $thisv)) (i32.or (call $is_object (local.get $thisv)) (call $is_function (local.get $thisv)))))  ;; generic on array-likes
     (then
