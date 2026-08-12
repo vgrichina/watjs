@@ -534,7 +534,7 @@
           (if (i32.eq (local.get $brq) (i32.const 42)) (then (set! $brmin (i32.const 0)) (set! $brmax (i32.add (local.get $slen) (i32.const 1))) (set! $brqend (i32.add (local.get $brqp) (i32.const 1)))))  ;; *
           (if (i32.eq (local.get $brq) (i32.const 43)) (then (set! $brmin (i32.const 1)) (set! $brmax (i32.add (local.get $slen) (i32.const 1))) (set! $brqend (i32.add (local.get $brqp) (i32.const 1)))))  ;; +
           (if (i32.eq (local.get $brq) (i32.const 63)) (then (set! $brmin (i32.const 0)) (set! $brmax (i32.const 1)) (set! $brqend (i32.add (local.get $brqp) (i32.const 1)))))  ;; ?
-          (if (i32.eq (local.get $brq) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $brqp)) (set! $brmin (i32.load (i32.const 172))) (set! $brmax (i32.load (i32.const 176))) (set! $brqend (i32.load (i32.const 180)))))  ;; {n,m}
+          (if (i32.and (i32.eq (local.get $brq) (i32.const 123)) (call $re_brace_is_quant (local.get $p) (local.get $plen) (local.get $brqp))) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $brqp)) (set! $brmin (i32.load (i32.const 172))) (set! $brmax (i32.load (i32.const 176))) (set! $brqend (i32.load (i32.const 180)))))  ;; {n,m}
           (return (call $re_backref_rep (local.get $p) (local.get $plen) (local.get $bnum) (local.get $brqend) (local.get $brmin) (local.get $brmax) (local.get $s) (local.get $slen) (local.get $spos)))))
       (if (i32.and (i32.eq (local.get $bnc) (i32.const 107)) (i32.eq (call $re_pb (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2))) (i32.const 60)))  ;; \k<
         (then
@@ -548,7 +548,7 @@
           (if (i32.eq (local.get $kq) (i32.const 42)) (then (set! $kmin (i32.const 0)) (set! $kmax (i32.add (local.get $slen) (i32.const 1))) (set! $kqend (i32.add (local.get $kqp) (i32.const 1)))))  ;; *
           (if (i32.eq (local.get $kq) (i32.const 43)) (then (set! $kmin (i32.const 1)) (set! $kmax (i32.add (local.get $slen) (i32.const 1))) (set! $kqend (i32.add (local.get $kqp) (i32.const 1)))))  ;; +
           (if (i32.eq (local.get $kq) (i32.const 63)) (then (set! $kmin (i32.const 0)) (set! $kmax (i32.const 1)) (set! $kqend (i32.add (local.get $kqp) (i32.const 1)))))  ;; ?
-          (if (i32.eq (local.get $kq) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $kqp)) (set! $kmin (i32.load (i32.const 172))) (set! $kmax (i32.load (i32.const 176))) (set! $kqend (i32.load (i32.const 180)))))  ;; {n,m}
+          (if (i32.and (i32.eq (local.get $kq) (i32.const 123)) (call $re_brace_is_quant (local.get $p) (local.get $plen) (local.get $kqp))) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $kqp)) (set! $kmin (i32.load (i32.const 172))) (set! $kmax (i32.load (i32.const 176))) (set! $kqend (i32.load (i32.const 180)))))  ;; {n,m}
           (return (call $re_backref_rep (local.get $p) (local.get $plen) (local.get $kgidx) (local.get $kqend) (local.get $kmin) (local.get $kmax) (local.get $s) (local.get $slen) (local.get $spos)))))))
   (if (i32.eq (local.get $c) (i32.const 40))  ;; '(' group (capturing, (?:non-capturing), or (?=/(?! lookahead)
     (then
@@ -611,7 +611,7 @@
       (if (i32.eq (local.get $gq) (i32.const 42)) (then (set! $gmin (i32.const 0)) (set! $gmax (i32.add (local.get $slen) (i32.const 1))) (set! $gqend (i32.add (local.get $after) (i32.const 1)))))
       (if (i32.eq (local.get $gq) (i32.const 43)) (then (set! $gmin (i32.const 1)) (set! $gmax (i32.add (local.get $slen) (i32.const 1))) (set! $gqend (i32.add (local.get $after) (i32.const 1)))))
       (if (i32.eq (local.get $gq) (i32.const 63)) (then (set! $gmin (i32.const 0)) (set! $gmax (i32.const 1)) (set! $gqend (i32.add (local.get $after) (i32.const 1)))))
-      (if (i32.eq (local.get $gq) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $after)) (set! $gmin (i32.load (i32.const 172))) (set! $gmax (i32.load (i32.const 176))) (set! $gqend (i32.load (i32.const 180)))))
+      (if (i32.and (i32.eq (local.get $gq) (i32.const 123)) (call $re_brace_is_quant (local.get $p) (local.get $plen) (local.get $after))) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $after)) (set! $gmin (i32.load (i32.const 172))) (set! $gmax (i32.load (i32.const 176))) (set! $gqend (i32.load (i32.const 180)))))
       ;; a trailing `?` right after a group quantifier (`(ab)*?`, `(a|b)+?`, `(x){2,3}?`) makes the REPETITION
       ;; lazy (fewest reps first). Consume it and flip greedy off; without this the `?` corrupts the continuation.
       (let $ggreedy i32 (i32.const 1))
@@ -627,7 +627,7 @@
   (if (i32.eq (local.get $q) (i32.const 42)) (then (set! $min (i32.const 0)) (set! $max (i32.add (local.get $slen) (i32.const 1))) (set! $qend (i32.add (local.get $aend) (i32.const 1)))))  ;; *
   (if (i32.eq (local.get $q) (i32.const 43)) (then (set! $min (i32.const 1)) (set! $max (i32.add (local.get $slen) (i32.const 1))) (set! $qend (i32.add (local.get $aend) (i32.const 1)))))  ;; +
   (if (i32.eq (local.get $q) (i32.const 63)) (then (set! $min (i32.const 0)) (set! $max (i32.const 1)) (set! $qend (i32.add (local.get $aend) (i32.const 1)))))  ;; ?
-  (if (i32.eq (local.get $q) (i32.const 123)) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $aend))  ;; {n,m} → sets regs 172/176/180
+  (if (i32.and (i32.eq (local.get $q) (i32.const 123)) (call $re_brace_is_quant (local.get $p) (local.get $plen) (local.get $aend))) (then (call $re_parse_brace (local.get $p) (local.get $plen) (local.get $aend))  ;; {n,m} → sets regs 172/176/180
     (set! $min (i32.load (i32.const 172))) (set! $max (i32.load (i32.const 176))) (set! $qend (i32.load (i32.const 180)))))
   ;; lazy modifier: a '?' right after the quantifier (a+?, a*?, a??, a{2,3}?)
   (let $lazy i32 (i32.const 0))
@@ -664,6 +664,30 @@
     (set! $count (i32.sub (local.get $count) (i32.const 1)))
     (br $bl)))
   (i32.const -1))
+
+;; Is the '{' at $bpos a WELL-FORMED quantifier `{n}` / `{n,}` / `{n,m}` (needs ≥1 leading digit)?
+;; A `{` that isn't (e.g. `{,2}`, `{}`, `{a}`) is a literal '{' in sloppy mode (Annex B ExtendedPatternChar).
+;; Mirrors the validator in re_check_quant so the matcher agrees.
+(func $re_brace_is_quant (param $p i32) (param $plen i32) (param $bpos i32) (result i32) (effects)
+  (let $i i32 (i32.add (local.get $bpos) (i32.const 1)))
+  (let $nd i32 (i32.const 0))
+  (block $e (loop $l
+    (let $d i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $i)))
+    (br_if $e (i32.eqz (i32.and (i32.ge_s (local.get $d) (i32.const 48)) (i32.le_s (local.get $d) (i32.const 57)))))
+    (set! $nd (i32.add (local.get $nd) (i32.const 1)))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (if (i32.eqz (local.get $nd)) (then (return (i32.const 0))))  ;; no leading digits → not a quantifier
+  (let $c i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $i)))
+  (if (i32.eq (local.get $c) (i32.const 125)) (then (return (i32.const 1))))  ;; {n}
+  (if (i32.eq (local.get $c) (i32.const 44))  ;; ','
+    (then
+      (set! $i (i32.add (local.get $i) (i32.const 1)))
+      (block $e2 (loop $l2
+        (let $d2 i32 (call $re_pb (local.get $p) (local.get $plen) (local.get $i)))
+        (br_if $e2 (i32.eqz (i32.and (i32.ge_s (local.get $d2) (i32.const 48)) (i32.le_s (local.get $d2) (i32.const 57)))))
+        (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l2)))
+      (if (i32.eq (call $re_pb (local.get $p) (local.get $plen) (local.get $i)) (i32.const 125)) (then (return (i32.const 1))))))  ;; {n,} {n,m}
+  (i32.const 0))
 
 ;; parse {n}, {n,}, {n,m} at brace pos → regs 172 min, 176 max, 180 qend
 (func $re_parse_brace (param $p i32) (param $plen i32) (param $bpos i32) (effects)
