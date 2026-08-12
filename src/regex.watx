@@ -329,10 +329,15 @@
       (if (i32.and (i32.ge_s (local.get $u1) (i32.const 0)) (i32.and (i32.ge_s (local.get $u2) (i32.const 0)) (i32.and (i32.ge_s (local.get $u3) (i32.const 0)) (i32.ge_s (local.get $u4) (i32.const 0)))))
         (then (return (i32.or (i32.shl (i32.add (i32.add (i32.add (i32.mul (local.get $u1) (i32.const 4096)) (i32.mul (local.get $u2) (i32.const 256))) (i32.mul (local.get $u3) (i32.const 16))) (local.get $u4)) (i32.const 4)) (i32.const 6)))))
       (return (i32.or (i32.shl (i32.const 117) (i32.const 4)) (i32.const 2)))))  ;; malformed → literal 'u'
-  ;; \cX (ControlLetter) → the control char (X & 0x1F), 3 bytes consumed
+  ;; \cX (ControlLetter) → the control char (X & 0x1F), 3 bytes consumed. Annex B (sloppy, in a class)
+  ;; extends ClassControlLetter to a DIGIT or '_' as well, so `[\c0]` = \x10, `[\c_]` = \x1F.
   (if (i32.eq (local.get $e) (i32.const 99))
-    (then (if (call $re_isletter (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 2)))))
-      (then (return (i32.or (i32.shl (i32.and (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 2)))) (i32.const 31)) (i32.const 4)) (i32.const 3)))))))
+    (then
+      (let $cc2 i32 (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $i) (i32.const 2)))))
+      (if (i32.or (call $re_isletter (local.get $cc2))
+                  (i32.or (i32.and (i32.ge_s (local.get $cc2) (i32.const 48)) (i32.le_s (local.get $cc2) (i32.const 57)))
+                          (i32.eq (local.get $cc2) (i32.const 95))))
+        (then (return (i32.or (i32.shl (i32.and (local.get $cc2) (i32.const 31)) (i32.const 4)) (i32.const 3)))))))
   ;; single-char escapes (in a class, \b is backspace, not a word boundary)
   (let $lit i32 (local.get $e))
   (if (i32.eq (local.get $e) (i32.const 110)) (then (set! $lit (i32.const 10))))   ;; \n
@@ -376,6 +381,14 @@
     (if (i32.and (i32.lt_s (i32.add (local.get $rstart) (i32.const 1)) (local.get $end))
           (i32.eq (i32.load8_u (i32.add (local.get $p) (local.get $rstart))) (i32.const 45)))  ;; '-'
       (then
+        ;; Annex B: if the char after '-' is a CharacterClassEscape (\d \w \s …), this is NOT a range —
+        ;; the '-' is a literal and `lo` is a literal endpoint. (u-mode rejects this shape at validation.)
+        (if (i32.and (i32.eq (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $rstart) (i32.const 1)))) (i32.const 92))
+                     (call $re_is_classesc (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $rstart) (i32.const 2))))))
+          (then
+            (if (call $re_eqc (local.get $ch) (local.get $lo)) (then (set! $found (i32.const 1))))
+            (set! $i (local.get $rstart))
+            (br $l)))
         (if (i32.eq (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $rstart) (i32.const 1)))) (i32.const 92))
           (then
             (set! $packed (call $re_litesc (local.get $p) (i32.add (local.get $rstart) (i32.const 1))))
