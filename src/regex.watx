@@ -782,6 +782,59 @@
     (br $l)))
   (local.get $n))
 
+;; emit code point $cp as UTF-8 into Str $s at byte index $k; return the next byte index.
+(func $re_emit_utf8 (param $s i32) (param $k i32) (param $cp i32) (result i32) (effects)
+  (if (i32.lt_u (local.get $cp) (i32.const 0x80))
+    (then (call $str_set_byte (local.get $s) (local.get $k) (local.get $cp)) (return (i32.add (local.get $k) (i32.const 1)))))
+  (if (i32.lt_u (local.get $cp) (i32.const 0x800))
+    (then
+      (call $str_set_byte (local.get $s) (local.get $k) (i32.or (i32.const 0xC0) (i32.shr_u (local.get $cp) (i32.const 6))))
+      (call $str_set_byte (local.get $s) (i32.add (local.get $k) (i32.const 1)) (i32.or (i32.const 0x80) (i32.and (local.get $cp) (i32.const 0x3F))))
+      (return (i32.add (local.get $k) (i32.const 2)))))
+  (if (i32.lt_u (local.get $cp) (i32.const 0x10000))
+    (then
+      (call $str_set_byte (local.get $s) (local.get $k) (i32.or (i32.const 0xE0) (i32.shr_u (local.get $cp) (i32.const 12))))
+      (call $str_set_byte (local.get $s) (i32.add (local.get $k) (i32.const 1)) (i32.or (i32.const 0x80) (i32.and (i32.shr_u (local.get $cp) (i32.const 6)) (i32.const 0x3F))))
+      (call $str_set_byte (local.get $s) (i32.add (local.get $k) (i32.const 2)) (i32.or (i32.const 0x80) (i32.and (local.get $cp) (i32.const 0x3F))))
+      (return (i32.add (local.get $k) (i32.const 3)))))
+  (call $str_set_byte (local.get $s) (local.get $k) (i32.or (i32.const 0xF0) (i32.shr_u (local.get $cp) (i32.const 18))))
+  (call $str_set_byte (local.get $s) (i32.add (local.get $k) (i32.const 1)) (i32.or (i32.const 0x80) (i32.and (i32.shr_u (local.get $cp) (i32.const 12)) (i32.const 0x3F))))
+  (call $str_set_byte (local.get $s) (i32.add (local.get $k) (i32.const 2)) (i32.or (i32.const 0x80) (i32.and (i32.shr_u (local.get $cp) (i32.const 6)) (i32.const 0x3F))))
+  (call $str_set_byte (local.get $s) (i32.add (local.get $k) (i32.const 3)) (i32.or (i32.const 0x80) (i32.and (local.get $cp) (i32.const 0x3F))))
+  (i32.add (local.get $k) (i32.const 4)))
+
+;; decode a group name [ns,ne) (raw pattern bytes at $p) into a fresh Str, applying RegExpUnicodeEscape
+;; Sequences (\uXXXX / \u{H+}; a high+low surrogate pair is combined into one astral code point).
+(func $re_gname_decode (param $p i32) (param $ns i32) (param $ne i32) (result i32) (effects)
+  (let $nstr i32 (call $str_alloc (i32.sub (local.get $ne) (local.get $ns))))
+  (let $nk i32 (i32.const 0))
+  (let $ni i32 (local.get $ns))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $ni) (local.get $ne)))
+    (if (i32.and (i32.eq (i32.load8_u (i32.add (local.get $p) (local.get $ni))) (i32.const 92)) (i32.lt_s (i32.add (local.get $ni) (i32.const 1)) (local.get $ne)))
+      (then
+        (let $packed i32 (call $re_litesc (local.get $p) (local.get $ni)))
+        (let $cp i32 (i32.shr_u (local.get $packed) (i32.const 4)))
+        (set! $ni (i32.add (local.get $ni) (i32.and (local.get $packed) (i32.const 15))))
+        (if (i32.and (i32.and (i32.ge_u (local.get $cp) (i32.const 0xD800)) (i32.le_u (local.get $cp) (i32.const 0xDBFF)))
+                     (i32.and (i32.lt_s (i32.add (local.get $ni) (i32.const 1)) (local.get $ne)) (i32.eq (i32.load8_u (i32.add (local.get $p) (local.get $ni))) (i32.const 92))))
+          (then
+            (let $packed2 i32 (call $re_litesc (local.get $p) (local.get $ni)))
+            (let $cp2 i32 (i32.shr_u (local.get $packed2) (i32.const 4)))
+            (if (i32.and (i32.ge_u (local.get $cp2) (i32.const 0xDC00)) (i32.le_u (local.get $cp2) (i32.const 0xDFFF)))
+              (then
+                (set! $cp (i32.add (i32.const 0x10000) (i32.add (i32.shl (i32.sub (local.get $cp) (i32.const 0xD800)) (i32.const 10)) (i32.sub (local.get $cp2) (i32.const 0xDC00)))))
+                (set! $ni (i32.add (local.get $ni) (i32.and (local.get $packed2) (i32.const 15))))))))
+        (set! $nk (call $re_emit_utf8 (local.get $nstr) (local.get $nk) (local.get $cp)))
+        (br $l))
+      (else
+        (call $str_set_byte (local.get $nstr) (local.get $nk) (i32.load8_u (i32.add (local.get $p) (local.get $ni))))
+        (set! $nk (i32.add (local.get $nk) (i32.const 1)))
+        (set! $ni (i32.add (local.get $ni) (i32.const 1)))
+        (br $l)))))
+  (i32.store (local.get $nstr) (local.get $nk))
+  (local.get $nstr))
+
 ;; capture store: reg 280 = base (cap[2k]=start, cap[2k+1]=end for group k+1), 284 = ngroups
 (func $re_reset_caps (param $p i32) (param $plen i32) (effects)
   (if (i32.eqz (i32.load (i32.const 280))) (then (i32.store (i32.const 280) (call $heap_alloc (i32.const 512)))))
@@ -814,11 +867,7 @@
             (let $ns i32 (i32.add (local.get $j) (i32.const 3)))
             (let $ne i32 (local.get $ns))
             (block $nme (loop $nml (br_if $nme (i32.or (i32.ge_s (local.get $ne) (local.get $plen)) (i32.eq (i32.load8_u (i32.add (local.get $p) (local.get $ne))) (i32.const 62)))) (set! $ne (i32.add (local.get $ne) (i32.const 1))) (br $nml)))
-            (let $nstr i32 (call $str_alloc (i32.sub (local.get $ne) (local.get $ns))))
-            (let $nk i32 (i32.const 0))
-            (block $nce (loop $ncl (br_if $nce (i32.ge_s (i32.add (local.get $ns) (local.get $nk)) (local.get $ne)))
-              (call $str_set_byte (local.get $nstr) (local.get $nk) (i32.load8_u (i32.add (local.get $p) (i32.add (local.get $ns) (local.get $nk)))))
-              (set! $nk (i32.add (local.get $nk) (i32.const 1))) (br $ncl)))
+            (let $nstr i32 (call $re_gname_decode (local.get $p) (local.get $ns) (local.get $ne)))  ;; decode \u escapes in the name
             (i32.store (i32.add (i32.load (i32.const 600)) (i32.mul (local.get $g) (i32.const 4))) (local.get $nstr))
             (i32.store (i32.const 604) (i32.const 1))))))
     (set! $j (i32.add (local.get $j) (i32.const 1))) (br $l2)))
@@ -1803,8 +1852,13 @@
                         (then
                           (if (i32.eq (local.get $i) (local.get $gnst)) (then (call $throw_type (cstring "SyntaxError") (cstring "Empty group name")) (return)))
                           (set! $i (i32.add (local.get $i) (i32.const 1))) (br $gne)))
-                      (if (i32.eq (local.get $gnc) (i32.const 92))  ;; '\' RegExpUnicodeEscapeSequence → skip permissively
-                        (then (set! $i (i32.add (local.get $i) (i32.const 2))) (set! $gnf (i32.const 0)) (br $gnl)))
+                      (if (i32.eq (local.get $gnc) (i32.const 92))  ;; '\' RegExpUnicodeEscapeSequence \uXXXX / \u{H+} → skip the whole escape
+                        (then
+                          (set! $i (i32.add (local.get $i) (i32.const 2)))  ;; past '\u'
+                          (if (i32.and (i32.lt_s (local.get $i) (local.get $n)) (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 123)))
+                            (then (block $gnue (loop $gnul (br_if $gnue (i32.ge_s (local.get $i) (local.get $n))) (if (i32.eq (call $str_byte (local.get $pat) (local.get $i)) (i32.const 125)) (then (set! $i (i32.add (local.get $i) (i32.const 1))) (br $gnue))) (set! $i (i32.add (local.get $i) (i32.const 1))) (br $gnul))))
+                            (else (set! $i (i32.add (local.get $i) (i32.const 4)))))
+                          (set! $gnf (i32.const 0)) (br $gnl)))
                       (if (local.get $gnf)
                         (then (if (i32.eqz (call $re_id_start (local.get $gnc))) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid group name")) (return))))
                         (else (if (i32.eqz (call $re_id_part (local.get $gnc))) (then (call $throw_type (cstring "SyntaxError") (cstring "Invalid group name")) (return)))))
