@@ -4110,8 +4110,11 @@
             ;; access (`[ {..}.y ] = ..`, `[ [..][0] ] = ..`) is a MemberExpression assignment target with
             ;; a literal base, NOT a nested pattern. Detect by skipping the balanced literal and checking
             ;; for a trailing '.'/'['; if so, evaluate the literal via vm_c_primary and assign into it.
+            ;; also applies to a REST target: `[...{}[k]] = v` / `[...[][0]] = v` is a MemberExpression
+            ;; assignment target with a literal base (skip_balanced + a trailing '.'/'[' distinguishes it
+            ;; from a nested binding pattern like `[...[x]]`, whose literal is followed by ']').
             (let $litmember i32 (i32.const 0))
-            (if (i32.and (i32.ne (i32.load (i32.const 676)) (i32.const 0)) (i32.eqz (local.get $isrest)))
+            (if (i32.ne (i32.load (i32.const 676)) (i32.const 0))
               (then
                 (let $lms i32 (call $cursor_save))
                 (call $vm_skip_balanced)
