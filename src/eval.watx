@@ -12712,7 +12712,7 @@
   (call $scope_define_attr (local.get $refo) (cstring "@@toStringTag") (call $mk_str (cstring "Reflect")) (i32.const 4))  ;; toString → [object Reflect]; {W:false,E:false,C:true}
   (call $scope_define (local.get $g) (cstring "Reflect") (call $mk_obj (local.get $refo)))
   (let $proxyf i64 (call $def_native (local.get $g) (cstring "Proxy") (i32.const 209)))
-  (call $set_prop (local.get $proxyf) (call $mk_str (cstring "revocable")) (call $mk_native (i32.const 450) (cstring "revocable")))
+  (call $scope_define_attr (call $fn_def_scope (local.get $proxyf)) (cstring "revocable") (call $mk_native (i32.const 450) (cstring "revocable")) (i32.const 12))  ;; non-enumerable
   ;; DataView/SharedArrayBuffer/%TypedArray.prototype% (reg 528) must exist before the
   ;; per-type TA prototypes chain to it
   (call $setup_dataview)
@@ -12730,7 +12730,7 @@
   (call $ta_type_setup (call $def_native (local.get $g) (cstring "BigInt64Array") (i32.const 394)) (i32.const 9))
   (call $ta_type_setup (call $def_native (local.get $g) (cstring "BigUint64Array") (i32.const 395)) (i32.const 10))
   (let $abf i64 (call $def_native (local.get $g) (cstring "ArrayBuffer") (i32.const 219)))
-  (call $set_prop (local.get $abf) (call $mk_str (cstring "isView")) (call $mk_native (i32.const 392) (cstring "isView")))
+  (call $scope_define_attr (call $fn_def_scope (local.get $abf)) (cstring "isView") (call $mk_native (i32.const 392) (cstring "isView")) (i32.const 12))  ;; non-enumerable
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $abf))) (cstring "@@species")  ;; ArrayBuffer[Symbol.species] === ArrayBuffer
     (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
   (let $abproto i32 (call $obj_new (i32.const 8)))
@@ -12815,7 +12815,7 @@
   (call $scope_define (local.get $setproto) (cstring "constructor") (local.get $setf))
   (call $scope_clear_enum (local.get $setproto))
   (call $scope_define_attr (call $fn_def_scope (local.get $setf)) (cstring "prototype") (call $mk_obj (local.get $setproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
-  (call $set_prop (local.get $mapf) (call $mk_str (cstring "groupBy")) (call $mk_native (i32.const 331) (cstring "groupBy")))
+  (call $scope_define_attr (call $fn_def_scope (local.get $mapf)) (cstring "groupBy") (call $mk_native (i32.const 331) (cstring "groupBy")) (i32.const 12))  ;; non-enumerable
   ;; Map[Symbol.species] / Set[Symbol.species] — accessor getter returning the receiver
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $mapf))) (cstring "@@species")
     (call $mk_native (i32.const 329) (cstring "get [Symbol.species]")) (call $v_undef) (i32.const 5))
