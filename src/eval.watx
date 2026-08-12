@@ -12917,10 +12917,11 @@
   (call $scope_define (local.get $iterproto) (cstring "constructor") (local.get $iterf))
   (call $scope_clear_enum (local.get $iterproto))
   (call $scope_define_attr (call $fn_def_scope (local.get $iterf)) (cstring "prototype") (call $mk_obj (local.get $iterproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
-  (call $set_prop (local.get $iterf) (call $mk_str (cstring "from")) (call $mk_native (i32.const 349) (cstring "from")))
-  (call $set_prop (local.get $iterf) (call $mk_str (cstring "concat")) (call $mk_native (i32.const 350) (cstring "concat")))
-  (call $set_prop (local.get $iterf) (call $mk_str (cstring "zip")) (call $mk_native (i32.const 355) (cstring "zip")))
-  (call $set_prop (local.get $iterf) (call $mk_str (cstring "zipKeyed")) (call $mk_native (i32.const 357) (cstring "zipKeyed")))
+  ;; static methods are non-enumerable ({W:true,E:false,C:true} = attr 12), like all standard built-ins
+  (call $scope_define_attr (call $fn_def_scope (local.get $iterf)) (cstring "from") (call $mk_native (i32.const 349) (cstring "from")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $iterf)) (cstring "concat") (call $mk_native (i32.const 350) (cstring "concat")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $iterf)) (cstring "zip") (call $mk_native (i32.const 355) (cstring "zip")) (i32.const 12))
+  (call $scope_define_attr (call $fn_def_scope (local.get $iterf)) (cstring "zipKeyed") (call $mk_native (i32.const 357) (cstring "zipKeyed")) (i32.const 12))
   (let $datef i64 (call $def_native (local.get $g) (cstring "Date") (i32.const 180)))
   (call $set_prop (local.get $datef) (call $mk_str (cstring "now")) (call $mk_native (i32.const 179) (cstring "now")))
   ;; Date.prototype (reg 308) — instances link to it for instanceof/getPrototypeOf/inheritance
