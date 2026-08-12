@@ -1443,8 +1443,13 @@
 ;; written (spec mutators call Set(O,"length",..,Throw=true)). A non-object
 ;; receiver (string/primitive) and a non-writable own length both throw.
 (func $set_length_throwing (param $thisv i64) (param $valf f64) (effects)
-  (if (call $is_array (local.get $thisv))  ;; a real array's length is writable (unless frozen, which set_prop handles)
-    (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (local.get $valf))) (return)))
+  (if (call $is_array (local.get $thisv))
+    ;; Set(O,"length",v,Throw=true): a non-writable/frozen array length throws (set_prop alone is sloppy —
+    ;; it would silently ignore the write). A mutator freezing its own length mid-op must still throw here.
+    (then
+      (if (i32.eqz (call $arr_len_writable (call $val_payload (local.get $thisv))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return)))
+      (call $set_prop (local.get $thisv) (call $mk_str (cstring "length")) (call $num (local.get $valf))) (return)))
   (if (i32.eqz (call $is_object (local.get $thisv)))
     (then (call $throw_type (cstring "TypeError") (cstring "Cannot assign to read only property 'length'")) (return)))
   (let $sl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "length")))
@@ -11399,8 +11404,12 @@
           (if (i32.le_s (local.get $n) (i32.const 0))
             (then (if (call $arr_mut_locked (local.get $arr) (i32.const 0)) (then (return (call $v_undef)))) (return (call $v_undef))))  ;; empty: spec still sets length 0 (throws if non-writable)
           (if (call $arr_mut_locked (local.get $arr) (i32.const 0)) (then (return (call $v_undef))))
-          (let $v i64 (call $arr_get (local.get $arr) (i32.sub (local.get $n) (i32.const 1))))
-          (i32.store (local.get $arr) (i32.sub (local.get $n) (i32.const 1)))
+          ;; spec: element = Get(O, len-1) — proto-aware, so a hole fires an inherited getter (which may make
+          ;; length non-writable) — THEN Set(O,"length",len-1) which throws if length became non-writable.
+          (let $v i64 (call $dense_get (local.get $thisv) (local.get $arr) (i32.sub (local.get $n) (i32.const 1))))
+          (if (call $err) (then (return (call $v_undef))))
+          (call $set_length_throwing (local.get $thisv) (f64.convert_i32_s (i32.sub (local.get $n) (i32.const 1))))
+          (if (call $err) (then (return (call $v_undef))))
           (return (local.get $v))))
       (if (i32.eq (local.get $id) (i32.const 28))  ;; at(i) — supports negative index
         (then
