@@ -1442,6 +1442,21 @@
 ;; Set the receiver's `length` to `valf`, throwing a TypeError if it can't be
 ;; written (spec mutators call Set(O,"length",..,Throw=true)). A non-object
 ;; receiver (string/primitive) and a non-writable own length both throw.
+;; Does the receiver's [[Prototype]] chain have a property at any index in [start, start+count)? If so, a
+;; push/unshift write there is observable (an inherited accessor/non-writable must go through OrdinarySet),
+;; and the dense fast path is invalid. Common case: a plain array over a clean Array.prototype → 0.
+(func $arr_range_inherited (param $thisv i64) (param $start i32) (param $count i32) (result i32) (effects)
+  (let $proto i64 (call $js_get_prototype (local.get $thisv)))
+  (if (i32.eqz (i32.or (call $is_object (local.get $proto)) (i32.or (call $is_array (local.get $proto)) (i32.or (call $is_function (local.get $proto)) (call $is_proxy (local.get $proto)))))) (then (return (i32.const 0))))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $count)))
+    (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (i32.add (local.get $start) (local.get $i)))) (local.get $proto)))
+      (then (return (i32.const 1))))
+    (if (call $err) (then (return (i32.const 0))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (i32.const 0))
+
 (func $set_length_throwing (param $thisv i64) (param $valf f64) (effects)
   (if (call $is_array (local.get $thisv))
     ;; Set(O,"length",v,Throw=true): a non-writable/frozen array length throws (set_prop alone is sloppy —
@@ -11310,8 +11325,10 @@
           (return (local.get $sh0))))
       (if (i32.eq (local.get $id) (i32.const 225))  ;; unshift(...items)
         (then
-          ;; generic array-like object receiver — f64 length/index (ToLength is up to 2^53-1)
-          (if (i32.eqz (call $is_array (local.get $thisv)))
+          ;; generic array-like object receiver — f64 length/index (ToLength is up to 2^53-1). A real array
+          ;; whose write range [0,len+argc) is covered by an inherited accessor also takes this observable
+          ;; (proto-aware get_prop/set_prop) path, so an inherited setter fires and Set(length) can throw.
+          (if (i32.or (i32.eqz (call $is_array (local.get $thisv))) (call $arr_range_inherited (local.get $thisv) (i32.const 0) (i32.add (local.get $n) (local.get $argc))))
             (then
               (let $ulenf f64 (call $alike_len_f64 (local.get $thisv)))
               (if (call $err) (then (return (call $v_undef))))
@@ -11381,6 +11398,22 @@
             ;; length (frozen array) throws even though nothing is appended.
             (else (if (i32.eqz (call $arr_len_writable (local.get $arr)))
               (then (call $throw_type (cstring "TypeError") (cstring "Cannot modify the length of a non-extensible array")) (return (call $v_undef))))))
+          ;; spec: each item is Set(O,ToString(len),E,true) — proto-aware, so writing a new index that an
+          ;; inherited accessor covers fires that setter (which may freeze length), then Set(O,"length")
+          ;; throws. Fast dense arr_push is only valid when no inherited property covers the write range;
+          ;; gate on that (the common case: a plain array whose proto chain has no such index).
+          (let $plen0 i32 (call $arr_len (local.get $arr)))
+          (if (call $arr_range_inherited (local.get $thisv) (local.get $plen0) (local.get $argc))
+            (then  ;; observable path: Set each item, then Set(length)
+              (let $psk i32 (i32.const 0))
+              (block $pse (loop $psl
+                (br_if $pse (i32.ge_s (local.get $psk) (local.get $argc)))
+                (call $set_prop (local.get $thisv) (call $num (f64.convert_i32_s (i32.add (local.get $plen0) (local.get $psk)))) (call $argn (local.get $argv) (local.get $argc) (local.get $psk)))
+                (if (call $err) (then (return (call $v_undef))))
+                (set! $psk (i32.add (local.get $psk) (i32.const 1))) (br $psl)))
+              (call $set_length_throwing (local.get $thisv) (f64.convert_i32_s (i32.add (local.get $plen0) (local.get $argc))))
+              (if (call $err) (then (return (call $v_undef))))
+              (return (call $num (f64.convert_i32_s (i32.add (local.get $plen0) (local.get $argc)))))))
           (let $k i32 (i32.const 0))
           (block $pe (loop $pl
             (br_if $pe (i32.ge_s (local.get $k) (local.get $argc)))
