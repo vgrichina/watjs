@@ -3790,13 +3790,19 @@
       ;; take/drop need a non-negative integer count (NaN/neg → RangeError) — validated BEFORE GetIteratorDirect
       (if (i32.or (i32.eq (local.get $id) (i32.const 345)) (i32.eq (local.get $id) (i32.const 346)))
         (then
+          ;; validation failure must IteratorClose the underlying iterator (call its return()) — spec
+          ;; IfAbruptCloseIterator / "Return ? IteratorClose(iterated, error)". GetIteratorDirect (reads
+          ;; .next) is deferred to after validation, so only return() is invoked here, never next.
           (let $ihd f64 (call $to_num (local.get $iha0)))
-          (if (call $err) (then (return (call $v_undef))))
+          (if (call $err) (then (call $iter_close_throw (local.get $thisv)) (return (call $v_undef))))
           (if (f64.ne (local.get $ihd) (local.get $ihd))
-            (then (call $throw_type (cstring "RangeError") (cstring "Iterator take/drop count is NaN")) (return (call $v_undef))))
+            (then (call $throw_type (cstring "RangeError") (cstring "Iterator take/drop count is NaN")) (call $iter_close_throw (local.get $thisv)) (return (call $v_undef))))
+          ;; step 7: finite AND > 2^53-1 → RangeError (Infinity is allowed; ihd-ihd==0 ⇒ finite, Inf-Inf=NaN)
+          (if (i32.and (f64.eq (f64.sub (local.get $ihd) (local.get $ihd)) (f64.const 0)) (f64.gt (local.get $ihd) (f64.const 9007199254740991)))
+            (then (call $throw_type (cstring "RangeError") (cstring "Iterator take/drop count exceeds MAX_SAFE_INTEGER")) (call $iter_close_throw (local.get $thisv)) (return (call $v_undef))))
           (set! $ihd (f64.trunc (local.get $ihd)))
           (if (f64.lt (local.get $ihd) (f64.const 0))
-            (then (call $throw_type (cstring "RangeError") (cstring "Iterator take/drop count is negative")) (return (call $v_undef))))
+            (then (call $throw_type (cstring "RangeError") (cstring "Iterator take/drop count is negative")) (call $iter_close_throw (local.get $thisv)) (return (call $v_undef))))
           (set! $ihn (local.get $ihd))))
       ;; GetIteratorDirect (reads .next) happens last
       (let $ihsn i64 (call $iter_direct_next (local.get $thisv)))
