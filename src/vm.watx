@@ -4586,8 +4586,9 @@
   (i32.store (i32.const 232) (i32.const 0))  ;; clear now (before the body) so a nested fn/arrow doesn't inherit or consume our flag; our async-ness is held in $arrasync
   (let $arrsaveinasync i32 (i32.load (i32.const 896)))
   (i32.store (i32.const 896) (i32.or (local.get $arrasync) (local.get $arrsaveinasync)))
-  (let $arrsavesb i32 (i32.load (i32.const 912)))  ;; an arrow body has its own return; not the static block itself
-  (i32.store (i32.const 912) (i32.const 0))
+  (let $arrsavesb i32 (i32.load (i32.const 912)))  ;; class-static-block flag — an arrow INHERITS it (unlike a
+  ;; regular function): `await`/`arguments` stay reserved in a static-block arrow. `return` is still allowed
+  ;; because it is gated on `912 && !920` and an arrow sets reg 920 (in-fn) below. (Do NOT clear reg 912.)
   (let $arrsaveinfn i32 (i32.load (i32.const 920)))  ;; an arrow body allows `return`
   (i32.store (i32.const 920) (i32.const 1))
   ;; an arrow is a function boundary for break/continue/labels too (see vm_c_fnbody): isolate the loop
@@ -5539,8 +5540,9 @@
       ;; return [expr] ;   (tail call peephole: trailing CALL → TAILCALL)
       (if (call $tok_is_kw (cstring "return"))
         (then
-          ;; `return` is not allowed in a class static block (it is not a function body)
-          (if (i32.load (i32.const 912)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'return' is not allowed in a class static block")) (return)))
+          ;; `return` is not allowed DIRECTLY in a class static block (reg 912) — but a nested arrow (which
+          ;; inherits 912 for await/arguments) sets reg 920 (in-fn) and DOES own its return, so gate on !920.
+          (if (i32.and (i32.load (i32.const 912)) (i32.eqz (i32.load (i32.const 920)))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'return' is not allowed in a class static block")) (return)))
           ;; `return` outside any function body (top-level program / eval code) is a SyntaxError.
           (if (i32.eqz (i32.load (i32.const 920))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'return' outside of function")) (return)))
           (call $next_token)
