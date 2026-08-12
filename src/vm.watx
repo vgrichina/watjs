@@ -1897,7 +1897,7 @@
           (br_if $se2 (i32.eqz (call $eat (i32.const 22))))
           (br $sl2)))))
       (call $next_token)  ;; ')'
-      (if (local.get $devmark) (then (call $vm_emit_op (local.get $code) (i32.const 118)) (call $vm_emit_op (local.get $code) (local.get $devmark))))  ;; DIRECTEVALMARK
+      (if (local.get $devmark) (then (call $vm_emit_op (local.get $code) (i32.const 118)) (call $vm_emit_op (local.get $code) (local.get $devmark)) (call $vm_emit_op (local.get $code) (call $priv_ctx_snapshot))))  ;; DIRECTEVALMARK (+ private-name context snapshot)
       (call $vm_emit_op (local.get $code) (i32.const 54))  ;; CALLSPREAD
       (return)))
   (let $argc i32 (i32.const 0))
@@ -1909,7 +1909,7 @@
       (br_if $ce (i32.eqz (call $eat (i32.const 22))))
       (br $cl)))))
   (call $next_token)  ;; ')'
-  (if (local.get $devmark) (then (call $vm_emit_op (local.get $code) (i32.const 118)) (call $vm_emit_op (local.get $code) (local.get $devmark))))  ;; DIRECTEVALMARK (direct eval → thread super-context)
+  (if (local.get $devmark) (then (call $vm_emit_op (local.get $code) (i32.const 118)) (call $vm_emit_op (local.get $code) (local.get $devmark)) (call $vm_emit_op (local.get $code) (call $priv_ctx_snapshot))))  ;; DIRECTEVALMARK (+ private-name context snapshot)
   (call $vm_emit_op (local.get $code) (i32.const 19)) (call $vm_emit_op (local.get $code) (local.get $argc)))  ;; CALL
 
 (func $vm_c_postfix (param $code i32) (effects)
@@ -4802,6 +4802,26 @@
       (then (return (call $str_concat (cstring "#") (call $str_concat (call $num_to_str (f64.convert_i32_s (i32.load (i32.add (local.get $cbuf) (i32.mul (local.get $sc) (i32.const 4)))))) (local.get $name))))))
     (br $l)))
   (local.get $name))
+
+;; Snapshot the current visible-private-name context (names + classids) for a DIRECT eval so the eval'd
+;; code can resolve `#x`. Returns a heap buffer [count][name0][cid0]…, or 0 if not inside any class body.
+;; Name pointers are stable interned strings, valid at the runtime the eval later compiles.
+(func $priv_ctx_snapshot (result i32) (effects)
+  (let $cnt i32 (i32.load (i32.const 908)))
+  (if (i32.gt_s (local.get $cnt) (i32.const 8192)) (then (set! $cnt (i32.const 8192))))
+  (if (i32.le_s (local.get $cnt) (i32.const 0)) (then (return (i32.const 0))))
+  (let $buf i32 (i32.load (i32.const 904)))
+  (let $cbuf i32 (i32.load (i32.const 1220)))
+  (if (i32.or (i32.eqz (local.get $buf)) (i32.eqz (local.get $cbuf))) (then (return (i32.const 0))))
+  (let $snap i32 (call $heap_alloc (i32.add (i32.const 4) (i32.mul (local.get $cnt) (i32.const 8)))))
+  (i32.store (local.get $snap) (local.get $cnt))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.ge_s (local.get $i) (local.get $cnt)))
+    (i32.store (i32.add (local.get $snap) (i32.add (i32.const 4) (i32.mul (local.get $i) (i32.const 8)))) (i32.load (i32.add (local.get $buf) (i32.mul (local.get $i) (i32.const 4)))))
+    (i32.store (i32.add (local.get $snap) (i32.add (i32.const 8) (i32.mul (local.get $i) (i32.const 8)))) (i32.load (i32.add (local.get $cbuf) (i32.mul (local.get $i) (i32.const 4)))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (local.get $snap))
 
 (func $vm_class_priv_dup_check (effects)
   ;; assign this class a unique compile-time id (reg 1224 = counter, reg 1228 = current class id). Private
@@ -9018,9 +9038,11 @@
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $ssv))  ;; assignment yields the value
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 118))  ;; DIRECTEVALMARK (operand: 1=direct-no-super, 2=direct-super) — set reg 880 for the imminent eval() call
+    (if (i32.eq (local.get $op) (i32.const 118))  ;; DIRECTEVALMARK (op1: bitfield → reg 880; op2: private-ctx snapshot → reg 1232) for the imminent eval() call
       (then
         (i32.store (i32.const 880) (i32.load (i32.add (local.get $code) (local.get $ip))))
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
+        (i32.store (i32.const 1232) (i32.load (i32.add (local.get $code) (local.get $ip))))
         (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 31))  ;; GETIDX — pop key, pop obj
@@ -10281,6 +10303,7 @@
   (i32.store (i32.const 1220) (i32.const 0))  ;; parallel per-name classid buffer (lazy-alloc)
   (i32.store (i32.const 1224) (i32.const 0))  ;; class-id counter
   (i32.store (i32.const 1228) (i32.const 0))  ;; current class id
+  (i32.store (i32.const 1232) (i32.const 0))  ;; pending direct-eval private-context snapshot
   (i32.store (i32.const 704) (i32.const 0))  ;; fresh microtask queue (heap_reset freed any prior array)
   (let $ctx i32 (call $vm_new (call $vm_compile_prog (local.get $ptr) (local.get $len) (i32.const 1))))  ;; top-level: build the Error prelude
   (if (call $err)
@@ -10328,7 +10351,29 @@
   (i32.store (i32.const 892) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 8)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 388 seed (direct eval inherits caller strict); consumed by vm_compile_prog
   (i32.store (i32.const 1012) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 16)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 1008 seed (direct eval in a function → new.target allowed)
   (i32.store (i32.const 880) (i32.const 0))
+  ;; DIRECT eval inside a class: restore the captured private-name context (reg 1232 snapshot) into the
+  ;; visible-set stack so the eval'd code resolves `#x` to the enclosing class's brand key AND passes the
+  ;; #name early-error check. Restored only for the compile, then the stack depth is put back.
+  (let $psnap i32 (i32.load (i32.const 1232)))
+  (i32.store (i32.const 1232) (i32.const 0))  ;; consume (don't leak to a later eval)
+  (let $savepc i32 (i32.load (i32.const 908)))
+  (if (local.get $psnap)
+    (then
+      (if (i32.eqz (i32.load (i32.const 904))) (then (i32.store (i32.const 904) (call $heap_alloc (i32.const 32768)))))
+      (if (i32.eqz (i32.load (i32.const 1220))) (then (i32.store (i32.const 1220) (call $heap_alloc (i32.const 32768)))))
+      (let $psc i32 (i32.load (local.get $psnap)))
+      (if (i32.gt_s (local.get $psc) (i32.const 8192)) (then (set! $psc (i32.const 8192))))
+      (let $pnbuf i32 (i32.load (i32.const 904)))
+      (let $pcbuf i32 (i32.load (i32.const 1220)))
+      (let $pj i32 (i32.const 0))
+      (block $pe (loop $pl
+        (br_if $pe (i32.ge_s (local.get $pj) (local.get $psc)))
+        (i32.store (i32.add (local.get $pnbuf) (i32.mul (local.get $pj) (i32.const 4))) (i32.load (i32.add (local.get $psnap) (i32.add (i32.const 4) (i32.mul (local.get $pj) (i32.const 8))))))
+        (i32.store (i32.add (local.get $pcbuf) (i32.mul (local.get $pj) (i32.const 4))) (i32.load (i32.add (local.get $psnap) (i32.add (i32.const 8) (i32.mul (local.get $pj) (i32.const 8))))))
+        (set! $pj (i32.add (local.get $pj) (i32.const 1))) (br $pl)))
+      (i32.store (i32.const 908) (local.get $psc))))
   (let $code i32 (call $vm_compile_prog (i32.add (local.get $s) (i32.const 4)) (call $str_len (local.get $s)) (i32.const 0)))  ;; nested eval: reuse the caller's existing prelude bindings
+  (i32.store (i32.const 908) (local.get $savepc))  ;; restore visible-set stack depth (both success and error paths)
   (if (call $err) (then (return (call $v_undef))))  ;; SyntaxError → propagates
   ;; STRICT eval gets its OWN variable environment (spec: "If strict is true, let varEnv be a NEW declarative
   ;; Environment Record") — a var/function it declares must NOT leak to the caller. Run the body in a fresh
