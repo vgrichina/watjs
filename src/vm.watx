@@ -1976,9 +1976,34 @@
             (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $ik))  ;; LOADVAR key → [obj, obj, key]
             (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [obj, method]
             (call $next_token)  ;; '('
+            ;; lookahead for ...spread in the args (paren-balanced), like the obj.key(args) path
+            (let $ispc i32 (call $cursor_save))
+            (let $ishas i32 (i32.const 0)) (let $ispd i32 (i32.const 0))
+            (block $ispe (loop $ispl
+              (br_if $ispe (i32.eq (call $tok_kind) (i32.const 0)))
+              (if (i32.eq (call $tok_kind) (i32.const 15)) (then (set! $ispd (i32.add (local.get $ispd) (i32.const 1)))))
+              (if (i32.eq (call $tok_kind) (i32.const 16)) (then (br_if $ispe (i32.eqz (local.get $ispd))) (set! $ispd (i32.sub (local.get $ispd) (i32.const 1)))))
+              (if (i32.and (i32.eq (call $tok_kind) (i32.const 54)) (i32.eqz (local.get $ispd))) (then (set! $ishas (i32.const 1))))
+              (call $next_token) (br $ispl)))
+            (call $cursor_restore (local.get $ispc))
+            (if (local.get $ishas)
+              (then  ;; [obj, method] → build args array → CALLMSPREAD
+                (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0
+                (if (i32.ne (call $tok_kind) (i32.const 16))
+                  (then (block $is2 (loop $isl2
+                    (br_if $is2 (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')'
+                    (if (i32.eq (call $tok_kind) (i32.const 54))
+                      (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 53)))
+                      (else (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 52))))
+                    (br_if $is2 (i32.eqz (call $eat (i32.const 22))))
+                    (br $isl2)))))
+                (call $next_token)  ;; ')'
+                (call $vm_emit_op (local.get $code) (i32.const 55))  ;; CALLMSPREAD
+                (br $l)))
             (let $iargc i32 (i32.const 0))
             (if (i32.ne (call $tok_kind) (i32.const 16))
               (then (block $ie (loop $il
+                (br_if $ie (i32.eq (call $tok_kind) (i32.const 16)))  ;; trailing comma → ')'
                 (call $vm_c_expr (local.get $code))
                 (set! $iargc (i32.add (local.get $iargc) (i32.const 1)))
                 (br_if $ie (i32.eqz (call $eat (i32.const 22))))
