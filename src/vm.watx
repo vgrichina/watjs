@@ -2148,7 +2148,7 @@
             (if (local.get $ociscall)
               (then
                 (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP receiver → [R, R]
-                (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; [ idx ] → [R, R, idx]
+                (call $next_token) (call $vm_c_commaexpr (local.get $code)) (call $next_token)  ;; [ Expression ] → [R, R, idx] (comma allowed)
                 (call $vm_emit_op (local.get $code) (i32.const 31))  ;; GETIDX → [R, method]
                 (call $next_token)  ;; '('
                 (let $ocia i32 (i32.const 0))
@@ -2156,7 +2156,7 @@
                   (then (block $ocie (loop $ocil (call $vm_c_expr (local.get $code)) (set! $ocia (i32.add (local.get $ocia) (i32.const 1))) (br_if $ocie (i32.eqz (call $eat (i32.const 22)))) (br $ocil)))))
                 (call $next_token)  ;; ')'
                 (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $ocia)))  ;; CALLM
-              (else (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token) (call $vm_emit_op (local.get $code) (i32.const 31)))))  ;; GETIDX
+              (else (call $next_token) (call $vm_c_commaexpr (local.get $code)) (call $next_token) (call $vm_emit_op (local.get $code) (i32.const 31)))))  ;; GETIDX ([ Expression ], comma allowed)
           (else
             (let $ock i32 (call $ident_name)) (call $next_token)
             (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ?.m(args) optional method call
