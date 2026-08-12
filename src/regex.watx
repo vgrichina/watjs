@@ -1228,7 +1228,9 @@
     (call $re_reset_caps (local.get $p) (local.get $plen))
     (let $r i32 (call $re_match_alt (local.get $p) (i32.const 0) (local.get $plen) (local.get $s) (local.get $slen) (local.get $start)))
     (if (i32.ge_s (local.get $r) (i32.const 0)) (then (i32.store (i32.const 168) (local.get $r)) (return (local.get $start))))
-    (set! $start (i32.add (local.get $start) (i32.const 1)))
+    ;; advance to the next code-point boundary (skip UTF-8 continuation bytes) so the search never starts
+    ;; mid-character — where \W/\D/\S would false-match a continuation byte.
+    (set! $start (i32.add (local.get $start) (if i32 (i32.lt_s (local.get $start) (local.get $slen)) (then (call $utf8_seqlen (i32.load8_u (i32.add (local.get $s) (local.get $start))))) (else (i32.const 1)))))
     (br $l)))
   (i32.const -1))
 
@@ -1996,7 +1998,9 @@
     (br_if $e (i32.gt_s (local.get $start) (local.get $slen)))
     (let $r i32 (call $re_match_alt (local.get $p) (i32.const 0) (local.get $plen) (local.get $s) (local.get $slen) (local.get $start)))
     (if (i32.ge_s (local.get $r) (i32.const 0)) (then (i32.store (i32.const 168) (local.get $r)) (return (local.get $start))))
-    (set! $start (i32.add (local.get $start) (i32.const 1)))
+    ;; advance to the next code-point boundary (skip UTF-8 continuation bytes) so the search never starts
+    ;; mid-character — where \W/\D/\S would false-match a continuation byte.
+    (set! $start (i32.add (local.get $start) (if i32 (i32.lt_s (local.get $start) (local.get $slen)) (then (call $utf8_seqlen (i32.load8_u (i32.add (local.get $s) (local.get $start))))) (else (i32.const 1)))))
     (br $l)))
   (i32.const -1))
 
