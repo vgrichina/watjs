@@ -1218,26 +1218,42 @@
 
 ;; Append one concat item to result `A` starting at index `n`; returns the next
 ;; index. Spreads the item if IsConcatSpreadable (an array, or an object whose
+;; IsArray(v) per spec: sees through Proxies to the target (throws on a revoked proxy).
+(func $js_isarray_p (param $v i64) (result i32) (effects)
+  (let $x i64 (local.get $v))
+  (block $e (loop $l
+    (br_if $e (i32.eqz (call $is_proxy (local.get $x))))
+    (set! $x (call $proxy_target (local.get $x)))
+    (if (call $is_null (local.get $x)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot perform 'IsArray' on a proxy that has been revoked")) (return (i32.const 0))))
+    (br $l)))
+  (if (call $is_object (local.get $x)) (then (if (i32.eq (call $val_payload (local.get $x)) (i32.load (i32.const 160))) (then (return (i32.const 1))))))
+  (call $is_array (local.get $x)))
+
 ;; @@isConcatSpreadable is truthy) defining present indices via CreateDataProperty
 ;; (holes stay absent), else defines it as one element.
 (func $concat_append (param $A i64) (param $n i32) (param $item i64) (result i32) (effects)
   (let $spread i32 (i32.const 0))
-  (if (i32.or (call $is_object (local.get $item)) (i32.or (call $is_array (local.get $item)) (call $is_function (local.get $item))))
+  (if (i32.or (call $is_proxy (local.get $item)) (i32.or (call $is_object (local.get $item)) (i32.or (call $is_array (local.get $item)) (call $is_function (local.get $item)))))
     (then
       (let $s i64 (call $get_prop (local.get $item) (call $make_symbol (cstring "@@isConcatSpreadable") (cstring "Symbol.isConcatSpreadable"))))
+      (if (call $err) (then (return (local.get $n))))
       (if (call $is_undefined (local.get $s))
-        (then (set! $spread (call $is_array (local.get $item))))
+        (then (set! $spread (call $js_isarray_p (local.get $item))) (if (call $err) (then (return (local.get $n)))))
         (else (set! $spread (call $truthy (local.get $s)))))))
   (if (local.get $spread)
     (then
-      (let $clen i32 (call $alike_len (local.get $item)))
-      (let $cj i32 (i32.const 0))
-      (block $cce (loop $ccl (br_if $cce (i32.ge_s (local.get $cj) (local.get $clen)))
-        (if (call $truthy (call $js_in (call $num (f64.convert_i32_s (local.get $cj))) (local.get $item)))
-          (then (call $cdp_throw (local.get $A) (local.get $n) (call $get_prop (local.get $item) (call $num (f64.convert_i32_s (local.get $cj)))))))
+      ;; f64 length (ToLength up to 2^53-1, overflows/traps i32); spec: n + len > 2^53-1 → TypeError
+      (let $clenf f64 (call $alike_len_f64 (local.get $item)))
+      (if (call $err) (then (return (local.get $n))))
+      (if (f64.gt (f64.add (f64.convert_i32_s (local.get $n)) (local.get $clenf)) (f64.const 9007199254740991))
+        (then (call $throw_type (cstring "TypeError") (cstring "Invalid array length")) (return (local.get $n))))
+      (let $cjf f64 (f64.const 0))
+      (block $cce (loop $ccl (br_if $cce (f64.ge (local.get $cjf) (local.get $clenf)))
+        (if (call $truthy (call $js_in (call $num (local.get $cjf)) (local.get $item)))
+          (then (call $cdp_throw (local.get $A) (local.get $n) (call $get_prop (local.get $item) (call $num (local.get $cjf))))))
         (br_if $cce (call $err))
         (set! $n (i32.add (local.get $n) (i32.const 1)))
-        (set! $cj (i32.add (local.get $cj) (i32.const 1))) (br $ccl))))
+        (set! $cjf (f64.add (local.get $cjf) (f64.const 1))) (br $ccl))))
     (else (call $cdp_throw (local.get $A) (local.get $n) (local.get $item)) (set! $n (i32.add (local.get $n) (i32.const 1)))))
   (local.get $n))
 
