@@ -9430,9 +9430,16 @@
         (if (call $err) (then (return (call $v_undef))))
         (if (i32.eqz (call $str_len (local.get $rpM0)))
           (then
-            (let $rpLi i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))))
+            ;; thisIndex = ToLength(Get(rx,"lastIndex")); nextIndex = thisIndex + 1 (AdvanceStringIndex,
+            ;; non-unicode). ToLength clamps to 2^53-1 in f64 — a plain i32 index would overflow for a
+            ;; huge coerced lastIndex (e.g. 2^54 → 2^53-1 → 2^53), which the spec preserves exactly.
+            (let $rpLif f64 (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")))))
             (if (call $err) (then (return (call $v_undef))))
-            (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.convert_i32_s (i32.add (local.get $rpLi) (i32.const 1)))))
+            (if (f64.ne (local.get $rpLif) (local.get $rpLif)) (then (set! $rpLif (f64.const 0)))
+              (else (if (f64.le (local.get $rpLif) (f64.const 0)) (then (set! $rpLif (f64.const 0)))
+                (else (set! $rpLif (f64.floor (local.get $rpLif)))))))
+            (if (f64.gt (local.get $rpLif) (f64.const 9007199254740991)) (then (set! $rpLif (f64.const 9007199254740991))))
+            (call $set_prop (local.get $thisv) (call $mk_str (cstring "lastIndex")) (call $num (f64.add (local.get $rpLif) (f64.const 1))))
             (if (call $err) (then (return (call $v_undef))))))
         (br $rpCL)))
       ;; build the output by stitching substitutions between matches
