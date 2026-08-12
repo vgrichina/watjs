@@ -11297,12 +11297,16 @@
           (if (i32.eqz (local.get $n))
             (then (if (call $arr_mut_locked (local.get $arr) (i32.const 0)) (then (return (call $v_undef)))) (return (call $v_undef))))
           (if (call $arr_mut_locked (local.get $arr) (i32.const 0)) (then (return (call $v_undef))))
-          (let $sh0 i64 (call $arr_get (local.get $arr) (i32.const 0)))
+          ;; spec: element 0 = Get(O,0) — proto-aware, so a hole fires an inherited getter that may make
+          ;; length non-writable — and the final Set(O,"length") then throws.
+          (let $sh0 i64 (call $dense_get (local.get $thisv) (local.get $arr) (i32.const 0)))
+          (if (call $err) (then (return (call $v_undef))))
           (let $shi i32 (i32.const 1))
           (block $she (loop $shl (br_if $she (i32.ge_s (local.get $shi) (local.get $n)))
             (call $arr_set (local.get $arr) (i32.sub (local.get $shi) (i32.const 1)) (call $arr_get (local.get $arr) (local.get $shi)))
             (set! $shi (i32.add (local.get $shi) (i32.const 1))) (br $shl)))
-          (i32.store (local.get $arr) (i32.sub (local.get $n) (i32.const 1)))
+          (call $set_length_throwing (local.get $thisv) (f64.convert_i32_s (i32.sub (local.get $n) (i32.const 1))))
+          (if (call $err) (then (return (call $v_undef))))
           (return (local.get $sh0))))
       (if (i32.eq (local.get $id) (i32.const 225))  ;; unshift(...items)
         (then
