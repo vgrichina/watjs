@@ -1580,6 +1580,11 @@
       (if (i32.eq (call $tok_kind) (i32.const 52))  ;; NAME => body  (single-param arrow, no parens)
         (then
           (if (local.get $heritnoarrow) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "class heritage may not be an arrow function")) (return)))
+          ;; the single ArrowParameters BindingIdentifier may not be a ReservedWord (`switch => 1`, `if => 1`)
+          ;; — nor a strict-reserved word (`yield`/`await`/`let`/… handled by the context checks above) in
+          ;; strict mode.
+          (if (call $is_reserved_word (local.get $vn)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A reserved word may not be used as an arrow parameter")) (return)))
+          (if (i32.and (i32.load (i32.const 388)) (call $is_strict_reserved (local.get $vn))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "A strict-mode reserved word may not be used as an arrow parameter")) (return)))
           ;; ArrowParameters [no LineTerminator here] => — a newline before `=>` is a SyntaxError (`x \n => x`).
           (if (call $nl_before) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '=>'")) (return)))
           (i32.store (i32.const 700) (i32.add (local.get $vnstart) (i32.const 1)))
