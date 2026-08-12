@@ -1821,6 +1821,10 @@
                           ;; `{static}`, `{yield}`) is a SyntaxError under strict mode.
                           (if (call $is_reserved_word (local.get $oki)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as shorthand property")) (return)))
                           (if (i32.and (i32.load (i32.const 388)) (call $is_strict_reserved (local.get $oki))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected strict-mode reserved word as shorthand property")) (return)))
+                          ;; a shorthand IdentifierReference of `await` (async body / class static block) or
+                          ;; `yield` (generator body) is reserved in that context → SyntaxError (mirrors line ~517).
+                          (if (i32.and (i32.or (i32.load (i32.const 896)) (i32.load (i32.const 912))) (call $str_eq (local.get $oki) (cstring "await"))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' is reserved as a shorthand property here")) (return)))
+                          (if (i32.and (i32.load (i32.const 672)) (call $str_eq (local.get $oki) (cstring "yield"))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' is reserved as a shorthand property here")) (return)))
                           (set! $oshort (i32.const 1)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $oki))))  ;; shorthand → LOADVAR
                       (if (call $vm_is_anon_fn_def (local.get $afs))  ;; `key: <anon fn>` → .name = key
                         (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))))
