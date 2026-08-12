@@ -414,6 +414,20 @@
 ;; does the atom [astart,aend) match char `ch`?
 ;; decode the code point of the UTF-8 sequence at RAW byte offset $off in $ptr (the matcher passes RAW
 ;; byte pointers — pattern/subject past the Str header — so we can't use the Str-based heap.watx utf8_cp).
+;; code point ENDING just before byte offset $pos (i.e. the char whose bytes end at pos-1), or -1 if none.
+;; Scans back over UTF-8 continuation bytes (0x80..0xBF) to the lead byte, then decodes. For \b's "char
+;; before the position" so a multi-byte word char (e.g. ſ under ignoreCase) is seen correctly.
+(func $re_cp_before (param $s i32) (param $pos i32) (result i32) (effects)
+  (if (i32.le_s (local.get $pos) (i32.const 0)) (then (return (i32.const -1))))
+  (let $i i32 (i32.sub (local.get $pos) (i32.const 1)))
+  (block $e (loop $l
+    (br_if $e (i32.le_s (local.get $i) (i32.const 0)))
+    (let $b i32 (i32.load8_u (i32.add (local.get $s) (local.get $i))))
+    (br_if $e (i32.lt_u (local.get $b) (i32.const 0x80)))   ;; ASCII byte = its own char
+    (br_if $e (i32.ge_u (local.get $b) (i32.const 0xC0)))   ;; multi-byte lead byte
+    (set! $i (i32.sub (local.get $i) (i32.const 1))) (br $l)))
+  (call $re_utf8_cp (local.get $s) (local.get $i)))
+
 (func $re_utf8_cp (param $ptr i32) (param $off i32) (result i32) (effects)
   (let $b0 i32 (i32.load8_u (i32.add (local.get $ptr) (local.get $off))))
   (if i32 (i32.lt_s (local.get $b0) (i32.const 0x80)) (then (local.get $b0))
@@ -512,8 +526,8 @@
       ;; word-ness of the char before spos differs from the char at spos (out-of-range counts as non-word).
       (if (i32.or (i32.eq (local.get $bnc) (i32.const 98)) (i32.eq (local.get $bnc) (i32.const 66)))  ;; 'b' / 'B'
         (then
-          (let $wbb i32 (if i32 (i32.gt_s (local.get $spos) (i32.const 0)) (then (call $re_is_word (i32.load8_u (i32.add (local.get $s) (i32.sub (local.get $spos) (i32.const 1)))))) (else (i32.const 0))))
-          (let $wba i32 (if i32 (i32.lt_s (local.get $spos) (i32.load (i32.const 1204))) (then (call $re_is_word (i32.load8_u (i32.add (local.get $s) (local.get $spos))))) (else (i32.const 0))))  ;; full length (not the lookbehind-truncated slen)
+          (let $wbb i32 (if i32 (i32.gt_s (local.get $spos) (i32.const 0)) (then (call $re_is_word (call $re_cp_before (local.get $s) (local.get $spos)))) (else (i32.const 0))))  ;; code point BEFORE spos (multi-byte aware)
+          (let $wba i32 (if i32 (i32.lt_s (local.get $spos) (i32.load (i32.const 1204))) (then (call $re_is_word (call $re_utf8_cp (local.get $s) (local.get $spos)))) (else (i32.const 0))))  ;; code point AT spos; full length (not lookbehind-truncated slen)
           (let $atb i32 (i32.ne (local.get $wbb) (local.get $wba)))  ;; is a boundary here?
           (if (i32.eq (local.get $atb) (i32.eq (local.get $bnc) (i32.const 98)))  ;; \b wants boundary, \B wants non-boundary
             (then (return (call $re_match (local.get $p) (local.get $plen) (i32.add (local.get $ppos) (i32.const 2)) (local.get $s) (local.get $slen) (local.get $spos))))
