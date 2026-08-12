@@ -1793,6 +1793,10 @@
                       (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $oki))  ;; method .name = key
                       (call $vm_emit_op (local.get $code) (i32.const 101)))  ;; DEFDATA_OWN — a method is always an own prop (a `__proto__(){}` method does NOT set the prototype)
                     (else
+                      ;; a `*` (generator) or `async` method modifier requires a method body `(){}` — reaching
+                      ;; here (no '(') means `({* foo})` / `({async async})`, which is a SyntaxError.
+                      (if (i32.or (local.get $ogen) (local.get $oasync))
+                        (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Object method modifier ('*'/'async') requires a method body")) (return)))
                       (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $oki)))
                       (let $afs i32 (call $vm_emit_cursor))
                       (let $oshort i32 (i32.const 0))
