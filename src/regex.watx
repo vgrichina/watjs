@@ -249,6 +249,11 @@
   (call $re_eqc (local.get $ch) (local.get $lit)))
 
 (func $re_is_word (param $ch i32) (result i32) (effects)
+  ;; ignoreCase: the two non-ASCII code points whose case-fold lands in [A-Za-z0-9_] are also word chars
+  ;; (ſ U+017F → 's', KELVIN SIGN U+212A → 'k'). Only reachable when a code point is passed (\w in the
+  ;; matcher); \b's byte-based check never sees these, so it's unaffected.
+  (if (i32.load (i32.const 272))
+    (then (if (i32.or (i32.eq (local.get $ch) (i32.const 0x17F)) (i32.eq (local.get $ch) (i32.const 0x212A))) (then (return (i32.const 1))))))
   (i32.or (i32.and (i32.ge_s (local.get $ch) (i32.const 48)) (i32.le_s (local.get $ch) (i32.const 57)))
     (i32.or (i32.and (i32.ge_s (local.get $ch) (i32.const 65)) (i32.le_s (local.get $ch) (i32.const 90)))
       (i32.or (i32.and (i32.ge_s (local.get $ch) (i32.const 97)) (i32.le_s (local.get $ch) (i32.const 122)))
