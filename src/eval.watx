@@ -11182,13 +11182,16 @@
           ;; generic array-like object receiver
           (if (i32.eqz (call $is_array (local.get $thisv)))
             (then
-              (let $plen i32 (call $alike_len (local.get $thisv)))
-              (if (i32.le_s (local.get $plen) (i32.const 0))
-                (then (call $set_length_throwing (local.get $thisv) (f64.const 0)) (return (call $v_undef))))
-              (let $pidx i32 (i32.sub (local.get $plen) (i32.const 1)))
-              (let $pv i64 (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $pidx)))))
-              (if (call $is_object (local.get $thisv)) (then (drop (call $scope_delete (call $val_payload (local.get $thisv)) (call $num_to_str (f64.convert_i32_s (local.get $pidx)))))))
-              (call $set_length_throwing (local.get $thisv) (f64.convert_i32_s (local.get $pidx)))
+              ;; f64 length/index — an array-like length is ToLength (up to 2^53-1), overflows i32
+              (let $plenf f64 (call $alike_len_f64 (local.get $thisv)))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (f64.le (local.get $plenf) (f64.const 0))
+                (then (call $set_length_throwing (local.get $thisv) (f64.const 0)) (if (call $err) (then (return (call $v_undef)))) (return (call $v_undef))))
+              (let $pidxf f64 (f64.sub (local.get $plenf) (f64.const 1)))
+              (let $pv i64 (call $get_prop (local.get $thisv) (call $num (local.get $pidxf))))
+              (if (call $err) (then (return (call $v_undef))))
+              (if (call $is_object (local.get $thisv)) (then (drop (call $scope_delete (call $val_payload (local.get $thisv)) (call $num_to_str (local.get $pidxf))))))
+              (call $set_length_throwing (local.get $thisv) (local.get $pidxf))
               (if (call $err) (then (return (call $v_undef))))
               (return (local.get $pv))))
           (if (i32.le_s (local.get $n) (i32.const 0))
