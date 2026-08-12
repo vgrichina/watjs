@@ -9119,19 +9119,22 @@
       (let $relastix i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "lastIndex"))))))
       (if (call $err) (then (return (call $v_undef))))
       (if (i32.eqz (local.get $restateful)) (then (set! $relastix (i32.const 0))))
+      ;; lastIndex is a code-unit index; the matcher searches in BYTES → convert (and bound-check in code units)
+      (let $rebyte i32 (if i32 (local.get $restateful) (then (call $str_cu_to_byte (local.get $sub) (local.get $relastix))) (else (i32.const 0))))
       (let $start i32 (if i32 (local.get $restateful)
-        (then (if i32 (i32.gt_s (local.get $relastix) (call $str_len (local.get $sub)))
+        (then (if i32 (i32.gt_s (local.get $relastix) (call $str_cu_len (local.get $sub)))
                 (then (i32.const -1))   ;; lastIndex past end → no match
                 (else (if i32 (local.get $resticky)
-                        (then (call $re_match_str_at (local.get $pat) (local.get $sub) (local.get $relastix)))
-                        (else (call $re_search_str_from (local.get $pat) (local.get $sub) (local.get $relastix)))))))
+                        (then (call $re_match_str_at (local.get $pat) (local.get $sub) (local.get $rebyte)))
+                        (else (call $re_search_str_from (local.get $pat) (local.get $sub) (local.get $rebyte)))))))
         (else (call $re_search_str (local.get $pat) (local.get $sub)))))
       (if (i32.lt_s (local.get $start) (i32.const 0))
         (then
           (if (local.get $restateful) (then (call $re_set_lastindex (local.get $thisv) (call $num (f64.const 0))) (if (call $err) (then (return (call $v_undef))))))
           (return (call $v_null))))
       (let $end i32 (i32.load (i32.const 168)))
-      (if (local.get $restateful) (then (call $re_set_lastindex (local.get $thisv) (call $num (f64.convert_i32_s (local.get $end)))) (if (call $err) (then (return (call $v_undef))))))
+      ;; lastIndex is a UTF-16 code-unit index (the matcher returns a byte offset into the UTF-8 subject)
+      (if (local.get $restateful) (then (call $re_set_lastindex (local.get $thisv) (call $num (f64.convert_i32_s (call $str_byte_to_cu (local.get $sub) (local.get $end))))) (if (call $err) (then (return (call $v_undef))))))
       (let $r i32 (call $arr_new (i32.const 2)))
       (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $start) (i32.sub (local.get $end) (local.get $start)))))
       (let $gi i32 (i32.const 1))
@@ -9144,8 +9147,8 @@
           (else (call $arr_push (local.get $r) (call $mk_str (call $substr (local.get $sub) (local.get $cs) (i32.sub (i32.load (i32.add (local.get $cb) (i32.const 4))) (local.get $cs)))))))
         (set! $gi (i32.add (local.get $gi) (i32.const 1)))
         (br $ecl)))
-      ;; spec exec result carries .index (match offset), .input (subject), .groups
-      (call $scope_define (call $arr_props (local.get $r)) (cstring "index") (call $num (f64.convert_i32_s (local.get $start))))
+      ;; spec exec result carries .index (match offset, a UTF-16 code-unit index), .input (subject), .groups
+      (call $scope_define (call $arr_props (local.get $r)) (cstring "index") (call $num (f64.convert_i32_s (call $str_byte_to_cu (local.get $sub) (local.get $start)))))
       (call $scope_define (call $arr_props (local.get $r)) (cstring "input") (call $mk_str (local.get $sub)))
       (call $re_set_groups (local.get $sub) (i32.const 0) (call $arr_props (local.get $r)))
       ;; 'd' hasIndices flag (reg 668): an .indices array of [start,end] pairs (undefined per unmatched
@@ -9154,8 +9157,8 @@
         (then
           (let $idxa i32 (call $arr_new (i32.const 2)))
           (let $im i32 (call $arr_new (i32.const 2)))
-          (call $arr_push (local.get $im) (call $num (f64.convert_i32_s (local.get $start))))
-          (call $arr_push (local.get $im) (call $num (f64.convert_i32_s (local.get $end))))
+          (call $arr_push (local.get $im) (call $num (f64.convert_i32_s (call $str_byte_to_cu (local.get $sub) (local.get $start)))))
+          (call $arr_push (local.get $im) (call $num (f64.convert_i32_s (call $str_byte_to_cu (local.get $sub) (local.get $end)))))
           (call $arr_push (local.get $idxa) (call $mk_arr (local.get $im)))
           (let $ig i32 (i32.const 1))
           (block $ie (loop $il
@@ -9166,8 +9169,8 @@
               (then (call $arr_push (local.get $idxa) (call $v_undef)))
               (else
                 (let $ipair i32 (call $arr_new (i32.const 2)))
-                (call $arr_push (local.get $ipair) (call $num (f64.convert_i32_s (local.get $ics))))
-                (call $arr_push (local.get $ipair) (call $num (f64.convert_i32_s (i32.load (i32.add (local.get $icb) (i32.const 4))))))
+                (call $arr_push (local.get $ipair) (call $num (f64.convert_i32_s (call $str_byte_to_cu (local.get $sub) (local.get $ics)))))
+                (call $arr_push (local.get $ipair) (call $num (f64.convert_i32_s (call $str_byte_to_cu (local.get $sub) (i32.load (i32.add (local.get $icb) (i32.const 4)))))))
                 (call $arr_push (local.get $idxa) (call $mk_arr (local.get $ipair)))))
             (set! $ig (i32.add (local.get $ig) (i32.const 1)))
             (br $il)))
@@ -9337,10 +9340,11 @@
         (let $rpMatched i32 (call $to_str (call $get_prop (local.get $rpRes2) (call $mk_str (cstring "0")))))
         (if (call $err) (then (return (call $v_undef))))
         (let $rpMlen i32 (call $str_len (local.get $rpMatched)))
-        (let $rpPos i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $rpRes2) (call $mk_str (cstring "index"))))))
+        (let $rpPos i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $rpRes2) (call $mk_str (cstring "index"))))))  ;; code-unit index (JS-visible)
         (if (call $err) (then (return (call $v_undef))))
         (if (i32.lt_s (local.get $rpPos) (i32.const 0)) (then (set! $rpPos (i32.const 0))))
-        (if (i32.gt_s (local.get $rpPos) (local.get $rpLen)) (then (set! $rpPos (local.get $rpLen))))
+        (if (i32.gt_s (local.get $rpPos) (call $str_cu_len (local.get $rpSstr))) (then (set! $rpPos (call $str_cu_len (local.get $rpSstr)))))
+        (let $rpPosByte i32 (call $str_cu_to_byte (local.get $rpSstr) (local.get $rpPos)))  ;; byte offset for the subject substring ops
         (let $rpNamed i64 (call $get_prop (local.get $rpRes2) (call $mk_str (cstring "groups"))))
         (if (call $err) (then (return (call $v_undef))))
         (let $rpReplc i32 (cstring ""))
@@ -9387,13 +9391,13 @@
                       (if (call $err) (then (return (call $v_undef))))))
               (set! $rpCj (i32.add (local.get $rpCj) (i32.const 1)))
               (br $rpCL2)))
-            (set! $rpReplc (call $get_substitution (local.get $rpMatched) (local.get $rpSstr) (local.get $rpPos) (call $mk_obj (local.get $rpCoer)) (local.get $rpNcap) (local.get $rpNamed) (local.get $rpReplStr)))
+            (set! $rpReplc (call $get_substitution (local.get $rpMatched) (local.get $rpSstr) (local.get $rpPosByte) (call $mk_obj (local.get $rpCoer)) (local.get $rpNcap) (local.get $rpNamed) (local.get $rpReplStr)))
             (if (call $err) (then (return (call $v_undef))))))
-        (if (i32.ge_s (local.get $rpPos) (local.get $rpNext))
+        (if (i32.ge_s (local.get $rpPosByte) (local.get $rpNext))
           (then
-            (set! $rpOut (call $str_concat (local.get $rpOut) (call $substr (local.get $rpSstr) (local.get $rpNext) (i32.sub (local.get $rpPos) (local.get $rpNext)))))
+            (set! $rpOut (call $str_concat (local.get $rpOut) (call $substr (local.get $rpSstr) (local.get $rpNext) (i32.sub (local.get $rpPosByte) (local.get $rpNext)))))
             (set! $rpOut (call $str_concat (local.get $rpOut) (local.get $rpReplc)))
-            (set! $rpNext (i32.add (local.get $rpPos) (local.get $rpMlen)))))
+            (set! $rpNext (i32.add (local.get $rpPosByte) (local.get $rpMlen)))))
         (set! $rpK (i32.add (local.get $rpK) (i32.const 1)))
         (br $rpBL)))
       (if (i32.lt_s (local.get $rpNext) (local.get $rpLen))
@@ -9406,7 +9410,7 @@
       (let $spSstr i32 (call $to_str_ck (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))  ;; S = ToString(string) — a Symbol throws
       (if (call $err) (then (return (call $v_undef))))
       (let $spS i64 (call $mk_str (local.get $spSstr)))
-      (let $spSize i32 (call $str_len (local.get $spSstr)))
+      (let $spSize i32 (call $str_cu_len (local.get $spSstr)))  ;; code-unit length (positions round-trip via lastIndex, which is code-unit)
       ;; C = SpeciesConstructor(rx, %RegExp%)
       (let $spDef i64 (i64.load (call $scope_find_local (i32.load (i32.const 152)) (cstring "RegExp"))))
       (let $spC i64 (call $species_constructor (local.get $thisv) (local.get $spDef)))
@@ -9459,7 +9463,8 @@
             (if (i32.eq (local.get $spE2) (local.get $spP))
               (then (set! $spQ (i32.add (local.get $spQ) (i32.const 1))))
               (else
-                (call $arr_push (local.get $spA) (call $mk_str (call $substr (local.get $spSstr) (local.get $spP) (i32.sub (local.get $spQ) (local.get $spP)))))
+                (let $spPb i32 (call $str_cu_to_byte (local.get $spSstr) (local.get $spP)))
+                (call $arr_push (local.get $spA) (call $mk_str (call $substr (local.get $spSstr) (local.get $spPb) (i32.sub (call $str_cu_to_byte (local.get $spSstr) (local.get $spQ)) (local.get $spPb)))))
                 (if (i32.ge_s (call $arr_len (local.get $spA)) (local.get $spLim)) (then (return (call $mk_arr (local.get $spA)))))
                 (set! $spP (local.get $spE2))
                 ;; append each capture from the result object
@@ -9475,7 +9480,8 @@
                   (br $spCapL)))
                 (set! $spQ (local.get $spP))))))
         (br $spL)))
-      (call $arr_push (local.get $spA) (call $mk_str (call $substr (local.get $spSstr) (local.get $spP) (i32.sub (local.get $spSize) (local.get $spP)))))
+      (let $spPf i32 (call $str_cu_to_byte (local.get $spSstr) (local.get $spP)))
+      (call $arr_push (local.get $spA) (call $mk_str (call $substr (local.get $spSstr) (local.get $spPf) (i32.sub (call $str_len (local.get $spSstr)) (local.get $spPf)))))
       (return (call $mk_arr (local.get $spA)))))
   (if (i32.eq (local.get $id) (i32.const 428))  ;; RegExp.prototype[@@match](string) — spec protocol
     (then
