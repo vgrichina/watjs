@@ -10938,6 +10938,44 @@
             (set! $fmgi (i32.add (local.get $fmgi) (i32.const 1))) (br $fmgl)))
           (if (i32.eq (local.get $id) (i32.const 26)) (then (return (local.get $fmgA))))
           (return (call $v_undef))))
+      ;; fill(29) on an array-like OBJECT (not a real array, not a TypedArray): operate LIVE with an f64
+      ;; length/range so a length near 2^53-1 neither overflows i32 nor snapshots the (sparse) receiver
+      ;; via alike_arr (which would OOM). amut_set already goes live for objects; this just avoids the snapshot.
+      ;; NB: gate is nested ifs (NOT i32.and) — scope_find_local(val_payload) must only run once we KNOW
+      ;; thisv is an object, else a primitive receiver's non-pointer payload traps (i32.and isn't short-circuit).
+      (if (i32.and (i32.eq (local.get $id) (i32.const 29)) (i32.and (i32.eqz (call $is_array (local.get $thisv))) (call $is_object (local.get $thisv))))
+        (then
+        (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
+        (then
+          (let $flon f64 (call $alike_len_f64 (local.get $thisv)))
+          (if (call $err) (then (return (call $v_undef))))
+          (let $flov i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+          (let $flos f64 (f64.const 0))
+          (if (i32.ge_s (local.get $argc) (i32.const 2))
+            (then
+              (let $flot f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+              (if (call $err) (then (return (call $v_undef))))
+              (set! $flot (if f64 (f64.ne (local.get $flot) (local.get $flot)) (then (f64.const 0)) (else (f64.trunc (local.get $flot)))))
+              (if (f64.lt (local.get $flot) (f64.const 0))
+                (then (set! $flos (f64.add (local.get $flon) (local.get $flot))) (if (f64.lt (local.get $flos) (f64.const 0)) (then (set! $flos (f64.const 0)))))
+                (else (set! $flos (if f64 (f64.lt (local.get $flot) (local.get $flon)) (then (local.get $flot)) (else (local.get $flon))))))))
+          (let $floe f64 (local.get $flon))
+          (if (i32.and (i32.ge_s (local.get $argc) (i32.const 3)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))))
+            (then
+              (let $flot2 f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))
+              (if (call $err) (then (return (call $v_undef))))
+              (set! $flot2 (if f64 (f64.ne (local.get $flot2) (local.get $flot2)) (then (f64.const 0)) (else (f64.trunc (local.get $flot2)))))
+              (if (f64.lt (local.get $flot2) (f64.const 0))
+                (then (set! $floe (f64.add (local.get $flon) (local.get $flot2))) (if (f64.lt (local.get $floe) (f64.const 0)) (then (set! $floe (f64.const 0)))))
+                (else (set! $floe (if f64 (f64.lt (local.get $flot2) (local.get $flon)) (then (local.get $flot2)) (else (local.get $flon))))))))
+          (let $flok f64 (local.get $flos))
+          (block $floend (loop $flol
+            (br_if $floend (f64.ge (local.get $flok) (local.get $floe)))
+            (call $set_prop (local.get $thisv) (call $num (local.get $flok)) (local.get $flov))
+            (if (call $err) (then (return (call $v_undef))))
+            (set! $flok (f64.add (local.get $flok) (f64.const 1)))
+            (br $flol)))
+          (return (local.get $thisv))))))
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
