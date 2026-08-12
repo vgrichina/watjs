@@ -3825,22 +3825,22 @@
       ;; GetIteratorFlattenable: method = GetMethod(O, @@iterator). undefined/null → O itself IS the
       ;; iterator (fallback); callable → Call(method, O) (must return an Object); non-callable → TypeError.
       (let $ifit i64 (call $v_undef))
-      (if (call $is_object (local.get $ifo))
-        (then
-          (let $ifm i64 (call $get_prop (local.get $ifo) (call $make_symbol (cstring "@@iterator") (cstring "Symbol.iterator"))))
-          (if (call $err) (then (return (call $v_undef))))
-          (if (i32.or (call $is_undefined (local.get $ifm)) (call $is_null (local.get $ifm)))
-            (then (set! $ifit (local.get $ifo)))  ;; fallback: treat O as the iterator
-            (else
-              (if (i32.eqz (call $is_function (local.get $ifm)))
-                (then (call $throw_type (cstring "TypeError") (cstring "@@iterator is not a function")) (return (call $v_undef))))
-              (set! $ifit (call $call_val (local.get $ifm) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $ifo)))
-              (if (call $err) (then (return (call $v_undef))))
-              (if (i32.eqz (call $is_object (local.get $ifit)))
-                (then (call $throw_type (cstring "TypeError") (cstring "@@iterator did not return an object")) (return (call $v_undef)))))))
+      ;; GetIteratorFlattenable(O, iterate-string-primitives): an Object OR a String is allowed; any
+      ;; other primitive → TypeError. A String is boxed so GetMethod(String.prototype, @@iterator) fires
+      ;; observably (a getter sees `this` = the primitive string) — not the vm_get_iter fast path.
+      (if (i32.eqz (i32.or (call $is_string (local.get $ifo)) (i32.or (call $is_object (local.get $ifo)) (i32.or (call $is_array (local.get $ifo)) (call $is_function (local.get $ifo))))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.from called on a non-string primitive")) (return (call $v_undef))))
+      (let $ifm i64 (call $get_prop (local.get $ifo) (call $make_symbol (cstring "@@iterator") (cstring "Symbol.iterator"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.or (call $is_undefined (local.get $ifm)) (call $is_null (local.get $ifm)))
+        (then (set! $ifit (local.get $ifo)))  ;; fallback: treat O as the iterator
         (else
-          (set! $ifit (call $vm_get_iter (local.get $ifo)))   ;; strings → their iterator; other primitives throw
-          (if (call $err) (then (return (call $v_undef))))))
+          (if (i32.eqz (call $is_function (local.get $ifm)))
+            (then (call $throw_type (cstring "TypeError") (cstring "@@iterator is not a function")) (return (call $v_undef))))
+          (set! $ifit (call $call_val (local.get $ifm) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $ifo)))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.eqz (call $is_object (local.get $ifit)))
+            (then (call $throw_type (cstring "TypeError") (cstring "@@iterator did not return an object")) (return (call $v_undef))))))
       ;; already an Iterator (proto chain reaches %Iterator.prototype%) → return as-is
       (if (call $is_object (local.get $ifit))
         (then
@@ -6025,7 +6025,11 @@
             (call $arr_push (local.get $fra) (call $str_cp_at (local.get $frsp) (local.get $frj)))
             (set! $frj (i32.add (local.get $frj) (call $str_cp_len (call $str_byte (local.get $frsp) (local.get $frj)))))
             (br $frsl)))))
-      (if (i32.or (call $is_object (local.get $frs)) (call $is_array (local.get $frs)))
+      ;; object/array OR a coercible non-string primitive (number/boolean/symbol/bigint): GetMethod
+      ;; boxes it, so a custom prototype @@iterator makes it iterable; else it falls to the array-like
+      ;; path (length via boxing → usually 0). null/undefined and strings are handled elsewhere.
+      (if (i32.or (call $is_object (local.get $frs)) (i32.or (call $is_array (local.get $frs))
+            (i32.and (i32.eqz (call $is_string (local.get $frs))) (i32.and (i32.eqz (call $is_undefined (local.get $frs))) (i32.eqz (call $is_null (local.get $frs)))))))
         (then
           ;; resolve an iterator: @@iterator() if present, else the object itself
           (let $frit i64 (local.get $frs))

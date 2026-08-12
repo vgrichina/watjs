@@ -609,7 +609,10 @@
         (call $arr_push (local.get $dst) (call $str_cp_at (local.get $ssp) (local.get $sci)))
         (set! $sci (i32.add (local.get $sci) (call $str_cp_len (call $str_byte (local.get $ssp) (local.get $sci))))) (br $sl)))
       (return)))
-  (if (i32.or (call $is_array (local.get $srcv)) (call $is_object (local.get $srcv)))
+  ;; array/object OR a coercible non-string primitive (number/boolean/symbol/bigint): vm_get_iter
+  ;; boxes it so a custom prototype @@iterator makes it spreadable. null/undefined fall through below.
+  (if (i32.or (call $is_array (local.get $srcv)) (i32.or (call $is_object (local.get $srcv))
+        (i32.and (i32.eqz (call $is_undefined (local.get $srcv))) (i32.eqz (call $is_null (local.get $srcv))))))
     (then
       (let $it i64 (call $vm_get_iter (local.get $srcv)))
       (if (call $err) (then (return)))  ;; @@iterator threw / missing
@@ -668,7 +671,16 @@
       (if (call $is_function (local.get $itf)) (then (return (call $call_val (local.get $itf) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
       (if (call $is_function (call $get_prop (local.get $v) (call $mk_str (cstring "next")))) (then (return (local.get $v))))  ;; already an iterator (generator/manual): has .next
       (call $throw_type (cstring "TypeError") (cstring "is not iterable")) (return (call $v_undef))))  ;; object with neither @@iterator nor next
-  (call $throw_type (cstring "TypeError") (cstring "is not iterable")) (call $v_undef))  ;; primitive (null/undefined/number/boolean) — not iterable
+  ;; other primitive (number/boolean/symbol/bigint): GetMethod(@@iterator) boxes it, so a custom
+  ;; prototype @@iterator (e.g. Number.prototype[Symbol.iterator]) makes it iterable. null/undefined
+  ;; are not object-coercible → TypeError.
+  (if (i32.eqz (i32.or (call $is_undefined (local.get $v)) (call $is_null (local.get $v))))
+    (then
+      (let $pitf i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@iterator"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (call $is_function (local.get $pitf))
+        (then (return (call $call_val (local.get $pitf) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))))
+  (call $throw_type (cstring "TypeError") (cstring "is not iterable")) (call $v_undef))  ;; null/undefined or a primitive with no @@iterator
 
 ;; GetIterator(v, async): @@asyncIterator() if present, else fall back to the sync iterator
 ;; (its next() results are awaited by the for-await loop — approximates CreateAsyncFromSyncIterator).
