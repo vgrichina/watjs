@@ -1188,7 +1188,9 @@
           (if (i32.and (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "function"))) (i32.eqz (call $nl_before)))
             (then (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1))) (drop (call $vm_c_function (local.get $code))) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; an async FunctionExpression is not an assignment target
           ;; async x => …   |   async ( … ) => …
-          (if (i32.eq (call $tok_kind) (i32.const 3))  ;; async IDENT =>
+          ;; `async [no LineTerminator here] AsyncArrowBindingIdentifier` — a newline after `async` means it
+          ;; is NOT an async arrow head; `async` is a plain IdentifierReference (falls through to 1226).
+          (if (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eqz (call $nl_before)))  ;; async [no LT] IDENT =>
             (then
               (let $aan i32 (call $ident_name)) (call $next_token)
               (if (i32.eq (call $tok_kind) (i32.const 52))
