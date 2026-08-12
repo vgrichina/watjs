@@ -8190,7 +8190,7 @@
         ;; a private name ("#x") is never observable via the `in` operator (the private brand check calls
         ;; js_in directly, bypassing this opcode, so it still sees declared private members)
         (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))
-          (if i64 (i32.and (call $is_string (local.get $inkey)) (call $is_private_key (call $val_payload (local.get $inkey))))
+          (if i64 (if i32 (call $is_string (local.get $inkey)) (then (call $is_private_key (call $val_payload (local.get $inkey)))) (else (i32.const 0)))  ;; short-circuit: val_payload of a non-string (e.g. a number key) is not a pointer
             (then (call $v_false))
             (else (call $js_in (local.get $inkey) (i64.load (i32.add (local.get $stack) (local.get $sp)))))))
         (br $disp)))
