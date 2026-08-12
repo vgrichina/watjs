@@ -9076,6 +9076,9 @@
         (if (i32.and (i32.eq (local.get $pb) (i32.const 45)) (i32.ge_s (local.get $lastatom) (i32.const 0)))  ;; '-' after a plain atom
           (then
             (let $nb i32 (if i32 (i32.lt_s (i32.add (local.get $pi) (i32.const 1)) (local.get $pl)) (then (call $str_byte (local.get $pat) (i32.add (local.get $pi) (i32.const 1)))) (else (i32.const -1))))
+            ;; v-mode: `--` is the ClassSubtraction operator, not a range (skip both '-'); don't false-flag it
+            (if (i32.and (i32.ne (i32.and (local.get $fseen) (i32.const 128)) (i32.const 0)) (i32.eq (local.get $nb) (i32.const 45)))
+              (then (set! $lastatom (i32.const -1)) (set! $pi (i32.add (local.get $pi) (i32.const 2))) (br $pvl)))
             (if (i32.and (i32.ge_s (local.get $nb) (i32.const 32)) (i32.and (i32.lt_s (local.get $nb) (i32.const 128)) (i32.and (i32.ne (local.get $nb) (i32.const 92)) (i32.ne (local.get $nb) (i32.const 93)))))  ;; hi is an unescaped ASCII char → a real range
               (then
                 (if (i32.gt_s (local.get $lastatom) (local.get $nb))
