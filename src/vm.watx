@@ -2352,6 +2352,9 @@
     (then (call $next_token) (i32.store (i32.const 940) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 44)) (return)))
   (if (i32.and (i32.and (i32.eq (local.get $k) (i32.const 3)) (i32.load (i32.const 896))) (call $tok_is_kw (cstring "await")))  ;; await expr (only in an async body; else `await` is an identifier)
     (then
+      ;; an AwaitExpression may not appear in an async function's FormalParameters (reg 960 bit1):
+      ;; `async function(x = await 1){}` → SyntaxError.
+      (if (i32.and (i32.load (i32.const 960)) (i32.const 2)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' expression is not allowed in async function parameters")) (return)))
       (call $next_token)
       ;; AwaitExpression requires a UnaryExpression operand; a terminator (';' ')' ']' '}' ',' ':' EOF)
       ;; means `await` was used as an IdentifierReference — forbidden in an async body.
@@ -3457,7 +3460,7 @@
   ;; reg 960 bit0 = "compiling a generator's parameter defaults" → `yield` is forbidden there (a nested
   ;; regular function RESETS it to its own kind; a nested arrow inherits it — see vm_c_arrow).
   (let $savepa960 i32 (i32.load (i32.const 960)))
-  (i32.store (i32.const 960) (local.get $genf))
+  (i32.store (i32.const 960) (i32.or (local.get $genf) (if i32 (local.get $asyncf) (then (i32.const 2)) (else (i32.const 0)))))  ;; bit0=generator params (no yield), bit1=async params (no await expression)
   ;; non-simple params → mark the parameter scope as separate before defaults run, so a sloppy direct eval
   ;; in a param default that `var`-declares a parameter name throws (EvalDeclarationInstantiation).
   (if (local.get $nsdup) (then (call $vm_emit_op (local.get $code) (i32.const 127))))  ;; MARKPARAMSCOPE
