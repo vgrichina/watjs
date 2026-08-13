@@ -1178,6 +1178,17 @@
       (return)))
   (if (i32.eq (call $tok_kind) (i32.const 3))  ;; identifier / true / false / function-expression
     (then
+      ;; an ESCAPED `async` (`async`) heading an async function is a SyntaxError — the `async`
+      ;; contextual keyword may not contain an escape. tok_is_kw compares RAW source so it misses it; check
+      ;; the decoded name + raw length, and only when `function` [no LT] follows (a bare escaped `async`
+      ;; identifier / `async(x)` call is fine — the arrow head is ambiguous with a call, so left alone).
+      (if (i32.and (call $str_eq (call $ident_name) (cstring "async")) (i32.ne (call $tok_len) (i32.const 5)))
+        (then
+          (let $easc i32 (call $cursor_save))
+          (call $next_token)
+          (let $easfn i32 (i32.and (i32.eqz (call $nl_before)) (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "function")))))
+          (call $cursor_restore (local.get $easc))
+          (if (local.get $easfn) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'async' keyword may not contain an escape sequence")) (return)))))
       (if (call $tok_is_kw (cstring "async"))  ;; async function / async arrow
         (then
           (let $asyncstart i32 (call $tok_start))  ;; 'async' keyword offset (for `async function`'s source span)
