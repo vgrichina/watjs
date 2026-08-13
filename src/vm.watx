@@ -4823,6 +4823,19 @@
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (local.get $snap))
 
+;; Is `name` ("#x") a currently-visible private name (declared by some class on the visible-set stack)?
+(func $priv_name_visible (param $name i32) (result i32) (effects)
+  (let $sc i32 (i32.load (i32.const 908)))
+  (if (i32.gt_s (local.get $sc) (i32.const 8192)) (then (set! $sc (i32.const 8192))))
+  (let $buf i32 (i32.load (i32.const 904)))
+  (if (i32.eqz (local.get $buf)) (then (return (i32.const 0))))
+  (block $d (loop $l
+    (br_if $d (i32.le_s (local.get $sc) (i32.const 0)))
+    (set! $sc (i32.sub (local.get $sc) (i32.const 1)))
+    (if (call $str_eq (i32.load (i32.add (local.get $buf) (i32.mul (local.get $sc) (i32.const 4)))) (local.get $name)) (then (return (i32.const 1))))
+    (br $l)))
+  (i32.const 0))
+
 (func $vm_class_priv_dup_check (effects)
   ;; assign this class a unique compile-time id (reg 1224 = counter, reg 1228 = current class id). Private
   ;; names are stored/accessed under a per-class-id-qualified key ("#<id>#name") so two distinct class
@@ -5032,7 +5045,12 @@
     (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "class")))
       (then (call $skip_one_class) (br $lp)))
     (if (i32.and (i32.eq (local.get $k) (i32.const 3)) (i32.eq (call $str_byte (call $ident_name) (i32.const 0)) (i32.const 35)))
-      (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Private field must be declared in an enclosing class")) (br $done)))
+      (then
+        ;; a top-level '#name' is valid ONLY if it is a currently-visible private name (a direct eval inside
+        ;; a class restores the enclosing visible set — so `eval("this.#declared")` is OK but `#undeclared`
+        ;; is a SyntaxError). For a fresh program the visible set is empty → any '#name' errors.
+        (if (i32.eqz (call $priv_name_visible (call $ident_name)))
+          (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Private field must be declared in an enclosing class")) (br $done)))))
     (call $next_token) (br $lp))))
 
 (func $vm_c_class (param $code i32) (param $isExpr i32) (effects)
@@ -7207,10 +7225,11 @@
   ;; Early Error: a '#name' reference outside any class body is invalid (empty private-name scope). Only
   ;; for a fresh top-level program — a nested/direct eval ($prelude=0) may legitimately reference the
   ;; enclosing method's class private names, which this flat scan cannot see.
-  (if (local.get $prelude)
-    (then
-      (call $vm_toplevel_priv_check (local.get $ptr) (local.get $len))
-      (if (call $err) (then (return (local.get $code))))))
+  ;; Always run: a top-level '#name' is valid only if it is a currently-visible private name. For a fresh
+  ;; program / indirect eval / no-private-class direct eval the visible set is empty → any '#name' is a
+  ;; SyntaxError; a direct eval inside a class restored its enclosing visible set (reg 904/908) above.
+  (call $vm_toplevel_priv_check (local.get $ptr) (local.get $len))
+  (if (call $err) (then (return (local.get $code))))
   ;; hoist the user program's var declarations (define as undefined up front)
   (call $set_src (local.get $ptr) (local.get $len))
   (call $lex_init)
