@@ -85,10 +85,24 @@
     (i32.and (i32.eq (call $str_byte (local.get $ptr) (i32.const 0)) (i32.const 64))
              (i32.eq (call $str_byte (local.get $ptr) (i32.const 1)) (i32.const 64)))))
 
-;; a private name key starts with "#" — never reachable via string reflection
-;; (hasOwnProperty/getOwnPropertyDescriptor/propertyIsEnumerable with a string arg).
+;; a private name key starts with "#" — used by the compiler ($priv_key qualification decision on the RAW
+;; `#x`) and the runtime access/brand-check on the QUALIFIED `#<id>#x` (which also starts with "#").
 (func $is_private_key (param $ptr i32) (result i32) (effects)
   (i32.and (i32.ge_s (call $str_len (local.get $ptr)) (i32.const 1)) (i32.eq (call $str_byte (local.get $ptr) (i32.const 0)) (i32.const 35))))
+
+;; a REAL private-BRAND key: the emitted per-class form '#' <digits> '#' … (see $priv_key). Used by string
+;; reflection (hasOwnProperty/gOPD/propertyIsEnumerable/Reflect.has and `"#x" in o`) to hide ONLY genuine
+;; private members — a user's PUBLIC computed key "#m" or an internal "#errkind" is NOT one, so it stays
+;; visible there. (Enumeration hiding stays via $is_internal_key, which hides every '#'.)
+(func $is_private_brand_key (param $ptr i32) (result i32) (effects)
+  (if (i32.lt_s (call $str_len (local.get $ptr)) (i32.const 3)) (then (return (i32.const 0))))
+  (if (i32.ne (call $str_byte (local.get $ptr) (i32.const 0)) (i32.const 35)) (then (return (i32.const 0))))
+  (let $i i32 (i32.const 1))
+  (block $done (loop $l
+    (let $b i32 (call $str_byte (local.get $ptr) (local.get $i)))
+    (if (i32.and (i32.ge_s (local.get $b) (i32.const 48)) (i32.le_s (local.get $b) (i32.const 57)))  ;; a digit → keep scanning the classid
+      (then (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))))
+  (i32.and (i32.gt_s (local.get $i) (i32.const 1)) (i32.eq (call $str_byte (local.get $ptr) (local.get $i)) (i32.const 35))))  ;; '#'<digits>'#'
 
 (func $str_set_byte (param $ptr i32) (param $i i32) (param $b i32) (effects)
   (i32.store8 (i32.add (i32.add (local.get $ptr) (i32.const 4)) (local.get $i)) (local.get $b)))

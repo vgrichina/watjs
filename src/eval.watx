@@ -5430,7 +5430,7 @@
       (if (call $err) (then (return (call $v_undef))))
       (if (i32.or (call $is_null (local.get $thisv)) (call $is_undefined (local.get $thisv)))  ;; ToObject(this)
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert undefined or null to object")) (return (call $v_undef))))
-      (if (call $is_private_key (local.get $pk)) (then (return (call $v_false))))  ;; #x not a string-keyed own prop
+      (if (call $is_private_brand_key (local.get $pk)) (then (return (call $v_false))))  ;; #x not a string-keyed own prop
       (if (call $is_array (local.get $thisv))
         (then
           (let $pa i32 (call $val_payload (local.get $thisv)))
@@ -6740,7 +6740,7 @@
       (if (i32.eqz (i32.or (call $is_object (local.get $thisv)) (i32.or (call $is_array (local.get $thisv)) (call $is_function (local.get $thisv)))))
         (then (set! $thisv (call $to_object (local.get $thisv)))))
       ;; private names (#x) are not string-keyed own properties — invisible to reflection
-      (if (call $is_private_key (local.get $ks)) (then (return (call $v_false))))
+      (if (call $is_private_brand_key (local.get $ks)) (then (return (call $v_false))))
       ;; Proxy: HasOwnProperty = [[GetOwnProperty]](P) is not undefined (dispatches the trap)
       (if (call $is_proxy (local.get $thisv))
         (then
@@ -7731,7 +7731,7 @@
       ;; `in` op directly, never Reflect.has) — private members are invisible to Reflect.has
       (let $rhk i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
       (if (call $is_string (local.get $rhk))
-        (then (if (call $is_private_key (call $val_payload (local.get $rhk))) (then (return (call $v_false))))))
+        (then (if (call $is_private_brand_key (call $val_payload (local.get $rhk))) (then (return (call $v_false))))))
       (return (call $js_in (local.get $rhk) (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
   (if (i32.eq (local.get $id) (i32.const 203))  ;; Reflect.deleteProperty(target, key) → boolean
     (then
@@ -10253,7 +10253,7 @@
               (return (call $call_native (i32.const 156) (i32.const 2) (local.get $gdb) (call $v_undef)))))))
       ;; private names (#x) have no string-keyed descriptor (invisible to reflection)
       (if (call $is_string (local.get $ky))
-        (then (if (call $is_private_key (call $val_payload (local.get $ky))) (then (return (call $v_undef))))))
+        (then (if (call $is_private_brand_key (call $val_payload (local.get $ky))) (then (return (call $v_undef))))))
       ;; arrays: indices are {W:true,E:true,C:true}; length is {W:true,E:false,C:false}
       (if (call $is_array (local.get $ob))
         (then
