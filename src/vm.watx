@@ -1871,7 +1871,7 @@
   (let $isdeval i32 (i32.load (i32.const 876)))
   (i32.store (i32.const 876) (i32.const 0))
   ;; direct-eval marker bitfield: bit0=is-direct-eval, bit1=super-property-allowed(reg868), bit2=super()-allowed(reg884)
-  (let $devmark i32 (if i32 (local.get $isdeval) (then (i32.or (i32.const 1) (i32.or (if i32 (i32.load (i32.const 868)) (then (i32.const 2)) (else (i32.const 0))) (i32.or (if i32 (i32.load (i32.const 884)) (then (i32.const 4)) (else (i32.const 0))) (i32.or (if i32 (i32.load (i32.const 388)) (then (i32.const 8)) (else (i32.const 0))) (if i32 (i32.load (i32.const 1008)) (then (i32.const 16)) (else (i32.const 0)))))))) (else (i32.const 0))))  ;; bit3 = caller strict; bit4 = caller new.target-allowed (direct eval inherits both)
+  (let $devmark i32 (if i32 (local.get $isdeval) (then (i32.or (i32.const 1) (i32.or (if i32 (i32.load (i32.const 868)) (then (i32.const 2)) (else (i32.const 0))) (i32.or (if i32 (i32.load (i32.const 884)) (then (i32.const 4)) (else (i32.const 0))) (i32.or (if i32 (i32.load (i32.const 388)) (then (i32.const 8)) (else (i32.const 0))) (i32.or (if i32 (i32.load (i32.const 1008)) (then (i32.const 16)) (else (i32.const 0))) (if i32 (i32.load (i32.const 916)) (then (i32.const 32)) (else (i32.const 0))))))))) (else (i32.const 0))))  ;; bit3=caller strict; bit4=new.target-allowed; bit5=`arguments` forbidden (class field-init / static block — inherited by a direct eval)
   (call $next_token)  ;; '('
   (let $spc i32 (call $cursor_save))
   (let $sphas i32 (i32.const 0)) (let $spd i32 (i32.const 0))
@@ -7169,7 +7169,7 @@
   (i32.store (i32.const 912) (i32.const 0))  ;; in-static-block flag (reset per compile; balanced save/restore otherwise)
   (i32.store (i32.const 920) (i32.const 0))  ;; in-function-body flag: 0 for program/eval code (`return` at top level is a SyntaxError)
   (i32.store (i32.const 972) (i32.const 0))  ;; using-allowed container flag: 0 at the top level of a Script/eval (a `using` there is a SyntaxError; a Block/FunctionBody/for-head sets it to 1)
-  (i32.store (i32.const 916) (i32.const 0))  ;; arguments-forbidden flag (static block / field initializer)
+  (if (local.get $prelude) (then (i32.store (i32.const 916) (i32.const 0))))  ;; arguments-forbidden flag — reset for a FRESH program; a nested/direct eval inherits it from vm_eval_str (bit5)
   (i32.store (i32.const 244) (i32.const 0)) (i32.store (i32.const 248) (i32.const 0)) (i32.store (i32.const 228) (i32.const 0))  ;; labels: pending, current, depth
   (i32.store (i32.const 932) (i32.const 0))  ;; label-find floor (0 = program top; raised at each function boundary)
   (i32.store (i32.const 940) (i32.const 0))  ;; unary-before-** flag (transient; cleared each vm_c_pow)
@@ -10369,6 +10369,7 @@
   (i32.store (i32.const 888) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 4)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 884 (super call)
   (i32.store (i32.const 892) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 8)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 388 seed (direct eval inherits caller strict); consumed by vm_compile_prog
   (i32.store (i32.const 1012) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 16)) (then (i32.const 1)) (else (i32.const 0))))  ;; → reg 1008 seed (direct eval in a function → new.target allowed)
+  (i32.store (i32.const 916) (if i32 (i32.and (i32.load (i32.const 880)) (i32.const 32)) (then (i32.const 1)) (else (i32.const 0))))  ;; bit5: `arguments` forbidden (direct eval in a class field-init / static block)
   (i32.store (i32.const 880) (i32.const 0))
   ;; DIRECT eval inside a class: restore the captured private-name context (reg 1232 snapshot) into the
   ;; visible-set stack so the eval'd code resolves `#x` to the enclosing class's brand key AND passes the
