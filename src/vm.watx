@@ -4618,8 +4618,13 @@
   ;; inside a generator's parameter default is still forbidden (arrows are never generators themselves).
   (if (call $vm_params_nonsimple (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))
     (then (call $vm_emit_op (local.get $code) (i32.const 127))))  ;; MARKPARAMSCOPE (non-simple arrow params — see vm_c_fnbody)
+  ;; an ASYNC arrow's params may not contain an await-expression (reg 960 bit1); keep the inherited bit0
+  ;; (generator param yield-reservation) so a nested arrow in a generator's default still forbids yield.
+  (let $arrsave960 i32 (i32.load (i32.const 960)))
+  (i32.store (i32.const 960) (i32.or (local.get $arrsave960) (if i32 (local.get $arrasync) (then (i32.const 2)) (else (i32.const 0)))))
   (if (local.get $pdef)
     (then (call $vm_emit_default_params (local.get $code) (local.get $params) (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))))
+  (i32.store (i32.const 960) (local.get $arrsave960))
   ;; rest-parameter prologue
   (if (i32.ge_s (local.get $restidx) (i32.const 0))
     (then
