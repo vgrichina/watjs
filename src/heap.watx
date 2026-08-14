@@ -4,8 +4,10 @@
 ;; Linear memory map (we manage it ourselves; the WATX region
 ;; allocator / $bump_ptr global is unused):
 ;;   0    .. 1023    : VM state registers (see below)
-;;   1024 .. 131071  : cstring constant pool (compiler-managed)
-;;   131072 ..       : dynamic heap (bump allocator)
+;;   1024 .. 524287  : cstring constant pool (compiler-managed) — grew past the
+;;                     old 131071 ceiling as the Temporal prelude landed; base
+;;                     bumped to 524288 with ~393KB of headroom above the pool.
+;;   524288 ..        : dynamic heap (bump allocator)
 ;;
 ;; Registers (fixed addresses; i64/f64 slots are 8-aligned):
 ;;   0  HEAP_PTR (i32)   next free heap address
@@ -24,9 +26,10 @@
 (func $heap_ptr (result i32) (effects) (i32.load (i32.const 0)))
 (func $set_heap_ptr (param $v i32) (effects) (i32.store (i32.const 0) (local.get $v)))
 
-;; Initialize the heap pointer to HEAP_BASE (131072).
+;; Initialize the heap pointer to HEAP_BASE (524288 — raised from 131072 once the
+;; cstring pool grew past 131071; see the memory map above).
 (func $heap_init (effects)
-  (call $set_heap_ptr (i32.const 131072))
+  (call $set_heap_ptr (i32.const 524288))
   (i32.store (i32.const 16) (i32.const 0))   ;; clear ERR
   (i32.store (i32.const 648) (i32.const 0)))  ;; clear the operand-stack reuse pool (stale buffers point into the reclaimed heap)
 

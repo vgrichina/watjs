@@ -13,11 +13,12 @@
 ;; digit temp at scratch+200 and scratch+400..+501. It must sit clear of BOTH the fixed
 ;; registers (0..1023) AND the cstring constant pool (1024..~), which has grown to ~51KB —
 ;; the old base 50000 collided with the pool, so formatting a number corrupted whichever
-;; cstrings landed at 50000..50501 (manifesting as e.g. `const` no longer recognized once the
-;; pool layout shifted a keyword into that range). 130000 sits ABOVE the pool with ~79KB of
-;; headroom and below the heap base (131072). (Long-term: park it in the heap region or add a
-;; codegen guard that the pool end never reaches it — see setup-globals-compiler-cliff.)
-(func $scratch (result i32) (effects) (i32.const 130000))
+;; cstrings landed at 50000..50501. Then 130000 was outgrown too when the Temporal prelude
+;; pushed the pool to ~130KB (pool end reached 131357 > 130000 AND > the old heap base 131072,
+;; corrupting async job-queue heap allocs → OOB traps). Now 500000: ABOVE the pool with plenty
+;; of headroom and below the raised heap base (524288). (Long-term: park it in the heap region
+;; or add a codegen guard that the pool end never reaches it — see setup-globals-compiler-cliff.)
+(func $scratch (result i32) (effects) (i32.const 500000))
 
 ;; Format a non-negative i64 into scratch[start..], return new index (end).
 (func $emit_u64 (param $start i32) (param $val i64) (result i32) (effects)
