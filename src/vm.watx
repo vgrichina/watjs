@@ -7204,10 +7204,19 @@
   (i32.store (i32.const 1008) (i32.load (i32.const 1012))) (i32.store (i32.const 1012) (i32.const 0))  ;; new.target-allowed: seeded from reg 1012 (direct eval in a function); 0 for a fresh script → top-level new.target is a SyntaxError
   ;; Size the code buffer to the source: bytecode is bounded by a small multiple
   ;; of source length (densest real case ~5 bytes/char; 16 is a safe ceiling),
-  ;; plus a fixed 128 KB base that covers the always-compiled Error prelude. A
-  ;; flat 4 MB buffer used to LEAK 4 MB per (nested/repeated) eval — the bump
-  ;; allocator ran dry after ~5 evals (memory access out of bounds).
-  (let $code i32 (call $heap_alloc (i32.add (i32.mul (local.get $len) (i32.const 16)) (i32.const 131072))))
+  ;; plus a fixed 128 KB base. The always-compiled prelude is compiled into this
+  ;; SAME buffer ahead of user code, so its (growing) source length must be
+  ;; INCLUDED in the sizing — a fixed base failed once the prelude (Error + all
+  ;; the Temporal types) outgrew 128 KB: a tiny user program (small $len) got a
+  ;; buffer too small for the prelude bytecode, silently corrupting it (prepending
+  ;; harness masked it by enlarging $len). Scale by the prelude length whenever it
+  ;; is compiled ($prelude=1); nested eval ($prelude=0) needs only $len. A flat
+  ;; 4 MB buffer used to LEAK 4 MB per (nested/repeated) eval — the bump allocator
+  ;; ran dry after ~5 evals (memory access out of bounds).
+  (let $prebytes i32 (if (result i32) (local.get $prelude)
+    (then (i32.mul (call $str_len (call $prelude_src)) (i32.const 16)))
+    (else (i32.const 0))))
+  (let $code i32 (call $heap_alloc (i32.add (i32.add (i32.mul (local.get $len) (i32.const 16)) (local.get $prebytes)) (i32.const 131072))))
   (call $vm_set_emit_cursor (i32.const 0))
   ;; the Error-hierarchy prelude is compiled into the same buffer first, so its
   ;; constructors exist (as VM functions) before user code runs (new ReferenceError, etc.).
