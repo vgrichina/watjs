@@ -156,21 +156,21 @@
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
   <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
   <div class="meta">
-    <span class="chip">status as of <b>2026-08-12</b></span>
+    <span class="chip">status as of <b>2026-08-14</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>f8e78be</b></span>
-    <span class="chip"><b>1718</b> commits</span>
+    <span class="chip">@ <b>a677b54</b></span>
+    <span class="chip"><b>1744</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
     <a class="chip" href="https://watjs.berrry.app/" style="color:var(--accent);text-decoration:none">↗&nbsp;watjs.berrry.app</a>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">31.2k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">353 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">31.4k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">403 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
-  <div class="card"><div class="n">90.0M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">91.6M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -216,7 +216,7 @@
   <tr><td>4</td><td>threaded-code VM + GC + test262 breadth</td><td><span class="pill wip">in progress</span></td></tr>
 </table>
 
-<h2>Test suites <span class="em">live run · 2026-08-12</span></h2>
+<h2>Test suites <span class="em">live run · 2026-08-14</span></h2>
 <table>
   <tr><th>suite</th><th>files</th><th>pass rate</th></tr>
   <tr><td>self-check <code>test/</code></td><td class="mono">486 / 486</td><td><span class="prate"><span style="width:100%"></span></span><span class="rate good">100%</span></td></tr>
@@ -294,13 +294,13 @@ engines get distinct source variants to defeat V8's compilation cache.</p>
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
-  <tr><td class="mono">f8e78be</td><td>class static block: an arrow inherits the <code>await</code>/<code>arguments</code> reservation</td></tr>
-  <tr><td class="mono">ff7ba82</td><td>arrow function: a single <code>BindingIdentifier</code> param may not be a reserved word</td></tr>
-  <tr><td class="mono">4ff3ebb</td><td>async arrow: <code>async</code> heading an arrow may not be followed by a LineTerminator</td></tr>
-  <tr><td class="mono">9b46af1</td><td>object literal: a <code>*</code>/<code>async</code> method modifier requires a method body</td></tr>
-  <tr><td class="mono">c9ba132</td><td>object shorthand: <code>await</code>/<code>yield</code> reserved as an <code>IdentifierReference</code> by context</td></tr>
-  <tr><td class="mono">8bfa216</td><td>destructuring assignment: a rest target may be a literal-base member expression</td></tr>
-  <tr><td class="mono">51f8566</td><td>regex: lazy quantified groups <code>(a)*?</code> / <code>(a|b)+?</code> / <code>(x){2,3}?</code></td></tr>
+  <tr><td class="mono">a677b54</td><td><code>Temporal.PlainDateTime</code> <code>until</code>/<code>since</code>: date-diff + time-borrow (+81)</td></tr>
+  <tr><td class="mono">c56d855</td><td><code>Temporal.PlainDate</code> <code>until</code>/<code>since</code> via DifferenceISODate calendar balancing (+13)</td></tr>
+  <tr><td class="mono">0105ea5</td><td><code>Temporal.PlainDateTime.round</code> with day-carry into the date (+36)</td></tr>
+  <tr><td class="mono">33e847e</td><td><code>Temporal.Instant</code>/<code>PlainTime</code> <code>toString</code> precision options (+31)</td></tr>
+  <tr><td class="mono">151c1f3</td><td><code>Temporal.PlainTime</code> round/until/since via shared rounding helpers (+128)</td></tr>
+  <tr><td class="mono">b48d2dd</td><td><code>Temporal.Instant</code> round/until/since with full rounding options (+65)</td></tr>
+  <tr><td class="mono">1abbfa3</td><td>Temporal: ISO 8601 (RFC 9557) bracket-annotation parsing in <code>from()</code> (+71)</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -342,7 +342,7 @@ engines get distinct source variants to defeat V8's compilation cache.</p>
   <tr><td><b>BigInt</b> — arbitrary precision</td><td><span class="pill todo">not implemented</span></td><td>backed by one <code>i64</code>; overflows past 2^63. Needs heap-allocated bignum limbs</td></tr>
   <tr><td><b>ES modules</b> — <code>import</code> / <code>export</code> linking</td><td><span class="pill todo">not implemented</span></td><td>only a dynamic <code>import()</code> parse + Promise stub; no module graph</td></tr>
   <tr><td><b><code>Intl</code></b> — internationalization</td><td><span class="pill todo">not implemented</span></td><td><code>intl402</code> ~1%; very large surface, deferred</td></tr>
-  <tr><td><b><code>Temporal</code></b> — date/time API</td><td><span class="pill todo">not implemented</span></td><td>large surface, deferred</td></tr>
+  <tr><td><b><code>Temporal</code></b> — date/time API</td><td><span class="pill wip">partial</span></td><td>in progress — <code>Instant</code>, <code>PlainTime</code>, <code>PlainDate</code>, <code>PlainDateTime</code> (round / until / since / toString), <code>Now</code>, RFC 9557 parsing; calendars &amp; zoned/duration surface still to come</td></tr>
   <tr><td><b><code>Atomics</code> / <code>SharedArrayBuffer</code></b>, cross-realm</td><td><span class="pill todo">not implemented</span></td><td>headless, single-realm host</td></tr>
   <tr><td>Full <b>UTF-16 strings</b></td><td><span class="pill wip">partial</span></td><td>UTF-8 internally; lone surrogates aren't single code units → blocks <code>isWellFormed</code>/<code>toWellFormed</code> and some astral-plane edge cases</td></tr>
   <tr><td>Mark-sweep <b>garbage collector</b></td><td><span class="pill todo">not implemented</span></td><td>bump allocator only; memory is never freed <em>within</em> a run (just <code>heap_reset()</code> between tests). Long-running / allocation-heavy programs grow until they trap</td></tr>
@@ -391,7 +391,7 @@ engines get distinct source variants to defeat V8's compilation cache.</p>
 </ul>
 
 <footer>
-  <span>Last refreshed 2026-08-12 from repo state &amp; session memory · self-check <code>test/</code> + tc39 <code>test262/</code> · charts drawn inline, no external deps.</span>
+  <span>Last refreshed 2026-08-14 from repo state &amp; session memory · self-check <code>test/</code> + tc39 <code>test262/</code> · charts drawn inline, no external deps.</span>
   <span><a href="https://watjs.berrry.app/">watjs.berrry.app</a> &nbsp;·&nbsp; <a href="https://github.com/vgrichina/watjs" target="_blank" rel="noopener">github ↗</a></span>
 </footer>
 
@@ -421,7 +421,8 @@ const DAILY = [
   ["Jul 30", 0, 0], ["Jul 31", 3, 0.59], ["Aug 1", 11, 0.87],
   ["Aug 2", 30, 1.80], ["Aug 3", 13, 1.54], ["Aug 4", 8, 0.98], ["Aug 5", 8, 0.49],
   ["Aug 6", 26, 1.22], ["Aug 7", 11, 1.51], ["Aug 8", 10, 0.71],
-  ["Aug 9", 2, 0.26], ["Aug 10", 17, 0.25], ["Aug 11", 48, 3.07], ["Aug 12", 23, 3.07],
+  ["Aug 9", 2, 0.26], ["Aug 10", 17, 0.25], ["Aug 11", 48, 3.07], ["Aug 12", 40, 3.47],
+  ["Aug 13", 0, 0.69], ["Aug 14", 9, 0.52],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -446,7 +447,8 @@ const GROWTH = [
   ["Jul 30", 28161, 320], ["Jul 31", 28190, 321], ["Aug 1", 28449, 323],
   ["Aug 2", 28785, 326], ["Aug 3", 29120, 330], ["Aug 4", 29332, 332], ["Aug 5", 29435, 333],
   ["Aug 6", 29809, 337], ["Aug 7", 29943, 338], ["Aug 8", 30078, 339],
-  ["Aug 9", 30110, 339], ["Aug 10", 30235, 341], ["Aug 11", 30937, 349], ["Aug 12", 31219, 353],
+  ["Aug 9", 30110, 339], ["Aug 10", 30235, 341], ["Aug 11", 30937, 349], ["Aug 12", 31346, 382],
+  ["Aug 13", 31346, 382], ["Aug 14", 31355, 403],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
@@ -476,7 +478,9 @@ const HUMAN = {
   "Aug 2": { n:13 }, "Aug 3": { n:10 }, "Aug 4": { n:8 }, "Aug 5": { n:4 },
   "Aug 6": { n:6 }, "Aug 7": { n:6 }, "Aug 8": { n:4 }, "Aug 9": { n:3 }, "Aug 10": { n:2 },
   "Aug 11": { i:["don't get shy of architectural work"], n:17 },
-  "Aug 12": { n:20 },
+  "Aug 12": { i:["don't get shy of architectural work — accept regressions when it means progress"], n:20 },
+  "Aug 13": { n:3 },
+  "Aug 14": { n:2 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
