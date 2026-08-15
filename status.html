@@ -158,8 +158,8 @@
   <div class="meta">
     <span class="chip">status as of <b>2026-08-15</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>9e72327</b></span>
-    <span class="chip"><b>1781</b> commits</span>
+    <span class="chip">@ <b>0d9f825</b></span>
+    <span class="chip"><b>1812</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
     <a class="chip" href="https://watjs.berrry.app/" style="color:var(--accent);text-decoration:none">↗&nbsp;watjs.berrry.app</a>
   </div>
@@ -167,10 +167,10 @@
 
 <div class="grid">
   <div class="card"><div class="n">31.4k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">429 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">437 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
-  <div class="card"><div class="n">93.9M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">94.4M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -294,13 +294,13 @@ engines get distinct source variants to defeat V8's compilation cache.</p>
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
-  <tr><td class="mono">9e72327</td><td>Temporal: reject a UTC offset on date-only ISO strings without a time (+9)</td></tr>
-  <tr><td class="mono">110d0b7</td><td>Temporal: validate the property-bag <code>calendar</code> field (+34)</td></tr>
-  <tr><td class="mono">b04d57d</td><td><code>Temporal.PlainDate</code>: enforce the representable date range (+14)</td></tr>
-  <tr><td class="mono">d795462</td><td>Temporal: reject an unsupported calendar in a <code>[u-ca=…]</code> annotation (+19)</td></tr>
-  <tr><td class="mono">1dbe552</td><td>Temporal: reject the Unicode minus sign (U+2212) in ISO strings (+17)</td></tr>
-  <tr><td class="mono">4809aa3</td><td>Temporal: accept a lowercase <code>t</code> date-time separator in ISO strings (+12)</td></tr>
-  <tr><td class="mono">9dbf466</td><td>Temporal: <code>overflow:constrain</code> clamps out-of-range fields in <code>from()</code> (+18, incl. PlainYearMonth/PlainMonthDay)</td></tr>
+  <tr><td class="mono">0d9f825</td><td><code>Temporal.ZonedDateTime.from</code>: property-bag time-zone object, options &amp; calendar (+2)</td></tr>
+  <tr><td class="mono">8d11fa5</td><td><code>Temporal.PlainMonthDay.from</code>: anchor + validate the full date string (+2)</td></tr>
+  <tr><td class="mono">2a33836</td><td><code>Temporal.PlainYearMonth.from</code>: anchor + validate the full string (+6)</td></tr>
+  <tr><td class="mono">3e40b89</td><td><code>Temporal.PlainDate.from</code>: anchor + validate the full date-time string (+10)</td></tr>
+  <tr><td class="mono">f480941</td><td>Temporal: <code>PlainMonthDay</code> reference ISO year is always 1972 (+13)</td></tr>
+  <tr><td class="mono">460e4ad</td><td>Temporal: <code>PlainYearMonth</code> reference ISO day is always 1 (+8)</td></tr>
+  <tr><td class="mono">e527a37</td><td>Temporal: <code>era</code>/<code>eraYear</code> getters + <code>getTimeZoneTransition</code> brand check (+17)</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -422,7 +422,7 @@ const DAILY = [
   ["Aug 2", 30, 1.80], ["Aug 3", 13, 1.54], ["Aug 4", 8, 0.98], ["Aug 5", 8, 0.49],
   ["Aug 6", 26, 1.22], ["Aug 7", 11, 1.51], ["Aug 8", 10, 0.71],
   ["Aug 9", 2, 0.26], ["Aug 10", 17, 0.25], ["Aug 11", 48, 3.07], ["Aug 12", 40, 3.47],
-  ["Aug 13", 0, 0.71], ["Aug 14", 34, 1.83], ["Aug 15", 12, 0.90],
+  ["Aug 13", 0, 0.71], ["Aug 14", 34, 1.83], ["Aug 15", 43, 1.46],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -448,7 +448,7 @@ const GROWTH = [
   ["Aug 2", 28785, 326], ["Aug 3", 29120, 330], ["Aug 4", 29332, 332], ["Aug 5", 29435, 333],
   ["Aug 6", 29809, 337], ["Aug 7", 29943, 338], ["Aug 8", 30078, 339],
   ["Aug 9", 30110, 339], ["Aug 10", 30235, 341], ["Aug 11", 30937, 349], ["Aug 12", 31346, 382],
-  ["Aug 13", 31346, 382], ["Aug 14", 31359, 425], ["Aug 15", 31359, 429],
+  ["Aug 13", 31346, 382], ["Aug 14", 31359, 425], ["Aug 15", 31359, 437],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
