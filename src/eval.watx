@@ -3912,6 +3912,7 @@
       (call $scope_define (local.get $cco) (cstring "@@cdone") (call $v_false))
       (call $scope_define (local.get $cco) (cstring "@@crunning") (call $v_false))
       (call $scope_define_attr (local.get $cco) (cstring "next") (call $mk_native (i32.const 351) (cstring "next")) (i32.const 12))  ;; DontEnum
+      (call $scope_define_attr (local.get $cco) (cstring "return") (call $mk_native (i32.const 533) (cstring "return")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $cco)))))
   ;; Iterator.concat helper .next() (351)
   (if (i32.eq (local.get $id) (i32.const 351))
@@ -3962,6 +3963,33 @@
             (call $scope_define (local.get $cnself) (cstring "@@cidx") (call $num (f64.convert_i32_s (i32.add (local.get $cnidx) (i32.const 1)))))
             (br $cnl)))))
       (return (call $v_undef))))
+  ;; Iterator.concat helper .return() (533) — IteratorClose the active inner iterator, then done.
+  ;; No forward before the first next() (@@cinner still undefined) nor after exhaustion (@@cdone).
+  (if (i32.eq (local.get $id) (i32.const 533))
+    (then
+      (let $crr i32 (call $obj_new (i32.const 2)))
+      (let $crself i32 (call $val_payload (local.get $thisv)))
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@crunning"))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.concat: return() called on an already-running iterator")) (return (call $v_undef))))
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cdone"))))
+        (then (call $scope_define (local.get $crr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $crr) (cstring "done") (call $v_true)) (return (call $mk_obj (local.get $crr)))))
+      (call $scope_define (local.get $crself) (cstring "@@cdone") (call $v_true))
+      (let $crinner i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cinner"))))
+      (if (call $is_object (local.get $crinner))
+        (then
+          (let $crret i64 (call $get_prop (local.get $crinner) (call $mk_str (cstring "return"))))
+          (if (call $err) (then (return (call $v_undef))))
+          (if (i32.eqz (i32.or (call $is_undefined (local.get $crret)) (call $is_null (local.get $crret))))
+            (then
+              (if (i32.eqz (call $is_function (local.get $crret)))
+                (then (call $throw_type (cstring "TypeError") (cstring "iterator return is not a function")) (return (call $v_undef))))
+              (let $crbuf i32 (call $heap_alloc (i32.const 8)))
+              (call $scope_define (local.get $crself) (cstring "@@crunning") (call $v_true))  ;; re-entrant return() during the forward → TypeError
+              (drop (call $call_val (local.get $crret) (i32.const 0) (local.get $crbuf) (local.get $crinner)))
+              (call $scope_define (local.get $crself) (cstring "@@crunning") (call $v_false))
+              (if (call $err) (then (return (call $v_undef))))))))
+      (call $scope_define (local.get $crr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $crr) (cstring "done") (call $v_true))
+      (return (call $mk_obj (local.get $crr)))))
   ;; Iterator.zip(iterables[, options]) (355) — modes shortest(0)/longest(1)/strict(2)
   (if (i32.eq (local.get $id) (i32.const 355))
     (then
@@ -6197,8 +6225,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "RegExp legacy static property accessor requires the RegExp constructor as receiver")) (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 528)) (then (return (call $mk_str (cstring "")))))  ;; getter → "" (no tracked state)
       (return (call $v_undef))))  ;; setter (input/$_) → ignore the value
-  ;; Iterator Helpers (335-357) — handled in $native_iterator
-  (if (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357)))
+  ;; Iterator Helpers (335-357, + 533 = Iterator.concat helper .return) — handled in $native_iterator
+  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357))) (i32.eq (local.get $id) (i32.const 533)))
     (then (return (call $native_iterator (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
