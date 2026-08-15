@@ -759,21 +759,10 @@
   (call $to_primitive_h (local.get $v) (i32.const 0)))
 
 ;; Lexicographic (code-unit / byte) string less-than: 1 if a < b, else 0.
+;; a < b in UTF-16 code-unit order (delegates to $str_cmp, which handles the astral/high-BMP
+;; boundary where UTF-8 byte order diverges from UTF-16 order).
 (func $str_less (param $a i32) (param $b i32) (result i32) (effects)
-  (let $la i32 (call $str_len (local.get $a)))
-  (let $lb i32 (call $str_len (local.get $b)))
-  (let $n i32 (if i32 (i32.lt_s (local.get $la) (local.get $lb)) (then (local.get $la)) (else (local.get $lb))))
-  (let $i i32 (i32.const 0))
-  (block $brk (loop $cont
-    (br_if $brk (i32.ge_s (local.get $i) (local.get $n)))
-    (let $ca i32 (call $str_byte (local.get $a) (local.get $i)))
-    (let $cb i32 (call $str_byte (local.get $b) (local.get $i)))
-    (if (i32.lt_u (local.get $ca) (local.get $cb)) (then (return (i32.const 1))))
-    (if (i32.gt_u (local.get $ca) (local.get $cb)) (then (return (i32.const 0))))
-    (set! $i (i32.add (local.get $i) (i32.const 1)))
-    (br $cont)))
-  ;; common prefix equal → shorter string is less
-  (i32.lt_s (local.get $la) (local.get $lb)))
+  (i32.lt_s (call $str_cmp (local.get $a) (local.get $b)) (i32.const 0)))
 
 ;; Abstract Relational Comparison a < b (LeftFirst). Returns 0 false, 1 true,
 ;; 2 undefined (a NaN operand). Both operands ToPrimitive(number); two string

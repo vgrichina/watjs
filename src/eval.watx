@@ -100,8 +100,22 @@
     (br_if $brk (i32.ge_s (local.get $i) (local.get $n)))
     (let $ca i32 (call $str_byte (local.get $a) (local.get $i)))
     (let $cb i32 (call $str_byte (local.get $b) (local.get $i)))
-    (if (i32.lt_s (local.get $ca) (local.get $cb)) (then (set! $res (i32.const -1)) (br $brk)))
-    (if (i32.gt_s (local.get $ca) (local.get $cb)) (then (set! $res (i32.const 1)) (br $brk)))
+    ;; String comparison uses UTF-16 code-unit order, but strings are stored UTF-8. Byte order
+    ;; equals code-unit order EXCEPT at the astral/high-BMP boundary: an astral char (4-byte lead
+    ;; F0-F4) is a surrogate pair starting 0xD800-0xDBFF in UTF-16, which sorts BELOW a high-BMP
+    ;; char U+E000-U+FFFF (3-byte lead EE-EF) — the reverse of their UTF-8 byte order. The first
+    ;; differing byte is code-point-aligned (identical prefix ⇒ identical code points), so a
+    ;; lead-byte pair in {EE,EF}×{F0..F4} is exactly this case → invert the natural byte order.
+    (if (i32.ne (local.get $ca) (local.get $cb))
+      (then
+        (let $inv i32 (i32.or
+          (i32.and (i32.and (i32.ge_u (local.get $ca) (i32.const 0xF0)) (i32.le_u (local.get $ca) (i32.const 0xF4)))
+                   (i32.and (i32.ge_u (local.get $cb) (i32.const 0xEE)) (i32.le_u (local.get $cb) (i32.const 0xEF))))
+          (i32.and (i32.and (i32.ge_u (local.get $ca) (i32.const 0xEE)) (i32.le_u (local.get $ca) (i32.const 0xEF)))
+                   (i32.and (i32.ge_u (local.get $cb) (i32.const 0xF0)) (i32.le_u (local.get $cb) (i32.const 0xF4))))))
+        (let $nat i32 (if i32 (i32.lt_u (local.get $ca) (local.get $cb)) (then (i32.const -1)) (else (i32.const 1))))
+        (set! $res (if i32 (local.get $inv) (then (i32.sub (i32.const 0) (local.get $nat))) (else (local.get $nat))))
+        (br $brk)))
     (set! $i (i32.add (local.get $i) (i32.const 1)))
     (br $cont)))
   (if i32 (local.get $res) (then (local.get $res))
