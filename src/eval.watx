@@ -7141,7 +7141,17 @@
           ;; reg 1200 (set by str_cu_to_byte) = "cpi is the LOW surrogate half" → return just that unit;
           ;; else the lead byte decodes to the full code point (BMP value, or the astral code point).
           (if (i32.load (i32.const 1200)) (then (return (call $num (f64.convert_i32_s (call $str_cu_at (local.get $s) (local.get $cpi)))))))
-          (return (call $num (f64.convert_i32_s (call $utf8_cp (local.get $s) (local.get $cpoff)))))))
+          (let $cppt i32 (call $utf8_cp (local.get $s) (local.get $cpoff)))
+          ;; A surrogate PAIR stored as two lone WTF-8 units (e.g. from `𐀀` escapes or
+          ;; fromCharCode concat, as opposed to a pre-combined 4-byte astral) decodes here as a bare
+          ;; high surrogate; codePointAt must still combine it with a following low surrogate.
+          (if (i32.and (i32.ge_u (local.get $cppt) (i32.const 0xD800)) (i32.le_u (local.get $cppt) (i32.const 0xDBFF)))
+            (then (if (i32.lt_s (i32.add (local.get $cpi) (i32.const 1)) (call $str_cu_len (local.get $s)))
+              (then
+                (let $cplo i32 (call $str_cu_at (local.get $s) (i32.add (local.get $cpi) (i32.const 1))))
+                (if (i32.and (i32.ge_u (local.get $cplo) (i32.const 0xDC00)) (i32.le_u (local.get $cplo) (i32.const 0xDFFF)))
+                  (then (set! $cppt (i32.add (i32.const 0x10000) (i32.add (i32.mul (i32.sub (local.get $cppt) (i32.const 0xD800)) (i32.const 0x400)) (i32.sub (local.get $cplo) (i32.const 0xDC00)))))))))))
+          (return (call $num (f64.convert_i32_s (local.get $cppt))))))
       (if (i32.eq (local.get $id) (i32.const 13))  ;; indexOf(searchString[, position])
         (then
           (if (call $is_symbol (local.get $a0)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
