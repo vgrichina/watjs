@@ -11957,6 +11957,10 @@
           ;; (an @@ property on it corrupted its index storage / Object.keys). A self-referential array
           ;; (`a[0]=a; a.join()`) recurses join → to_str → toString → join; a re-entrant join on an object
           ;; already on the stack yields "" (like every engine) instead of overflowing.
+          ;; ToString(separator) throws for a Symbol (to_str is lenient, so guard) — before the loop,
+          ;; so join(symbol) on an empty array still throws.
+          (if (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (call $is_symbol (local.get $a0)))
+            (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
           (if (i32.eqz (call $join_cycle_enter (local.get $thisv))) (then (return (call $mk_str (cstring "")))))
           (let $sep i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (local.get $a0)))) (then (call $to_str (local.get $a0))) (else (cstring ","))))  ;; undefined separator → ","
           (let $out i32 (cstring ""))
