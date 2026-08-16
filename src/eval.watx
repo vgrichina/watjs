@@ -5538,9 +5538,9 @@
       (if (i32.eq (local.get $id) (i32.const 498)) (then (return (call $call_native (i32.const 97)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; values
       (if (i32.eq (local.get $id) (i32.const 499)) (then (return (call $call_native (i32.const 95)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; entries
       (if (i32.eq (local.get $id) (i32.const 500)) (then (return (call $call_native (i32.const 305) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; toLocaleString
-      (if (i32.eq (local.get $id) (i32.const 501)) (then (return (call $call_native (i32.const 29)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; fill (already ValidateTypedArray'd at 4709)
+      (if (i32.eq (local.get $id) (i32.const 501)) (then (i32.store (i32.const 864) (i32.const 1)) (return (call $call_native (i32.const 29)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; fill (already ValidateTypedArray'd at 4709; reg864=throw-on-detach-after-coercion)
       (if (i32.eq (local.get $id) (i32.const 502)) (then (return (call $call_native (i32.const 28)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; at
-      (if (i32.eq (local.get $id) (i32.const 503)) (then (return (call $call_native (i32.const 168) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; copyWithin
+      (if (i32.eq (local.get $id) (i32.const 503)) (then (i32.store (i32.const 864) (i32.const 1)) (return (call $call_native (i32.const 168) (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; copyWithin (reg864=throw-on-detach-after-coercion)
       (if (i32.eq (local.get $id) (i32.const 504)) (then (i32.store (i32.const 860) (i32.const 1)) (return (call $call_native (i32.const 25)  (local.get $argc) (local.get $argv) (local.get $thisv)))))))  ;; forEach
   ;; %TypedArray%.prototype.findLast/findLastIndex — ValidateTypedArray then delegate to the generic
   ;; Array natives 33/34 (separate ids so the GENERIC Array.prototype.findLast.call(oobTA) doesn't validate).
@@ -11768,6 +11768,11 @@
           (return (if i64 (local.get $atIsTA) (then (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $atx))))) (else (call $arr_get (local.get $arr) (local.get $atx)))))))
       (if (i32.eq (local.get $id) (i32.const 29))  ;; fill(v[, start[, end]])
         (then
+          ;; reg864 set only by %TypedArray%.prototype.fill (501): after coercing value/start/end (any
+          ;; can detach), IsDetachedBuffer(O)→TypeError (spec step 10). Cleared here so the generic
+          ;; Array.prototype.fill.call path (never sets it) and re-entrant calls don't inherit it.
+          (let $ftathrow i32 (i32.load (i32.const 864)))
+          (i32.store (i32.const 864) (i32.const 0))
           ;; TypedArray fill: coerce the value to Number/BigInt EXACTLY ONCE (spec step 3),
           ;; before start/end coercion + the loop — else set_prop re-coerces per element
           ;; (calling the value's valueOf once per index).
@@ -11795,6 +11800,8 @@
           (if (call $is_object (local.get $thisv))
             (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))
               (then
+                (if (i32.and (local.get $ftathrow) (call $ta_is_detached (local.get $thisv)))
+                  (then (call $throw_type (cstring "TypeError") (cstring "fill: buffer detached during argument coercion")) (return (call $v_undef))))
                 (let $flen i32 (if i32 (call $ta_is_oob (local.get $thisv)) (then (i32.const 0)) (else (call $ta_live_len (local.get $thisv)))))
                 (if (i32.lt_s (local.get $flen) (local.get $fend)) (then (set! $fend (local.get $flen))))))))
           (let $fk i32 (local.get $fstart))
@@ -11806,6 +11813,10 @@
           (return (local.get $thisv))))
       (if (i32.eq (local.get $id) (i32.const 168))  ;; copyWithin(target, start[, end])
         (then
+          ;; reg864 set only by %TypedArray%.prototype.copyWithin (503): after coercing target/start/end
+          ;; (any can detach), IsDetachedBuffer(O)→TypeError. Cleared so generic/re-entrant calls don't inherit it.
+          (let $cwthrow i32 (i32.load (i32.const 864)))
+          (i32.store (i32.const 864) (i32.const 0))
           (let $ct i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
           (let $cs i32 (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))) (else (i32.const 0))))
           (let $ce i32 (if i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 3)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (then (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))) (else (local.get $n))))  ;; undefined end → length
@@ -11813,6 +11824,10 @@
           (if (i32.lt_s (local.get $cs) (i32.const 0)) (then (set! $cs (i32.add (local.get $n) (local.get $cs))) (if (i32.lt_s (local.get $cs) (i32.const 0)) (then (set! $cs (i32.const 0))))))
           (if (i32.lt_s (local.get $ce) (i32.const 0)) (then (set! $ce (i32.add (local.get $n) (local.get $ce)))))
           (if (i32.gt_s (local.get $ce) (local.get $n)) (then (set! $ce (local.get $n))))
+          ;; %TypedArray%.prototype.copyWithin: a target/start/end coercion that detached the buffer → TypeError
+          (if (i32.and (local.get $cwthrow) (call $is_object (local.get $thisv)))
+            (then (if (i32.and (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0)) (call $ta_is_detached (local.get $thisv)))
+              (then (call $throw_type (cstring "TypeError") (cstring "copyWithin: buffer detached during argument coercion")) (return (call $v_undef))))))
           ;; count = min(end-start, n-target), clamped at 0
           (let $ccnt i32 (i32.sub (local.get $ce) (local.get $cs)))
           (if (i32.gt_s (local.get $ccnt) (i32.sub (local.get $n) (local.get $ct))) (then (set! $ccnt (i32.sub (local.get $n) (local.get $ct)))))
