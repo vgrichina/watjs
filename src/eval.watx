@@ -2565,6 +2565,16 @@
       ;; ToIntegerOrInfinity(offset) can run user code (valueOf) that detaches the target buffer
       (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))
       (let $stsrc i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      ;; SetTypedArrayFromTypedArray: a TypedArray source whose content type differs from the target
+      ;; (exactly one is a BigInt element type: BigInt64=9 / BigUint64=10) → TypeError, before the
+      ;; length RangeError. (An array-like / non-TA source coerces per-element instead, no check here.)
+      (let $stsrcta i32 (if i32 (call $is_object (local.get $stsrc)) (then (call $scope_find_local (call $val_payload (local.get $stsrc)) (cstring "@@taelem"))) (else (i32.const 0))))
+      (if (local.get $stsrcta)
+        (then
+          (let $stsrcelem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $stsrcta)))))
+          (if (i32.ne (i32.and (i32.ge_s (local.get $stsrcelem) (i32.const 9)) (i32.le_s (local.get $stsrcelem) (i32.const 10)))
+                      (i32.and (i32.ge_s (local.get $stelem) (i32.const 9)) (i32.le_s (local.get $stelem) (i32.const 10))))
+            (then (call $throw_type (cstring "TypeError") (cstring "cannot mix BigInt and non-BigInt TypedArrays in set")) (return (call $v_undef))))))
       (let $stsn i32 (call $alike_len (local.get $stsrc)))
       (if (i32.gt_s (local.get $stoff) (i32.sub (local.get $stlen) (local.get $stsn)))  ;; offset+srcLen > targetLen, overflow-free (offset ToIndex-capped 2^31-1 would overflow i32 on +)
         (then (call $throw_type (cstring "RangeError") (cstring "TypedArray.set: source too large")) (return (call $v_undef))))
