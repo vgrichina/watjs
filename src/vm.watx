@@ -144,10 +144,15 @@
     (if (i32.eq (i32.load (local.get $ent)) (i32.const 2))
       (then (call $vm_emit_op (local.get $code) (i32.const 94)))  ;; kind 2: pop a lexical scope (LEAVEWITH) — stack-neutral
     (if (i32.eq (i32.load (local.get $ent)) (i32.const 1))
-      (then  ;; iterator close: LOADVAR itname; CLOSEITER (it.return()) — stack-neutral
+      (then  ;; iterator close: the for-of's runtime handler is still live during this abrupt unwind — pop
+        ;; it (POPHANDLER) BEFORE CLOSEITER so a throw from it.return() isn't caught by that same handler.
+        (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER (for-of iterator-close handler)
         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (i32.load (i32.add (local.get $ent) (i32.const 4))))
         (call $vm_emit_op (local.get $code) (i32.const 74)))
-      (else  ;; finally source block
+      (else  ;; finally source block: pop the try's still-live runtime handler BEFORE running the finally
+        ;; inline (matching the normal path's POPHANDLER-before-finally) so a throw in the finally isn't
+        ;; caught by that handler and the finally re-run (double execution on return/break-through-finally).
+        (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER (this try/finally handler)
         (let $save i32 (call $cursor_save))
         (call $cursor_restore (i32.load (i32.add (local.get $ent) (i32.const 4))))
         (call $vm_c_stmt (local.get $code))  ;; the finally '{...}' block (stack-neutral)
