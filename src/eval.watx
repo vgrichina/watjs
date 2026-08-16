@@ -2874,6 +2874,22 @@
 ;; constructor[@@species] override → build the same-type TA (fast default). Otherwise
 ;; [[Construct]] the species with the result length, validate it's a long-enough
 ;; TypedArray, and copy the values in (set_prop does element conversion + bounds).
+;; TypedArrayCreate($S, $newLen): [[Construct]] and validate (object, TypedArray, long enough, mutable).
+;; Returns the result, or v_undef with a thrown TypeError / $err set (caller must check $err).
+(func $ta_species_make (param $S i64) (param $newLen i32) (result i64) (effects)
+  (let $ab i32 (call $heap_alloc (i32.const 8)))
+  (i64.store (local.get $ab) (call $num (f64.convert_i32_s (local.get $newLen))))
+  (let $A i64 (call $vm_construct (local.get $S) (i32.const 1) (local.get $ab) (local.get $S)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_object (local.get $A)))
+    (then (call $throw_type (cstring "TypeError") (cstring "species did not return an object")) (return (call $v_undef))))
+  (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $A)) (cstring "@@taelem")))
+    (then (call $throw_type (cstring "TypeError") (cstring "species result is not a TypedArray")) (return (call $v_undef))))
+  (if (i32.lt_s (call $ta_live_len (local.get $A)) (local.get $newLen))
+    (then (call $throw_type (cstring "TypeError") (cstring "species result is too short")) (return (call $v_undef))))
+  (if (call $ta_is_immutable (local.get $A))
+    (then (call $throw_type (cstring "TypeError") (cstring "species result is backed by an immutable ArrayBuffer")) (return (call $v_undef))))
+  (local.get $A))
 (func $ta_species_result (param $thisv i64) (param $tmaid i32) (param $argc i32) (param $argv i32) (param $elem i32) (param $id i32) (result i64) (effects)
   ;; %TypedArray%.prototype.map/filter/slice ValidateTypedArray(this) first (only these TA methods
   ;; reach here — the generic Array.prototype.map/filter/slice never do). Throws on detached/OOB.
@@ -2883,12 +2899,21 @@
   ;; fire BEFORE species; slice (402) has no callback so either order is observably the same.
   (let $S i64 (call $v_undef))
   (let $resarr i64 (call $v_undef))
+  (let $A i64 (call $v_undef))
+  (let $len i32 (i32.const 0))
   ;; map/filter over a TypedArray visit every index k<len (no HasProperty skip) — a mid-callback resize
   ;; yields undefined for shrunk indices. Set the visit-all flag (mem 860) for the delegated Array op.
   (if (i32.eq (local.get $id) (i32.const 400))
     (then
+      ;; map: TypedArraySpeciesCreate(C, sourceLen) runs and is fully validated BEFORE the callback loop,
+      ;; so the constructor's side effects (a resize) and an immutable result are observed first.
       (set! $S (call $species_constructor (local.get $thisv) (call $v_undef)))
       (if (call $err) (then (return (call $v_undef))))
+      (set! $len (call $ta_live_len (local.get $thisv)))  ;; source length, before the callback runs
+      (if (i32.eqz (call $is_undefined (local.get $S)))
+        (then
+          (set! $A (call $ta_species_make (local.get $S) (local.get $len)))
+          (if (call $err) (then (return (call $v_undef))))))
       (i32.store (i32.const 860) (i32.const 1))
       (set! $resarr (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef)))))
@@ -2897,33 +2922,22 @@
       (set! $resarr (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef))))
       (set! $S (call $species_constructor (local.get $thisv) (call $v_undef)))
-      (if (call $err) (then (return (call $v_undef))))))
-  (let $len i32 (call $arr_len (call $val_payload (local.get $resarr))))
+      (if (call $err) (then (return (call $v_undef))))
+      (set! $len (call $arr_len (call $val_payload (local.get $resarr))))))
   (if (call $is_undefined (local.get $S))
     (then
       (let $db i32 (call $heap_alloc (i32.const 8)))
       (i64.store (local.get $db) (local.get $resarr))
       (return (call $ta_make (local.get $elem) (i32.const 1) (local.get $db)))))
-  (let $ab i32 (call $heap_alloc (i32.const 8)))
-  (i64.store (local.get $ab) (call $num (f64.convert_i32_s (local.get $len))))
-  (let $A i64 (call $vm_construct (local.get $S) (i32.const 1) (local.get $ab) (local.get $S)))
-  (if (call $err) (then (return (call $v_undef))))
-  (if (i32.eqz (call $is_object (local.get $A)))
-    (then (call $throw_type (cstring "TypeError") (cstring "species did not return an object")) (return (call $v_undef))))
-  (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $A)) (cstring "@@taelem")))
-    (then (call $throw_type (cstring "TypeError") (cstring "species result is not a TypedArray")) (return (call $v_undef))))
-  ;; TypedArrayCreate: if the result's LIVE [[ArrayLength]] (0 for a length-tracking view over a
-  ;; shrunk/detached buffer) is less than the requested count, throw — not the stored @@talen, which
-  ;; wouldn't reflect a resize between construction and here.
-  (let $alen i32 (call $ta_live_len (local.get $A)))
-  (if (i32.lt_s (local.get $alen) (local.get $len))
-    (then (call $throw_type (cstring "TypeError") (cstring "species result is too short")) (return (call $v_undef))))
-  (if (call $ta_is_immutable (local.get $A))  ;; writing results into an immutable-backed species result throws
-    (then (call $throw_type (cstring "TypeError") (cstring "species result is backed by an immutable ArrayBuffer")) (return (call $v_undef))))
+  (if (call $is_undefined (local.get $A))  ;; filter/slice construct here; map already constructed above
+    (then
+      (set! $A (call $ta_species_make (local.get $S) (local.get $len)))
+      (if (call $err) (then (return (call $v_undef))))))
   (let $rp i32 (call $val_payload (local.get $resarr)))
+  (let $rlen i32 (call $arr_len (local.get $rp)))
   (let $i i32 (i32.const 0))
   (block $e (loop $l (br_if $e (i32.ge_s (local.get $i) (local.get $len)))
-    (call $set_prop (local.get $A) (call $num (f64.convert_i32_s (local.get $i))) (call $arr_get (local.get $rp) (local.get $i)))
+    (call $set_prop (local.get $A) (call $num (f64.convert_i32_s (local.get $i))) (if i64 (i32.lt_s (local.get $i) (local.get $rlen)) (then (call $arr_get (local.get $rp) (local.get $i))) (else (call $v_undef))))
     (if (call $err) (then (return (call $v_undef))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (local.get $A))
