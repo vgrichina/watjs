@@ -1676,6 +1676,10 @@
   ;; TypedArrayCreate(C, «len»): the constructed TypedArray must be at least `len` long
   (if (i32.lt_s (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (call $val_payload (local.get $res)) (cstring "@@talen"))))) (local.get $tflen))
     (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor returned a too-small TypedArray")) (return (call $v_undef))))
+  ;; TypedArrayCreateFromConstructor uses write access mode → an immutable-backed result throws here,
+  ;; before the element Set loop reads/coerces any source value (immutable-arraybuffer proposal).
+  (if (call $ta_is_immutable (local.get $res))
+    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor returned a TypedArray over an immutable ArrayBuffer")) (return (call $v_undef))))
   (let $si i32 (i32.const 0))
   (block $sfe (loop $sfl
     (br_if $sfe (i32.ge_s (local.get $si) (local.get $tflen)))
@@ -2476,16 +2480,40 @@
   (if (i32.eq (local.get $id) (i32.const 399))
     (then
       (let $toelem i32 (call $ta_ctor_elem (local.get $thisv)))
-      (if (i32.lt_s (local.get $toelem) (i32.const 0)) (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.of called on a non-TypedArray constructor")) (return (call $v_undef))))
       (let $toa i32 (call $arr_new (i32.const 4)))
       (let $toi i32 (i32.const 0))
       (block $toe (loop $tol
         (br_if $toe (i32.ge_s (local.get $toi) (local.get $argc)))
         (call $arr_push (local.get $toa) (call $argn (local.get $argv) (local.get $argc) (local.get $toi)))
         (set! $toi (i32.add (local.get $toi) (i32.const 1))) (br $tol)))
-      (let $tobuf i32 (call $heap_alloc (i32.const 8)))
-      (i64.store (local.get $tobuf) (call $mk_arr (local.get $toa)))
-      (return (call $ta_make (local.get $toelem) (i32.const 1) (local.get $tobuf)))))
+      (if (i32.ge_s (local.get $toelem) (i32.const 0))
+        (then  ;; a concrete TypedArray constructor → build directly
+          (let $tobuf i32 (call $heap_alloc (i32.const 8)))
+          (i64.store (local.get $tobuf) (call $mk_arr (local.get $toa)))
+          (return (call $ta_make (local.get $toelem) (i32.const 1) (local.get $tobuf)))))
+      ;; a custom `this` constructor → TypedArrayCreateFromConstructor(C, «len», write): construct via C,
+      ;; validate it's a long-enough TypedArray over a mutable buffer, then Set each item (throw=true).
+      (if (i32.eqz (call $is_constructor (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.of called on a non-TypedArray constructor")) (return (call $v_undef))))
+      (let $olen i32 (call $arr_len (local.get $toa)))
+      (let $oab i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $oab) (call $num (f64.convert_i32_s (local.get $olen))))
+      (let $ores i64 (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $oab) (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $is_object (local.get $ores)))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.of constructor did not return an object")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $ores)) (cstring "@@taelem")))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.of constructor did not return a TypedArray")) (return (call $v_undef))))
+      (if (i32.lt_s (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (call $val_payload (local.get $ores)) (cstring "@@talen"))))) (local.get $olen))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.of constructor returned a too-small TypedArray")) (return (call $v_undef))))
+      (if (call $ta_is_immutable (local.get $ores))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.of constructor returned a TypedArray over an immutable ArrayBuffer")) (return (call $v_undef))))
+      (let $osi i32 (i32.const 0))
+      (block $osfe (loop $osfl
+        (br_if $osfe (i32.ge_s (local.get $osi) (local.get $olen)))
+        (call $set_prop (local.get $ores) (call $num (f64.convert_i32_s (local.get $osi))) (call $arr_get (local.get $toa) (local.get $osi)))
+        (if (call $err) (then (return (call $v_undef))))
+        (set! $osi (i32.add (local.get $osi) (i32.const 1))) (br $osfl)))
+      (return (local.get $ores))))
   ;; TypedArray.prototype.subarray(begin, end) (397) — a view sharing the same buffer
   (if (i32.eq (local.get $id) (i32.const 397))
     (then
@@ -2685,8 +2713,8 @@
   (call $scope_clear_enum (local.get $p))
   (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "prototype") (call $mk_obj (local.get $p)) (i32.const 0))
   (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "BYTES_PER_ELEMENT") (call $num (f64.convert_i32_s (call $ta_bpe (local.get $elem)))) (i32.const 0))
-  (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "from") (call $mk_native (i32.const 398) (cstring "from")) (i32.const 12))
-  (call $scope_define_attr (call $fn_def_scope (local.get $ctor)) (cstring "of") (call $mk_native (i32.const 399) (cstring "of")) (i32.const 12))
+  ;; NOTE: `from`/`of` are NOT own on a per-type ctor — they are inherited from %TypedArray% (reg 712)
+  ;; via the ctor [[Prototype]] set below, so Int8Array.from === %TypedArray%.from (same object).
   ;; [[Prototype]] of each per-type ctor = %TypedArray% (reg 712), so Object.getPrototypeOf(Int8Array)===%TypedArray%
   (if (i64.ne (i64.load (i32.const 712)) (i64.const 0))
     (then (call $scope_define (call $fn_props (call $val_payload (local.get $ctor))) (cstring "@@protoover") (i64.load (i32.const 712))))))

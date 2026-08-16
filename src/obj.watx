@@ -1001,6 +1001,26 @@
                   (if (call $is_function (local.get $get)) (then (return (call $call_fn0 (local.get $get) (local.get $cont)))))
                   (return (call $v_undef))))
               (return (i64.load (local.get $slot)))))))
+      ;; native-fn [[Prototype]] override (@@protoover, e.g. Int8Array → %TypedArray%): inherit the
+      ;; target constructor's own static props (from/of/@@species) BEFORE the Function.prototype chain,
+      ;; so Int8Array.from === %TypedArray%.from (a single shared intrinsic, not a per-type copy).
+      (if (local.get $props)
+        (then
+          (let $povs i32 (call $scope_find_local (local.get $props) (cstring "@@protoover")))
+          (if (local.get $povs)
+            (then
+              (let $povt i64 (i64.load (local.get $povs)))
+              (if (call $is_function (local.get $povt))
+                (then
+                  (let $povp i32 (i32.load (i32.add (call $val_payload (local.get $povt)) (i32.const 12))))
+                  (if (local.get $povp)
+                    (then
+                      (let $ptslot i32 (call $scope_find_local (local.get $povp) (local.get $ks)))
+                      (if (local.get $ptslot)
+                        (then
+                          (if (call $entry_is_accessor (local.get $ptslot))
+                            (then (let $ptg i64 (i64.load (call $val_payload (i64.load (local.get $ptslot))))) (if (call $is_function (local.get $ptg)) (then (return (call $call_fn0 (local.get $ptg) (local.get $cont))))) (return (call $v_undef))))
+                          (return (i64.load (local.get $ptslot)))))))))))))
       (if (call $str_eq (local.get $ks) (cstring "hasOwnProperty")) (then (return (call $mk_native (i32.const 93) (cstring "hasOwnProperty")))))
       (if (call $str_eq (local.get $ks) (cstring "propertyIsEnumerable")) (then (return (call $mk_native (i32.const 159) (cstring "propertyIsEnumerable")))))
       (let $ninh i32 (call $fn_inherited_slot (local.get $ks)))
