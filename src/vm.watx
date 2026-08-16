@@ -4689,6 +4689,11 @@
         (set! $pti (i32.add (local.get $pti) (i32.const 1)))
         (br $ptl)))))
   (call $cursor_restore (local.get $bodycur))
+  ;; an arrow's ConciseBody is [~Await]: a class static block's `await` reservation (reg 912) does NOT
+  ;; cross into the arrow BODY (only its params inherit [+Await], already checked above). Clear reg 912
+  ;; for the body so `() => { try{}catch(await){} }` in a static block is valid; restored at 4747.
+  ;; (`arguments` uses the separate reg 916, unaffected; `return` is gated on reg 920 which the arrow sets.)
+  (i32.store (i32.const 912) (i32.const 0))
   (let $arrsave i32 (i32.load (i32.const 388)))
   (let $arrstrict i32 (local.get $arrsave))  ;; inherited strictness (an arrow can also carry its own "use strict")
   (if (i32.eq (call $tok_kind) (i32.const 17))  ;; block body
