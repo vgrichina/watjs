@@ -1887,6 +1887,10 @@
     (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
   (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab")))
     (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
+  ;; setFloat16 (477) over an immutable buffer throws BEFORE reading arguments
+  (if (i32.eq (local.get $id) (i32.const 477))
+    (then (if (call $is_immutable_buf (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
+      (then (call $throw_type (cstring "TypeError") (cstring "Cannot write to a DataView over an immutable ArrayBuffer")) (return (call $v_undef))))))
   (let $boff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
   (if (call $err) (then (return (call $v_undef))))
   (let $dvab i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
@@ -1958,6 +1962,15 @@
     (then
       (let $bo i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@tabufobj")))
       (if (local.get $bo) (then (return (call $is_detached_buf (i64.load (local.get $bo))))))))
+  (i32.const 0))
+
+;; 1 if this TypedArray's backing ArrayBuffer is immutable (else 0). Non-throwing. Writes through
+;; a view over an immutable buffer must throw TypeError (immutable-arraybuffer proposal).
+(func $ta_is_immutable (param $thisv i64) (result i32) (effects)
+  (if (call $is_object (local.get $thisv))
+    (then
+      (let $bo i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@tabufobj")))
+      (if (local.get $bo) (then (return (call $is_immutable_buf (i64.load (local.get $bo))))))))
   (i32.const 0))
 
 ;; $262.detachArrayBuffer(buffer): mark the buffer detached and zero its length. Returns null.
@@ -2247,6 +2260,8 @@
       (let $rzsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@ablen")))
       (if (i32.eqz (local.get $rzsl))
         (then (call $throw_type (cstring "TypeError") (cstring "ArrayBuffer.prototype.resize called on incompatible receiver")) (return (call $v_undef))))
+      (if (call $is_immutable_buf (local.get $thisv))  ;; an immutable buffer is not resizable → throw before reading newLength
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot resize an immutable ArrayBuffer")) (return (call $v_undef))))
       (let $rzmaxsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@abmax")))
       (let $rznew i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))  ;; ToIndex(newLength) first (observable)
       (if (call $err) (then (return (call $v_undef))))
@@ -2497,6 +2512,8 @@
       (let $stsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
       (if (i32.eqz (local.get $stsl)) (then (call $throw_type (cstring "TypeError") (cstring "set called on a non-TypedArray")) (return (call $v_undef))))
       (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))  ;; detached/out-of-bounds target → TypeError
+      (if (call $ta_is_immutable (local.get $thisv))  ;; set into an immutable-backed TA throws before reading source/offset
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot set into a TypedArray over an immutable ArrayBuffer")) (return (call $v_undef))))
       (let $stelem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $stsl)))))
       (let $stlen i32 (call $ta_live_len (local.get $thisv)))  ;; live target length (tracks a resizable buffer)
       (let $stbuf i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@tabuf"))))))
@@ -2524,6 +2541,10 @@
         (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab")))
         (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
+      ;; setBigInt64/setBigUint64 (388/389) over an immutable buffer throws BEFORE reading arguments
+      (if (i32.ge_s (local.get $id) (i32.const 388))
+        (then (if (call $is_immutable_buf (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot write to a DataView over an immutable ArrayBuffer")) (return (call $v_undef))))))
       (let $bisget i32 (i32.lt_s (local.get $id) (i32.const 388)))
       (let $biboff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
@@ -2609,6 +2630,10 @@
         (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
       (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@dvab")))
         (then (call $throw_type (cstring "TypeError") (cstring "DataView method called on incompatible receiver")) (return (call $v_undef))))
+      ;; a setX (id>=372) over an immutable buffer throws BEFORE reading arguments (immutable-arraybuffer)
+      (if (i32.ge_s (local.get $id) (i32.const 372))
+        (then (if (call $is_immutable_buf (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@dvab"))))
+          (then (call $throw_type (cstring "TypeError") (cstring "Cannot write to a DataView over an immutable ArrayBuffer")) (return (call $v_undef))))))
       (let $isget i32 (i32.lt_s (local.get $id) (i32.const 372)))
       (let $elem i32 (call $dv_elem (i32.sub (local.get $id) (if i32 (local.get $isget) (then (i32.const 364)) (else (i32.const 372))))))
       (let $bpe i32 (call $ta_bpe (local.get $elem)))
@@ -5406,6 +5431,10 @@
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 485)) (i32.le_s (local.get $id) (i32.const 504)))
     (then
       (if (call $ta_validate_brand (local.get $thisv)) (then (return (call $v_undef))))
+      ;; in-place write methods (reverse 491 / sort 492 / fill 501 / copyWithin 503) on a TA over an
+      ;; immutable buffer throw before reading arguments (immutable-arraybuffer proposal).
+      (if (i32.or (i32.eq (local.get $id) (i32.const 491)) (i32.or (i32.eq (local.get $id) (i32.const 492)) (i32.or (i32.eq (local.get $id) (i32.const 501)) (i32.eq (local.get $id) (i32.const 503)))))
+        (then (if (call $ta_is_immutable (local.get $thisv)) (then (call $throw_type (cstring "TypeError") (cstring "Cannot modify a TypedArray over an immutable ArrayBuffer")) (return (call $v_undef))))))
       (if (i32.eq (local.get $id) (i32.const 485)) (then (return (call $call_native (i32.const 27)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; includes
       (if (i32.eq (local.get $id) (i32.const 486)) (then (return (call $call_native (i32.const 23)  (local.get $argc) (local.get $argv) (local.get $thisv)))))  ;; join
       ;; the iterating delegations set the TA-native "visit all indices" flag (mem 860): a TypedArray
