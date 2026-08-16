@@ -1639,51 +1639,64 @@
   (let $tfmap i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
   (if (i32.and (i32.eqz (call $is_undefined (local.get $tfmap))) (i32.eqz (call $is_function (local.get $tfmap))))
     (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from mapfn is not callable")) (return (call $v_undef))))
-  (let $tfa i32 (call $arr_new (i32.const 4)))
-  (if (i32.or (call $is_string (local.get $tfsrc)) (i32.or (call $is_array (local.get $tfsrc))
-              (i32.and (call $is_object (local.get $tfsrc)) (call $is_function (call $get_prop (local.get $tfsrc) (call $mk_str (cstring "@@iterator")))))))
-    (then (call $spread_into (local.get $tfa) (local.get $tfsrc)))
-    (else (set! $tfa (call $alike_arr (local.get $tfsrc)))))
+  ;; %TypedArray%.from spec order: GetMethod(source, @@iterator) FIRST (its getter is observable),
+  ;; THEN — iterable: collect all values before constructing the target; array-like: read length only
+  ;; (elements are read later, AFTER the target is constructed). Finally per-element map+Set interleaved.
+  (let $usingIt i64 (call $get_prop (local.get $tfsrc) (call $mk_str (cstring "@@iterator"))))
   (if (call $err) (then (return (call $v_undef))))
-  (if (call $is_function (local.get $tfmap))
+  (let $iterable i32 (i32.const 0))
+  (if (i32.eqz (i32.or (call $is_undefined (local.get $usingIt)) (call $is_null (local.get $usingIt))))
     (then
-      (let $tharg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
-      (let $tfi i32 (i32.const 0))
-      (let $tfb i32 (call $heap_alloc (i32.const 16)))
-      (block $tfe (loop $tfl
-        (br_if $tfe (i32.ge_s (local.get $tfi) (call $arr_len (local.get $tfa))))
-        (i64.store (local.get $tfb) (call $arr_get (local.get $tfa) (local.get $tfi)))
-        (i64.store (i32.add (local.get $tfb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $tfi))))
-        (call $arr_set (local.get $tfa) (local.get $tfi) (call $call_val (local.get $tfmap) (i32.const 2) (local.get $tfb) (local.get $tharg)))
-        (if (call $err) (then (return (call $v_undef))))
-        (set! $tfi (i32.add (local.get $tfi) (i32.const 1))) (br $tfl)))))
-  (let $tflen i32 (call $arr_len (local.get $tfa)))
+      (if (i32.eqz (call $is_function (local.get $usingIt)))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from source[Symbol.iterator] is not a function")) (return (call $v_undef))))
+      (set! $iterable (i32.const 1))))
+  (let $vals i32 (call $arr_new (i32.const 4)))
+  (let $tflen i32 (i32.const 0))
+  (if (local.get $iterable)
+    (then (call $drain_iter_method (local.get $vals) (local.get $tfsrc) (local.get $usingIt)) (if (call $err) (then (return (call $v_undef)))) (set! $tflen (call $arr_len (local.get $vals))))
+    (else (set! $tflen (call $alike_len (local.get $tfsrc))) (if (call $err) (then (return (call $v_undef))))))
+  ;; TypedArrayCreate(C, «len»): concrete ctor → build an empty target directly; a custom C → construct
+  ;; via C then validate (object / TypedArray / long-enough / mutable — write access mode).
   (let $tfelem i32 (call $ta_ctor_elem (local.get $thisv)))
+  (let $res i64 (call $v_undef))
   (if (i32.ge_s (local.get $tfelem) (i32.const 0))
-    (then  ;; a concrete TypedArray constructor → build directly
-      (let $tfbuf i32 (call $heap_alloc (i32.const 8)))
-      (i64.store (local.get $tfbuf) (call $mk_arr (local.get $tfa)))
-      (return (call $ta_make (local.get $tfelem) (i32.const 1) (local.get $tfbuf)))))
-  ;; TypedArrayCreate(C, «len»): construct via C, validate it's a TypedArray, Set each value
-  (let $ab i32 (call $heap_alloc (i32.const 8)))
-  (i64.store (local.get $ab) (call $num (f64.convert_i32_s (local.get $tflen))))
-  (let $res i64 (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $ab) (local.get $thisv)))
-  (if (call $err) (then (return (call $v_undef))))
-  (if (i32.eqz (call $is_object (local.get $res)))
-    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor did not return an object")) (return (call $v_undef))))
-  (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $res)) (cstring "@@taelem")))
-    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor did not return a TypedArray")) (return (call $v_undef))))
-  ;; TypedArrayCreate(C, «len»): the constructed TypedArray must be at least `len` long
-  (if (i32.lt_s (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (call $val_payload (local.get $res)) (cstring "@@talen"))))) (local.get $tflen))
-    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor returned a too-small TypedArray")) (return (call $v_undef))))
-  ;; TypedArrayCreateFromConstructor uses write access mode → an immutable-backed result throws here,
-  ;; before the element Set loop reads/coerces any source value (immutable-arraybuffer proposal).
-  (if (call $ta_is_immutable (local.get $res))
-    (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor returned a TypedArray over an immutable ArrayBuffer")) (return (call $v_undef))))
+    (then
+      (let $lb i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $lb) (call $num (f64.convert_i32_s (local.get $tflen))))
+      (set! $res (call $ta_make (local.get $tfelem) (i32.const 1) (local.get $lb))))
+    (else
+      (let $ab i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $ab) (call $num (f64.convert_i32_s (local.get $tflen))))
+      (set! $res (call $vm_construct (local.get $thisv) (i32.const 1) (local.get $ab) (local.get $thisv)))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $is_object (local.get $res)))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor did not return an object")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $res)) (cstring "@@taelem")))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor did not return a TypedArray")) (return (call $v_undef))))
+      (if (i32.lt_s (i32.trunc_f64_s (call $tonum_raw (i64.load (call $scope_find_local (call $val_payload (local.get $res)) (cstring "@@talen"))))) (local.get $tflen))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor returned a too-small TypedArray")) (return (call $v_undef))))
+      (if (call $ta_is_immutable (local.get $res))
+        (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.from constructor returned a TypedArray over an immutable ArrayBuffer")) (return (call $v_undef))))))
+  ;; per-element: read kValue (iterable: from the collected list; array-like: Get(source,k)), optionally
+  ;; map, then Set(target, k, mappedValue). Interleaved so a mid-stream abrupt completion (mapfn throw /
+  ;; element ToNumber throw) stops exactly at that index (observable via a mapfn that records progress).
+  (let $mapping i32 (call $is_function (local.get $tfmap)))
+  (let $tharg i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
+  (let $cb i32 (call $heap_alloc (i32.const 16)))
   (let $si i32 (i32.const 0))
   (block $sfe (loop $sfl
     (br_if $sfe (i32.ge_s (local.get $si) (local.get $tflen)))
-    (call $set_prop (local.get $res) (call $num (f64.convert_i32_s (local.get $si))) (call $arr_get (local.get $tfa) (local.get $si)))
+    (let $kv i64 (if i64 (local.get $iterable)
+      (then (call $arr_get (local.get $vals) (local.get $si)))
+      (else (call $get_prop (local.get $tfsrc) (call $num (f64.convert_i32_s (local.get $si)))))))
+    (if (call $err) (then (return (call $v_undef))))
+    (if (local.get $mapping)
+      (then
+        (i64.store (local.get $cb) (local.get $kv))
+        (i64.store (i32.add (local.get $cb) (i32.const 8)) (call $num (f64.convert_i32_s (local.get $si))))
+        (set! $kv (call $call_val (local.get $tfmap) (i32.const 2) (local.get $cb) (local.get $tharg)))
+        (if (call $err) (then (return (call $v_undef))))))
+    (call $set_prop (local.get $res) (call $num (f64.convert_i32_s (local.get $si))) (local.get $kv))
     (if (call $err) (then (return (call $v_undef))))
     (set! $si (i32.add (local.get $si) (i32.const 1))) (br $sfl)))
   (local.get $res))
