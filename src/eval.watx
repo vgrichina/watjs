@@ -11256,7 +11256,7 @@
                 (then
                   (let $nif f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
                   (if (call $err) (then (return (call $v_undef))))
-                  (set! $nif (if f64 (f64.ne (local.get $nif) (local.get $nif)) (then (f64.const 0)) (else (f64.trunc (local.get $nif)))))  ;; ToIntegerOrInfinity
+                  (set! $nif (if f64 (f64.ne (local.get $nif) (local.get $nif)) (then (f64.const 0)) (else (f64.add (f64.trunc (local.get $nif)) (f64.const 0)))))  ;; ToIntegerOrInfinity (+0 normalizes -0 so the returned index isn't -0)
                   (if (f64.ge (local.get $nif) (local.get $ionf)) (then (return (call $num (f64.const -1)))))  ;; n >= len → -1
                   (if (f64.lt (local.get $nif) (f64.const 0))
                     (then (set! $ioif (f64.add (local.get $ionf) (local.get $nif))) (if (f64.lt (local.get $ioif) (f64.const 0)) (then (set! $ioif (f64.const 0)))))
@@ -11278,7 +11278,7 @@
                 (then
                   (let $nlf f64 (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
                   (if (call $err) (then (return (call $v_undef))))
-                  (set! $nlf (if f64 (f64.ne (local.get $nlf) (local.get $nlf)) (then (f64.const 0)) (else (f64.trunc (local.get $nlf)))))  ;; ToIntegerOrInfinity
+                  (set! $nlf (if f64 (f64.ne (local.get $nlf) (local.get $nlf)) (then (f64.const 0)) (else (f64.add (f64.trunc (local.get $nlf)) (f64.const 0)))))  ;; ToIntegerOrInfinity (+0 normalizes -0)
                   (if (f64.ge (local.get $nlf) (f64.const 0))
                     (then (if (f64.lt (local.get $nlf) (local.get $iojf)) (then (set! $iojf (local.get $nlf)))))
                     (else (set! $iojf (f64.add (local.get $ionf) (local.get $nlf)))))))
