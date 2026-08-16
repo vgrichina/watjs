@@ -1143,13 +1143,11 @@
   ;; a TypedArray receiver: HasProperty(i) is a LIVE, resize-aware bounds check ([[HasProperty]]
   ;; is called each iteration per spec, so a resize inside the callback shrinks the visited range),
   ;; not the start-of-call snapshot. is_object gates the scope walk (i32.and is not short-circuit).
-  ;; EXCEPTION — a DETACHED buffer: fall back to the start-of-call snapshot so a TA-native method
-  ;; (map/filter, which delegate here) still visits every original index (Get yields undefined); only
-  ;; a mid-iteration RESIZE shrinks the visited range.
+  ;; A DETACHED buffer has [[ArrayLength]] 0 → ta_live_len 0 → i<0 false → HasProperty false for every
+  ;; index (spec: IsValidIntegerIndex is false on a detached buffer), matching a mid-iteration RESIZE.
   (if (call $is_object (local.get $thisv))
     (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))
       (then
-        (if (call $ta_is_detached (local.get $thisv)) (then (return (call $arr_has (local.get $arr) (local.get $i)))))
         (return (i32.lt_s (local.get $i) (call $ta_live_len (local.get $thisv))))))))
   (if (call $arr_has (local.get $arr) (local.get $i)) (then (return (i32.const 1))))
   (if (call $is_array (local.get $thisv))
@@ -1160,13 +1158,13 @@
 (func $dense_get (param $thisv i64) (param $arr i32) (param $i i32) (result i64) (effects)
   ;; a TypedArray receiver: read the element LIVE via [[Get]] (undefined past a mid-iteration shrink),
   ;; not from the start-of-call snapshot. is_object gates the scope walk (i32.and is not short-circuit).
-  ;; EXCEPTION — a DETACHED buffer: fall back to the start-of-call snapshot (baseline behavior) so
-  ;; HasProperty-style methods (indexOf/lastIndexOf) don't spuriously match a live `undefined`; only a
-  ;; mid-iteration RESIZE reads live.
+  ;; A DETACHED buffer: [[Get]] yields undefined (get_prop → IntegerIndexedElementGet on a detached/
+  ;; out-of-bounds view returns undefined), matching a mid-iteration RESIZE past the shrunk length.
+  ;; indexOf/lastIndexOf gate this behind dense_visit (HasProperty=false when detached) so they don't
+  ;; spuriously match undefined; includes/join read it directly (Get yields undefined per spec).
   (if (call $is_object (local.get $thisv))
     (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))
       (then
-        (if (call $ta_is_detached (local.get $thisv)) (then (return (call $arr_get (local.get $arr) (local.get $i)))))
         (return (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $i)))))))))
   (if i64 (call $arr_has (local.get $arr) (local.get $i))
     (then (call $arr_get (local.get $arr) (local.get $i)))
@@ -1384,6 +1382,10 @@
 (func $ta_live_len_p (param $pl i32) (result i32) (effects)
   (let $tln i32 (call $scope_find_local (local.get $pl) (cstring "@@talen")))
   (if (i32.eqz (local.get $tln)) (then (return (i32.const 0))))
+  ;; a detached backing buffer has [[ArrayLength]] 0 (IsValidIntegerIndex false for every index,
+  ;; .length reads 0) — checked here so js_in/dense_visit/iteration observe a mid-operation detach.
+  (let $dbo i32 (call $scope_find_local (local.get $pl) (cstring "@@tabufobj")))
+  (if (local.get $dbo) (then (if (call $is_detached_buf (i64.load (local.get $dbo))) (then (return (i32.const 0))))))
   (let $stored i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tln)))))
   (let $track i32 (if i32 (call $scope_find_local (local.get $pl) (cstring "@@tatrack")) (then (i32.const 1)) (else (i32.const 0))))
   ;; locate the RESIZABLE backing buffer's current byteLength; a non-resizable backing (no @@abmax) or
