@@ -2581,6 +2581,10 @@
       (let $stsrcta i32 (if i32 (call $is_object (local.get $stsrc)) (then (call $scope_find_local (call $val_payload (local.get $stsrc)) (cstring "@@taelem"))) (else (i32.const 0))))
       (if (local.get $stsrcta)
         (then
+          ;; SetTypedArrayFromTypedArray: a TypedArray source whose buffer was detached / shrunk out of
+          ;; bounds by the offset coercion is out of bounds → TypeError (spec IsTypedArrayOutOfBounds).
+          (if (i32.or (call $ta_is_detached (local.get $stsrc)) (call $ta_is_oob (local.get $stsrc)))
+            (then (call $throw_type (cstring "TypeError") (cstring "TypedArray.set source is detached or out of bounds")) (return (call $v_undef))))
           (let $stsrcelem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $stsrcta)))))
           (if (i32.ne (i32.and (i32.ge_s (local.get $stsrcelem) (i32.const 9)) (i32.le_s (local.get $stsrcelem) (i32.const 10)))
                       (i32.and (i32.ge_s (local.get $stelem) (i32.const 9)) (i32.le_s (local.get $stelem) (i32.const 10))))
