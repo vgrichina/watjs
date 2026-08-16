@@ -1258,7 +1258,9 @@
   (let $spread i32 (i32.const 0))
   (if (i32.or (call $is_proxy (local.get $item)) (i32.or (call $is_object (local.get $item)) (i32.or (call $is_array (local.get $item)) (call $is_function (local.get $item)))))
     (then
-      (let $s i64 (call $get_prop (local.get $item) (call $make_symbol (cstring "@@isConcatSpreadable") (cstring "Symbol.isConcatSpreadable"))))
+      ;; use the CANONICAL Symbol.isConcatSpreadable (registered at startup), not a fresh make_symbol —
+      ;; else a proxy get trap sees a symbol whose identity ≠ Symbol.isConcatSpreadable (key === fails).
+      (let $s i64 (call $get_prop (local.get $item) (call $sym_from_key (cstring "@@isConcatSpreadable"))))
       (if (call $err) (then (return (local.get $n))))
       (if (call $is_undefined (local.get $s))
         (then (set! $spread (call $js_isarray_p (local.get $item))) (if (call $err) (then (return (local.get $n)))))
