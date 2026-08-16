@@ -2549,7 +2549,15 @@
       (if (i32.gt_s (local.get $saend) (local.get $salen)) (then (set! $saend (local.get $salen))))
       (let $sanew i32 (i32.sub (local.get $saend) (local.get $sabeg)))
       (if (i32.lt_s (local.get $sanew) (i32.const 0)) (then (set! $sanew (i32.const 0))))
-      (return (call $ta_subarray_result (local.get $thisv) (local.get $saelem) (local.get $sabpe) (local.get $sabuf) (local.get $sabeg) (local.get $sanew)))))
+      ;; subarray over a DETACHED source: TypedArraySpeciesCreate builds a view over the detached buffer,
+      ;; which the constructor rejects with TypeError — thrown AFTER begin/end are coerced (observable).
+      (if (call $ta_is_detached (local.get $thisv))
+        (then (call $throw_type (cstring "TypeError") (cstring "subarray called on a detached ArrayBuffer")) (return (call $v_undef))))
+      ;; a length-TRACKING view (@@tatrack) with `end` omitted → newLength is auto: TypedArraySpeciesCreate
+      ;; is invoked with «buffer, beginByteOffset» (2 args), not 3 (spec %TypedArray%.prototype.subarray).
+      (let $saomit i32 (i32.and (if i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@tatrack")) (then (i32.const 1)) (else (i32.const 0)))
+                                (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))))
+      (return (call $ta_subarray_result (local.get $thisv) (local.get $saelem) (local.get $sabpe) (local.get $sabuf) (local.get $sabeg) (local.get $sanew) (local.get $saomit)))))
   ;; TypedArray.prototype.set(source[, offset]) (396)
   (if (i32.eq (local.get $id) (i32.const 396))
     (then
@@ -2831,8 +2839,10 @@
               (if (call $err) (then (return (call $v_undef))))
               (if (i32.ne (i32.rem_s (local.get $boff) (local.get $bpe)) (i32.const 0))
                 (then (call $throw_type (cstring "RangeError") (cstring "start offset must be a multiple of the element size")) (return (call $v_undef))))
-              ;; length (if given) = ToIndex(length) — RangeError on negative
-              (let $sahaslen i32 (i32.ge_s (local.get $argc) (i32.const 3)))
+              ;; length (if given AND not undefined) = ToIndex(length) — RangeError on negative. An explicit
+              ;; `undefined` length is treated as ABSENT (auto / length-tracking), per InitializeTypedArray-
+              ;; FromArrayBuffer ("If length is undefined …"), matching an omitted 3rd argument.
+              (let $sahaslen i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 3)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))))
               (let $saexlen i32 (if i32 (local.get $sahaslen) (then (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))) (else (i32.const 0))))
               (if (call $err) (then (return (call $v_undef))))
               (let $ablen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "byteLength"))))))
@@ -3015,7 +3025,7 @@
 ;; the computed byte offset; otherwise build the default same-buffer view inline (kept
 ;; byte-for-byte identical to the original handler so the common path is unchanged).
 (func $ta_subarray_result (param $thisv i64) (param $saelem i32) (param $sabpe i32)
-                          (param $sabuf i32) (param $sabeg i32) (param $sanew i32) (result i64) (effects)
+                          (param $sabuf i32) (param $sabeg i32) (param $sanew i32) (param $saomit i32) (result i64) (effects)
   (let $S i64 (call $species_constructor (local.get $thisv) (call $v_undef)))
   (if (call $err) (then (return (call $v_undef))))
   (if (i32.eqz (call $is_undefined (local.get $S)))
@@ -3026,8 +3036,23 @@
       (let $ab i32 (call $heap_alloc (i32.const 24)))
       (i64.store (local.get $ab) (local.get $buf))
       (i64.store (i32.add (local.get $ab) (i32.const 8)) (call $num (f64.convert_i32_s (i32.add (local.get $boff) (i32.mul (local.get $sabeg) (local.get $sabpe))))))
-      (i64.store (i32.add (local.get $ab) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $sanew))))
-      (return (call $vm_construct (local.get $S) (i32.const 3) (local.get $ab) (local.get $S)))))
+      ;; length-tracking + omitted end → construct with 2 args (auto length); else pass explicit newLength
+      (let $sares i64 (if i64 (local.get $saomit)
+        (then (call $vm_construct (local.get $S) (i32.const 2) (local.get $ab) (local.get $S)))
+        (else (i64.store (i32.add (local.get $ab) (i32.const 16)) (call $num (f64.convert_i32_s (local.get $sanew))))
+              (call $vm_construct (local.get $S) (i32.const 3) (local.get $ab) (local.get $S)))))
+      (if (call $err) (then (return (call $v_undef))))
+      ;; TypedArrayCreate validates the constructed result is a TypedArray (a plain species that returns a
+      ;; non-TypedArray — e.g. `function(){}` — throws TypeError).
+      (if (i32.eqz (call $is_object (local.get $sares)))
+        (then (call $throw_type (cstring "TypeError") (cstring "subarray species did not return an object")) (return (call $v_undef))))
+      (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $sares)) (cstring "@@taelem")))
+        (then (call $throw_type (cstring "TypeError") (cstring "subarray species result is not a TypedArray")) (return (call $v_undef))))
+      (return (local.get $sares))))
+  ;; default (no @@species): a subarray over a DETACHED source constructs a view over the detached buffer,
+  ;; which the default TypedArray constructor rejects with a TypeError (after begin/end were coerced).
+  (if (call $ta_is_detached (local.get $thisv))
+    (then (call $throw_type (cstring "TypeError") (cstring "subarray called on a detached ArrayBuffer")) (return (call $v_undef))))
   (let $sao i32 (call $obj_new (i32.const 8)))
   (let $saproto i32 (i32.load (i32.add (i32.const 532) (i32.mul (local.get $saelem) (i32.const 4)))))
   (if (local.get $saproto) (then (i32.store (local.get $sao) (local.get $saproto))))
