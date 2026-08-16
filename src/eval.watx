@@ -2936,6 +2936,10 @@
     (then (call $throw_type (cstring "TypeError") (cstring "species did not return an object")) (return (call $v_undef))))
   (if (i32.eqz (call $scope_find_local (call $val_payload (local.get $A)) (cstring "@@taelem")))
     (then (call $throw_type (cstring "TypeError") (cstring "species result is not a TypedArray")) (return (call $v_undef))))
+  ;; TypedArrayCreate validates the constructed result (ValidateTypedArray): a result over a detached
+  ;; buffer throws TypeError, before the length check.
+  (if (call $ta_is_detached (local.get $A))
+    (then (call $throw_type (cstring "TypeError") (cstring "species result is backed by a detached ArrayBuffer")) (return (call $v_undef))))
   (if (i32.lt_s (call $ta_live_len (local.get $A)) (local.get $newLen))
     (then (call $throw_type (cstring "TypeError") (cstring "species result is too short")) (return (call $v_undef))))
   (if (call $ta_is_immutable (local.get $A))
@@ -2974,7 +2978,13 @@
       (if (call $err) (then (return (call $v_undef))))
       (set! $S (call $species_constructor (local.get $thisv) (call $v_undef)))
       (if (call $err) (then (return (call $v_undef))))
-      (set! $len (call $arr_len (call $val_payload (local.get $resarr))))))
+      (set! $len (call $arr_len (call $val_payload (local.get $resarr))))
+      ;; slice (402): TypedArraySpeciesCreate reads constructor[@@species], whose getter may DETACH the
+      ;; source. Per spec, with count>0 the copy step re-checks IsDetachedBuffer(O) and throws TypeError
+      ;; (our call_native already snapshotted the values, so re-check here before building the result).
+      (if (i32.eq (local.get $id) (i32.const 402))
+        (then (if (i32.and (i32.gt_s (local.get $len) (i32.const 0)) (call $ta_is_detached (local.get $thisv)))
+          (then (call $throw_type (cstring "TypeError") (cstring "slice: source buffer detached during species construction")) (return (call $v_undef))))))))
   (if (call $is_undefined (local.get $S))
     (then
       (let $db i32 (call $heap_alloc (i32.const 8)))
@@ -2984,6 +2994,11 @@
     (then
       (set! $A (call $ta_species_make (local.get $S) (local.get $len)))
       (if (call $err) (then (return (call $v_undef))))))
+  ;; slice (402): the species CONSTRUCTOR itself (not just a constructor getter) may detach the source
+  ;; while building A — re-check IsDetachedBuffer(O) after A is constructed, count>0 → TypeError.
+  (if (i32.eq (local.get $id) (i32.const 402))
+    (then (if (i32.and (i32.gt_s (local.get $len) (i32.const 0)) (call $ta_is_detached (local.get $thisv)))
+      (then (call $throw_type (cstring "TypeError") (cstring "slice: source buffer detached during species construction")) (return (call $v_undef))))))
   (let $rp i32 (call $val_payload (local.get $resarr)))
   (let $rlen i32 (call $arr_len (local.get $rp)))
   (let $i i32 (i32.const 0))
