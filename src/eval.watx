@@ -719,6 +719,20 @@
           (let $spfnp i32 (i32.load (i32.add (local.get $spff) (i32.const 12))))
           (if (local.get $spfnp) (then (call $scope_define (local.get $spfnp) (cstring "@@fnproto") (local.get $proto))))))
       (return (i32.const 1))))
+  ;; array [[SetPrototypeOf]] to a PROXY: store it as @@protoval on the array's @12 named-prop scope so
+  ;; OrdinarySet (array_inherited_set) forwards an inherited (hole/named) write to the proxy's [[Set]].
+  ;; js_get_prototype short-circuits arrays to Array.prototype (reg 160) BEFORE reading @@protoval, so
+  ;; getPrototypeOf is unchanged; an ordinary-object array proto stays unmodeled (pre-existing).
+  (if (call $is_array (local.get $o))
+    (then
+      (if (call $is_proxy (local.get $proto))
+        (then
+          (let $spa i32 (call $val_payload (local.get $o)))
+          (let $spap i32 (i32.load (i32.add (local.get $spa) (i32.const 12))))
+          (if (i32.eqz (local.get $spap))
+            (then (set! $spap (call $scope_new (i32.const 0) (i32.const 8))) (i32.store (i32.add (local.get $spa) (i32.const 12)) (local.get $spap))))
+          (call $scope_define (local.get $spap) (cstring "@@protoval") (local.get $proto))))
+      (return (i32.const 1))))
   (i32.const 1))
 
 ;; Proxy [[PreventExtensions]]: dispatch the trap (else forward), enforce the
@@ -11094,7 +11108,7 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Object.setPrototypeOf called on null or undefined")) (return (call $v_undef))))
       (if (i32.eqz (i32.or (call $is_object (local.get $spp)) (i32.or (call $is_null (local.get $spp)) (i32.or (call $is_array (local.get $spp)) (call $is_function (local.get $spp))))))
         (then (call $throw_type (cstring "TypeError") (cstring "Object prototype may only be an Object or null")) (return (call $v_undef))))
-      (if (i32.or (call $is_proxy (local.get $spo)) (i32.or (call $is_object (local.get $spo)) (call $is_function (local.get $spo))))
+      (if (i32.or (call $is_proxy (local.get $spo)) (i32.or (call $is_object (local.get $spo)) (i32.or (call $is_array (local.get $spo)) (call $is_function (local.get $spo)))))
         (then
           (let $spok i32 (call $setproto_internal (local.get $spo) (local.get $spp)))
           (if (call $err) (then (return (call $v_undef))))

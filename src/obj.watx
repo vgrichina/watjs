@@ -1549,6 +1549,16 @@
 ;; if the write was handled/refused there, 0 to fall through and create an own property. `keystr` is the
 ;; property-key string ("2" for an index, "foo" for a named prop).
 (func $array_inherited_set (param $cont i64) (param $keystr i32) (param $val i64) (result i32) (effects)
+  ;; a custom [[Prototype]] set via Object.setPrototypeOf(array, proxy) is stored as @@protoval in the
+  ;; array's named-prop scope (@12); it REPLACES Array.prototype in the chain, so an inherited (hole/named)
+  ;; write forwards to that proxy's [[Set]] with receiver = the array (a trapless proxy → own element).
+  (let $ap12b i32 (i32.load (i32.add (call $val_payload (local.get $cont)) (i32.const 12))))
+  (if (local.get $ap12b)
+    (then
+      (let $apvb i32 (call $scope_find_local (local.get $ap12b) (cstring "@@protoval")))
+      (if (local.get $apvb)
+        (then (if (call $is_proxy (i64.load (local.get $apvb)))
+          (then (return (call $proxy_set_recv (i64.load (local.get $apvb)) (call $mk_str (local.get $keystr)) (local.get $val) (local.get $cont)))))))))
   (let $ainhp i32 (i32.load (i32.const 160)))
   (if (local.get $ainhp)
     (then
@@ -1567,6 +1577,35 @@
               (return (i32.const 1))))
           (if (i32.eqz (call $entry_writable (local.get $ainhs))) (then (call $set_fail) (return (i32.const 1))))))))
   (i32.const 0))
+
+;; OrdinarySet up the [[Prototype]] chain to a Proxy: ordinary proto links use scope-parents, but an
+;; EXOTIC proto (array/function/proxy) is stored in @@protoval and terminates the scope-parent chain.
+;; scope_find (used for the accessor/data slot) follows scope-parents only, so it never reaches a proxy
+;; that sits 2+ levels up (o →scope-parent→ mid →@@protoval→ proxy). Walk both link kinds and, at the
+;; first proxy, run its [[Set]] with receiver = the original object. Returns 1 = handled (caller returns),
+;; 0 = fall through to the own-data set (no proxy, or a trapless proxy → own prop on the receiver).
+(func $set_protoval_proxy_walk (param $o i32) (param $key i64) (param $val i64) (param $recv i64) (result i32) (effects)
+  (let $cur i32 (local.get $o))
+  (let $guard i32 (i32.const 0))
+  (let $res i32 (i32.const 0))
+  (block $done
+    (loop $L
+      (if (i32.eqz (local.get $cur)) (then (br $done)))
+      (if (i32.gt_s (local.get $guard) (i32.const 1000000)) (then (br $done)))
+      (set! $guard (i32.add (local.get $guard) (i32.const 1)))
+      (let $pv i32 (call $scope_find_local (local.get $cur) (cstring "@@protoval")))
+      (if (local.get $pv)
+        (then
+          (let $pvv i64 (i64.load (local.get $pv)))
+          (if (call $is_proxy (local.get $pvv))
+            (then (set! $res (call $proxy_set_recv (local.get $pvv) (local.get $key) (local.get $val) (local.get $recv)))))
+          (br $done))  ;; @@protoval boundary: proxy handled, or exotic non-proxy proto → stop
+        (else
+          (let $par i32 (call $scope_parent (local.get $cur)))
+          (if (i32.eqz (local.get $par)) (then (br $done)))
+          (set! $cur (local.get $par))
+          (br $L)))))
+  (local.get $res))
 
 (func $set_prop (param $cont i64) (param $key i64) (param $val i64) (effects)
   (if (call $is_array (local.get $cont))
@@ -1694,10 +1733,7 @@
       ;; trap intercepts the write with receiver = cont (a trapless proxy falls through to the own-data set)
       (if (i32.eqz (local.get $slot))
         (then
-          (let $pvss i32 (call $scope_find_local (local.get $o) (cstring "@@protoval")))
-          (if (local.get $pvss)
-            (then (if (call $is_proxy (i64.load (local.get $pvss)))
-              (then (if (call $proxy_set_recv (i64.load (local.get $pvss)) (local.get $key) (local.get $val) (local.get $cont)) (then (return)))))))))
+          (if (call $set_protoval_proxy_walk (local.get $o) (local.get $key) (local.get $val) (local.get $cont)) (then (return)))))
       ;; adding a NEW own property to a non-extensible object (preventExtensions/
       ;; seal/freeze) is refused (no own slot yet + @@noext marker present); strict: throw.
       (if (i32.and (i32.eqz (call $scope_find_local (local.get $o) (local.get $ks)))
