@@ -294,30 +294,41 @@
     (set! $t (f64.mul (local.get $t) (f64.const 10))) (set! $e (i32.sub (local.get $e) (i32.const 1))) (br $ll)))
   ;; f64 carries only ~17 significant digits; extracting more via i64 overflows
   ;; (ax*10^scale can exceed 2^64). Extract pdig=min(p,17) digits, then zero-pad to p.
-  (let $pdig i32 (if i32 (i32.gt_s (local.get $p) (i32.const 19)) (then (i32.const 19)) (else (local.get $p))))
+  ;; up to 21 significant digits (toPrecision/toExponential max); ≤19 fit a u64, 20-21 need bigint digits.
+  (let $pdig i32 (if i32 (i32.gt_s (local.get $p) (i32.const 21)) (then (i32.const 21)) (else (local.get $p))))
   (let $scale i32 (i32.sub (i32.sub (local.get $pdig) (i32.const 1)) (local.get $e)))
-  ;; m = round-half-up(ax·10^scale), the pdig-digit significand — computed EXACTLY via bigint (the old
-  ;; single f64 mul lost the last digit at large |scale|). The decimal-exp estimate $e (from the log10
-  ;; normalization loop) may be off by one; the carry/borrow adjustments below re-center m to pdig digits.
-  (let $m i64 (call $bi_scale_round (local.get $ax) (local.get $scale) (local.get $rmode)))
-  ;; rounding carry pushed it to pdig+1 digits → shift back, bump exponent
-  (if (i64.ge_u (local.get $m) (call $pow10u (local.get $pdig)))
-    (then (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $e (i32.add (local.get $e) (i32.const 1)))))
-  ;; estimate was one too HIGH → m has pdig-1 digits (leading zero): re-scale one lower, bump exp down
-  (if (i32.and (i64.ne (local.get $m) (i64.const 0)) (i64.lt_u (local.get $m) (call $pow10u (i32.sub (local.get $pdig) (i32.const 1)))))
-    (then
-      (set! $e (i32.sub (local.get $e) (i32.const 1)))
-      (set! $m (call $bi_scale_round (local.get $ax) (i32.add (local.get $scale) (i32.const 1)) (local.get $rmode)))
-      (if (i64.ge_u (local.get $m) (call $pow10u (local.get $pdig))) (then (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $e (i32.add (local.get $e) (i32.const 1)))))))
-  ;; write the pdig digits of m (zero-padded) into db = scratch+400, then '0'-fill to p
   (let $db i32 (i32.add (call $scratch) (i32.const 400)))
+  ;; the pdig-digit significand (MSD-first) = round(ax·10^scale) EXACTLY, written into db[0..pdig). The
+  ;; log10-based $e estimate may be one off; the carry/borrow re-centering keeps db to pdig digits.
+  (if (i32.le_s (local.get $pdig) (i32.const 19))
+    (then  ;; fits u64
+      (let $m i64 (call $bi_scale_round (local.get $ax) (local.get $scale) (local.get $rmode)))
+      (if (i64.ge_u (local.get $m) (call $pow10u (local.get $pdig)))
+        (then (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $e (i32.add (local.get $e) (i32.const 1)))))
+      (if (i32.and (i64.ne (local.get $m) (i64.const 0)) (i64.lt_u (local.get $m) (call $pow10u (i32.sub (local.get $pdig) (i32.const 1)))))
+        (then
+          (set! $e (i32.sub (local.get $e) (i32.const 1)))
+          (set! $m (call $bi_scale_round (local.get $ax) (i32.add (local.get $scale) (i32.const 1)) (local.get $rmode)))
+          (if (i64.ge_u (local.get $m) (call $pow10u (local.get $pdig))) (then (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $e (i32.add (local.get $e) (i32.const 1)))))))
+      (let $k i32 (i32.sub (local.get $pdig) (i32.const 1)))
+      (block $we (loop $wl (br_if $we (i32.lt_s (local.get $k) (i32.const 0)))
+        (i32.store8 (i32.add (local.get $db) (local.get $k)) (i32.add (i32.const 48) (i32.wrap_i64 (i64.rem_u (local.get $m) (i64.const 10)))))
+        (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $k (i32.sub (local.get $k) (i32.const 1))) (br $wl))))
+    (else  ;; 20-21 digits: bigint quotient
+      (call $bi_scale_round_big_setup (local.get $ax) (local.get $scale))
+      (call $bi_roundedQ_big (i32.const 0) (local.get $rmode) (i32.const 506000))
+      (let $len i32 (call $bi_digits_to (i32.const 506000) (local.get $db) (local.get $pdig)))
+      (if (i32.eq (local.get $len) (i32.add (local.get $pdig) (i32.const 1))) (then (set! $e (i32.add (local.get $e) (i32.const 1)))))
+      (if (i32.eq (local.get $len) (i32.sub (local.get $pdig) (i32.const 1)))
+        (then
+          (set! $e (i32.sub (local.get $e) (i32.const 1)))
+          (call $bi_scale_round_big_setup (local.get $ax) (i32.add (local.get $scale) (i32.const 1)))
+          (call $bi_roundedQ_big (i32.const 0) (local.get $rmode) (i32.const 506000))
+          (if (i32.eq (call $bi_digits_to (i32.const 506000) (local.get $db) (local.get $pdig)) (i32.add (local.get $pdig) (i32.const 1))) (then (set! $e (i32.add (local.get $e) (i32.const 1)))))))))
+  ;; '0'-fill db[pdig, p)
   (let $kf i32 (local.get $pdig))
   (block $fe (loop $fl (br_if $fe (i32.ge_s (local.get $kf) (local.get $p)))
     (i32.store8 (i32.add (local.get $db) (local.get $kf)) (i32.const 48)) (set! $kf (i32.add (local.get $kf) (i32.const 1))) (br $fl)))
-  (let $k i32 (i32.sub (local.get $pdig) (i32.const 1)))
-  (block $we (loop $wl (br_if $we (i32.lt_s (local.get $k) (i32.const 0)))
-    (i32.store8 (i32.add (local.get $db) (local.get $k)) (i32.add (i32.const 48) (i32.wrap_i64 (i64.rem_u (local.get $m) (i64.const 10)))))
-    (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $k (i32.sub (local.get $k) (i32.const 1))) (br $wl)))
   ;; assemble into scratch[0..]
   (let $n i32 (i32.const 0))
   (let $pp1 i32 (i32.add (local.get $e) (i32.const 1)))  ;; digits before the point
@@ -1069,6 +1080,66 @@
   (if (i32.eqz (local.get $n)) (then (return (i32.const 0))))
   (let $top i32 (i32.load (i32.add (local.get $p) (i32.mul (local.get $n) (i32.const 4)))))
   (i32.add (i32.mul (i32.sub (local.get $n) (i32.const 1)) (i32.const 32)) (i32.sub (i32.const 32) (i32.clz (local.get $top)))))
+;; set bit $bit in the bigint at $p (grows len as needed).
+(func $bi_setbit (param $p i32) (param $bit i32) (effects)
+  (let $w i32 (i32.add (i32.div_u (local.get $bit) (i32.const 32)) (i32.const 1)))  ;; word index (1-based)
+  (let $b i32 (i32.rem_u (local.get $bit) (i32.const 32)))
+  (block $ze (loop $zl (br_if $ze (i32.ge_s (i32.load (local.get $p)) (local.get $w)))  ;; zero-extend up to word $w
+    (i32.store (i32.add (local.get $p) (i32.mul (i32.add (i32.load (local.get $p)) (i32.const 1)) (i32.const 4))) (i32.const 0))
+    (i32.store (local.get $p) (i32.add (i32.load (local.get $p)) (i32.const 1))) (br $zl)))
+  (i32.store (i32.add (local.get $p) (i32.mul (local.get $w) (i32.const 4))) (i32.or (i32.load (i32.add (local.get $p) (i32.mul (local.get $w) (i32.const 4)))) (i32.shl (i32.const 1) (local.get $b)))))
+;; add 1 to the bigint at $p.
+(func $bi_inc (param $p i32) (effects)
+  (let $i i32 (i32.const 1))
+  (let $carry i32 (i32.const 1))
+  (let $n i32 (i32.load (local.get $p)))
+  (block $e (loop $l
+    (br_if $e (i32.eqz (local.get $carry)))
+    (if (i32.gt_s (local.get $i) (local.get $n)) (then (i32.store (local.get $p) (local.get $i)) (set! $n (local.get $i))))
+    (let $s i64 (i64.add (i64.extend_i32_u (i32.load (i32.add (local.get $p) (i32.mul (local.get $i) (i32.const 4))))) (i64.const 1)))
+    (i32.store (i32.add (local.get $p) (i32.mul (local.get $i) (i32.const 4))) (i32.wrap_i64 (i64.and (local.get $s) (i64.const 0xffffffff))))
+    (set! $carry (i32.wrap_i64 (i64.shr_u (local.get $s) (i64.const 32))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (call $bi_norm (local.get $p)))
+;; M = round(NUM/(DEN·2^e), $mode) as a BIGINT left in slot $out (uses A=506648, B=506972, T2=507620).
+;; Same algorithm as bi_roundedQ but the quotient can exceed 64 bits (toPrecision up to 21 digits).
+(func $bi_roundedQ_big (param $e i32) (param $mode i32) (param $out i32) (effects)
+  (call $bi_copy (i32.const 506648) (i32.const 506000))
+  (call $bi_copy (i32.const 506972) (i32.const 506324))
+  (if (i32.ge_s (local.get $e) (i32.const 0)) (then (call $bi_shl (i32.const 506972) (local.get $e))) (else (call $bi_shl (i32.const 506648) (i32.sub (i32.const 0) (local.get $e)))))
+  (i32.store (local.get $out) (i32.const 0))  ;; out = 0
+  (let $bit i32 (i32.const 76))  ;; quotient ≤ ~2^73 (21 decimal digits)
+  (block $de (loop $dl (br_if $de (i32.lt_s (local.get $bit) (i32.const 0)))
+    (call $bi_copy (i32.const 507620) (i32.const 506972))
+    (call $bi_shl (i32.const 507620) (local.get $bit))
+    (if (i32.ge_s (call $bi_cmp (i32.const 506648) (i32.const 507620)) (i32.const 0))
+      (then (call $bi_sub (i32.const 506648) (i32.const 507620)) (call $bi_setbit (local.get $out) (local.get $bit))))
+    (set! $bit (i32.sub (local.get $bit) (i32.const 1))) (br $dl)))
+  ;; round: compare 2·remainder vs B (remainder in A=506648)
+  (call $bi_copy (i32.const 507620) (i32.const 506648))
+  (call $bi_shl (i32.const 507620) (i32.const 1))
+  (let $c i32 (call $bi_cmp (i32.const 507620) (i32.const 506972)))
+  (if (i32.and (i32.ne (local.get $mode) (i32.const 2))
+               (i32.or (i32.gt_s (local.get $c) (i32.const 0))
+                       (i32.and (i32.eqz (local.get $c)) (if i32 (i32.eq (local.get $mode) (i32.const 1)) (then (i32.const 1)) (else (i32.and (i32.load (i32.add (local.get $out) (i32.const 4))) (i32.const 1)))))))
+    (then (call $bi_inc (local.get $out)))))
+;; write the decimal digits of the bigint at $slot (consumed) into $db, right-aligned in $pdig slots
+;; (zero-padded on the left); returns the actual digit count. Used for ≥20-significant-digit formatting.
+(func $bi_digits_to (param $slot i32) (param $db i32) (param $pdig i32) (result i32) (effects)
+  (let $tmp i32 (i32.add (call $scratch) (i32.const 700)))
+  (let $len i32 (i32.const 0))
+  (if (call $bi_iszero (local.get $slot))
+    (then (i32.store8 (i32.add (local.get $tmp) (i32.const 0)) (i32.const 48)) (set! $len (i32.const 1)))
+    (else (block $de (loop $dl (br_if $de (call $bi_iszero (local.get $slot)))
+      (i32.store8 (i32.add (local.get $tmp) (local.get $len)) (i32.add (i32.const 48) (call $bi_divmod_small (local.get $slot) (i32.const 10))))
+      (set! $len (i32.add (local.get $len) (i32.const 1))) (br $dl)))))
+  ;; db[0..pdig): the top pdig digits, MSD-first, left-padded with '0' if fewer than pdig
+  (let $k i32 (i32.const 0))
+  (block $we (loop $wl (br_if $we (i32.ge_s (local.get $k) (local.get $pdig)))
+    (let $src i32 (i32.sub (i32.sub (local.get $len) (i32.const 1)) (local.get $k)))  ;; digit index (MSD-first) from the little-endian tmp
+    (i32.store8 (i32.add (local.get $db) (local.get $k)) (if i32 (i32.ge_s (local.get $src) (i32.const 0)) (then (i32.load8_u (i32.add (local.get $tmp) (local.get $src)))) (else (i32.const 48))))
+    (set! $k (i32.add (local.get $k) (i32.const 1))) (br $wl)))
+  (local.get $len))
 ;; q = round( NUM / (DEN·2^e) ) using bounded (≤2^57) bit-by-bit division. Uses A/B/T.
 ;; mode 0 = round-half-to-even (IEEE, for strtod); mode 1 = round-half-up (toFixed/toPrecision/toString digits).
 (func $bi_roundedQ (param $e i32) (param $mode i32) (result i64) (effects)
@@ -1097,7 +1168,9 @@
   (local.get $q))
 ;; M = round-half-up( ax · 10^scale ) as an exact integer (ax a positive finite double; M fits i64).
 ;; Used by fmt_sig for correctly-rounded significant-digit extraction.
-(func $bi_scale_round (param $ax f64) (param $scale i32) (param $mode i32) (result i64) (effects)
+;; Sets up NUM(506000)=|significand|·2^max(e2,0)·10^max(scale,0), DEN(506324)=2^max(-e2,0)·10^max(-scale,0)
+;; for the double $ax, so round(NUM/DEN) = round(ax·10^scale).
+(func $bi_scale_round_big_setup (param $ax f64) (param $scale i32) (effects)
   (let $bits i64 (i64.reinterpret_f64 (local.get $ax)))
   (let $ef i32 (i32.wrap_i64 (i64.and (i64.shr_u (local.get $bits) (i64.const 52)) (i64.const 0x7ff))))
   (let $frac i64 (i64.and (local.get $bits) (i64.sub (i64.shl (i64.const 1) (i64.const 52)) (i64.const 1))))
@@ -1108,7 +1181,9 @@
   (call $bi_setu64 (i32.const 506000) (local.get $m))
   (call $bi_setu64 (i32.const 506324) (i64.const 1))
   (if (i32.ge_s (local.get $e2) (i32.const 0)) (then (call $bi_shl (i32.const 506000) (local.get $e2))) (else (call $bi_shl (i32.const 506324) (i32.sub (i32.const 0) (local.get $e2)))))
-  (if (i32.ge_s (local.get $scale) (i32.const 0)) (then (call $bi_mul_pow10 (i32.const 506000) (local.get $scale))) (else (call $bi_mul_pow10 (i32.const 506324) (i32.sub (i32.const 0) (local.get $scale)))))
+  (if (i32.ge_s (local.get $scale) (i32.const 0)) (then (call $bi_mul_pow10 (i32.const 506000) (local.get $scale))) (else (call $bi_mul_pow10 (i32.const 506324) (i32.sub (i32.const 0) (local.get $scale))))))
+(func $bi_scale_round (param $ax f64) (param $scale i32) (param $mode i32) (result i64) (effects)
+  (call $bi_scale_round_big_setup (local.get $ax) (local.get $scale))
   (call $bi_roundedQ (i32.const 0) (local.get $mode)))
 ;; correctly-rounded nearest double to mant·10^exp10 (mant>0). Round-to-nearest-even, IEEE-754.
 (func $strtod_big (param $mant i64) (param $exp10 i32) (result f64) (effects)
