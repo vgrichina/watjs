@@ -5659,6 +5659,7 @@
       (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected ')' after with object")) (return)))
       (call $next_token)  ;; ')'
       (call $vm_emit_op (local.get $code) (i32.const 93))  ;; ENTERWITH (consumes obj, pushes with-scope)
+      (call $vm_emit_op (local.get $code) (i32.const 90))  ;; RESETCOMPLETION: WithStatement does UpdateEmpty(C, undefined) — an empty body yields undefined
       (call $vm_finally_push_scope)  ;; break/continue/return through the body must pop the with-scope
       (i32.store (i32.const 900) (i32.const 1)) (i32.store (i32.const 936) (i32.const 1))  ;; with-body is a single Statement — no lexical/async/gen/function decl
       (call $vm_c_stmt (local.get $code))  ;; body
