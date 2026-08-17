@@ -2829,11 +2829,20 @@
       (then
         (let $ap i32 (call $val_payload (local.get $a0)))
         (set! $len (call $arr_len (local.get $ap)))
+        ;; InitializeTypedArrayFromList iterates the source to a list FIRST, then AllocateTypedArray and
+        ;; ToNumber/ToBigInt each element. Snapshot all values up front so an element's valueOf that
+        ;; mutates the source array (e.g. truncates it) can't corrupt a not-yet-read index.
+        (let $tsnap i32 (call $heap_alloc (i32.add (i32.mul (local.get $len) (i32.const 8)) (i32.const 8))))
+        (let $tsi i32 (i32.const 0))
+        (block $tse (loop $tsl (br_if $tse (i32.ge_s (local.get $tsi) (local.get $len)))
+          (i64.store (i32.add (local.get $tsnap) (i32.mul (local.get $tsi) (i32.const 8))) (call $arr_get (local.get $ap) (local.get $tsi)))
+          (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $tsl)))
         (set! $buf (call $heap_alloc (i32.add (i32.mul (local.get $len) (local.get $bpe)) (i32.const 8))))
         (call $ta_zero (local.get $buf) (i32.mul (local.get $len) (local.get $bpe)))
         (let $ti i32 (i32.const 0))
         (block $te (loop $tl (br_if $te (i32.ge_s (local.get $ti) (local.get $len)))
-          (call $ta_store_val (local.get $buf) (local.get $ti) (local.get $elem) (call $arr_get (local.get $ap) (local.get $ti)))
+          (call $ta_store_val (local.get $buf) (local.get $ti) (local.get $elem) (i64.load (i32.add (local.get $tsnap) (i32.mul (local.get $ti) (i32.const 8)))))
+          (if (call $err) (then (return (call $v_undef))))
           (set! $ti (i32.add (local.get $ti) (i32.const 1))) (br $tl))))
       (else (if (call $is_object (local.get $a0))
         (then
