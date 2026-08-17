@@ -9680,10 +9680,15 @@
     (then (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (return (call $v_undef))))
   (let $done i32 (call $truthy (call $get_prop (local.get $ir) (call $mk_str (cstring "done")))))
   (if (call $err) (then (return (call $v_undef))))
+  ;; Per spec (YieldExpression : yield * ...): while `done` is false, GeneratorYield(innerResult) yields
+  ;; the WHOLE inner result object — `value` is NOT read (IteratorValue runs only once the delegation
+  ;; COMPLETES). Return $ir as-is with action 0 (yield); vm_gen_result forwards it unwrapped.
+  (if (i32.eqz (local.get $done))
+    (then (i32.store (i32.const 840) (i32.const 0)) (return (local.get $ir))))
+  ;; done → IteratorValue(innerResult): read `value` once; action 1 (continue past yield*) or 2 (gen-return).
   (let $val i64 (call $get_prop (local.get $ir) (call $mk_str (cstring "value"))))
   (if (call $err) (then (return (call $v_undef))))
-  (i32.store (i32.const 840)
-    (if i32 (local.get $done) (then (if i32 (local.get $donekind) (then (i32.const 2)) (else (i32.const 1)))) (else (i32.const 0))))
+  (i32.store (i32.const 840) (if i32 (local.get $donekind) (then (i32.const 2)) (else (i32.const 1))))
   (local.get $val))
 
 ;; one step of a sync yield* delegation. rkind: 0 next / 1 throw / 2 return; recv = the value
@@ -9745,6 +9750,9 @@
       (let $vt i64 (call $vm_step (local.get $ctx) (local.get $errv)))
       (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 0))
       (if (call $err) (then (return (call $v_undef))))
+      ;; resumed into a further yield* suspend → forward the inner result object unwrapped (as vm_gen_result)
+      (if (i32.and (i32.eqz (call $vm_done (local.get $ctx))) (i32.load (i32.add (local.get $ctx) (i32.const 40))))
+        (then (return (local.get $vt))))
       (let $rt i32 (call $obj_new (i32.const 2)))
       (call $scope_define (local.get $rt) (cstring "value") (local.get $vt))
       (call $scope_define (local.get $rt) (cstring "done") (call $mk_bool (call $vm_done (local.get $ctx))))
@@ -9781,6 +9789,9 @@
       (let $vr i64 (call $vm_step (local.get $ctx) (local.get $value)))
       (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 0))
       (if (call $err) (then (return (call $v_undef))))
+      ;; resumed into a further yield* suspend → forward the inner result object unwrapped (as vm_gen_result)
+      (if (i32.and (i32.eqz (call $vm_done (local.get $ctx))) (i32.load (i32.add (local.get $ctx) (i32.const 40))))
+        (then (return (local.get $vr))))
       (let $rr i32 (call $obj_new (i32.const 2)))
       (call $scope_define (local.get $rr) (cstring "value") (local.get $vr))
       (call $scope_define (local.get $rr) (cstring "done") (call $mk_bool (call $vm_done (local.get $ctx))))
@@ -9841,6 +9852,10 @@
       (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 1))  ;; mark executing
       (let $v i64 (call $vm_step (local.get $ctx) (local.get $resumeval)))
       (i32.store (i32.add (local.get $ctx) (i32.const 44)) (i32.const 0))  ;; clear executing
+      ;; a yield* delegation suspend (ctx+40) yields the inner iterator's result object DIRECTLY —
+      ;; $v IS that object, forwarded unwrapped (spec GeneratorYield(innerResult)), not re-wrapped.
+      (if (i32.and (i32.eqz (call $vm_done (local.get $ctx))) (i32.load (i32.add (local.get $ctx) (i32.const 40))))
+        (then (return (local.get $v))))
       (call $scope_define (local.get $r) (cstring "value") (local.get $v))
       (call $scope_define (local.get $r) (cstring "done") (call $mk_bool (call $vm_done (local.get $ctx))))))
   (call $mk_obj (local.get $r)))
