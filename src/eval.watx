@@ -1708,7 +1708,7 @@
 ;; TypedArray.prototype.set copy loop. A TypedArray source may share the target's buffer, so
 ;; snapshot its element values before writing (an interleaved read/write would corrupt an
 ;; overlapping range); an array-like source has observable getters, so copy interleaved.
-(func $ta_set_copy (param $stbuf i32) (param $stoff i32) (param $stelem i32) (param $src i64) (param $srclen i32) (effects)
+(func $ta_set_copy (param $stbuf i32) (param $stoff i32) (param $stelem i32) (param $src i64) (param $srclen i32) (param $thisv i64) (effects)
   (let $srcta i32 (if i32 (call $is_object (local.get $src)) (then (call $scope_find_local (call $val_payload (local.get $src)) (cstring "@@taelem"))) (else (i32.const 0))))
   (if (local.get $srcta)
     (then
@@ -1723,13 +1723,23 @@
         (if (call $err) (then (return)))
         (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l2)))
       (return)))
+  ;; SetTypedArrayFromArrayLike: per element, Get(src,k) then TypedArraySetElement(target, off+k, value).
+  ;; TypedArraySetElement ALWAYS coerces the value (ToNumber/ToBigInt — observable valueOf, may throw),
+  ;; then writes ONLY if IsValidIntegerIndex(target, index) — a source getter (or the length getter) may
+  ;; have detached or shrunk the target buffer, in which case that element write is silently skipped.
+  ;; A one-slot scratch absorbs the coercion for a now-out-of-bounds index so the valueOf still fires.
+  (let $scr i32 (call $heap_alloc (i32.const 8)))
   (let $j i32 (i32.const 0))
   (block $e3 (loop $l3 (br_if $e3 (i32.ge_s (local.get $j) (local.get $srclen)))
     ;; Get(src, k) has an observable getter that may throw — read it FIRST and bail before
     ;; ta_store_val runs (else the store would fire with the thrown/undefined value).
     (let $sv i64 (call $get_prop (local.get $src) (call $num (f64.convert_i32_s (local.get $j)))))
     (if (call $err) (then (return)))
-    (call $ta_store_val (local.get $stbuf) (i32.add (local.get $stoff) (local.get $j)) (local.get $stelem) (local.get $sv))
+    (let $idx i32 (i32.add (local.get $stoff) (local.get $j)))
+    (let $tln i32 (if i32 (i32.or (call $ta_is_detached (local.get $thisv)) (call $ta_is_oob (local.get $thisv))) (then (i32.const 0)) (else (call $ta_live_len (local.get $thisv)))))
+    (if (i32.and (i32.ge_s (local.get $idx) (i32.const 0)) (i32.lt_s (local.get $idx) (local.get $tln)))
+      (then (call $ta_store_val (local.get $stbuf) (local.get $idx) (local.get $stelem) (local.get $sv)))
+      (else (call $ta_store_val (local.get $scr) (i32.const 0) (local.get $stelem) (local.get $sv))))  ;; coerce (observable) + discard
     (if (call $err) (then (return)))
     (set! $j (i32.add (local.get $j) (i32.const 1))) (br $l3))))
 
@@ -2597,7 +2607,7 @@
       (let $stsn i32 (call $alike_len (local.get $stsrc)))
       (if (i32.gt_s (local.get $stoff) (i32.sub (local.get $stlen) (local.get $stsn)))  ;; offset+srcLen > targetLen, overflow-free (offset ToIndex-capped 2^31-1 would overflow i32 on +)
         (then (call $throw_type (cstring "RangeError") (cstring "TypedArray.set: source too large")) (return (call $v_undef))))
-      (call $ta_set_copy (local.get $stbuf) (local.get $stoff) (local.get $stelem) (local.get $stsrc) (local.get $stsn))
+      (call $ta_set_copy (local.get $stbuf) (local.get $stoff) (local.get $stelem) (local.get $stsrc) (local.get $stsn) (local.get $thisv))
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 392))  ;; ArrayBuffer.isView(arg)
     (then
