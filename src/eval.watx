@@ -3016,8 +3016,8 @@
       ;; source. Per spec, with count>0 the copy step re-checks IsDetachedBuffer(O) and throws TypeError
       ;; (our call_native already snapshotted the values, so re-check here before building the result).
       (if (i32.eq (local.get $id) (i32.const 402))
-        (then (if (i32.and (i32.gt_s (local.get $len) (i32.const 0)) (call $ta_is_detached (local.get $thisv)))
-          (then (call $throw_type (cstring "TypeError") (cstring "slice: source buffer detached during species construction")) (return (call $v_undef))))))))
+        (then (if (i32.and (i32.gt_s (local.get $len) (i32.const 0)) (i32.or (call $ta_is_detached (local.get $thisv)) (call $ta_is_oob (local.get $thisv))))
+          (then (call $throw_type (cstring "TypeError") (cstring "slice: source buffer detached or out of bounds during argument coercion")) (return (call $v_undef))))))))
   (if (call $is_undefined (local.get $S))
     (then
       (let $db i32 (call $heap_alloc (i32.const 8)))
@@ -3030,14 +3030,21 @@
   ;; slice (402): the species CONSTRUCTOR itself (not just a constructor getter) may detach the source
   ;; while building A — re-check IsDetachedBuffer(O) after A is constructed, count>0 → TypeError.
   (if (i32.eq (local.get $id) (i32.const 402))
-    (then (if (i32.and (i32.gt_s (local.get $len) (i32.const 0)) (call $ta_is_detached (local.get $thisv)))
-      (then (call $throw_type (cstring "TypeError") (cstring "slice: source buffer detached during species construction")) (return (call $v_undef))))))
+    (then (if (i32.and (i32.gt_s (local.get $len) (i32.const 0)) (i32.or (call $ta_is_detached (local.get $thisv)) (call $ta_is_oob (local.get $thisv))))
+      (then (call $throw_type (cstring "TypeError") (cstring "slice: source buffer detached or out of bounds during species construction")) (return (call $v_undef))))))
   (let $rp i32 (call $val_payload (local.get $resarr)))
   (let $rlen i32 (call $arr_len (local.get $rp)))
   (let $i i32 (i32.const 0))
   (block $e (loop $l (br_if $e (i32.ge_s (local.get $i) (local.get $len)))
-    (call $set_prop (local.get $A) (call $num (f64.convert_i32_s (local.get $i))) (if i64 (i32.lt_s (local.get $i) (local.get $rlen)) (then (call $arr_get (local.get $rp) (local.get $i))) (else (call $v_undef))))
-    (if (call $err) (then (return (call $v_undef))))
+    (let $sv i64 (if i64 (i32.lt_s (local.get $i) (local.get $rlen)) (then (call $arr_get (local.get $rp) (local.get $i))) (else (call $v_undef))))
+    ;; slice (402) over a TypedArray never yields a genuine `undefined` element — an undefined snapshot
+    ;; slot means the source shrank (resizable buffer) and index i is now out of bounds. Leave the
+    ;; species result's zero-initialized slot rather than writing undefined (→NaN/0), matching the spec
+    ;; copy step that stops at the post-coercion length. map/filter (400/401) may yield real undefined.
+    (if (i32.eqz (i32.and (i32.eq (local.get $id) (i32.const 402)) (call $is_undefined (local.get $sv))))
+      (then
+        (call $set_prop (local.get $A) (call $num (f64.convert_i32_s (local.get $i))) (local.get $sv))
+        (if (call $err) (then (return (call $v_undef))))))
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (local.get $A))
 
