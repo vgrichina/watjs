@@ -12867,7 +12867,14 @@
   (if (i32.eq (i32.load (local.get $fn)) (i32.const 1448232528))  ;; async fn → returns a promise
     (then (return (call $vm_make_async (local.get $fn) (local.get $argc) (local.get $argv) (i32.load (i32.const 204)) (local.get $thisv)))))
   (if i64 (i32.load (local.get $fn))
-    (then (call $call_native (i32.load (local.get $fn)) (local.get $argc) (local.get $argv) (local.get $thisv)))
+    (then
+      ;; a construct-only native (Map/Set/Promise/Proxy/TypedArray/…) reached as a plain [[Call]] via
+      ;; Function.prototype.call/apply or Reflect.apply → TypeError. The VM CALL op guards the direct-call
+      ;; path; this guards the call_val path. Gated on the native-construct flag (640) so an actual
+      ;; [[Construct]] routed through here is unaffected.
+      (if (i32.and (i32.eqz (i32.load (i32.const 640))) (call $native_requires_new (i32.load (local.get $fn))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Constructor requires 'new'")) (return (call $v_undef))))
+      (call $call_native (i32.load (local.get $fn)) (local.get $argc) (local.get $argv) (local.get $thisv)))
     (else (call $v_undef))))  ;; @0==0 (production user fn) no longer exists
 
 ;; call a function value with a given `this` and no arguments
@@ -13951,6 +13958,11 @@
   ;; %ThrowTypeError% is a frozen intrinsic: non-extensible + own props (length/name) non-configurable.
   (call $scope_define (call $fn_def_scope (local.get $tte)) (cstring "@@noext") (call $v_true))
   (call $scope_define (call $fn_def_scope (local.get $tte)) (cstring "@@sealed") (call $v_true))
+  ;; %ThrowTypeError% own `name`/`length` are {W:false,E:false,C:false} (attrs 0). The computed native
+  ;; name/length descriptor reports C:true, so define explicit non-configurable own entries (which the
+  ;; get_prop own-name/length override honors) to match the frozen-intrinsic spec.
+  (call $scope_define_attr (call $fn_def_scope (local.get $tte)) (cstring "name") (call $mk_str (cstring "")) (i32.const 0))
+  (call $scope_define_attr (call $fn_def_scope (local.get $tte)) (cstring "length") (call $num (f64.const 0)) (i32.const 0))
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "caller") (local.get $tte) (local.get $tte) (i32.const 5))
   (call $scope_define_accessor_attr (call $fn_props (call $val_payload (local.get $funcproto))) (cstring "arguments") (local.get $tte) (local.get $tte) (i32.const 5))
   ;; Function.prototype[Symbol.hasInstance] — default OrdinaryHasInstance; attrs {W:false,E:false,C:false}
