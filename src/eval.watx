@@ -500,9 +500,15 @@
                     (then (call $bigint_loose_eq (call $bigint_val (local.get $a)) (local.get $b)))
                     (else (if i32 (call $is_bigint (local.get $b))
                       (then (call $bigint_loose_eq (call $bigint_val (local.get $b)) (local.get $a)))
-                      (else (if i32 (i32.and (local.get $ap) (local.get $bp))
-                        (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
-                        (else (i32.const 0))))))))))))))))))))))
+                      (else (if i32 (i32.and (call $is_string (local.get $a)) (call $is_string (local.get $b)))
+                        ;; String == String is STRING equality (Abstract Equality step 1: same Type → strict);
+                        ;; strict_eq above already returned false, so two unequal strings are NOT equal — do
+                        ;; NOT coerce them to Numbers ("1" == "+1" must be false, not 1 == 1).
+                        (then (i32.const 0))
+                        (else (if i32 (i32.and (local.get $ap) (local.get $bp))
+                          ;; a MIXED numeric-ish pair (Number/Boolean/String across differing types) → Number
+                          (then (f64.eq (call $to_num (local.get $a)) (call $to_num (local.get $b))))
+                          (else (i32.const 0))))))))))))))))))))))))
 
 ;; relational compare: kind 29 < , 30 > , 31 <= , 32 >=
 
