@@ -3113,8 +3113,11 @@
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 2)))
   (call $vm_emit_op (local.get $code) (i32.const 18))   ;; STRICTEQ → [action==2]
   (let $jact1 i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF (not 2) → action1 path
-  ;; action 2: outer generator returns yval
+  ;; action 2: outer generator returns yval (a Return completion from the delegation, e.g. an inner
+  ;; iterator's return() that reported done) — run all enclosing finally blocks first, like a `return`
+  ;; statement, so a try/finally around the yield* executes on the way out.
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yval))
+  (call $vm_finally_emit_all (local.get $code))
   (call $vm_emit_op (local.get $code) (i32.const 20))   ;; RET yval
   ;; action 1: yield* completes; result value = yval
   (call $vm_patch (local.get $code) (local.get $jact1))
