@@ -1395,7 +1395,7 @@
                   (call $vm_emit_op (local.get $code) (i32.const 116))  ;; SUPERPROTO → [recv, superproto]
                   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $smn)))  ;; PUSH key → [recv, superproto, key]
                   (if (i32.eq (call $tok_kind) (i32.const 24))  ;; `super.name = RHS`
-                    (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 119)))  ;; RHS → SUPERSET → [value]
+                    (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 119)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388))))  ;; RHS → SUPERSET → [value]
                     (else (if (call $is_compound_assign (call $tok_kind))  ;; `super.name op= RHS`
                       (then
                         (let $scop i32 (call $compound_cop (call $tok_kind))) (call $next_token)
@@ -1404,7 +1404,7 @@
                         (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (local.get $scop))  ;; [old,rhs] → op → [new]
                         (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sctmp))  ;; STOREVAR @@new
                         (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 116)) (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $smn)))  ;; re-emit [recv,superproto,key]
-                        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sctmp)) (call $vm_emit_op (local.get $code) (i32.const 119)))  ;; LOADVAR @@new; SUPERSET → [new]
+                        (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sctmp)) (call $vm_emit_op (local.get $code) (i32.const 119)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388))))  ;; LOADVAR @@new; SUPERSET → [new]
                       (else (if (i32.and (i32.eqz (call $nl_before)) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))  ;; `super.name++` / `--` (postfix)
                         (then
                           (let $siop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99)))) (call $next_token)
@@ -1415,7 +1415,7 @@
                           (call $vm_emit_op (local.get $code) (local.get $siop))  ;; INC/DEC → [oldnum,new]
                           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sitmp))  ;; STOREVAR @@new → [oldnum]
                           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 116)) (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (local.get $smn)))
-                          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sitmp)) (call $vm_emit_op (local.get $code) (i32.const 119))  ;; SUPERSET → [oldnum,new]
+                          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sitmp)) (call $vm_emit_op (local.get $code) (i32.const 119)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388)))  ;; SUPERSET → [oldnum,new]
                           (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP → [oldnum] (postfix yields old numeric)
                         (else (call $vm_emit_op (local.get $code) (i32.const 117))))))))))  ;; SUPERGET → [value]
               (return)))
@@ -1467,7 +1467,7 @@
                   (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $sxargc))  ;; CALLM
                   (return)))
               (if (i32.eq (call $tok_kind) (i32.const 24))  ;; `super[expr] = RHS`
-                (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 119)))  ;; SUPERSET
+                (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 119)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388))))  ;; SUPERSET
                 (else (if (call $is_compound_assign (call $tok_kind))  ;; `super[expr] op= RHS`
                   (then
                     (let $secop i32 (call $compound_cop (call $tok_kind))) (call $next_token)
@@ -1475,14 +1475,14 @@
                     (call $vm_emit_op (local.get $code) (i32.const 117))  ;; SUPERGET → [old]
                     (call $vm_c_expr (local.get $code)) (call $vm_emit_op (local.get $code) (local.get $secop)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sen))  ;; → [new]; STOREVAR @@new
                     (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 116)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sek))  ;; re-emit [recv,superproto,key]
-                    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sen)) (call $vm_emit_op (local.get $code) (i32.const 119)))  ;; LOADVAR @@new; SUPERSET
+                    (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sen)) (call $vm_emit_op (local.get $code) (i32.const 119)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388))))  ;; LOADVAR @@new; SUPERSET
                   (else (if (i32.and (i32.eqz (call $nl_before)) (i32.or (i32.eq (call $tok_kind) (i32.const 38)) (i32.eq (call $tok_kind) (i32.const 39))))  ;; `super[expr]++/--`
                     (then
                       (let $seiop i32 (if i32 (i32.eq (call $tok_kind) (i32.const 38)) (then (i32.const 98)) (else (i32.const 99)))) (call $next_token)
                       (let $sein i32 (call $vm_tmpname))
                       (call $vm_emit_op (local.get $code) (i32.const 117)) (call $vm_emit_op (local.get $code) (i32.const 97)) (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (local.get $seiop)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $sein))  ;; SUPERGET,TONUMERIC,DUP,INC/DEC,STOREVAR @@new → [oldnum]
                       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 116)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sek))
-                      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sein)) (call $vm_emit_op (local.get $code) (i32.const 119)) (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; SUPERSET; POP → [oldnum]
+                      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sein)) (call $vm_emit_op (local.get $code) (i32.const 119)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388))) (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; SUPERSET; POP → [oldnum]
                     (else (call $vm_emit_op (local.get $code) (i32.const 117))))))))  ;; SUPERGET
               (return)))
           (return)))
@@ -2323,7 +2323,7 @@
           (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $psk))  ;; STOREVAR @@key → [recv, superproto]
           (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $psk))  ;; LOADVAR @@key → [recv, superproto, key]
           (call $vm_emit_op (local.get $code) (i32.const 117)) (call $vm_emit_op (local.get $code) (i32.const 97)) (call $vm_emit_op (local.get $code) (local.get $pop)) (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $psn))  ;; SUPERGET,TONUMERIC,INC/DEC,STOREVAR @@new
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 116)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $psk)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $psn)) (call $vm_emit_op (local.get $code) (i32.const 119))  ;; re-emit [recv,superproto], LOADVAR key, LOADVAR new, SUPERSET → [new] (prefix yields new)
+          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "this")) (call $vm_emit_op (local.get $code) (i32.const 116)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $psk)) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $psn)) (call $vm_emit_op (local.get $code) (i32.const 119)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388)))  ;; re-emit [recv,superproto], LOADVAR key, LOADVAR new, SUPERSET → [new] (prefix yields new)
           (return)))
       ;; member/index target: `++obj.key` / `++obj[i]` / `++a.b.c` (rooted at the identifier).
       ;; Emit the object, walk the access chain, and do read-modify-write on the LAST access.
@@ -9124,8 +9124,10 @@
         (if (call $err) (then (br $disp)))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 119))  ;; SUPERSET — [receiver, superproto, key, value] → super[key]=value; leaves value
+    (if (i32.eq (local.get $op) (i32.const 119))  ;; SUPERSET (operand: strict flag) — [receiver, superproto, key, value] → super[key]=value; leaves value
       (then
+        (let $sstrict i32 (i32.load (i32.add (local.get $code) (local.get $ip))))  ;; strict → a refused write throws (reg 392)
+        (set! $ip (i32.add (local.get $ip) (i32.const 4)))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $ssv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
@@ -9136,7 +9138,11 @@
         (let $ssr i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (if (i32.or (call $is_null (local.get $ssp)) (call $is_undefined (local.get $ssp)))
           (then (call $throw_type (cstring "TypeError") (cstring "Cannot set super property of a null prototype")) (br $disp)))
+        ;; strict-mode super assignment: a refused [[Set]] (non-writable / frozen receiver, setter absent)
+        ;; throws TypeError — set reg 392 so set_prop's set_fail throws (mirrors SETPROP_STRICT).
+        (if (local.get $sstrict) (then (i32.store (i32.const 392) (i32.const 1))))
         (call $set_super_prop (local.get $ssp) (local.get $ssk) (local.get $ssv) (local.get $ssr))
+        (i32.store (i32.const 392) (i32.const 0))
         (if (call $err) (then (br $disp)))
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (local.get $ssv))  ;; assignment yields the value
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
