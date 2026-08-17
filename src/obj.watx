@@ -1478,7 +1478,12 @@
   (if (i32.eqz (call $scope_find_local (local.get $o) (cstring "@@taelem"))) (then (return (i32.const 0))))
   (let $n f64 (f64.const 0))
   (if (call $is_number (local.get $dkey))
-    (then (set! $n (call $tonum_raw (local.get $dkey))))
+    (then
+      (set! $n (call $tonum_raw (local.get $dkey)))
+      ;; a NUMBER key -0 has property key ToString(-0) = "0" → CanonicalNumericIndexString "0" = +0
+      ;; (a valid index), NOT the -0𝔽 that IsValidIntegerIndex rejects. Only the string key "-0"
+      ;; canonicalizes to -0𝔽. Normalize the number-key negative zero away before the validity check.
+      (if (f64.eq (local.get $n) (f64.const 0)) (then (set! $n (f64.const 0)))))
     (else
       (if (i32.eqz (call $is_string (local.get $dkey))) (then (return (i32.const 0))))
       (if (i32.eqz (call $ta_is_canon_str (call $val_payload (local.get $dkey)))) (then (return (i32.const 0))))
