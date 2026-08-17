@@ -3519,11 +3519,23 @@
   ;; regular function RESETS it to its own kind; a nested arrow inherits it — see vm_c_arrow).
   (let $savepa960 i32 (i32.load (i32.const 960)))
   (i32.store (i32.const 960) (i32.or (local.get $genf) (if i32 (local.get $asyncf) (then (i32.const 2)) (else (i32.const 0)))))  ;; bit0=generator params (no yield), bit1=async params (no await expression)
+  ;; reg 672 (yield-is-an-expression) and 896 (await-is-the-operator) are 0 while parameter defaults
+  ;; compile: yield/await are NEVER operators in a FormalParameters list. A nested regular
+  ;; `function(x = yield)` inside a generator (or `function(x = await)` inside an async fn) then parses
+  ;; the default as an ordinary identifier reference; a generator's/async fn's OWN params instead route
+  ;; `yield`/`await` through the identifier path where reg 960 raises the SyntaxError. Without this, params
+  ;; ran with the ENCLOSING context (the body sets 672/896 only afterwards).
+  (let $savepa672 i32 (i32.load (i32.const 672)))
+  (i32.store (i32.const 672) (i32.const 0))
+  (let $savepa896 i32 (i32.load (i32.const 896)))
+  (i32.store (i32.const 896) (i32.const 0))
   ;; non-simple params → mark the parameter scope as separate before defaults run, so a sloppy direct eval
   ;; in a param default that `var`-declares a parameter name throws (EvalDeclarationInstantiation).
   (if (local.get $nsdup) (then (call $vm_emit_op (local.get $code) (i32.const 127))))  ;; MARKPARAMSCOPE
   (call $vm_emit_default_params (local.get $code) (local.get $params) (local.get $pdef) (local.get $ppat) (local.get $np) (local.get $restidx))
   (i32.store (i32.const 960) (local.get $savepa960))
+  (i32.store (i32.const 672) (local.get $savepa672))
+  (i32.store (i32.const 896) (local.get $savepa896))
   ;; rest parameter: restName = arguments.slice(restidx)
   (if (i32.ge_s (local.get $restidx) (i32.const 0))
     (then
