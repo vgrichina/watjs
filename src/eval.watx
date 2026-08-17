@@ -3016,6 +3016,11 @@
           (set! $A (call $ta_species_make (local.get $S) (local.get $len)))
           (if (call $err) (then (return (call $v_undef))))))
       (i32.store (i32.const 860) (i32.const 1))
+      ;; map captures len BEFORE TypedArraySpeciesCreate (which may have resized/detached the buffer);
+      ;; the callback must still visit every original index k<len (Get yields undefined for shrunk
+      ;; indices). Force the delegated Array map's length to $len via mem 596 (stored +1; 0 = unset),
+      ;; since alike_arr snapshots 0 elements for a now-out-of-bounds view.
+      (i32.store (i32.const 596) (i32.add (local.get $len) (i32.const 1)))
       (set! $resarr (call $call_native (local.get $tmaid) (local.get $argc) (local.get $argv) (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef)))))
     (else
@@ -11594,6 +11599,11 @@
           (return (local.get $sloA))))))
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
+      ;; mem 596 (stored +1): ta_species_result forces the TypedArray map source length captured BEFORE
+      ;; the species constructor ran — alike_arr snapshots 0 elements once that resized the view out of
+      ;; bounds, but the callback must still visit every original index (dense_get returns undefined for
+      ;; the now-out-of-bounds ones). Read once and clear so re-entrant / other-native calls don't inherit.
+      (if (i32.load (i32.const 596)) (then (set! $n (i32.sub (i32.load (i32.const 596)) (i32.const 1))) (i32.store (i32.const 596) (i32.const 0))))
       (let $a0 i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (if (i32.eq (local.get $id) (i32.const 273))  ;; toReversed() → new reversed array
         (then
