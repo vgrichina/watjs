@@ -2843,6 +2843,10 @@
           (let $ctsl i32 (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@taelem")))
           (if (local.get $ctsl)
             (then
+              ;; a TypedArray source that is detached or out of bounds (a fixed-length view whose resizable
+              ;; buffer shrank below it) → TypeError (IsTypedArrayOutOfBounds, before reading its length).
+              (if (i32.or (call $ta_is_detached (local.get $a0)) (call $ta_is_oob (local.get $a0)))
+                (then (call $throw_type (cstring "TypeError") (cstring "cannot construct a TypedArray from a detached or out-of-bounds TypedArray")) (return (call $v_undef))))
               (let $srcelem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $ctsl)))))
               (if (i32.ne (i32.and (i32.ge_s (local.get $srcelem) (i32.const 9)) (i32.le_s (local.get $srcelem) (i32.const 10)))
                           (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10))))
