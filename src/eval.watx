@@ -2819,6 +2819,16 @@
           (set! $ti (i32.add (local.get $ti) (i32.const 1))) (br $tl))))
       (else (if (call $is_object (local.get $a0))
         (then
+          ;; InitializeTypedArrayFromTypedArray: a TypedArray source whose content type differs from the
+          ;; target (exactly one is a BigInt element type: BigInt64=9 / BigUint64=10) → TypeError, before
+          ;; any element is copied.
+          (let $ctsl i32 (call $scope_find_local (call $val_payload (local.get $a0)) (cstring "@@taelem")))
+          (if (local.get $ctsl)
+            (then
+              (let $srcelem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $ctsl)))))
+              (if (i32.ne (i32.and (i32.ge_s (local.get $srcelem) (i32.const 9)) (i32.le_s (local.get $srcelem) (i32.const 10)))
+                          (i32.and (i32.ge_s (local.get $elem) (i32.const 9)) (i32.le_s (local.get $elem) (i32.const 10))))
+                (then (call $throw_type (cstring "TypeError") (cstring "cannot construct a TypedArray from one of a different content type")) (return (call $v_undef))))))
           ;; not itself a TypedArray → GetMethod(O, @@iterator): a present-but-not-callable
           ;; @@iterator throws; a callable iterator is drained (InitializeTypedArrayFromList);
           ;; otherwise the array-like-by-length path applies.
