@@ -19,4 +19,5 @@ print(thr(function(){ g().forEach(5); }));
 print(thr(function(){ [].values().reduce(function(a,b){return a+b;}); }));   // empty + no init
 print(Iterator.prototype.forEach.length);
 print(Iterator.prototype.toArray.length);
-print(Object.getPrototypeOf(Object.getPrototypeOf(g())) === Iterator.prototype);
+// g() → g.prototype → %GeneratorPrototype% → %IteratorPrototype% (instance [[Prototype]] is g.prototype)
+print(Object.getPrototypeOf(Object.getPrototypeOf(Object.getPrototypeOf(g()))) === Iterator.prototype);
