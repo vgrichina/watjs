@@ -2539,7 +2539,10 @@
       (if (i32.eqz (local.get $sasl)) (then (call $throw_type (cstring "TypeError") (cstring "subarray called on a non-TypedArray")) (return (call $v_undef))))
       (let $saelem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $sasl)))))
       (let $sabpe i32 (call $ta_bpe (local.get $saelem)))
-      (let $salen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@talen"))))))
+      ;; srcLength: 0 when the source view is out of bounds (a fixed-length view whose resizable buffer
+      ;; shrank below it) or detached — captured at entry, BEFORE begin/end coercion (spec step 3), so a
+      ;; later regrow during coercion doesn't resurrect elements. Otherwise the current live length.
+      (let $salen i32 (if i32 (i32.or (call $ta_is_detached (local.get $thisv)) (call $ta_is_oob (local.get $thisv))) (then (i32.const 0)) (else (call $ta_live_len (local.get $thisv)))))
       (let $sabuf i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@tabuf"))))))
       (let $sabeg i32 (call $to_int_idx (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
       (if (i32.lt_s (local.get $sabeg) (i32.const 0)) (then (set! $sabeg (i32.add (local.get $salen) (local.get $sabeg)))))
