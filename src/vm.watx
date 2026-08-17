@@ -2821,6 +2821,39 @@
   (call $cursor_restore (local.get $save))
   (local.get $ok))
 
+;; non-destructive scan (caller wraps in look_save/look_restore): is the parenthesized expression at the
+;; cursor ('(') a single transparent Reference — `( ref )`, `( ( ref ) )`, `( base.name )`, `( base[e] )`?
+;; Returns 1 (leaving the cursor just past the matching ')') or 0. A comma / operator / call at the top
+;; level → 0 (the Reference is lost → the caller does a value-delete → true).
+(func $vm_delete_paren_is_ref (result i32) (effects)
+  (call $next_token)  ;; consume '('
+  (if (i32.eq (call $tok_kind) (i32.const 15))  ;; nested '(' → recurse for the inner reference
+    (then (if (i32.eqz (call $vm_delete_paren_is_ref)) (then (return (i32.const 0)))))
+    (else
+      (if (i32.ne (call $tok_kind) (i32.const 3)) (then (return (i32.const 0))))  ;; base must be an identifier / this / super
+      (if (i32.or (call $tok_is_kw (cstring "new")) (i32.or (call $tok_is_kw (cstring "function")) (i32.or (call $tok_is_kw (cstring "class"))
+            (i32.or (call $tok_is_kw (cstring "true")) (i32.or (call $tok_is_kw (cstring "false")) (call $tok_is_kw (cstring "null")))))))
+        (then (return (i32.const 0))))
+      (call $next_token)))
+  ;; member tail: `.name` | `[ … ]` (balanced)
+  (block $mte (loop $mtl
+    (if (i32.eq (call $tok_kind) (i32.const 23))  ;; .name
+      (then (call $next_token) (if (i32.ne (call $tok_kind) (i32.const 3)) (then (return (i32.const 0)))) (call $next_token) (br $mtl)))
+    (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [ … ]
+      (then
+        (call $next_token)
+        (let $bd i32 (i32.const 1))
+        (block $be (loop $bl
+          (if (i32.eq (call $tok_kind) (i32.const 0)) (then (return (i32.const 0))))  ;; EOF before ']'
+          (if (i32.eq (call $tok_kind) (i32.const 19)) (then (set! $bd (i32.add (local.get $bd) (i32.const 1)))))
+          (if (i32.eq (call $tok_kind) (i32.const 20)) (then (set! $bd (i32.sub (local.get $bd) (i32.const 1))) (if (i32.eqz (local.get $bd)) (then (call $next_token) (br $be)))))
+          (call $next_token) (br $bl)))
+        (br $mtl)))
+    (br $mte)))
+  (if (i32.ne (call $tok_kind) (i32.const 16)) (then (return (i32.const 0))))  ;; must reach the matching ')'
+  (call $next_token)  ;; consume ')'
+  (i32.const 1))
+
 ;; compile a `delete` operand: evaluate the base, and turn the FINAL member
 ;; access into a DELETE (op 70). Non-final accesses compile as normal GETs.
 (func $vm_c_delete_operand (param $code i32) (effects)
@@ -2828,6 +2861,29 @@
   (if (call $vm_delete_priv_check)
     (then (i32.store (i32.const 400) (i32.const 1))
           (call $throw_type (cstring "SyntaxError") (cstring "private member cannot be deleted")) (return)))
+  ;; `delete ( Reference )` — parentheses are a transparent CoverParenthesizedExpression, so a
+  ;; parenthesized bare identifier or member reference is still a Reference: delete that reference, NOT a
+  ;; value. Scan (non-destructively) for `( … ref … )` with nothing trailing; if so, peel one '(', recurse
+  ;; to compile the inner reference, and consume the ')'. Otherwise fall through (`delete (a, b)` /
+  ;; `delete (x)+1` lose the reference → value-delete → true).
+  (if (i32.eq (call $tok_kind) (i32.const 15))  ;; operand begins with '('
+    (then
+      (call $look_save)
+      (let $pref i32 (call $vm_delete_paren_is_ref))
+      (let $ptrail i32 (call $tok_kind))  ;; token right after the matching ')'
+      (call $look_restore)
+      ;; transparent iff it scanned as a single reference AND nothing continues the expression after ')'
+      ;; (a trailing '.'/'['/'('/template/operator means the parenthesized value is a sub-expression).
+      (if (i32.and (local.get $pref)
+            (i32.eqz (i32.or (i32.eq (local.get $ptrail) (i32.const 23)) (i32.or (i32.eq (local.get $ptrail) (i32.const 19))
+              (i32.or (i32.eq (local.get $ptrail) (i32.const 15)) (i32.eq (local.get $ptrail) (i32.const 53)))))))
+        (then
+          (call $next_token)  ;; consume the '('
+          (call $vm_c_delete_operand (local.get $code))  ;; recurse: bare ident → DELETEVAR, member → DELETE, nested '(' → here again
+          (if (call $err) (then (return)))
+          (drop (call $eat (i32.const 16)))  ;; consume the matching ')'
+          (i32.store (i32.const 956) (i32.const 0))
+          (return)))))
   ;; delete of a non-reference unary expression (void/typeof/delete/!/~/+/-/++/--) →
   ;; evaluate, discard the value, and return true (it is not a Reference).
   (if (i32.or (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.or (call $tok_is_kw (cstring "void")) (i32.or (call $tok_is_kw (cstring "typeof")) (call $tok_is_kw (cstring "delete")))))
