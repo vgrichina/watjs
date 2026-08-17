@@ -11903,8 +11903,8 @@
           (if (call $is_object (local.get $thisv))
             (then (if (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem"))
               (then
-                (if (i32.and (local.get $ftathrow) (call $ta_is_detached (local.get $thisv)))
-                  (then (call $throw_type (cstring "TypeError") (cstring "fill: buffer detached during argument coercion")) (return (call $v_undef))))
+                (if (i32.and (local.get $ftathrow) (i32.or (call $ta_is_detached (local.get $thisv)) (call $ta_is_oob (local.get $thisv))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "fill: buffer detached or out of bounds during argument coercion")) (return (call $v_undef))))
                 (let $flen i32 (if i32 (call $ta_is_oob (local.get $thisv)) (then (i32.const 0)) (else (call $ta_live_len (local.get $thisv)))))
                 (if (i32.lt_s (local.get $flen) (local.get $fend)) (then (set! $fend (local.get $flen))))))))
           (let $fk i32 (local.get $fstart))
