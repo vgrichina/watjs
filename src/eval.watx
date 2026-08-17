@@ -2482,6 +2482,11 @@
       (if (i32.eqz (call $is_object (local.get $thisv))) (then (call $throw_type (cstring "TypeError") (cstring "method called on incompatible receiver")) (return (call $v_undef))))
       (let $tmsl i32 (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")))
       (if (i32.eqz (local.get $tmsl)) (then (call $throw_type (cstring "TypeError") (cstring "method called on a non-TypedArray")) (return (call $v_undef))))
+      ;; toReversed/toSorted/with (403-405) ValidateTypedArray(this) first: a detached or out-of-bounds
+      ;; view throws TypeError before reading arguments. (map/filter/slice, 400-402, validate inside
+      ;; ta_species_result instead.)
+      (if (i32.ge_s (local.get $id) (i32.const 403))
+        (then (if (call $ta_validate (local.get $thisv)) (then (return (call $v_undef))))))
       (let $tmelem i32 (i32.trunc_f64_s (call $tonum_raw (i64.load (local.get $tmsl)))))
       (let $tmaid i32 (i32.const 275))  ;; default = with(275); else the matching Array native
       (if (i32.eq (local.get $id) (i32.const 400)) (then (set! $tmaid (i32.const 26))))    ;; map
@@ -11642,8 +11647,12 @@
             (br_if $we (i32.ge_s (local.get $wj) (local.get $n)))
             (if (i32.eq (local.get $wj) (local.get $wi))
               (then (call $arr_push (local.get $wr) (local.get $wval)))  ;; the (already-coerced, for a TA) replacement
-              (else  ;; spec reads via [[Get]] ONCE so an absent index inherits Array.prototype[k]
-                (call $arr_push (local.get $wr) (call $copy_read (local.get $thisv) (local.get $arr) (local.get $wj)))
+              (else  ;; spec reads each non-replaced index via [[Get]] ONCE AFTER the value coercion, so a
+                     ;; TypedArray reads LIVE (the value's valueOf may have mutated a not-yet-copied element);
+                     ;; a generic array-like uses the pre-materialized snapshot (inherits Array.prototype[k]).
+                (call $arr_push (local.get $wr) (if i64 (local.get $wIsTA)
+                  (then (call $get_prop (local.get $thisv) (call $num (f64.convert_i32_s (local.get $wj)))))
+                  (else (call $copy_read (local.get $thisv) (local.get $arr) (local.get $wj)))))
                 (if (call $err) (then (return (call $v_undef))))))
             (set! $wj (i32.add (local.get $wj) (i32.const 1))) (br $wl)))
           (return (call $mk_arr (local.get $wr)))))
@@ -11657,8 +11666,12 @@
             (call $arr_push (local.get $tsr) (call $copy_read (local.get $thisv) (local.get $arr) (local.get $tsi)))
             (if (call $err) (then (return (call $v_undef))))
             (set! $tsi (i32.add (local.get $tsi) (i32.const 1))) (br $tsl)))
-          ;; stable O(n log n) merge sort the copy (was O(n^2) insertion → crashed on large n)
-          (call $merge_sort (local.get $tsr) (local.get $n) (local.get $a0) (i32.const 0))
+          ;; stable O(n log n) merge sort the copy (was O(n^2) insertion → crashed on large n).
+          ;; A TypedArray's toSorted (via the 404 delegation) sorts NUMERICALLY by default (like sort/492),
+          ;; not by the lexicographic Array default — mirror native 78's is-TA numeric-default check.
+          (let $tstanum i32 (i32.and (i32.eqz (call $is_function (local.get $a0)))
+            (if i32 (call $is_object (local.get $thisv)) (then (i32.ne (call $scope_find_local (call $val_payload (local.get $thisv)) (cstring "@@taelem")) (i32.const 0))) (else (i32.const 0)))))
+          (call $merge_sort (local.get $tsr) (local.get $n) (local.get $a0) (local.get $tstanum))
           (if (call $err) (then (return (call $v_undef))))
           (return (call $mk_arr (local.get $tsr)))))
       (if (i32.eq (local.get $id) (i32.const 276))  ;; toSpliced(start, deleteCount, ...items) → new spliced array
