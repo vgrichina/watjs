@@ -8091,7 +8091,14 @@
       (if (i32.and (call $is_object (local.get $rstgt)) (i32.eqz (call $strict_eq (local.get $rsrecv) (local.get $rstgt))))
         (then
           (let $rsks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
-          (let $rstsl i32 (call $scope_find (call $val_payload (local.get $rstgt)) (local.get $rsks)))  ;; own or inherited descriptor on target
+          ;; a TypedArray target: a canonical numeric index is an integer-indexed OWN data property, never
+          ;; an inherited accessor. With Receiver != target, a VALID index defines a data prop on the
+          ;; receiver (skip the target-chain accessor lookup, which would wrongly reach a TA.prototype
+          ;; accessor); a canonical OUT-OF-RANGE index is a silent no-op → true. (ta_delete_kind: 2=valid
+          ;; index, 1=canonical-but-invalid, 0=ordinary key / non-TA.)
+          (let $rstdk i32 (call $ta_delete_kind (local.get $rstgt) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (if (i32.eq (local.get $rstdk) (i32.const 1)) (then (return (call $v_true))))
+          (let $rstsl i32 (if i32 (i32.eq (local.get $rstdk) (i32.const 2)) (then (i32.const 0)) (else (call $scope_find (call $val_payload (local.get $rstgt)) (local.get $rsks)))))  ;; own or inherited descriptor on target
           (if (local.get $rstsl)
             (then
               (if (call $entry_is_accessor (local.get $rstsl))
@@ -8106,11 +8113,42 @@
           ;; data (writable) or no descriptor → define a data property on the receiver
           (if (i32.eqz (call $is_object (local.get $rsrecv))) (then (return (call $v_false))))  ;; receiver not an Object
           (let $rsrcvo i32 (call $val_payload (local.get $rsrecv)))
+          ;; a TypedArray receiver: [[DefineOwnProperty]] of a canonical numeric index is IntegerIndexed-
+          ;; DefineOwnProperty — a VALID index coerces (ToNumber/ToBigInt) and writes the byte buffer; a
+          ;; canonical OUT-OF-RANGE index returns false WITHOUT coercing (never a scope data property).
+          ;; (ta_delete_kind: 2=valid index, 1=canonical-but-invalid, 0=ordinary key.)
+          (if (call $scope_find_local (local.get $rsrcvo) (cstring "@@taelem"))
+            (then
+              (let $rrk i32 (call $ta_delete_kind (local.get $rsrecv) (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+              (if (i32.eq (local.get $rrk) (i32.const 2))  ;; valid index → coerce + write the byte buffer
+                (then
+                  (drop (call $ta_set_elem (local.get $rsrcvo) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (local.get $rsval)))
+                  (if (call $err) (then (return (call $v_undef))))
+                  (return (call $v_true))))
+              (if (i32.eq (local.get $rrk) (i32.const 1))  ;; canonical out-of-range on a TA receiver
+                (then
+                  ;; If the receiver is an ANCESTOR of the target, the OrdinarySet recursion reached it as
+                  ;; O==Receiver → IntegerIndexedElementSet coerces (valueOf once) then no-ops → true.
+                  ;; Otherwise it is CreateDataProperty→IntegerIndexedDefineOwnProperty → false (no coercion).
+                  (let $rsanc i64 (call $js_get_prototype (local.get $rstgt)))
+                  (block $rsancdone
+                    (loop $rsancl
+                      (br_if $rsancdone (i32.eqz (call $is_object (local.get $rsanc))))
+                      (if (call $strict_eq (local.get $rsanc) (local.get $rsrecv))
+                        (then
+                          (drop (call $ta_set_elem (local.get $rsrcvo) (call $argn (local.get $argv) (local.get $argc) (i32.const 1)) (local.get $rsval)))
+                          (if (call $err) (then (return (call $v_undef))))
+                          (return (call $v_true))))
+                      (set! $rsanc (call $js_get_prototype (local.get $rsanc)))
+                      (br $rsancl)))
+                  (return (call $v_false))))))
           (let $rsrcvsl i32 (call $scope_find_local (local.get $rsrcvo) (local.get $rsks)))
           (if (local.get $rsrcvsl)
             (then
               (if (call $entry_is_accessor (local.get $rsrcvsl)) (then (return (call $v_false))))  ;; receiver own accessor → can't define data
-              (if (i32.eqz (call $entry_writable (local.get $rsrcvsl))) (then (return (call $v_false))))))  ;; receiver own non-writable → false
+              (if (i32.eqz (call $entry_writable (local.get $rsrcvsl))) (then (return (call $v_false)))))  ;; receiver own non-writable → false
+            ;; no own property → CreateDataProperty, which fails on a non-extensible receiver → false
+            (else (if (i32.ne (call $scope_find_local (local.get $rsrcvo) (cstring "@@noext")) (i32.const 0)) (then (return (call $v_false))))))
           (call $scope_define (local.get $rsrcvo) (local.get $rsks) (local.get $rsval))
           (return (call $v_true))))
       ;; receiver === target (the common 3-arg case): a failed [[Set]] returns false (not throw)
