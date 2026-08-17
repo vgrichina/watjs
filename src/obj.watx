@@ -953,17 +953,27 @@
                 (then (if (call $is_function (i64.load (local.get $vsup)))
                   (then
                     (let $vsupv i64 (i64.load (local.get $vsup)))
-                    ;; an OWN accessor on the immediate parent ctor (e.g. @@species, whose getter
-                    ;; returns `this`) must receive the ORIGINAL receiver ($cont = the derived ctor),
-                    ;; not the holder — so recursing get_prop(parent,key) (which would rebind this=parent)
-                    ;; is wrong for accessors. Data statics still go through the recursion below.
-                    (let $vsupsc i32 (call $fn_def_scope (local.get $vsupv)))
-                    (if (local.get $vsupsc)
-                      (then (let $vsupsl i32 (call $scope_find_local (local.get $vsupsc) (local.get $ks)))
-                        (if (local.get $vsupsl)
-                          (then (if (call $entry_is_accessor (local.get $vsupsl))
-                            (then (let $vsg i64 (i64.load (call $val_payload (i64.load (local.get $vsupsl)))))
-                              (if (call $is_function (local.get $vsg)) (then (return (call $call_fn0 (local.get $vsg) (local.get $cont))))) (return (call $v_undef))))))))
+                    ;; An accessor ANYWHERE on the parent static chain (immediate parent ctor, or higher
+                    ;; via @@protoover — e.g. %TypedArray%[@@species], whose getter returns `this`) must
+                    ;; receive the ORIGINAL receiver ($cont = the derived ctor), not the holder. Recursing
+                    ;; get_prop(parent,key) would rebind this=parent (returning the intermediate ctor), so
+                    ;; walk the chain here for an accessor and invoke it with $cont; data statics fall back
+                    ;; to the receiver-independent recursion below.
+                    (let $vwc i64 (local.get $vsupv))
+                    (block $vwdone
+                      (loop $vwloop
+                        (br_if $vwdone (i32.eqz (call $is_function (local.get $vwc))))
+                        (let $vwsc i32 (call $fn_def_scope (local.get $vwc)))
+                        (if (local.get $vwsc)
+                          (then (let $vwsl i32 (call $scope_find_local (local.get $vwsc) (local.get $ks)))
+                            (if (local.get $vwsl)
+                              (then
+                                (if (call $entry_is_accessor (local.get $vwsl))
+                                  (then (let $vsg i64 (i64.load (call $val_payload (i64.load (local.get $vwsl)))))
+                                    (if (call $is_function (local.get $vsg)) (then (return (call $call_fn0 (local.get $vsg) (local.get $cont))))) (return (call $v_undef))))
+                                (br $vwdone)))))  ;; found as data → recursion below returns its value
+                        (set! $vwc (call $js_get_prototype (local.get $vwc)))
+                        (br $vwloop)))
                     (return (call $get_prop (local.get $vsupv) (local.get $key)))))))))
           (return (call $v_undef))))
       (if (call $str_eq (local.get $ks) (cstring "prototype"))
