@@ -2851,6 +2851,11 @@
               (let $sahaslen i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 3)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))))
               (let $saexlen i32 (if i32 (local.get $sahaslen) (then (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))) (else (i32.const 0))))
               (if (call $err) (then (return (call $v_undef))))
+              ;; InitializeTypedArrayFromArrayBuffer: after coercing byteOffset/length (either can run a
+              ;; valueOf that detaches), a detached buffer throws TypeError — BEFORE the byteLength bounds
+              ;; checks (which would otherwise mis-report a RangeError on the now-zero length).
+              (if (call $is_detached_buf (local.get $a0))
+                (then (call $throw_type (cstring "TypeError") (cstring "Cannot construct a TypedArray over a detached ArrayBuffer")) (return (call $v_undef))))
               (let $ablen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $a0) (call $mk_str (cstring "byteLength"))))))
               (if (i32.gt_s (local.get $boff) (local.get $ablen))
                 (then (call $throw_type (cstring "RangeError") (cstring "start offset is outside the bounds of the buffer")) (return (call $v_undef))))
