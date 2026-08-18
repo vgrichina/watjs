@@ -1228,7 +1228,7 @@
           ;; `async [no LineTerminator here] function` — a newline before `function` means `async` is a
           ;; plain IdentifierReference, not the head of an async function expression (fall through to 1022).
           (if (i32.and (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (call $tok_is_kw (cstring "function"))) (i32.eqz (call $nl_before)))
-            (then (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1))) (drop (call $vm_c_function (local.get $code))) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; an async FunctionExpression is not an assignment target
+            (then (i32.store (i32.const 232) (i32.const 1)) (i32.store (i32.const 992) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $asyncstart) (i32.const 1))) (drop (call $vm_c_function (local.get $code))) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; an async FunctionExpression is not an assignment target
           ;; async x => …   |   async ( … ) => …
           ;; `async [no LineTerminator here] AsyncArrowBindingIdentifier` — a newline after `async` means it
           ;; is NOT an async arrow head; `async` is a plain IdentifierReference (falls through to 1226).
@@ -1269,7 +1269,7 @@
                   (call $vm_c_arrow (local.get $code) (local.get $aap2) (local.get $aanp) (local.get $aapd) (i32.load (i32.const 260)) (local.get $aapp)) (return)))))
           (call $cursor_restore (local.get $asc))))  ;; "async" is just an identifier
       (if (call $tok_is_kw (cstring "function"))  ;; function expression → pushes the fn value
-        (then (drop (call $vm_c_function (local.get $code))) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a FunctionExpression is not an assignment target
+        (then (i32.store (i32.const 992) (i32.const 1)) (drop (call $vm_c_function (local.get $code))) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a FunctionExpression is not an assignment target
       (if (call $tok_is_kw (cstring "class"))  ;; class expression → pushes the class value
         (then (call $vm_c_class (local.get $code) (i32.const 1)) (i32.store (i32.const 956) (i32.const 0)) (return)))  ;; a ClassExpression is not an assignment target
       (if (call $tok_is_kw (cstring "import"))  ;; ImportCall:  import ( AssignmentExpression [, AssignmentExpression] [,] )
@@ -4505,6 +4505,11 @@
 
 ;; function declaration/expression: cursor at 'function'. Returns name ptr (0 if anonymous).
 (func $vm_c_function (param $code i32) (result i32) (effects)
+  ;; expression-context flag (mem 992, set by the FunctionExpression callers): a GeneratorExpression's
+  ;; BindingIdentifier is [+Yield] so `yield` is never a valid NAME, whereas a GeneratorDeclaration's name
+  ;; is [~Yield]-from-context (allowed in sloppy top-level code). Consume + reset so it doesn't leak.
+  (let $fnexpr i32 (i32.load (i32.const 992)))
+  (i32.store (i32.const 992) (i32.const 0))
   ;; fn source start = offset of 'function' (+1 sentinel) UNLESS a caller already set it (e.g. the
   ;; 'async' keyword position for `async function`), so the span includes any leading modifier.
   (if (i32.eqz (i32.load (i32.const 700))) (then (i32.store (i32.const 700) (i32.add (call $tok_start) (i32.const 1)))))
@@ -4519,7 +4524,9 @@
       (if (call $is_reserved_word (local.get $fname)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word as function name")) (return (i32.const 0))))
       ;; the BindingIdentifier of a GENERATOR (reg 236) may not be `yield`, of an ASYNC function (reg 232)
       ;; may not be `await` — `[+Yield]`/`[+Await]` mark them reserved as the function's own name.
-      (if (i32.and (i32.load (i32.const 236)) (call $str_eq (local.get $fname) (cstring "yield"))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' may not be a generator function name")) (return (i32.const 0))))
+      ;; a GENERATOR's name may be `yield` only as a DECLARATION in [~Yield], non-strict code: reject when this
+      ;; is a FunctionExpression ([+Yield] name), inside an enclosing generator body (reg672), or strict (reg388).
+      (if (i32.and (i32.load (i32.const 236)) (i32.and (call $str_eq (local.get $fname) (cstring "yield")) (i32.or (local.get $fnexpr) (i32.or (i32.load (i32.const 672)) (i32.load (i32.const 388)))))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' may not be a generator function name")) (return (i32.const 0))))
       (if (i32.and (i32.load (i32.const 232)) (call $str_eq (local.get $fname) (cstring "await"))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' may not be an async function name")) (return (i32.const 0))))
       ;; strict enclosing code: the BindingIdentifier may not be `eval`/`arguments` (`"use strict"; function eval(){}`)
       ;; nor a strict-reserved word (`function interface(){}` / `function static(){}`).
