@@ -143,10 +143,40 @@
 (func $arr_push (param $a i32) (param $v i64) (effects)
   (call $arr_set (local.get $a) (call $arr_len (local.get $a)) (local.get $v)))
 ;; set the array length to $n: truncate (drop the tail) or extend (with holes).
+;; ArraySetLength shrink: a deopted array keeps accessor/attributed indices in its @12 named-prop scope
+;; (not the dense store), so a plain length truncation leaves them behind. Delete each canonical index >= the
+;; new length from @12 (descending / rescan-after-delete since entries shift); a NON-configurable such index
+;; blocks the shrink — the effective new length becomes that index + 1 (returned to the caller).
+(func $arr_trunc_deopt (param $a i32) (param $n i32) (result i32) (effects)
+  (let $ap i32 (i32.load (i32.add (local.get $a) (i32.const 12))))
+  (if (i32.eqz (local.get $ap)) (then (return (local.get $n))))
+  (let $eff i32 (local.get $n))
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l  ;; effective length = max(n, highest non-configurable canonical index >= n, + 1)
+    (br_if $e (i32.ge_s (local.get $i) (call $scope_count (local.get $ap))))
+    (let $ent i32 (call $scope_entry (local.get $ap) (local.get $i)))
+    (let $idx i32 (call $str_array_index (i32.load (local.get $ent))))
+    (if (i32.and (i32.ge_s (local.get $idx) (local.get $n)) (i32.eqz (call $entry_configurable (i32.add (local.get $ent) (i32.const 8)))))
+      (then (if (i32.gt_s (i32.add (local.get $idx) (i32.const 1)) (local.get $eff)) (then (set! $eff (i32.add (local.get $idx) (i32.const 1)))))))
+    (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
+  (block $de (loop $dl  ;; delete configurable canonical indices >= eff (rescan after each delete)
+    (let $found i32 (i32.const 0))
+    (let $j i32 (i32.const 0))
+    (block $je (loop $jl
+      (br_if $je (i32.ge_s (local.get $j) (call $scope_count (local.get $ap))))
+      (let $ent2 i32 (call $scope_entry (local.get $ap) (local.get $j)))
+      (let $idx2 i32 (call $str_array_index (i32.load (local.get $ent2))))
+      (if (i32.and (i32.ge_s (local.get $idx2) (local.get $eff)) (i32.ne (call $entry_configurable (i32.add (local.get $ent2) (i32.const 8))) (i32.const 0)))
+        (then (drop (call $scope_delete (local.get $ap) (i32.load (local.get $ent2)))) (set! $found (i32.const 1)) (br $je)))
+      (set! $j (i32.add (local.get $j) (i32.const 1))) (br $jl)))
+    (br_if $de (i32.eqz (local.get $found)))
+    (br $dl)))
+  (local.get $eff))
+
 (func $arr_set_length (param $a i32) (param $n i32) (effects)
   (let $cur i32 (call $arr_len (local.get $a)))
   (if (i32.lt_s (local.get $n) (local.get $cur))
-    (then (i32.store (local.get $a) (local.get $n)))  ;; truncate
+    (then (i32.store (local.get $a) (call $arr_trunc_deopt (local.get $a) (local.get $n))))  ;; truncate (+ delete deopt indices >= n)
     (else (if (i32.gt_s (local.get $n) (local.get $cur))
       (then
         (if (i32.gt_s (local.get $n) (call $arr_cap (local.get $a))) (then (call $arr_grow (local.get $a) (local.get $n))))
