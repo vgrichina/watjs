@@ -2287,6 +2287,13 @@
       (call $vm_c_unary (local.get $code))  ;; right operand may have a unary prefix; right-assoc via unary→pow
       (call $vm_emit_op (local.get $code) (i32.const 43)))))  ;; POW
 
+;; `** ExponentiationExpression` tail after a prefix UpdateExpression (`--x ** 2` = `(--x) ** 2`): a prefix
+;; ++/-- is a valid `**` base (unlike a UnaryExpression `-x`/`!x`), but it is parsed in vm_c_unary ABOVE pow,
+;; so the exponentiation is checked here. TOS already holds the update's result (the base). Right-assoc.
+(func $vm_c_powtail (param $code i32) (effects)
+  (if (i32.eq (call $tok_kind) (i32.const 51))  ;; **
+    (then (call $next_token) (i32.store (i32.const 956) (i32.const 0)) (call $vm_c_unary (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 43)))))  ;; POW
+
 ;; unary prefix:  - + ! ~   (binds looser than member/call/**, tighter than * /)
 (func $vm_c_unary (param $code i32) (effects)
   (let $k i32 (call $tok_kind))
@@ -2374,6 +2381,7 @@
                     (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 83)) (else (i32.const 35))))  ;; SETIDX → [new]
                     (br $pme)))))))
           (block $ppce (loop $ppcl (br_if $ppce (i32.eqz (local.get $pparens))) (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement")) (return))) (call $next_token) (set! $pparens (i32.sub (local.get $pparens) (i32.const 1))) (br $ppcl)))  ;; consume the wrapping ')'
+          (call $vm_c_powtail (local.get $code))  ;; `++obj.x ** y`
           (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (++obj.x) is not an assignment target
           (return)))
       ;; a bare keyword-literal (`++this`, `++true`, `++null`) is not a valid target; a member on it
@@ -2389,6 +2397,7 @@
       (call $vm_emit_op (local.get $code) (local.get $pop))  ;; INC/DEC → [ref, new]
       (call $vm_emit_op (local.get $code) (i32.const 124)) (call $vm_emit_op (local.get $code) (local.get $pvn)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 388)))  ;; REFSET → [new] (result)
       (block $ppce (loop $ppcl (br_if $ppce (i32.eqz (local.get $pparens))) (if (i32.ne (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Invalid operand for increment/decrement")) (return))) (call $next_token) (set! $pparens (i32.sub (local.get $pparens) (i32.const 1))) (br $ppcl)))  ;; consume the wrapping ')'
+      (call $vm_c_powtail (local.get $code))  ;; `++x ** y`
       (i32.store (i32.const 956) (i32.const 0))  ;; an UpdateExpression (++x) is not an assignment target
       (return)))
   (if (i32.eq (local.get $k) (i32.const 11))  ;; -
