@@ -245,11 +245,13 @@
 ;; IteratorClose during an abrupt completion: call return() but keep the pending
 ;; error (the original throw wins even if return() also throws).
 (func $iter_close_throw (param $o i64) (effects)
+  (let $had i32 (call $err))          ;; was an error already pending?
   (let $sv i64 (call $err_val))
   (call $set_err (i32.const 0))
   (call $iter_close (local.get $o))
-  (call $set_err (i32.const 1))
-  (call $set_err_val (local.get $sv)))
+  (if (local.get $had)
+    (then (call $set_err (i32.const 1)) (call $set_err_val (local.get $sv)))   ;; restore the original error (it wins over a return()-throw)
+    (else (call $set_err (i32.const 0)))))                                     ;; no prior error → swallow the return()'s throw (caller throws its own)
 
 ;; IteratorCloseAll(iters, throwCompletion): close each element in REVERSE List order, calling return()
 ;; but keeping the pending error (the original throw wins). For Iterator.zip abrupt setup/iteration.
