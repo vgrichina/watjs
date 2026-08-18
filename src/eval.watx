@@ -285,10 +285,26 @@
           (else (call $iter_close (call $arr_get (local.get $iters) (local.get $j)))))))       ;; none yet → a return()-throw becomes the error
     (set! $j (i32.sub (local.get $j) (i32.const 1))) (br $l))))
 
+;; GetIterator(O, sync) reading the CANONICAL %Symbol.iterator% (so a Proxy trap observes === Symbol.iterator,
+;; not the internal "@@iterator" string key vm_get_iter passes). method = GetMethod(O, @@iterator); undefined
+;; → TypeError; callable → Call(method,O) (must return an Object). Returns the iterator (next read separately).
+(func $get_iterator (param $o i64) (result i64) (effects)
+  (let $m i64 (call $get_prop (local.get $o) (call $sym_from_key (cstring "@@iterator"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.or (call $is_undefined (local.get $m)) (call $is_null (local.get $m)))
+    (then (call $throw_type (cstring "TypeError") (cstring "value is not iterable")) (return (call $v_undef))))
+  (if (i32.eqz (call $is_function (local.get $m)))
+    (then (call $throw_type (cstring "TypeError") (cstring "@@iterator is not a function")) (return (call $v_undef))))
+  (let $it i64 (call $call_val (local.get $m) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $o)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_object (local.get $it)))
+    (then (call $throw_type (cstring "TypeError") (cstring "@@iterator did not return an object")) (return (call $v_undef))))
+  (local.get $it))
+
 ;; GetIteratorFlattenable(O) — O already validated as an Object. method = GetMethod(O, @@iterator);
 ;; undefined/null → O is itself the iterator; callable → Call(method,O) (must return an Object); else TypeError.
 (func $get_iter_flattenable (param $o i64) (result i64) (effects)
-  (let $m i64 (call $get_prop (local.get $o) (call $make_symbol (cstring "@@iterator") (cstring "Symbol.iterator"))))
+  (let $m i64 (call $get_prop (local.get $o) (call $sym_from_key (cstring "@@iterator"))))  ;; canonical %Symbol.iterator% (a proxy trap sees === Symbol.iterator)
   (if (call $err) (then (return (call $v_undef))))
   (if (i32.or (call $is_undefined (local.get $m)) (call $is_null (local.get $m)))
     (then (return (local.get $o))))
@@ -4455,7 +4471,7 @@
                     (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip padding is not an object")) (return (call $v_undef))))
                   ;; defer pulling until iterableCount is known — pull exactly count values (the
                   ;; padding iterable may be infinite, so eagerly spreading it would never return).
-                  (set! $zpaditer (call $vm_get_iter (local.get $zpv)))
+                  (set! $zpaditer (call $get_iterator (local.get $zpv)))   ;; GetIterator(padding, sync) — canonical @@iterator
                   (if (call $err) (then (return (call $v_undef))))
                   (set! $zhaspad (i32.const 1))))))))
       ;; steps 10-12: GetIterator(iterables), then LAZILY step one value at a time; GetIteratorFlattenable
@@ -4465,7 +4481,7 @@
       (let $ziters i32 (call $arr_new (i32.const 4)))
       (let $znexts i32 (call $arr_new (i32.const 4)))
       (let $zdf i32 (call $arr_new (i32.const 4)))
-      (let $zinput i64 (call $vm_get_iter (local.get $ziterables)))   ;; GetIterator(iterables, sync)
+      (let $zinput i64 (call $get_iterator (local.get $ziterables)))   ;; GetIterator(iterables, sync) — canonical @@iterator
       (if (call $err) (then (return (call $v_undef))))
       (let $zinn i64 (call $get_prop (local.get $zinput) (call $mk_str (cstring "next"))))
       (if (call $err) (then (call $iter_close_throw (local.get $zinput)) (return (call $v_undef))))
