@@ -6823,7 +6823,12 @@
       ;; default %Promise% → fast internal resolve; a custom C → NewPromiseCapability(C) (constructs C
       ;; with the capabilities executor, validating resolve/reject are callable), then cap.[[Resolve]](x)
       (if (call $strict_eq (local.get $thisv) (i64.load (i32.const 844)))
-        (then (return (call $vm_promise_resolve (local.get $prv)))))
+        (then
+          ;; past the x.constructor===C check → for a promise x with a DIFFERENT constructor, PromiseResolve
+          ;; must return a NEW promise adopting x (not x itself, which vm_promise_resolve would return as-is).
+          (if (call $vm_is_promise (local.get $prv))
+            (then (let $np i64 (call $mk_promise (i32.const 0) (call $v_undef))) (call $promise_resolve_with (local.get $np) (local.get $prv)) (return (local.get $np)))
+            (else (return (call $vm_promise_resolve (local.get $prv)))))))
       (let $rcap i64 (call $promise_with_resolvers (local.get $thisv)))
       (if (call $err) (then (return (call $v_undef))))
       (let $rcapr i64 (call $get_prop (local.get $rcap) (call $mk_str (cstring "resolve"))))
