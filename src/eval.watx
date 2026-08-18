@@ -4329,6 +4329,37 @@
               (if (call $err) (then (return (call $v_undef))))))))
       (call $scope_define (local.get $crr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $crr) (cstring "done") (call $v_true))
       (return (call $mk_obj (local.get $crr)))))
+  ;; Iterator.zip / zipKeyed helper .return() (536) — %IteratorHelperPrototype%.return from suspended-start /
+  ;; suspended-yield: set completed, then IteratorCloseAll(UnderlyingIterators, ReturnCompletion(undefined)) in
+  ;; REVERSE order (first thrown close wins, but all returns are still called), and yield {undefined, true}.
+  ;; State is set to completed BEFORE closing so a re-entrant next()/return() (from an underlying return) sees done.
+  (if (i32.eq (local.get $id) (i32.const 536))
+    (then
+      (let $zrr i32 (call $obj_new (i32.const 2)))
+      (let $zrself i32 (call $val_payload (local.get $thisv)))
+      ;; re-entrant return() while a return()-driven IteratorCloseAll runs (generator "executing") → TypeError
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@zrunning"))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip: return() called on a running iterator")) (return (call $v_undef))))
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@zalldone"))))
+        (then (call $scope_define (local.get $zrr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $zrr) (cstring "done") (call $v_true)) (return (call $mk_obj (local.get $zrr)))))
+      (call $scope_define (local.get $zrself) (cstring "@@zalldone") (call $v_true))
+      ;; suspended-yield (already resumed): the close runs via GeneratorResumeAbrupt with state "executing",
+      ;; so a re-entrant next()/return() from an underlying return() must throw. suspended-start closes with
+      ;; state "completed" (re-entrant sees done), so no running guard there.
+      (let $zrstarted i32 (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@zstarted")))))
+      (if (local.get $zrstarted) (then (call $scope_define (local.get $zrself) (cstring "@@zrunning") (call $v_true))))
+      (let $zriters i32 (call $coll_arr (local.get $thisv) (cstring "@@ziters")))
+      (let $zri i32 (i32.sub (call $arr_len (local.get $zriters)) (i32.const 1)))
+      (block $zre (loop $zrl
+        (br_if $zre (i32.lt_s (local.get $zri) (i32.const 0)))
+        (if (call $err)
+          (then (call $iter_close_throw (call $arr_get (local.get $zriters) (local.get $zri))))   ;; a prior close threw → keep it, still call return()
+          (else (call $iter_close (call $arr_get (local.get $zriters) (local.get $zri)))))
+        (set! $zri (i32.sub (local.get $zri) (i32.const 1))) (br $zrl)))
+      (if (local.get $zrstarted) (then (call $scope_define (local.get $zrself) (cstring "@@zrunning") (call $v_false))))
+      (if (call $err) (then (return (call $v_undef))))
+      (call $scope_define (local.get $zrr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $zrr) (cstring "done") (call $v_true))
+      (return (call $mk_obj (local.get $zrr)))))
   ;; Iterator.zip(iterables[, options]) (355) — modes shortest(0)/longest(1)/strict(2)
   (if (i32.eq (local.get $id) (i32.const 355))
     (then
@@ -4422,12 +4453,17 @@
       (call $scope_define (local.get $zo) (cstring "@@zkeys") (call $mk_arr (call $arr_new (i32.const 1))))  ;; empty → array results
       (call $scope_define (local.get $zo) (cstring "@@zalldone") (call $v_false))
       (call $scope_define_attr (local.get $zo) (cstring "next") (call $mk_native (i32.const 356) (cstring "next")) (i32.const 12))  ;; DontEnum
+      (call $scope_define_attr (local.get $zo) (cstring "return") (call $mk_native (i32.const 536) (cstring "return")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $zo)))))
   ;; Iterator.zip helper .next() (356)
   (if (i32.eq (local.get $id) (i32.const 356))
     (then
       (let $znr i32 (call $obj_new (i32.const 2)))
       (let $znself i32 (call $val_payload (local.get $thisv)))
+      ;; re-entrant next() while a return()-driven IteratorCloseAll runs (generator "executing") → TypeError
+      (if (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@zrunning"))))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip: next() called on a running iterator")) (return (call $v_undef))))
+      (call $scope_define (local.get $znself) (cstring "@@zstarted") (call $v_true))  ;; resumed at least once → suspended-yield (not suspended-start)
       (let $znbuf i32 (call $heap_alloc (i32.const 8)))
       (let $zniters i32 (call $coll_arr (local.get $thisv) (cstring "@@ziters")))
       (let $znnexts i32 (call $coll_arr (local.get $thisv) (cstring "@@znexts")))
@@ -4561,6 +4597,7 @@
       (call $scope_define (local.get $zkobj) (cstring "@@zkeys") (call $mk_arr (local.get $zkkeys)))
       (call $scope_define (local.get $zkobj) (cstring "@@zalldone") (call $v_false))
       (call $scope_define_attr (local.get $zkobj) (cstring "next") (call $mk_native (i32.const 356) (cstring "next")) (i32.const 12))  ;; DontEnum
+      (call $scope_define_attr (local.get $zkobj) (cstring "return") (call $mk_native (i32.const 536) (cstring "return")) (i32.const 12))  ;; DontEnum
       (return (call $mk_obj (local.get $zkobj)))))
   (call $v_undef))
 
@@ -6630,8 +6667,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "RegExp legacy static property accessor requires the RegExp constructor as receiver")) (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 528)) (then (return (call $mk_str (cstring "")))))  ;; getter → "" (no tracked state)
       (return (call $v_undef))))  ;; setter (input/$_) → ignore the value
-  ;; Iterator Helpers (335-357, + 533 = Iterator.concat helper .return) — handled in $native_iterator
-  (if (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357))) (i32.eq (local.get $id) (i32.const 533)))
+  ;; Iterator Helpers (335-357, + 533 = Iterator.concat helper .return, 536 = Iterator.zip/zipKeyed .return) — handled in $native_iterator
+  (if (i32.or (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357))) (i32.eq (local.get $id) (i32.const 533))) (i32.eq (local.get $id) (i32.const 536)))
     (then (return (call $native_iterator (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
