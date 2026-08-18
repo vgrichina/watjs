@@ -4398,12 +4398,15 @@
       (let $zrstarted i32 (call $truthy (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@zstarted")))))
       (if (local.get $zrstarted) (then (call $scope_define (local.get $zrself) (cstring "@@zrunning") (call $v_true))))
       (let $zriters i32 (call $coll_arr (local.get $thisv) (cstring "@@ziters")))
+      (let $zrdf i32 (call $coll_arr (local.get $thisv) (cstring "@@zdf")))   ;; per-iterator done flags — a finished iterator is closed already
       (let $zri i32 (i32.sub (call $arr_len (local.get $zriters)) (i32.const 1)))
       (block $zre (loop $zrl
         (br_if $zre (i32.lt_s (local.get $zri) (i32.const 0)))
-        (if (call $err)
-          (then (call $iter_close_throw (call $arr_get (local.get $zriters) (local.get $zri))))   ;; a prior close threw → keep it, still call return()
-          (else (call $iter_close (call $arr_get (local.get $zriters) (local.get $zri)))))
+        (if (i32.eqz (call $truthy (call $arr_get (local.get $zrdf) (local.get $zri))))   ;; skip an already-done (removed from openIters) iterator
+          (then
+            (if (call $err)
+              (then (call $iter_close_throw (call $arr_get (local.get $zriters) (local.get $zri))))   ;; a prior close threw → keep it, still call return()
+              (else (call $iter_close (call $arr_get (local.get $zriters) (local.get $zri)))))))
         (set! $zri (i32.sub (local.get $zri) (i32.const 1))) (br $zrl)))
       (if (local.get $zrstarted) (then (call $scope_define (local.get $zrself) (cstring "@@zrunning") (call $v_false))))
       (if (call $err) (then (return (call $v_undef))))
