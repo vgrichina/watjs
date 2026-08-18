@@ -269,9 +269,12 @@
 
 (func $jp_object (result i64) (effects)
   (let $o i32 (call $obj_new (i32.const 4)))
+  ;; parallel source-node tree (only built when tracking): key → child source node. Set into slot 1240 on return.
+  (let $trk i32 (i32.load (i32.const 1236)))
+  (let $so i32 (if i32 (local.get $trk) (then (call $scope_new (i32.const 0) (i32.const 4))) (else (i32.const 0))))  ;; null-proto: get_prop of an absent key → undefined
   (call $jp_adv)  ;; consume {
   (call $jp_ws)
-  (if (i32.eq (call $jp_cur) (i32.const 125)) (then (call $jp_adv) (return (call $mk_obj (local.get $o)))))
+  (if (i32.eq (call $jp_cur) (i32.const 125)) (then (call $jp_adv) (if (local.get $trk) (then (i64.store (i32.const 1240) (call $mk_obj (local.get $so))))) (return (call $mk_obj (local.get $o)))))
   (block $done (loop $members
     (call $jp_ws)
     (if (i32.ne (call $jp_cur) (i32.const 34)) (then (call $jp_err (cstring "Expected property name or '}' in JSON")) (return (call $v_undef))))
@@ -283,42 +286,60 @@
     (let $val i64 (call $jp_value))
     (if (call $err) (then (return (call $v_undef))))
     (call $scope_define (local.get $o) (local.get $key) (local.get $val))  ;; CreateDataProperty: own enumerable data prop (so "__proto__" is a real own prop, not the setter)
+    (if (local.get $trk) (then (call $scope_define (local.get $so) (local.get $key) (i64.load (i32.const 1240)))))  ;; jp_value left this value's source node in 1240
     (call $jp_ws)
     (let $c i32 (call $jp_cur))
     (if (i32.eq (local.get $c) (i32.const 44)) (then (call $jp_adv) (br $members)))
     (if (i32.eq (local.get $c) (i32.const 125)) (then (call $jp_adv) (br $done)))
     (call $jp_err (cstring "Expected ',' or '}' after property value in JSON")) (return (call $v_undef))))
+  (if (local.get $trk) (then (i64.store (i32.const 1240) (call $mk_obj (local.get $so)))))
   (call $mk_obj (local.get $o)))
 
 (func $jp_array (result i64) (effects)
   (let $a i32 (call $arr_new (i32.const 4)))
+  (let $trk i32 (i32.load (i32.const 1236)))
+  (let $sa i32 (if i32 (local.get $trk) (then (call $arr_new (i32.const 4))) (else (i32.const 0))))  ;; parallel source-node array
   (call $jp_adv)  ;; consume [
   (call $jp_ws)
-  (if (i32.eq (call $jp_cur) (i32.const 93)) (then (call $jp_adv) (return (call $mk_arr (local.get $a)))))
+  (if (i32.eq (call $jp_cur) (i32.const 93)) (then (call $jp_adv) (if (local.get $trk) (then (i64.store (i32.const 1240) (call $mk_arr (local.get $sa))))) (return (call $mk_arr (local.get $a)))))
   (block $done (loop $elems
     (let $val i64 (call $jp_value))
     (if (call $err) (then (return (call $v_undef))))
     (call $arr_push (local.get $a) (local.get $val))
+    (if (local.get $trk) (then (call $arr_push (local.get $sa) (i64.load (i32.const 1240)))))  ;; parallel source node
     (call $jp_ws)
     (let $c i32 (call $jp_cur))
     (if (i32.eq (local.get $c) (i32.const 44)) (then (call $jp_adv) (br $elems)))
     (if (i32.eq (local.get $c) (i32.const 93)) (then (call $jp_adv) (br $done)))
     (call $jp_err (cstring "Expected ',' or ']' after array element in JSON")) (return (call $v_undef))))
+  (if (local.get $trk) (then (i64.store (i32.const 1240) (call $mk_arr (local.get $sa)))))
   (call $mk_arr (local.get $a)))
 
 (func $jp_value (result i64) (effects)
   (call $jp_ws)
+  (let $vstart i32 (call $jp_pos))  ;; start of this value's token (after ws) — for the source-text context
   (let $c i32 (call $jp_cur))
-  (if (i32.eq (local.get $c) (i32.const 123)) (then (return (call $jp_object))))   ;; {
-  (if (i32.eq (local.get $c) (i32.const 91)) (then (return (call $jp_array))))    ;; [
-  (if (i32.eq (local.get $c) (i32.const 34)) (then (return (call $mk_str (call $jp_string)))))  ;; "
-  (if (i32.eq (local.get $c) (i32.const 116)) (then (return (call $jp_lit (cstring "true") (call $v_true)))))
-  (if (i32.eq (local.get $c) (i32.const 102)) (then (return (call $jp_lit (cstring "false") (call $v_false)))))
-  (if (i32.eq (local.get $c) (i32.const 110)) (then (return (call $jp_lit (cstring "null") (call $v_null)))))
-  (if (i32.or (i32.eq (local.get $c) (i32.const 45)) (call $jp_isdigit (local.get $c)))
-    (then (return (call $jp_number))))
-  (call $jp_err (cstring "Unexpected token in JSON"))
-  (call $v_undef))
+  (if (i32.eq (local.get $c) (i32.const 123)) (then (return (call $jp_object))))   ;; { — jp_object sets slot 1240
+  (if (i32.eq (local.get $c) (i32.const 91)) (then (return (call $jp_array))))    ;; [ — jp_array sets slot 1240
+  ;; primitive: parse it, then (if tracking for a source-aware reviver) record its exact source substring
+  (let $pv i64 (call $v_undef))
+  (if (i32.eq (local.get $c) (i32.const 34)) (then (set! $pv (call $mk_str (call $jp_string))))
+    (else (if (i32.eq (local.get $c) (i32.const 116)) (then (set! $pv (call $jp_lit (cstring "true") (call $v_true))))
+    (else (if (i32.eq (local.get $c) (i32.const 102)) (then (set! $pv (call $jp_lit (cstring "false") (call $v_false))))
+    (else (if (i32.eq (local.get $c) (i32.const 110)) (then (set! $pv (call $jp_lit (cstring "null") (call $v_null))))
+    (else (if (i32.or (i32.eq (local.get $c) (i32.const 45)) (call $jp_isdigit (local.get $c))) (then (set! $pv (call $jp_number)))
+    (else (call $jp_err (cstring "Unexpected token in JSON")) (return (call $v_undef))))))))))))
+  (if (call $err) (then (return (call $v_undef))))
+  ;; source tracking on → slot 1240 = a null-proto node {@@s: source text, @@v: parsed value}. The parsed value
+  ;; lets the reviver check whether the value is still the one from the parse (SameValue) — a reviver that
+  ;; forward-modifies a sibling replaces its value, and then that sibling's context must NOT carry `source`.
+  (if (i32.load (i32.const 1236))
+    (then
+      (let $pn i32 (call $scope_new (i32.const 0) (i32.const 2)))
+      (call $scope_define (local.get $pn) (cstring "@@s") (call $mk_str (call $substr (i32.load (i32.const 408)) (local.get $vstart) (i32.sub (call $jp_pos) (local.get $vstart)))))
+      (call $scope_define (local.get $pn) (cstring "@@v") (local.get $pv))
+      (i64.store (i32.const 1240) (call $mk_obj (local.get $pn)))))
+  (local.get $pv))
 
 ;; top-level entry: parse the whole source; trailing junk is a SyntaxError.
 ;; CreateDataProperty(obj, key, v) via [[DefineOwnProperty]] with a full {W,E,C} data
@@ -338,14 +359,20 @@
   (drop (call $call_native (i32.const 206) (i32.const 3) (local.get $jcbuf) (call $v_undef))))
 
 ;; InternalizeJSONProperty: recursively apply a JSON.parse reviver bottom-up.
-(func $json_revive (param $holder i64) (param $key i32) (param $reviver i64) (result i64) (effects)
+;; $srcnode is the parallel source-text node for `holder[key]` (json-parse-with-source): a string for a
+;; primitive (its exact JSON source), an array of child nodes for an array, an object of key→node for an
+;; object, or undefined when not tracking / not from the original parse.
+(func $json_revive (param $holder i64) (param $key i32) (param $reviver i64) (param $srcnode i64) (result i64) (effects)
   (let $val i64 (call $get_prop (local.get $holder) (call $mk_str (local.get $key))))
+  (let $srcIsArr i32 (call $is_array (local.get $srcnode)))
+  (let $srcIsObj i32 (call $is_object (local.get $srcnode)))
   (if (call $is_array (local.get $val))
     (then
       (let $ja i32 (call $val_payload (local.get $val)))
       (let $ji i32 (i32.const 0))
       (block $jae (loop $jal (br_if $jae (i32.ge_s (local.get $ji) (call $arr_len (local.get $ja))))
-        (let $je i64 (call $json_revive (local.get $val) (call $num_to_str (f64.convert_i32_s (local.get $ji))) (local.get $reviver)))
+        (let $je i64 (call $json_revive (local.get $val) (call $num_to_str (f64.convert_i32_s (local.get $ji))) (local.get $reviver)
+                       (if i64 (i32.and (local.get $srcIsArr) (i32.lt_s (local.get $ji) (call $arr_len (call $val_payload (local.get $srcnode))))) (then (call $arr_get (call $val_payload (local.get $srcnode)) (local.get $ji))) (else (call $v_undef)))))
         (if (call $is_undefined (local.get $je))
           (then (i64.store (call $arr_slot (local.get $ja) (local.get $ji)) (call $v_hole)))
           (else (call $arr_set (local.get $ja) (local.get $ji) (local.get $je))))
@@ -359,7 +386,7 @@
         (let $pi i32 (i32.const 0))
         (block $ppe (loop $ppl (br_if $ppe (i32.ge_s (local.get $pi) (local.get $plen)))
           (let $pistr i32 (call $num_to_str (f64.convert_i32_s (local.get $pi))))
-          (let $pje i64 (call $json_revive (local.get $val) (local.get $pistr) (local.get $reviver)))
+          (let $pje i64 (call $json_revive (local.get $val) (local.get $pistr) (local.get $reviver) (call $v_undef)))  ;; proxy target isn't from parse → no source
           (if (call $err) (then (return (call $v_undef))))
           (if (call $is_undefined (local.get $pje))
             (then
@@ -378,7 +405,8 @@
         (let $ji2 i32 (i32.const 0))
         (block $joe (loop $jol (br_if $joe (i32.ge_s (local.get $ji2) (call $arr_len (local.get $jkeys))))
           (let $jk i32 (call $val_payload (call $arr_get (local.get $jkeys) (local.get $ji2))))
-          (let $je2 i64 (call $json_revive (local.get $val) (local.get $jk) (local.get $reviver)))
+          (let $je2 i64 (call $json_revive (local.get $val) (local.get $jk) (local.get $reviver)
+                         (if i64 (local.get $srcIsObj) (then (call $get_prop (local.get $srcnode) (call $mk_str (local.get $jk)))) (else (call $v_undef)))))
           (if (call $is_undefined (local.get $je2))
             ;; reviver returned undefined → ? val.[[Delete]](P) via Reflect.deleteProperty
             ;; (native 203): respects configurability for an ordinary object (non-configurable
@@ -393,10 +421,27 @@
               (call $json_create_data_prop (local.get $val) (local.get $jk) (local.get $je2))
               (if (call $err) (then (return (call $v_undef))))))
           (set! $ji2 (i32.add (local.get $ji2) (i32.const 1))) (br $jol)))))))))
-  (let $jav i32 (call $heap_alloc (i32.const 16)))
+  ;; context (json-parse-with-source): an ordinary object (Object.prototype). For a primitive value from the
+  ;; parse it carries a `source` data property {W,E,C:true} = the exact JSON source text; an object/array (or a
+  ;; value not from the original parse) gets an empty context.
+  (let $ctx i32 (call $obj_new (i32.const 2)))
+  ;; a primitive value that is STILL the one produced by the parse (SameValue with the node's stored @@v) →
+  ;; carry its source text. A forward-modified value (replaced by an earlier reviver call) fails SameValue.
+  (if (i32.eqz (i32.or (call $is_object (local.get $val)) (i32.or (call $is_array (local.get $val)) (call $is_function (local.get $val)))))
+    (then
+      (if (call $is_object (local.get $srcnode))
+        (then
+          (let $ssl i32 (call $scope_find_local (call $val_payload (local.get $srcnode)) (cstring "@@s")))
+          (if (local.get $ssl)  ;; srcnode is a primitive node {@@s,@@v}
+            (then
+              (let $pvsl i32 (call $scope_find_local (call $val_payload (local.get $srcnode)) (cstring "@@v")))
+              (if (call $same_value (local.get $val) (i64.load (local.get $pvsl)))
+                (then (call $scope_define (local.get $ctx) (cstring "source") (i64.load (local.get $ssl)))))))))))
+  (let $jav i32 (call $heap_alloc (i32.const 24)))
   (i64.store (local.get $jav) (call $mk_str (local.get $key)))
   (i64.store (i32.add (local.get $jav) (i32.const 8)) (local.get $val))
-  (call $call_val (local.get $reviver) (i32.const 2) (local.get $jav) (local.get $holder)))
+  (i64.store (i32.add (local.get $jav) (i32.const 16)) (call $mk_obj (local.get $ctx)))
+  (call $call_val (local.get $reviver) (i32.const 3) (local.get $jav) (local.get $holder)))
 
 (func $json_parse (param $src i32) (result i64) (effects)
   (i32.store (i32.const 408) (local.get $src))

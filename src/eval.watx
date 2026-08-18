@@ -9741,14 +9741,19 @@
         (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
       (let $jt i32 (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
       (if (call $err) (then (return (call $v_undef))))
-      (let $jpr i64 (call $json_parse (local.get $jt)))
-      (if (call $err) (then (return (call $v_undef))))
       (let $jrev i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      ;; json-parse-with-source: only build the parallel source-text tree when a reviver is present (it needs it)
+      (i32.store (i32.const 1236) (if i32 (call $is_function (local.get $jrev)) (then (i32.const 1)) (else (i32.const 0))))
+      (i64.store (i32.const 1240) (call $v_undef))
+      (let $jpr i64 (call $json_parse (local.get $jt)))
+      (let $jsrc i64 (i64.load (i32.const 1240)))  ;; root source node (captured before any nested JSON.parse in a reviver)
+      (i32.store (i32.const 1236) (i32.const 0))
+      (if (call $err) (then (return (call $v_undef))))
       (if (call $is_function (local.get $jrev))  ;; reviver → walk via {"" : result}
         (then
           (let $jhold i32 (call $obj_new (i32.const 2)))
           (call $scope_define (local.get $jhold) (cstring "") (local.get $jpr))
-          (return (call $json_revive (call $mk_obj (local.get $jhold)) (cstring "") (local.get $jrev)))))
+          (return (call $json_revive (call $mk_obj (local.get $jhold)) (cstring "") (local.get $jrev) (local.get $jsrc)))))
       (return (local.get $jpr))))
   ;; --- regex (100 RegExp, 101 test) and string regex methods (102 match,103 replace,104 search) ---
   (if (i32.eq (local.get $id) (i32.const 100))  ;; RegExp(pattern[,flags])
