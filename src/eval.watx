@@ -1499,6 +1499,16 @@
     (set! $i (i32.add (local.get $i) (i32.const 1))) (br $l)))
   (i32.const 0))
 
+;; Set(O, P, V, Throw=true): a plain set_prop is sloppy (silently ignores a failed [[Set]] — a getter-only
+;; accessor, a non-writable data prop, a frozen/non-extensible target). The generic array-like mutators
+;; (unshift/…) must throw on failure, so raise reg 392 (the strict-set lever set_fail honors) around it and
+;; restore it (even on the throw path — set_prop sets the err flag and returns; the caller checks $err).
+(func $set_v_throwing (param $thisv i64) (param $key i64) (param $val i64) (effects)
+  (let $sv i32 (i32.load (i32.const 392)))
+  (i32.store (i32.const 392) (i32.const 1))
+  (call $set_prop (local.get $thisv) (local.get $key) (local.get $val))
+  (i32.store (i32.const 392) (local.get $sv)))
+
 (func $set_length_throwing (param $thisv i64) (param $valf f64) (effects)
   (if (call $is_array (local.get $thisv))
     ;; Set(O,"length",v,Throw=true): a non-writable/frozen array length throws (set_prop alone is sloppy —
@@ -11883,12 +11893,12 @@
                 (then
                   (let $ukf f64 (f64.sub (local.get $ulenf) (f64.const 1)))
                   (block $ue (loop $ul (br_if $ue (f64.lt (local.get $ukf) (f64.const 0)))
-                    (call $set_prop (local.get $thisv) (call $num (f64.add (local.get $ukf) (f64.convert_i32_s (local.get $argc)))) (call $get_prop (local.get $thisv) (call $num (local.get $ukf))))
+                    (call $set_v_throwing (local.get $thisv) (call $num (f64.add (local.get $ukf) (f64.convert_i32_s (local.get $argc)))) (call $get_prop (local.get $thisv) (call $num (local.get $ukf))))
                     (if (call $err) (then (return (call $v_undef))))
                     (set! $ukf (f64.sub (local.get $ukf) (f64.const 1))) (br $ul)))
                   (let $upf f64 (f64.const 0))
                   (block $ue2 (loop $ul2 (br_if $ue2 (f64.ge (local.get $upf) (f64.convert_i32_s (local.get $argc))))
-                    (call $set_prop (local.get $thisv) (call $num (local.get $upf)) (call $argn (local.get $argv) (local.get $argc) (i32.trunc_f64_s (local.get $upf))))
+                    (call $set_v_throwing (local.get $thisv) (call $num (local.get $upf)) (call $argn (local.get $argv) (local.get $argc) (i32.trunc_f64_s (local.get $upf))))
                     (if (call $err) (then (return (call $v_undef))))
                     (set! $upf (f64.add (local.get $upf) (f64.const 1))) (br $ul2)))))
               (let $unlf f64 (f64.add (local.get $ulenf) (f64.convert_i32_s (local.get $argc))))
