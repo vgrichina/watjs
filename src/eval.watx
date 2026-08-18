@@ -260,6 +260,17 @@
     (call $iter_close_throw (call $arr_get (local.get $arr) (local.get $i)))
     (set! $i (i32.sub (local.get $i) (i32.const 1))) (br $l))))
 
+;; IfAbruptCloseIterators for the zip round loop: close every still-OPEN sub-iterator (in REVERSE List
+;; order) EXCEPT the current index $cur (the one whose step is abrupt) and already-finished ones (@@zdf),
+;; keeping the pending error (the original throw wins even if a return() also throws).
+(func $zip_close_others_throw (param $iters i32) (param $df i32) (param $n i32) (param $cur i32) (effects)
+  (let $j i32 (i32.sub (local.get $n) (i32.const 1)))
+  (block $e (loop $l
+    (br_if $e (i32.lt_s (local.get $j) (i32.const 0)))
+    (if (i32.and (i32.ne (local.get $j) (local.get $cur)) (i32.eqz (call $truthy (call $arr_get (local.get $df) (local.get $j)))))
+      (then (call $iter_close_throw (call $arr_get (local.get $iters) (local.get $j)))))
+    (set! $j (i32.sub (local.get $j) (i32.const 1))) (br $l))))
+
 ;; GetIteratorFlattenable(O) — O already validated as an Object. method = GetMethod(O, @@iterator);
 ;; undefined/null → O is itself the iterator; callable → Call(method,O) (must return an Object); else TypeError.
 (func $get_iter_flattenable (param $o i64) (result i64) (effects)
@@ -4535,8 +4546,12 @@
         (let $znx i64 (call $arr_get (local.get $znnexts) (local.get $zni)))
         (let $znit i64 (call $arr_get (local.get $zniters) (local.get $zni)))
         (let $znr2 i64 (call $call_val (local.get $znx) (i32.const 0) (local.get $znbuf) (local.get $znit)))
-        (if (call $err) (then (return (call $v_undef))))
-        (if (call $truthy (call $get_prop (local.get $znr2) (call $mk_str (cstring "done"))))
+        ;; IteratorStepValue abrupt (call next / read done / read value) → IfAbruptCloseIterators: close the
+        ;; OTHER open iterators (reverse, keep the error) and finish. Mark completed so a later next() is done.
+        (if (call $err) (then (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true)) (call $zip_close_others_throw (local.get $zniters) (local.get $zndf) (local.get $znn) (local.get $zni)) (return (call $v_undef))))
+        (let $zndv i64 (call $get_prop (local.get $znr2) (call $mk_str (cstring "done"))))
+        (if (call $err) (then (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true)) (call $zip_close_others_throw (local.get $zniters) (local.get $zndf) (local.get $znn) (local.get $zni)) (return (call $v_undef))))
+        (if (call $truthy (local.get $zndv))
           (then
             (set! $zndone (i32.add (local.get $zndone) (i32.const 1)))
             (if (i32.eq (local.get $znmode) (i32.const 0))   ;; shortest: first done → close the rest, finish
@@ -4556,7 +4571,9 @@
             (call $arr_push (local.get $znres) (if i64 (i32.lt_s (local.get $zni) (call $arr_len (local.get $znpad))) (then (call $arr_get (local.get $znpad) (local.get $zni))) (else (call $v_undef)))))
           (else
             (set! $znactive (i32.add (local.get $znactive) (i32.const 1)))
-            (call $arr_push (local.get $znres) (call $get_prop (local.get $znr2) (call $mk_str (cstring "value"))))))
+            (let $znvv i64 (call $get_prop (local.get $znr2) (call $mk_str (cstring "value"))))
+            (if (call $err) (then (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true)) (call $zip_close_others_throw (local.get $zniters) (local.get $zndf) (local.get $znn) (local.get $zni)) (return (call $v_undef))))
+            (call $arr_push (local.get $znres) (local.get $znvv))))
         (set! $zni (i32.add (local.get $zni) (i32.const 1))) (br $znl)))
       ;; strict: lengths must match — mixing done and active in one round is an error
       (if (i32.and (i32.eq (local.get $znmode) (i32.const 2)) (i32.and (i32.gt_s (local.get $zndone) (i32.const 0)) (i32.gt_s (local.get $znactive) (i32.const 0))))
