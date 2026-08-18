@@ -1339,6 +1339,10 @@
       (if (f64.lt (local.get $gdr) (local.get $gdcf)) (then (set! $gdcf (local.get $gdr))))))
   (if (i32.eq (local.get $argc) (i32.const 1)) (then (set! $gdcf (f64.sub (local.get $gslf) (local.get $gasf)))))
   (if (i32.eqz (local.get $argc)) (then (set! $gdcf (f64.const 0))))
+  ;; spec step: if len + insertCount - actualDeleteCount > 2^53-1, throw TypeError (before the removed-array
+  ;; RangeError). Without this a huge array-like `length` loops/OOBs in the shift below.
+  (if (f64.gt (f64.sub (f64.add (local.get $gslf) (f64.convert_i32_s (if i32 (i32.ge_s (local.get $argc) (i32.const 2)) (then (i32.sub (local.get $argc) (i32.const 2))) (else (i32.const 0))))) (local.get $gdcf)) (f64.const 9007199254740991))
+    (then (call $throw_type (cstring "TypeError") (cstring "Array length exceeds 2^53-1")) (return (call $v_undef))))
   (if (f64.gt (local.get $gdcf) (f64.const 4294967295))
     (then (call $throw_type (cstring "RangeError") (cstring "Invalid array length")) (return (call $v_undef))))
   (if (call $err) (then (return (call $v_undef))))
@@ -11678,6 +11682,11 @@
           (call $set_prop (local.get $sloA) (call $mk_str (cstring "length")) (call $num (local.get $slon2)))
           (if (call $err) (then (return (call $v_undef))))
           (return (local.get $sloA))))))
+      ;; splice on a non-array array-like operates via Get/Set/Delete directly (splice_generic), which reads
+      ;; `length` itself — dispatch BEFORE alike_arr so `length` isn't [[Get]]'d twice (once to materialize a
+      ;; temp array, once in splice_generic). Spec: splice reads `length` exactly once.
+      (if (i32.and (i32.eq (local.get $id) (i32.const 35)) (i32.eqz (call $is_array (local.get $thisv))))
+        (then (return (call $splice_generic (local.get $thisv) (local.get $argv) (local.get $argc)))))
       (let $arr i32 (call $alike_arr (local.get $thisv)))
       (let $n i32 (call $arr_len (local.get $arr)))
       ;; mem 596 (stored +1): ta_species_result forces the TypedArray map source length captured BEFORE
