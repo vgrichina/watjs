@@ -1528,12 +1528,19 @@
               ;; literal / nested-new / true/false/null / fn-expr / other primary → parse it
               ;; (the NEW op's is-function guard then throws TypeError for `new 1`, `new {}`, …)
               (else (call $vm_c_primary (local.get $code))))))
-          (block $nme (loop $nml  ;; member path on the constructor (no call)
-            (br_if $nme (i32.ne (call $tok_kind) (i32.const 23)))  ;; '.'
-            (call $next_token)
-            (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; GETPROP
-            (call $next_token)
-            (br $nml)))
+          (block $nme (loop $nml  ;; member path on the constructor (no call): `.name` and tagged-template tails
+            (if (i32.eq (call $tok_kind) (i32.const 23))  ;; '.'
+              (then
+                (call $next_token)
+                (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (call $ident_name))  ;; GETPROP
+                (call $next_token)
+                (br $nml)))
+            ;; a TemplateLiteral tail is part of the MemberExpression (`new tag`x`` parses as `new (tag`x`)`),
+            ;; binding TIGHTER than the argument-less `new`: apply the tag call to the constructor-so-far, then
+            ;; a following `(` is `new`'s Arguments. Bare-ident tag → CALL (this=undefined); ismethod=0.
+            (if (i32.eq (call $tok_kind) (i32.const 53))
+              (then (call $vm_c_tagged_template (local.get $code) (i32.const 0)) (br $nml)))
+            (br $nme)))
           ;; a NewExpression's MemberExpression may not be an optional chain (`new a?.b()` → SyntaxError)
           (if (i32.eq (call $tok_kind) (i32.const 55)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Optional chain may not be used in a 'new' expression")) (return)))
           (let $nargc i32 (i32.const 0))
