@@ -11870,9 +11870,13 @@
           ;; length non-writable — and the final Set(O,"length") then throws.
           (let $sh0 i64 (call $dense_get (local.get $thisv) (local.get $arr) (i32.const 0)))
           (if (call $err) (then (return (call $v_undef))))
+          ;; an inherited index in [0,n) makes the tail shift observable — a hole fires an inherited getter
+          ;; (proto-aware dense_get). No inherited props → the fast dense arr_get path.
+          (let $shinh i32 (call $arr_range_inherited (local.get $thisv) (i32.const 0) (local.get $n)))
           (let $shi i32 (i32.const 1))
           (block $she (loop $shl (br_if $she (i32.ge_s (local.get $shi) (local.get $n)))
-            (call $arr_set (local.get $arr) (i32.sub (local.get $shi) (i32.const 1)) (call $arr_get (local.get $arr) (local.get $shi)))
+            (call $arr_set (local.get $arr) (i32.sub (local.get $shi) (i32.const 1)) (if i64 (local.get $shinh) (then (call $dense_get (local.get $thisv) (local.get $arr) (local.get $shi))) (else (call $arr_get (local.get $arr) (local.get $shi)))))
+            (if (local.get $shinh) (then (if (call $err) (then (return (call $v_undef))))))
             (set! $shi (i32.add (local.get $shi) (i32.const 1))) (br $shl)))
           (call $set_length_throwing (local.get $thisv) (f64.convert_i32_s (i32.sub (local.get $n) (i32.const 1))))
           (if (call $err) (then (return (call $v_undef))))
