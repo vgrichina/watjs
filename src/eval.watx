@@ -4583,17 +4583,16 @@
             (let $znvv i64 (call $get_prop (local.get $znr2) (call $mk_str (cstring "value"))))
             (if (call $err) (then (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true)) (call $zip_close_others_throw (local.get $zniters) (local.get $zndf) (local.get $znn) (local.get $zni)) (return (call $v_undef))))
             (call $arr_push (local.get $znres) (local.get $znvv))))
+        ;; strict: the moment this round mixes a done and an active iterator it's a length mismatch → STOP
+        ;; (do not step the remaining iterators), IteratorCloseAll(all still-open non-done, the TypeError) in
+        ;; REVERSE order (cur=-1 → close every non-done, incl. the active one just stepped), and throw.
+        (if (i32.and (i32.eq (local.get $znmode) (i32.const 2)) (i32.and (i32.gt_s (local.get $zndone) (i32.const 0)) (i32.gt_s (local.get $znactive) (i32.const 0))))
+          (then
+            (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true))
+            (call $throw_type (cstring "TypeError") (cstring "Iterator.zip strict: iterators have different lengths"))
+            (call $zip_close_others_throw (local.get $zniters) (local.get $zndf) (local.get $znn) (i32.const -1))
+            (return (call $v_undef))))
         (set! $zni (i32.add (local.get $zni) (i32.const 1))) (br $znl)))
-      ;; strict: lengths must match — mixing done and active in one round is an error
-      (if (i32.and (i32.eq (local.get $znmode) (i32.const 2)) (i32.and (i32.gt_s (local.get $zndone) (i32.const 0)) (i32.gt_s (local.get $znactive) (i32.const 0))))
-        (then
-          ;; IteratorCloseAll(still-open iterators, the error) in REVERSE List order
-          (let $zj2 i32 (i32.sub (local.get $znn) (i32.const 1)))
-          (block $zse (loop $zsl
-            (br_if $zse (i32.lt_s (local.get $zj2) (i32.const 0)))
-            (if (i32.eqz (call $truthy (call $arr_get (local.get $zndf) (local.get $zj2)))) (then (call $iter_close (call $arr_get (local.get $zniters) (local.get $zj2)))))
-            (set! $zj2 (i32.sub (local.get $zj2) (i32.const 1))) (br $zsl)))
-          (call $throw_type (cstring "TypeError") (cstring "Iterator.zip strict: iterators have different lengths")) (return (call $v_undef))))
       ;; no active iterators this round → all done
       (if (i32.eqz (local.get $znactive))
         (then (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true))
