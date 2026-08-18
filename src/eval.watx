@@ -4440,6 +4440,7 @@
       (let $zmode i32 (i32.const 0))
       (let $zpad i32 (call $arr_new (i32.const 4)))
       (let $zpaditer i64 (call $v_undef))  ;; padding iterator (longest mode) — pulled lazily, count values
+      (let $zpadval i64 (call $v_undef))   ;; the padding option object (GetIterator deferred to step 15, after iterables open)
       (let $zhaspad i32 (i32.const 0))
       ;; read options (mode then padding) BEFORE iterating the iterables
       (if (i32.eqz (call $is_undefined (local.get $zopts)))
@@ -4469,10 +4470,9 @@
                   ;; step 7b: padding must be undefined or an Object (a primitive string is NOT an Object → throw)
                   (if (i32.eqz (i32.or (call $is_object (local.get $zpv)) (i32.or (call $is_array (local.get $zpv)) (call $is_function (local.get $zpv)))))
                     (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip padding is not an object")) (return (call $v_undef))))
-                  ;; defer pulling until iterableCount is known — pull exactly count values (the
-                  ;; padding iterable may be infinite, so eagerly spreading it would never return).
-                  (set! $zpaditer (call $get_iterator (local.get $zpv)))   ;; GetIterator(padding, sync) — canonical @@iterator
-                  (if (call $err) (then (return (call $v_undef))))
+                  ;; step 7 only READS + validates padding here; GetIterator(padding) is deferred to step 15
+                  ;; (after the iterables are opened) so a padding-iterator abrupt can close them.
+                  (set! $zpadval (local.get $zpv))
                   (set! $zhaspad (i32.const 1))))))))
       ;; steps 10-12: GetIterator(iterables), then LAZILY step one value at a time; GetIteratorFlattenable
       ;; each (reject-primitives). On abrupt: IteratorStepValue failure closes the already-opened `iters`
@@ -4515,7 +4515,13 @@
       ;; if not exhausted, close it.
       (if (i32.and (i32.eq (local.get $zmode) (i32.const 1)) (local.get $zhaspad))
         (then
+          ;; step 15: GetIterator(padding) — deferred to HERE (iterables already open) so any padding abrupt
+          ;; closes the opened iterables in reverse. Pull exactly iterableCount values (lazily, so an infinite
+          ;; padding iterator terminates); if it finishes early the rest are undefined; if not exhausted, close it.
+          (set! $zpaditer (call $get_iterator (local.get $zpadval)))
+          (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (return (call $v_undef))))
           (let $zpn i64 (call $get_prop (local.get $zpaditer) (call $mk_str (cstring "next"))))
+          (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (return (call $v_undef))))
           (let $zpbuf i32 (call $heap_alloc (i32.const 8)))
           (let $zpdone i32 (i32.const 0))
           (let $zpi i32 (i32.const 0))
@@ -4526,13 +4532,20 @@
               (then (call $arr_push (local.get $zpad) (call $v_undef)))
               (else
                 (let $zpr i64 (call $call_val (local.get $zpn) (i32.const 0) (local.get $zpbuf) (local.get $zpaditer)))
-                (if (call $err) (then (return (call $v_undef))))
-                (if (call $truthy (call $get_prop (local.get $zpr) (call $mk_str (cstring "done"))))
+                (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (return (call $v_undef))))
+                (let $zpd i64 (call $get_prop (local.get $zpr) (call $mk_str (cstring "done"))))
+                (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (return (call $v_undef))))
+                (if (call $truthy (local.get $zpd))
                   (then (set! $zpdone (i32.const 1)) (call $arr_push (local.get $zpad) (call $v_undef)))
-                  (else (call $arr_push (local.get $zpad) (call $get_prop (local.get $zpr) (call $mk_str (cstring "value"))))))))
+                  (else
+                    (let $zpvv i64 (call $get_prop (local.get $zpr) (call $mk_str (cstring "value"))))
+                    (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (return (call $v_undef))))
+                    (call $arr_push (local.get $zpad) (local.get $zpvv))))))
             (set! $zpi (i32.add (local.get $zpi) (i32.const 1))) (br $zppl)))
-          (if (i32.eqz (local.get $zpdone)) (then (call $iter_close (local.get $zpaditer))
-            (if (call $err) (then (return (call $v_undef))))))))
+          ;; not exhausted → IteratorClose(paddingIter); if THAT throws, close the iterables (reverse) keeping the error
+          (if (i32.eqz (local.get $zpdone))
+            (then (call $iter_close (local.get $zpaditer))
+              (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (return (call $v_undef))))))))
       (let $zo i32 (call $obj_new (i32.const 12)))
       (if (i32.load (i32.const 488)) (then (i32.store (local.get $zo) (i32.load (i32.const 488)))))
       (call $scope_define (local.get $zo) (cstring "@@ziters") (call $mk_arr (local.get $ziters)))
