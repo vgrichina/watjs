@@ -271,6 +271,20 @@
       (then (call $iter_close_throw (call $arr_get (local.get $iters) (local.get $j)))))
     (set! $j (i32.sub (local.get $j) (i32.const 1))) (br $l))))
 
+;; IteratorCloseAll(open iterators, NormalCompletion) in REVERSE List order (skip current + @@zdf): the
+;; FIRST return() that throws becomes the result error; later returns are still called but their throw is
+;; ignored (the first error wins). Used for shortest-mode normal completion.
+(func $iters_close_rev_normal (param $iters i32) (param $df i32) (param $n i32) (param $cur i32) (effects)
+  (let $j i32 (i32.sub (local.get $n) (i32.const 1)))
+  (block $e (loop $l
+    (br_if $e (i32.lt_s (local.get $j) (i32.const 0)))
+    (if (i32.and (i32.ne (local.get $j) (local.get $cur)) (i32.eqz (call $truthy (call $arr_get (local.get $df) (local.get $j)))))
+      (then
+        (if (call $err)
+          (then (call $iter_close_throw (call $arr_get (local.get $iters) (local.get $j))))   ;; error pending → keep it
+          (else (call $iter_close (call $arr_get (local.get $iters) (local.get $j)))))))       ;; none yet → a return()-throw becomes the error
+    (set! $j (i32.sub (local.get $j) (i32.const 1))) (br $l))))
+
 ;; GetIteratorFlattenable(O) — O already validated as an Object. method = GetMethod(O, @@iterator);
 ;; undefined/null → O is itself the iterator; callable → Call(method,O) (must return an Object); else TypeError.
 (func $get_iter_flattenable (param $o i64) (result i64) (effects)
@@ -4557,14 +4571,9 @@
             (if (i32.eq (local.get $znmode) (i32.const 0))   ;; shortest: first done → close the rest, finish
               (then
                 (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true))
-                ;; IteratorCloseAll(open iterators, NormalCompletion) in REVERSE List order — every still-open
-                ;; iterator except the one that just reported done (index $zni) and already-finished ones (@@zdf).
-                (let $zj i32 (i32.sub (local.get $znn) (i32.const 1)))
-                (block $zfe (loop $zfl
-                  (br_if $zfe (i32.lt_s (local.get $zj) (i32.const 0)))
-                  (if (i32.and (i32.ne (local.get $zj) (local.get $zni)) (i32.eqz (call $truthy (call $arr_get (local.get $zndf) (local.get $zj)))))
-                    (then (call $iter_close (call $arr_get (local.get $zniters) (local.get $zj)))))
-                  (set! $zj (i32.sub (local.get $zj) (i32.const 1))) (br $zfl)))
+                ;; IteratorCloseAll(open iterators, NormalCompletion), reverse; a return()-throw propagates.
+                (call $iters_close_rev_normal (local.get $zniters) (local.get $zndf) (local.get $znn) (local.get $zni))
+                (if (call $err) (then (return (call $v_undef))))
                 (call $scope_define (local.get $znr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $znr) (cstring "done") (call $v_true))
                 (return (call $mk_obj (local.get $znr)))))
             (call $arr_set (local.get $zndf) (local.get $zni) (call $v_true))   ;; longest/strict: mark this one done
