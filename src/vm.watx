@@ -6661,6 +6661,7 @@
               (let $itn i32 (call $vm_tmpname))
               (let $rn i32 (call $vm_tmpname))
               (let $foinm i32 (call $vm_tmpname))  ;; for-in: unique temp holding the enumerated object (for the per-key still-present check; must be per-loop so NESTED for-in loops don't clobber it)
+              (let $nextn i32 (call $vm_tmpname))  ;; the iterator's `next` method, read ONCE in the prologue (GetIteratorDirect) and reused each iteration
               ;; the for-in object / for-of iterable is required — `for (x of )` / `for (x in )` → SyntaxError.
               (if (i32.eq (call $tok_kind) (i32.const 16)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "for-in/of head requires an expression")) (return)))
               ;; ForIn/OfHeadEvaluation: a let/const ForDeclaration with a SIMPLE name binds that name in a
@@ -6694,6 +6695,11 @@
                   (call $vm_emit_op (local.get $code) (i32.const 56))))  ;; for-in: object → keys array (snapshot)
               (call $vm_emit_op (local.get $code) (if i32 (local.get $isawait) (then (i32.const 96)) (else (i32.const 45))))  ;; GETAITER (async iterator) / GETITER
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; STOREVAR it
+              ;; GetIteratorDirect: read `next` ONCE now (part of the iteration prologue), not on each step —
+              ;; a `next` accessor must fire exactly once. A throw here precedes the iterator-close registration.
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; LOADVAR it
+              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "next"))  ;; GETPROP next
+              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nextn))  ;; STOREVAR next
               ;; for-of: register an iterator-close on the finally stack so a `return` through
               ;; the body closes the iterator. reg360 (this loop's break/continue finally-base)
               ;; is raised above the close so break/continue use the explicit close paths instead.
@@ -6702,10 +6708,9 @@
               (call $next_token)  ;; ')'
               (let $oftop i32 (call $vm_emit_cursor))
               ;; r = it.next()
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; LOADVAR it
-              (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP
-              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "next"))  ;; GETPROP next
-              (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; CALLM 0
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itn))  ;; LOADVAR it (receiver)
+              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $nextn))  ;; LOADVAR cached next (read once in the prologue)
+              (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; CALLM 0 (this = it)
               (if (local.get $isawait) (then (call $vm_emit_op (local.get $code) (i32.const 50))))  ;; for-await: AWAIT it.next()'s result
               (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $rn))  ;; STOREVAR r
               ;; if (r.done) break  → emit (!done); JMPF end
