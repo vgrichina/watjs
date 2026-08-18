@@ -4724,10 +4724,18 @@
         (call $arr_push (local.get $zkiters) (local.get $zksub))
         (call $arr_push (local.get $zknexts) (local.get $zksn))
         (call $arr_push (local.get $zkdf) (call $v_false))
-        ;; pre-resolve per-key padding from the padding object (longest)
-        (call $arr_push (local.get $zkpad)
-          (if i64 (call $is_object (local.get $zkpadobj)) (then (call $get_prop (local.get $zkpadobj) (local.get $zkkey))) (else (call $v_undef))))
         (set! $zkk (i32.add (local.get $zkk) (i32.const 1))) (br $zkcl)))
+      ;; longest: AFTER every iterator is opened, read padding[key] for each KEPT key (in order). A getter
+      ;; abrupt closes ALL opened iterators (reverse). undefined padding object → all-undefined.
+      (if (call $is_object (local.get $zkpadobj))
+        (then
+          (let $zkpi i32 (i32.const 0))
+          (block $zkpe (loop $zkpl
+            (br_if $zkpe (i32.ge_s (local.get $zkpi) (call $arr_len (local.get $zkkeys))))
+            (let $zkpvv i64 (call $get_prop (local.get $zkpadobj) (call $arr_get (local.get $zkkeys) (local.get $zkpi))))
+            (if (call $err) (then (call $iters_close_rev_throw (local.get $zkiters)) (return (call $v_undef))))
+            (call $arr_push (local.get $zkpad) (local.get $zkpvv))
+            (set! $zkpi (i32.add (local.get $zkpi) (i32.const 1))) (br $zkpl)))))
       (let $zkobj i32 (call $obj_new (i32.const 12)))
       (if (i32.load (i32.const 488)) (then (i32.store (local.get $zkobj) (i32.load (i32.const 488)))))
       (call $scope_define (local.get $zkobj) (cstring "@@ziters") (call $mk_arr (local.get $zkiters)))
