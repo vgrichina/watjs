@@ -4382,7 +4382,11 @@
           (if (call $err) (then (return (call $v_undef))))
           (if (i32.eqz (call $is_undefined (local.get $zmv)))
             (then
-              (let $zms i32 (call $to_str (local.get $zmv)))
+              ;; step 5 compares the RAW mode to the three string literals (no coercion): a non-primitive-string
+              ;; (String object, symbol, number, bigint, null, boolean, object) can never be SameValue any → TypeError.
+              (if (i32.eqz (call $is_string (local.get $zmv)))
+                (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip mode is invalid")) (return (call $v_undef))))
+              (let $zms i32 (call $val_payload (local.get $zmv)))
               (let $zok i32 (i32.const 0))
               (if (call $str_eq (local.get $zms) (cstring "shortest")) (then (set! $zmode (i32.const 0)) (set! $zok (i32.const 1))))
               (if (call $str_eq (local.get $zms) (cstring "longest")) (then (set! $zmode (i32.const 1)) (set! $zok (i32.const 1))))
@@ -4394,8 +4398,9 @@
               (if (call $err) (then (return (call $v_undef))))
               (if (i32.eqz (call $is_undefined (local.get $zpv)))
                 (then
-                  (if (i32.eqz (i32.or (call $is_object (local.get $zpv)) (i32.or (call $is_array (local.get $zpv)) (call $is_string (local.get $zpv)))))
-                    (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip padding is not iterable")) (return (call $v_undef))))
+                  ;; step 7b: padding must be undefined or an Object (a primitive string is NOT an Object → throw)
+                  (if (i32.eqz (i32.or (call $is_object (local.get $zpv)) (i32.or (call $is_array (local.get $zpv)) (call $is_function (local.get $zpv)))))
+                    (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip padding is not an object")) (return (call $v_undef))))
                   ;; defer pulling until iterableCount is known — pull exactly count values (the
                   ;; padding iterable may be infinite, so eagerly spreading it would never return).
                   (set! $zpaditer (call $vm_get_iter (local.get $zpv)))
@@ -4556,14 +4561,21 @@
           (if (call $err) (then (return (call $v_undef))))
           (if (i32.eqz (call $is_undefined (local.get $zkmv)))
             (then
-              (let $zkms i32 (call $to_str (local.get $zkmv)))
+              ;; step 5 compares the RAW mode to the three string literals (no coercion) — see Iterator.zip
+              (if (i32.eqz (call $is_string (local.get $zkmv)))
+                (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zipKeyed mode is invalid")) (return (call $v_undef))))
+              (let $zkms i32 (call $val_payload (local.get $zkmv)))
               (let $zkok i32 (i32.const 0))
               (if (call $str_eq (local.get $zkms) (cstring "shortest")) (then (set! $zkmode (i32.const 0)) (set! $zkok (i32.const 1))))
               (if (call $str_eq (local.get $zkms) (cstring "longest")) (then (set! $zkmode (i32.const 1)) (set! $zkok (i32.const 1))))
               (if (call $str_eq (local.get $zkms) (cstring "strict")) (then (set! $zkmode (i32.const 2)) (set! $zkok (i32.const 1))))
               (if (i32.eqz (local.get $zkok)) (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zipKeyed mode is invalid")) (return (call $v_undef))))))
           (if (i32.eq (local.get $zkmode) (i32.const 1))
-            (then (set! $zkpadobj (call $get_prop (local.get $zko) (call $mk_str (cstring "padding")))) (if (call $err) (then (return (call $v_undef))))))))
+            (then (set! $zkpadobj (call $get_prop (local.get $zko) (call $mk_str (cstring "padding")))) (if (call $err) (then (return (call $v_undef))))
+              ;; step 7b: padding must be undefined or an Object
+              (if (i32.eqz (call $is_undefined (local.get $zkpadobj)))
+                (then (if (i32.eqz (i32.or (call $is_object (local.get $zkpadobj)) (i32.or (call $is_array (local.get $zkpadobj)) (call $is_function (local.get $zkpadobj)))))
+                  (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zipKeyed padding is not an object")) (return (call $v_undef))))))))))
       ;; own enumerable string keys of the iterables object, in order
       (let $zkkeys i32 (call $own_enum_keys (local.get $zki) (i32.const 0)))
       (let $zkiters i32 (call $arr_new (i32.const 4)))
