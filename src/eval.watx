@@ -6970,9 +6970,9 @@
       (let $f4cs i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cs"))))
       (let $f4i i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
       (let $f4k i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $f4cs) (call $mk_str (cstring "@@kind"))))))
-      (let $f4res i64 (call $get_prop (local.get $f4cs) (call $mk_str (cstring "@@res"))))
+      (let $f4res i64 (call $get_prop (local.get $f4cs) (call $mk_str (cstring "@@shres"))))
       (let $f4v i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eq (local.get $f4k) (i32.const 413)) (then (call $promise_resolve_with (local.get $f4res) (local.get $f4v)) (return (call $v_undef))))  ;; any → first fulfil wins
+      (if (i32.eq (local.get $f4k) (i32.const 413)) (then (let $f4ab i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $f4ab) (local.get $f4v)) (drop (call $call_val (local.get $f4res) (i32.const 1) (local.get $f4ab) (call $v_undef))) (return (call $v_undef))))  ;; any → first fulfil wins (capability resolve)
       (let $f4acc i32 (call $val_payload (call $get_prop (local.get $f4cs) (call $mk_str (cstring "@@acc")))))
       (if (i32.eq (local.get $f4k) (i32.const 410))
         (then (call $arr_set (local.get $f4acc) (local.get $f4i) (local.get $f4v)))  ;; all → values[i]
@@ -6983,7 +6983,7 @@
           (call $arr_set (local.get $f4acc) (local.get $f4i) (call $mk_obj (local.get $f4so)))))
       (let $f4n i32 (i32.sub (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $f4cs) (call $mk_str (cstring "@@cnt"))))) (i32.const 1)))
       (call $set_prop (local.get $f4cs) (call $mk_str (cstring "@@cnt")) (call $num (f64.convert_i32_s (local.get $f4n))))
-      (if (i32.eqz (local.get $f4n)) (then (call $promise_resolve_with (local.get $f4res) (call $mk_arr (local.get $f4acc)))))
+      (if (i32.eqz (local.get $f4n)) (then (let $f4fb i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $f4fb) (call $mk_arr (local.get $f4acc))) (drop (call $call_val (local.get $f4res) (i32.const 1) (local.get $f4fb) (call $v_undef)))))
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 455))
     (then
@@ -6992,9 +6992,10 @@
       (let $r5cs i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@cs"))))
       (let $r5i i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@i"))))))
       (let $r5k i32 (i32.trunc_f64_s (call $to_num (call $get_prop (local.get $r5cs) (call $mk_str (cstring "@@kind"))))))
-      (let $r5res i64 (call $get_prop (local.get $r5cs) (call $mk_str (cstring "@@res"))))
+      (let $r5res i64 (call $get_prop (local.get $r5cs) (call $mk_str (cstring "@@shrej"))))
+      (let $r5resS i64 (call $get_prop (local.get $r5cs) (call $mk_str (cstring "@@shres"))))
       (let $r5r i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
-      (if (i32.eq (local.get $r5k) (i32.const 410)) (then (call $promise_settle (local.get $r5res) (i32.const 2) (local.get $r5r)) (return (call $v_undef))))  ;; all → first reject wins
+      (if (i32.eq (local.get $r5k) (i32.const 410)) (then (let $r5b i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $r5b) (local.get $r5r)) (drop (call $call_val (local.get $r5res) (i32.const 1) (local.get $r5b) (call $v_undef))) (return (call $v_undef))))  ;; all → first reject wins (capability reject)
       (let $r5acc i32 (call $val_payload (call $get_prop (local.get $r5cs) (call $mk_str (cstring "@@acc")))))
       (if (i32.eq (local.get $r5k) (i32.const 412))  ;; allSettled → {status:rejected,reason}
         (then
@@ -7011,8 +7012,8 @@
             (then
               (let $r5age i64 (call $make_error (cstring "AggregateError") (cstring "All promises were rejected")))
               (if (call $is_object (local.get $r5age)) (then (call $scope_define (call $val_payload (local.get $r5age)) (cstring "errors") (call $mk_arr (local.get $r5acc)))))
-              (call $promise_settle (local.get $r5res) (i32.const 2) (local.get $r5age)))
-            (else (call $promise_resolve_with (local.get $r5res) (call $mk_arr (local.get $r5acc)))))))  ;; allSettled → resolve(results)
+              (let $r5gb i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $r5gb) (local.get $r5age)) (drop (call $call_val (local.get $r5res) (i32.const 1) (local.get $r5gb) (call $v_undef))))
+            (else (let $r5sb i32 (call $heap_alloc (i32.const 8))) (i64.store (local.get $r5sb) (call $mk_arr (local.get $r5acc))) (drop (call $call_val (local.get $r5resS) (i32.const 1) (local.get $r5sb) (call $v_undef)))))))  ;; allSettled → resolve(results) (capability resolve)
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 417))  ;; BigInt.prototype.toString([radix])
     (then
@@ -7111,6 +7112,11 @@
       ;; the internal pres (behavior-identical to the old per-element settlers, just shared identity).
       (let $shres i64 (if i64 (local.get $pcustom) (then (call $get_prop (local.get $pcapv) (call $mk_str (cstring "resolve")))) (else (call $promise_bound_settler (i32.const 415) (local.get $pres)))))
       (let $shrej i64 (if i64 (local.get $pcustom) (then (call $get_prop (local.get $pcapv) (call $mk_str (cstring "reject")))) (else (call $promise_bound_settler (i32.const 416) (local.get $pres)))))
+      ;; the FINAL resolve/reject (spec Call(resultCapability.[[Resolve/Reject]], ...)) must go through the
+      ;; capability's own functions — for a custom C those are its observable resolve/reject (e.g. a subclass
+      ;; that counts calls); for %Promise% they are the bound settlers (behavior-identical). Share via @@cs.
+      (call $scope_define (local.get $cs) (cstring "@@shres") (local.get $shres))
+      (call $scope_define (local.get $cs) (cstring "@@shrej") (local.get $shrej))
       (block $pae (loop $pal
         (let $pr i64 (call $call_val (local.get $pnf) (i32.const 0) (local.get $pnbuf) (local.get $pit)))  ;; iter.next()
         (br_if $pae (call $err))
