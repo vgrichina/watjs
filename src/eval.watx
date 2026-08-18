@@ -4148,6 +4148,18 @@
       ;; otherwise create an own data property on the receiver
       (call $scope_define (call $val_payload (local.get $thisv)) (cstring "@@toStringTag") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (return (call $v_undef))))
+  (if (i32.eq (local.get $id) (i32.const 537))  ;; get Iterator.prototype.constructor → %Iterator% (ignores `this`)
+    (then (return (i64.load (i32.const 1208)))))
+  (if (i32.eq (local.get $id) (i32.const 538))  ;; set constructor — SetterThatIgnoresPrototypeProperties(this, %Iterator.prototype%, "constructor", v)
+    (then
+      (if (i32.eqz (call $is_object (local.get $thisv)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Iterator.prototype.constructor setter called on non-object")) (return (call $v_undef))))
+      ;; assigning on the home object (%Iterator.prototype%) itself throws (emulates a non-writable data prop)
+      (if (i32.eq (call $val_payload (local.get $thisv)) (i32.load (i32.const 488)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot set constructor on Iterator.prototype")) (return (call $v_undef))))
+      ;; else define/overwrite an own data property on the receiver (ignores an inherited/frozen accessor)
+      (call $scope_define (call $val_payload (local.get $thisv)) (cstring "constructor") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (return (call $v_undef))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 336)) (i32.le_s (local.get $id) (i32.const 341)))
     (then
       ;; methods 337-341 take a callable fn/predicate/reducer as arg0 — validated
@@ -6816,8 +6828,8 @@
         (then (call $throw_type (cstring "TypeError") (cstring "RegExp legacy static property accessor requires the RegExp constructor as receiver")) (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 528)) (then (return (call $mk_str (cstring "")))))  ;; getter → "" (no tracked state)
       (return (call $v_undef))))  ;; setter (input/$_) → ignore the value
-  ;; Iterator Helpers (335-357, + 533 = Iterator.concat helper .return, 536 = Iterator.zip/zipKeyed .return) — handled in $native_iterator
-  (if (i32.or (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357))) (i32.eq (local.get $id) (i32.const 533))) (i32.eq (local.get $id) (i32.const 536)))
+  ;; Iterator Helpers (335-357, + 533 concat.return, 536 zip.return, 537/538 Iterator.prototype.constructor get/set) — in $native_iterator
+  (if (i32.or (i32.or (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357))) (i32.eq (local.get $id) (i32.const 533))) (i32.eq (local.get $id) (i32.const 536))) (i32.and (i32.ge_s (local.get $id) (i32.const 537)) (i32.le_s (local.get $id) (i32.const 538))))
     (then (return (call $native_iterator (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
@@ -13978,7 +13990,11 @@
   (call $scope_define (local.get $iterproto) (cstring "@@iterator") (call $mk_native (i32.const 342) (cstring "[Symbol.iterator]")))
   (call $scope_define_accessor_attr (local.get $iterproto) (cstring "@@toStringTag")
     (call $mk_native (i32.const 352) (cstring "get [Symbol.toStringTag]")) (call $mk_native (i32.const 353) (cstring "set [Symbol.toStringTag]")) (i32.const 5))
-  (call $scope_define (local.get $iterproto) (cstring "constructor") (local.get $iterf))
+  (i64.store (i32.const 1208) (local.get $iterf))  ;; %Iterator% intrinsic — read by the constructor getter (537)
+  ;; Iterator.prototype.constructor is an ACCESSOR (get → %Iterator%, set → SetterThatIgnoresPrototypeProperties),
+  ;; {enumerable:false, configurable:true} — NOT a data property (web-compat).
+  (call $scope_define_accessor_attr (local.get $iterproto) (cstring "constructor")
+    (call $mk_native (i32.const 537) (cstring "get constructor")) (call $mk_native (i32.const 538) (cstring "set constructor")) (i32.const 5))
   (call $scope_clear_enum (local.get $iterproto))
   (call $scope_define_attr (call $fn_def_scope (local.get $iterf)) (cstring "prototype") (call $mk_obj (local.get $iterproto)) (i32.const 0))  ;; {W:false,E:false,C:false}
   ;; static methods are non-enumerable ({W:true,E:false,C:true} = attr 12), like all standard built-ins
