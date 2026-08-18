@@ -11421,7 +11421,7 @@
             (let $fcarg i64 (call $argn (local.get $argv) (local.get $argc) (local.get $i)))
             (if (call $is_bigint (local.get $fcarg))  ;; ToUint16(ToNumber(BigInt)) → TypeError
               (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (return (call $v_undef))))
-            (set! $cu (i32.and (call $to_int_idx (call $to_num (local.get $fcarg))) (i32.const 65535)))
+            (set! $cu (i32.and (call $to_int32 (local.get $fcarg)) (i32.const 65535)))  ;; ToUint16: ToInt32 (NaN/±Inf→0, modular) then &0xFFFF — to_int_idx SATURATES ±Inf
             (set! $i (i32.add (local.get $i) (i32.const 1)))))
         ;; high surrogate D800-DBFF → try to pair with the next code unit
         (if (i32.and (i32.ge_u (local.get $cu) (i32.const 55296)) (i32.le_u (local.get $cu) (i32.const 56319)))
@@ -11431,7 +11431,7 @@
                 (let $fca2 i64 (call $argn (local.get $argv) (local.get $argc) (local.get $i)))
                 (if (call $is_bigint (local.get $fca2))
                   (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a BigInt value to a number")) (return (call $v_undef))))
-                (let $cu2 i32 (i32.and (call $to_int_idx (call $to_num (local.get $fca2))) (i32.const 65535)))
+                (let $cu2 i32 (i32.and (call $to_int32 (local.get $fca2)) (i32.const 65535)))  ;; ToUint16
                 (set! $i (i32.add (local.get $i) (i32.const 1)))
                 (if (i32.and (i32.ge_u (local.get $cu2) (i32.const 56320)) (i32.le_u (local.get $cu2) (i32.const 57343)))
                   (then (set! $fco (call $utf8_emit (local.get $fcp) (local.get $fco) (i32.add (i32.const 65536) (i32.add (i32.shl (i32.sub (local.get $cu) (i32.const 55296)) (i32.const 10)) (i32.sub (local.get $cu2) (i32.const 56320)))))))  ;; valid pair → astral
