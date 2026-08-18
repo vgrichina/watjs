@@ -1265,7 +1265,7 @@
   ;; `fn instanceof f` holds when f.prototype is one of those.
   (if (call $is_function (local.get $x))
     (then
-      (let $fpv i64 (call $fn_get_prototype (call $val_payload (local.get $f))))
+      (let $fpv i64 (local.get $ihp))  ;; P from [[Get]](F,"prototype") above (accessor-aware), not the raw slot
       (if (call $strict_eq (local.get $fpv) (i64.load (i32.const 336))) (then (return (call $v_true))))  ;; instanceof Function
       (if (call $strict_eq (local.get $fpv) (call $mk_obj (i32.load (i32.const 328)))) (then (return (call $v_true))))  ;; instanceof Object
       ;; a generator function (magic 527) is also an instance of %GeneratorFunction% / %AsyncGeneratorFunction%
@@ -1286,7 +1286,7 @@
   ;; overrides) comparing each link to F.prototype (a VALUE, so a function/array prototype matches).
   (if (i32.eqz (i32.or (call $is_object (local.get $x)) (i32.or (call $is_array (local.get $x)) (call $is_function (local.get $x)))))
     (then (return (call $v_false))))
-  (let $fproto i64 (call $fn_get_prototype (call $val_payload (local.get $f))))
+  (let $fproto i64 (local.get $ihp))  ;; P from [[Get]](F,"prototype") above (fires an accessor prototype), not the raw slot
   (let $cur i64 (call $js_get_prototype (local.get $x)))
   (block $brk (loop $cont
     (if (call $err) (then (return (call $v_false))))
