@@ -4532,7 +4532,7 @@
       (let $znkeys i32 (call $coll_arr (local.get $thisv) (cstring "@@zkeys")))
       (if (i32.gt_s (call $arr_len (local.get $znkeys)) (i32.const 0))
         (then
-          (let $zno i32 (call $obj_new (i32.const 8)))
+          (let $zno i32 (call $scope_new (i32.const 0) (i32.const 8)))  ;; finishResults: OrdinaryObjectCreate(null) — null [[Prototype]]
           (let $znj i32 (i32.const 0))
           (block $znoe (loop $znol
             (br_if $znoe (i32.ge_s (local.get $znj) (call $arr_len (local.get $znres))))
@@ -4576,22 +4576,41 @@
               (if (i32.eqz (call $is_undefined (local.get $zkpadobj)))
                 (then (if (i32.eqz (i32.or (call $is_object (local.get $zkpadobj)) (i32.or (call $is_array (local.get $zkpadobj)) (call $is_function (local.get $zkpadobj)))))
                   (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zipKeyed padding is not an object")) (return (call $v_undef))))))))))
-      ;; own enumerable string keys of the iterables object, in order
-      (let $zkkeys i32 (call $own_enum_keys (local.get $zki) (i32.const 0)))
+      ;; steps 11-12: allKeys = [[OwnPropertyKeys]] (strings + symbols, unfiltered); then per key re-check
+      ;; [[GetOwnProperty]].[[Enumerable]] (observable, live), Get the value, SKIP undefined values, and only
+      ;; keep the rest. $zkkeys accumulates the KEPT keys (parallel to iterators/nexts/df/pad).
+      (let $zkab i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $zkab) (local.get $zki))
+      (let $zkallv i64 (call $call_native (i32.const 204) (i32.const 1) (local.get $zkab) (call $v_undef)))  ;; Reflect.ownKeys(iterables)
+      (if (call $err) (then (return (call $v_undef))))
+      (let $zkall i32 (call $val_payload (local.get $zkallv)))
+      (let $zkkeys i32 (call $arr_new (i32.const 4)))
       (let $zkiters i32 (call $arr_new (i32.const 4)))
       (let $zknexts i32 (call $arr_new (i32.const 4)))
       (let $zkdf i32 (call $arr_new (i32.const 4)))
       (let $zkpad i32 (call $arr_new (i32.const 4)))
+      (let $zkgd i32 (call $heap_alloc (i32.const 16)))
       (let $zkk i32 (i32.const 0))
       (block $zkce (loop $zkcl
-        (br_if $zkce (i32.ge_s (local.get $zkk) (call $arr_len (local.get $zkkeys))))
-        (let $zkkey i64 (call $arr_get (local.get $zkkeys) (local.get $zkk)))
+        (br_if $zkce (i32.ge_s (local.get $zkk) (call $arr_len (local.get $zkall))))
+        (let $zkkey i64 (call $arr_get (local.get $zkall) (local.get $zkk)))
+        ;; step 12a: desc = ? GetOwnProperty(key); skip if absent or non-enumerable (getter NOT fired)
+        (i64.store (local.get $zkgd) (local.get $zki))
+        (i64.store (i32.add (local.get $zkgd) (i32.const 8)) (local.get $zkkey))
+        (let $zkdesc i64 (call $call_native (i32.const 156) (i32.const 2) (local.get $zkgd) (call $v_undef)))  ;; getOwnPropertyDescriptor
+        (if (call $err) (then (return (call $v_undef))))
+        (if (call $is_undefined (local.get $zkdesc)) (then (set! $zkk (i32.add (local.get $zkk) (i32.const 1))) (br $zkcl)))
+        (if (i32.eqz (call $truthy (call $get_prop (local.get $zkdesc) (call $mk_str (cstring "enumerable")))))
+          (then (set! $zkk (i32.add (local.get $zkk) (i32.const 1))) (br $zkcl)))
+        ;; step 12b-i/ii: value = ? Get(key); an undefined value is SKIPPED (not an error)
         (let $zkval i64 (call $get_prop (local.get $zki) (local.get $zkkey)))
         (if (call $err) (then (return (call $v_undef))))
+        (if (call $is_undefined (local.get $zkval)) (then (set! $zkk (i32.add (local.get $zkk) (i32.const 1))) (br $zkcl)))
         (if (i32.eqz (i32.or (call $is_object (local.get $zkval)) (i32.or (call $is_array (local.get $zkval)) (call $is_string (local.get $zkval)))))
           (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zipKeyed value is not iterable")) (return (call $v_undef))))
         (let $zksub i64 (call $vm_get_iter (local.get $zkval)))
         (if (call $err) (then (return (call $v_undef))))
+        (call $arr_push (local.get $zkkeys) (local.get $zkkey))
         (call $arr_push (local.get $zkiters) (local.get $zksub))
         (call $arr_push (local.get $zknexts) (call $get_prop (local.get $zksub) (call $mk_str (cstring "next"))))
         (call $arr_push (local.get $zkdf) (call $v_false))
