@@ -6512,13 +6512,21 @@
               (if (local.get $awu)
                 (then (set! $ofdecl (i32.const 1)) (set! $ofisconst (i32.const 1)) (set! $ofisusing (i32.const 1)) (set! $ofusingasync (i32.const 1))
                   (call $next_token) (call $next_token)))))  ;; consume `await` `using`
-          ;; NOTE: extending the `let`-as-IdentifierReference disambiguation into the for-head (so `for(let of E)`
-          ;; treats `let` as the loop target) is net-NEGATIVE: it regresses for-of/head-lhs-let and the strict
-          ;; `let`-as-LHS test (strict `let` must stay a reserved word / declaration keyword, not an identifier —
-          ;; the for-head path lacks the strict guard the statement path has). Left as-is; `let` in a for-head is
-          ;; always a declaration here. The statement-start disambiguation (6e67bb2) is unaffected.
+          ;; `let`-as-IdentifierReference in a for-head: in SLOPPY mode `let` is a lexical DECLARATION only when
+          ;; followed by `[`, `{`, or a BindingIdentifier; otherwise (`for(let in E)`, `for(let;;)`, `let=`, `let.`)
+          ;; it is the IdentifierReference `let` (a LeftHandSideExpression / Expression). `for(let of E)`: `of` is a
+          ;; BindingIdentifier → declaration attempt → `of E` fails → SyntaxError (for-of `[lookahead ≠ let]` upheld).
+          ;; In STRICT mode `let` is reserved → always the declaration keyword (an unbound name → error). Must gate
+          ;; the let/const branch below so an identifier-`let` falls through to the assignment-target/expression path.
+          (let $letisident i32 (i32.const 0))
+          (if (i32.and (i32.eqz (i32.load (i32.const 388))) (call $tok_is_kw (cstring "let")))
+            (then
+              (call $look_save) (call $next_token)  ;; peek past `let`
+              (set! $letisident (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.or (i32.eq (call $tok_kind) (i32.const 17))
+                 (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eqz (i32.or (call $is_reserved_word (call $ident_name)) (i32.or (call $tok_is_kw (cstring "in")) (call $tok_is_kw (cstring "instanceof"))))))))))
+              (call $look_restore)))
           (if (call $tok_is_kw (cstring "var")) (then (set! $ofdecl (i32.const 1)) (set! $ofisvar (i32.const 1)) (call $next_token))
-            (else (if (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))) (then (set! $ofdecl (i32.const 1)) (call $next_token))
+            (else (if (i32.and (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))) (i32.eqz (local.get $letisident))) (then (set! $ofdecl (i32.const 1)) (call $next_token))
               ;; `using` ForDeclaration: `for (using x of E)` — a using head is an immutable per-iteration
               ;; binding. Decl only when the next token, on the same line, is a BindingIdentifier (kind 3,
               ;; excluding the `in`/`instanceof` operators). `of` is normally a valid binding name here
@@ -6819,7 +6827,16 @@
                 (set! $forusing (i32.and (i32.eqz (call $nl_before)) (i32.and (i32.eq (call $tok_kind) (i32.const 3))
                   (i32.eqz (i32.or (call $tok_is_kw (cstring "in")) (call $tok_is_kw (cstring "instanceof")))))))
                 (call $look_restore)))))
-          (let $forlex i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (local.get $forusing) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const"))))))
+          ;; sloppy `let` as an IdentifierReference (not a declaration) in the regular-for init — mirrors the
+          ;; for-of/in detection gate above (this init parser re-runs from the head start via cursor_restore).
+          (let $forletident i32 (i32.const 0))
+          (if (i32.and (i32.eqz (i32.load (i32.const 388))) (call $tok_is_kw (cstring "let")))
+            (then
+              (call $look_save) (call $next_token)
+              (set! $forletident (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.or (i32.eq (call $tok_kind) (i32.const 17))
+                 (i32.and (i32.eq (call $tok_kind) (i32.const 3)) (i32.eqz (i32.or (call $is_reserved_word (call $ident_name)) (i32.or (call $tok_is_kw (cstring "in")) (call $tok_is_kw (cstring "instanceof"))))))))))
+              (call $look_restore)))
+          (let $forlex i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (local.get $forusing) (i32.or (i32.and (call $tok_is_kw (cstring "let")) (i32.eqz (local.get $forletident))) (call $tok_is_kw (cstring "const"))))))
           (let $forconst i32 (i32.and (i32.ne (call $tok_kind) (i32.const 21)) (i32.or (local.get $forusing) (call $tok_is_kw (cstring "const")))))  ;; const/using head → immutable binding (DEFCONST, reassign throws)
           (let $forletname i32 (i32.const 0))  ;; the single head let/const name → per-iteration fresh binding (0 = none / multi / destructuring: isolation only)
           (let $fhaspat i32 (i32.const 0))  ;; 1 = the head has a destructuring declarator (whose names aren't in $forlexb → no per-iteration copy)
@@ -6834,7 +6851,7 @@
           ;; init (consumes up to ';')
           (if (i32.ne (call $tok_kind) (i32.const 21))
             (then
-              (if (i32.or (local.get $forusing) (i32.or (call $tok_is_kw (cstring "var")) (i32.or (call $tok_is_kw (cstring "let")) (call $tok_is_kw (cstring "const")))))
+              (if (i32.or (local.get $forusing) (i32.or (call $tok_is_kw (cstring "var")) (i32.or (i32.and (call $tok_is_kw (cstring "let")) (i32.eqz (local.get $forletident))) (call $tok_is_kw (cstring "const")))))
                 (then
                   (if (local.get $forawu) (then (call $next_token)))  ;; consume `await` (then `using` below)
                   (call $next_token)  ;; consume var/let/const/using
