@@ -251,6 +251,30 @@
   (call $set_err (i32.const 1))
   (call $set_err_val (local.get $sv)))
 
+;; IteratorCloseAll(iters, throwCompletion): close each element in REVERSE List order, calling return()
+;; but keeping the pending error (the original throw wins). For Iterator.zip abrupt setup/iteration.
+(func $iters_close_rev_throw (param $arr i32) (effects)
+  (let $i i32 (i32.sub (call $arr_len (local.get $arr)) (i32.const 1)))
+  (block $e (loop $l
+    (br_if $e (i32.lt_s (local.get $i) (i32.const 0)))
+    (call $iter_close_throw (call $arr_get (local.get $arr) (local.get $i)))
+    (set! $i (i32.sub (local.get $i) (i32.const 1))) (br $l))))
+
+;; GetIteratorFlattenable(O) — O already validated as an Object. method = GetMethod(O, @@iterator);
+;; undefined/null → O is itself the iterator; callable → Call(method,O) (must return an Object); else TypeError.
+(func $get_iter_flattenable (param $o i64) (result i64) (effects)
+  (let $m i64 (call $get_prop (local.get $o) (call $make_symbol (cstring "@@iterator") (cstring "Symbol.iterator"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.or (call $is_undefined (local.get $m)) (call $is_null (local.get $m)))
+    (then (return (local.get $o))))
+  (if (i32.eqz (call $is_function (local.get $m)))
+    (then (call $throw_type (cstring "TypeError") (cstring "@@iterator is not a function")) (return (call $v_undef))))
+  (let $it i64 (call $call_val (local.get $m) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $o)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_object (local.get $it)))
+    (then (call $throw_type (cstring "TypeError") (cstring "@@iterator did not return an object")) (return (call $v_undef))))
+  (local.get $it))
+
 ;; build a lazy Iterator Helper object (kind: map0 filter1 take2 drop3 flatMap4)
 ;; WeakRef (358 ctor / 359 deref) + FinalizationRegistry (360 ctor / 361 register /
 ;; 362 unregister) — strong-ref, cleanup never runs (GC not observable from script)
@@ -4406,25 +4430,42 @@
                   (set! $zpaditer (call $vm_get_iter (local.get $zpv)))
                   (if (call $err) (then (return (call $v_undef))))
                   (set! $zhaspad (i32.const 1))))))))
-      ;; iterate iterables → open each sub-iterator
-      (let $zitems i32 (call $arr_new (i32.const 4)))
-      (call $spread_into (local.get $zitems) (local.get $ziterables))
-      (if (call $err) (then (return (call $v_undef))))
+      ;; steps 10-12: GetIterator(iterables), then LAZILY step one value at a time; GetIteratorFlattenable
+      ;; each (reject-primitives). On abrupt: IteratorStepValue failure closes the already-opened `iters`
+      ;; (reverse); a GetIteratorFlattenable failure closes «inputIter» ++ iters (reverse). No eager spread,
+      ;; so the observable open ordering matches the spec.
       (let $ziters i32 (call $arr_new (i32.const 4)))
       (let $znexts i32 (call $arr_new (i32.const 4)))
       (let $zdf i32 (call $arr_new (i32.const 4)))
-      (let $zk i32 (i32.const 0))
+      (let $zinput i64 (call $vm_get_iter (local.get $ziterables)))   ;; GetIterator(iterables, sync)
+      (if (call $err) (then (return (call $v_undef))))
+      (let $zinn i64 (call $get_prop (local.get $zinput) (call $mk_str (cstring "next"))))
+      (if (call $err) (then (call $iter_close_throw (local.get $zinput)) (return (call $v_undef))))
+      (let $zsb i32 (call $heap_alloc (i32.const 8)))
       (block $zce (loop $zcl
-        (br_if $zce (i32.ge_s (local.get $zk) (call $arr_len (local.get $zitems))))
-        (let $zit i64 (call $arr_get (local.get $zitems) (local.get $zk)))
-        (if (i32.eqz (i32.or (call $is_object (local.get $zit)) (i32.or (call $is_array (local.get $zit)) (call $is_string (local.get $zit)))))
-          (then (call $throw_type (cstring "TypeError") (cstring "Iterator.zip element is not iterable")) (return (call $v_undef))))
-        (let $zsub i64 (call $vm_get_iter (local.get $zit)))
-        (if (call $err) (then (return (call $v_undef))))
+        ;; IteratorStep(inputIter): call next, result must be Object, read done
+        (let $zir i64 (call $call_val (local.get $zinn) (i32.const 0) (local.get $zsb) (local.get $zinput)))
+        (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (return (call $v_undef))))
+        (if (i32.eqz (call $is_object (local.get $zir)))
+          (then (call $iters_close_rev_throw (local.get $ziters)) (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (return (call $v_undef))))
+        (let $zdn i64 (call $get_prop (local.get $zir) (call $mk_str (cstring "done"))))
+        (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (return (call $v_undef))))
+        (br_if $zce (call $truthy (local.get $zdn)))
+        ;; IteratorValue: Get(result, "value") — abrupt closes `iters`
+        (let $zvv i64 (call $get_prop (local.get $zir) (call $mk_str (cstring "value"))))
+        (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (return (call $v_undef))))
+        ;; GetIteratorFlattenable(value, reject-primitives): a primitive → TypeError; any abrupt from here
+        ;; closes «inputIter» ++ iters (reverse: iters first, then inputIter).
+        (if (i32.eqz (i32.or (call $is_object (local.get $zvv)) (i32.or (call $is_array (local.get $zvv)) (call $is_function (local.get $zvv)))))
+          (then (call $iters_close_rev_throw (local.get $ziters)) (call $iter_close_throw (local.get $zinput)) (call $throw_type (cstring "TypeError") (cstring "Iterator.zip element is not iterable")) (return (call $v_undef))))
+        (let $zsub i64 (call $get_iter_flattenable (local.get $zvv)))
+        (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (call $iter_close_throw (local.get $zinput)) (return (call $v_undef))))
+        (let $zsn i64 (call $get_prop (local.get $zsub) (call $mk_str (cstring "next"))))
+        (if (call $err) (then (call $iters_close_rev_throw (local.get $ziters)) (call $iter_close_throw (local.get $zinput)) (return (call $v_undef))))
         (call $arr_push (local.get $ziters) (local.get $zsub))
-        (call $arr_push (local.get $znexts) (call $get_prop (local.get $zsub) (call $mk_str (cstring "next"))))
+        (call $arr_push (local.get $znexts) (local.get $zsn))
         (call $arr_push (local.get $zdf) (call $v_false))
-        (set! $zk (i32.add (local.get $zk) (i32.const 1))) (br $zcl)))
+        (br $zcl)))
       ;; longest mode with an explicit padding iterable: pull exactly iterableCount values (lazily,
       ;; so an infinite padding iterator terminates); if it finishes early the rest are undefined;
       ;; if not exhausted, close it.
@@ -4434,7 +4475,7 @@
           (let $zpbuf i32 (call $heap_alloc (i32.const 8)))
           (let $zpdone i32 (i32.const 0))
           (let $zpi i32 (i32.const 0))
-          (let $zpcount i32 (call $arr_len (local.get $zitems)))
+          (let $zpcount i32 (call $arr_len (local.get $ziters)))
           (block $zppe (loop $zppl
             (br_if $zppe (i32.ge_s (local.get $zpi) (local.get $zpcount)))
             (if (local.get $zpdone)
@@ -4501,11 +4542,14 @@
             (if (i32.eq (local.get $znmode) (i32.const 0))   ;; shortest: first done → close the rest, finish
               (then
                 (call $scope_define (local.get $znself) (cstring "@@zalldone") (call $v_true))
-                (let $zj i32 (i32.add (local.get $zni) (i32.const 1)))
+                ;; IteratorCloseAll(open iterators, NormalCompletion) in REVERSE List order — every still-open
+                ;; iterator except the one that just reported done (index $zni) and already-finished ones (@@zdf).
+                (let $zj i32 (i32.sub (local.get $znn) (i32.const 1)))
                 (block $zfe (loop $zfl
-                  (br_if $zfe (i32.ge_s (local.get $zj) (local.get $znn)))
-                  (call $iter_close (call $arr_get (local.get $zniters) (local.get $zj)))
-                  (set! $zj (i32.add (local.get $zj) (i32.const 1))) (br $zfl)))
+                  (br_if $zfe (i32.lt_s (local.get $zj) (i32.const 0)))
+                  (if (i32.and (i32.ne (local.get $zj) (local.get $zni)) (i32.eqz (call $truthy (call $arr_get (local.get $zndf) (local.get $zj)))))
+                    (then (call $iter_close (call $arr_get (local.get $zniters) (local.get $zj)))))
+                  (set! $zj (i32.sub (local.get $zj) (i32.const 1))) (br $zfl)))
                 (call $scope_define (local.get $znr) (cstring "value") (call $v_undef)) (call $scope_define (local.get $znr) (cstring "done") (call $v_true))
                 (return (call $mk_obj (local.get $znr)))))
             (call $arr_set (local.get $zndf) (local.get $zni) (call $v_true))   ;; longest/strict: mark this one done
@@ -4517,11 +4561,12 @@
       ;; strict: lengths must match — mixing done and active in one round is an error
       (if (i32.and (i32.eq (local.get $znmode) (i32.const 2)) (i32.and (i32.gt_s (local.get $zndone) (i32.const 0)) (i32.gt_s (local.get $znactive) (i32.const 0))))
         (then
-          (let $zj2 i32 (i32.const 0))
+          ;; IteratorCloseAll(still-open iterators, the error) in REVERSE List order
+          (let $zj2 i32 (i32.sub (local.get $znn) (i32.const 1)))
           (block $zse (loop $zsl
-            (br_if $zse (i32.ge_s (local.get $zj2) (local.get $znn)))
+            (br_if $zse (i32.lt_s (local.get $zj2) (i32.const 0)))
             (if (i32.eqz (call $truthy (call $arr_get (local.get $zndf) (local.get $zj2)))) (then (call $iter_close (call $arr_get (local.get $zniters) (local.get $zj2)))))
-            (set! $zj2 (i32.add (local.get $zj2) (i32.const 1))) (br $zsl)))
+            (set! $zj2 (i32.sub (local.get $zj2) (i32.const 1))) (br $zsl)))
           (call $throw_type (cstring "TypeError") (cstring "Iterator.zip strict: iterators have different lengths")) (return (call $v_undef))))
       ;; no active iterators this round → all done
       (if (i32.eqz (local.get $znactive))
