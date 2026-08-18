@@ -4248,7 +4248,7 @@
       (call $vm_emit_op (local.get $code) (i32.const 48))  ;; PUSHHANDLER
       (let $dhloc i32 (call $vm_emit_cursor)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; catchIp placeholder
       (call $vm_emit_op (local.get $code) (cstring "@@dexc"))
-      (call $vm_emit_op (local.get $code) (i32.const 0))  ;; runOnReturn=0 (iterator-close, not a finally)
+      (call $vm_emit_op (local.get $code) (i32.const 1))  ;; runOnReturn=1: a generator .return()/.throw() suspended at a yield inside the pattern (e.g. an element default) must IteratorClose — the catchIp closes then re-raises the caught completion. Lexical abrupt exits pop this handler at compile time.
       (let $i i32 (i32.const 0))
       (block $ae (loop $al
         (br_if $ae (i32.eq (call $tok_kind) (i32.const 20)))  ;; ]
