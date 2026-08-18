@@ -6364,7 +6364,12 @@
       (call $throw_type (cstring "TypeError") (cstring "Cannot convert to a BigInt")) (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 5))  ;; String(x) / new String(x) (incl. super() from a subclass)
     (then
-      (let $sval i64 (if i64 (i32.eqz (local.get $argc)) (then (call $mk_str (cstring ""))) (else (call $mk_str (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))))
+      ;; String(sym) as a FUNCTION (no new.target) → SymbolDescriptiveString (to_str handles it); but as a
+      ;; CONSTRUCTOR (`new String(sym)` / super()), reg 640 is set → a Symbol argument is a TypeError.
+      (let $sarg0 i64 (if i64 (i32.eqz (local.get $argc)) (then (call $v_undef)) (else (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))))
+      (if (i32.and (i32.load (i32.const 640)) (call $is_symbol (local.get $sarg0)))
+        (then (call $throw_type (cstring "TypeError") (cstring "Cannot convert a Symbol value to a string")) (return (call $v_undef))))
+      (let $sval i64 (if i64 (i32.eqz (local.get $argc)) (then (call $mk_str (cstring ""))) (else (call $mk_str (call $to_str (local.get $sarg0))))))
       (if (call $err) (then (return (call $v_undef))))
       ;; super() from a subclass → init [[StringData]]. (Note: exotic length/index props are NOT
       ;; added here — a String subclass instance carries __prim__ but lacks the indexed exotics.)
