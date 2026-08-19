@@ -3226,6 +3226,17 @@
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $rkind))  ;; rkind = 0 (next)
   (let $yval i32 (call $vm_tmpname))
   (let $top i32 (call $vm_emit_cursor))
+  ;; AsyncGeneratorUnwrapYieldResumption: a RETURN resumption (rkind 2) Awaits its value before it is
+  ;; forwarded to the inner iterator's return (so a thenable .return() argument is assimilated, with the
+  ;; spec-mandated extra tick). next/throw resumptions are not awaited here.
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $rkind))
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 2)))
+  (call $vm_emit_op (local.get $code) (i32.const 18))  ;; [rkind==2]
+  (let $jnoraw i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → skip await
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $recv))
+  (call $vm_emit_op (local.get $code) (i32.const 50))   ;; AWAIT recv
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $recv))
+  (call $vm_patch (local.get $code) (local.get $jnoraw))
   ;; forward the current resumption to the inner iterator → [cr] (a promise, or recv for a missing return)
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $it))
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $recv))
@@ -3238,8 +3249,11 @@
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 2)))
   (call $vm_emit_op (local.get $code) (i32.const 18))   ;; [preact==2]
   (let $jnot2 i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))
+  ;; no return method → the outer generator returns Await(received.[[Value]]). Per the spec this Await is
+  ;; distinct from the UnwrapYieldResumption Await done at the loop top (a thenable is re-assimilated, so a
+  ;; `then` getter is observed twice), so await recv again here before returning.
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yval))
-  (call $vm_emit_op (local.get $code) (i32.const 50))   ;; AWAIT the return value (no return method → outer gen returns Await(recv))
+  (call $vm_emit_op (local.get $code) (i32.const 50))   ;; AWAIT recv
   (call $vm_finally_emit_all (local.get $code))
   (call $vm_emit_op (local.get $code) (i32.const 20))   ;; RET
   (call $vm_patch (local.get $code) (local.get $jnot2))
