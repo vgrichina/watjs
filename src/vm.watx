@@ -747,18 +747,28 @@
 ;; return a promise for { value: Await(value), done }. A getter throwing surfaces via err (the caller
 ;; unwinds); a thenable/rejected value is assimilated by vm_promise_resolve so the derived promise
 ;; rejects, matching AsyncFromSync semantics.
-(func $asyncfromsync_cont (param $result i64) (result i64) (effects)
+(func $asyncfromsync_cont (param $result i64) (param $syncit i64) (param $closerej i32) (result i64) (effects)
+  ;; a poisoned done/value getter (or non-object result) REJECTS the promise (IfAbruptRejectPromise),
+  ;; it does not throw synchronously out of the async iterator method.
   (if (i32.eqz (call $is_object (local.get $result)))
-    (then (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (return (call $v_undef))))
+    (then (return (call $mk_promise (i32.const 2) (call $make_error (cstring "TypeError") (cstring "iterator result is not an object"))))))
   (let $done i32 (call $truthy (call $get_prop (local.get $result) (call $mk_str (cstring "done")))))
-  (if (call $err) (then (return (call $v_undef))))
+  (if (call $err) (then (let $ed i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $ed)))))
   (let $value i64 (call $get_prop (local.get $result) (call $mk_str (cstring "value"))))
-  (if (call $err) (then (return (call $v_undef))))
+  (if (call $err) (then (let $ev i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $ev)))))
   (let $co i32 (call $obj_new (i32.const 2)))
   (call $scope_define (local.get $co) (cstring "@@done") (call $mk_bool (local.get $done)))
+  ;; closeOnRejection (next/throw, not return): if the awaited value rejects and done is false, close the
+  ;; sync iterator (IteratorClose with the rejection) before propagating — spec AsyncFromSyncIteratorContinuation step 13.
+  (let $onrej i64 (call $v_undef))
+  (if (i32.and (local.get $closerej) (i32.eqz (local.get $done)))
+    (then
+      (let $ro i32 (call $obj_new (i32.const 2)))
+      (call $scope_define (local.get $ro) (cstring "@@syncit") (local.get $syncit))
+      (set! $onrej (call $promise_bound_settler (i32.const 543) (call $mk_obj (local.get $ro))))))
   (call $promise_then (call $vm_promise_resolve (local.get $value))
     (call $promise_bound_settler (i32.const 542) (call $mk_obj (local.get $co)))
-    (call $v_undef)))
+    (local.get $onrej)))
 
 ;; GetIterator(v, async) for async yield*: like vm_get_async_iter but wrap the SYNC fallback in an
 ;; AsyncFromSyncIterator so its values are Awaited (spec CreateAsyncFromSyncIterator).
