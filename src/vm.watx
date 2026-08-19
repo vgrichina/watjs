@@ -4357,11 +4357,12 @@
             (set! $i (i32.add (local.get $i) (i32.const 1))) (call $next_token) (br $al)))
         (let $isrest i32 (i32.eq (call $tok_kind) (i32.const 54)))
         (if (local.get $isrest) (then (call $next_token)))
-        ;; ASSIGNMENT-mode (reg 676==1) member target (`[a.b]=`,`[a[k]]=`,`[{}.y]=`): the target REFERENCE must
-        ;; be evaluated BEFORE IteratorStep (an abrupt ref eval, e.g. a throwing computed key, must IteratorClose
-        ;; without ever calling next()). Look ahead (non-rest only) for a member tail after the element base.
+        ;; ASSIGNMENT-mode (reg 676==1) member target (`[a.b]=`,`[a[k]]=`,`[{}.y]=`,`[...a.b]=`): the target
+        ;; REFERENCE must be evaluated BEFORE IteratorStep/IteratorRest (an abrupt ref eval, e.g. a throwing
+        ;; computed key, must IteratorClose without ever calling next()). Look ahead for a member tail after the
+        ;; element base (identifier, or an ObjectLiteral/ArrayLiteral base). Handles rest members too.
         (let $ismbr i32 (i32.const 0))
-        (if (i32.and (i32.eqz (local.get $isrest)) (i32.eq (i32.load (i32.const 676)) (i32.const 1)))
+        (if (i32.eq (i32.load (i32.const 676)) (i32.const 1))
           (then
             (if (i32.eq (call $tok_kind) (i32.const 3))  ;; identifier base
               (then (let $las i32 (call $cursor_save)) (call $next_token) (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))) (then (set! $ismbr (i32.const 1)))) (call $cursor_restore (local.get $las)))
@@ -4374,9 +4375,14 @@
               (then (let $mnm i32 (call $ident_name)) (call $next_token) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $mnm)))  ;; LOADVAR base
               (else (call $vm_c_primary (local.get $code))))  ;; ObjectLiteral/ArrayLiteral base
             (call $vm_c_dstr_member_tail_ref (local.get $code))  ;; navigate → [finalObj] or [finalObj, key]
-            (call $vm_emit_iter_step (local.get $code) (local.get $itnm) (local.get $dnm) (local.get $rnm))  ;; value → stack (ref underneath)
+            ;; a rest member target may not carry a default (`[...a.b = x]` is a SyntaxError)
+            (if (i32.and (local.get $isrest) (i32.eq (call $tok_kind) (i32.const 24)))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element may not have a default initializer")) (return)))
+            (if (local.get $isrest)
+              (then (call $vm_emit_iter_rest (local.get $code) (local.get $itnm) (local.get $dnm) (local.get $rnm)))  ;; rest → array of remaining (ref underneath)
+              (else (call $vm_emit_iter_step (local.get $code) (local.get $itnm) (local.get $dnm) (local.get $rnm))))  ;; value → stack (ref underneath)
             (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval"))  ;; STOREVAR value (ref back on top)
-            (call $vm_c_dstr_member_tail_assign (local.get $code)))  ;; default + SETPROP/SETIDX
+            (call $vm_c_dstr_member_tail_assign (local.get $code)))  ;; default (non-rest) + SETPROP/SETIDX
           (else
             (call $vm_c_dstr_elem_nonmember (local.get $code) (local.get $isrest) (local.get $itnm) (local.get $dnm) (local.get $rnm))
             (if (call $err) (then (return)))))
