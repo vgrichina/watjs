@@ -4402,13 +4402,31 @@
       (call $vm_emit_op (local.get $code) (i32.const 74))  ;; CLOSEITER
       (call $vm_patch (local.get $code) (local.get $cdj))
       (let $dskip i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → past the throw handler
-      ;; throw handler: close the iterator (unless done — a next()-throw doesn't close), re-throw original
+      ;; abrupt handler (runOnReturn=1 → also catches a generator .return() unwind). Close the iterator (unless
+      ;; done) then re-raise the caught completion. IteratorClose semantics differ by completion type:
+      ;;  - THROW completion (@@dexc ≠ sentinel): the original exception wins → CLOSEITER-suppress (75).
+      ;;  - RETURN completion (@@dexc === reg832 sentinel): IteratorClose's abnormal return() result PROPAGATES
+      ;;    (return()==null → TypeError, return() throws → that throw) → CLOSEITER (74, validating).
       (i32.store (i32.add (local.get $code) (local.get $dhloc)) (call $vm_emit_cursor))  ;; catchIp = here
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@dexc"))  ;; LOADVAR @@dexc
+      (call $vm_emit_op (local.get $code) (i32.const 130)) (call $vm_emit_op (local.get $code) (i32.const 18))  ;; PUSHSENTINEL; STRICTEQ → [isReturn]
+      (let $isretj i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → throw-path
+      ;; return-completion path: validating CLOSEITER (74)
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $dnm)) (call $vm_emit_op (local.get $code) (i32.const 23))  ;; LOADVAR done; NOT
+      (let $rdnc i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → skip (done)
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itnm))  ;; LOADVAR it
+      (call $vm_emit_op (local.get $code) (i32.const 74))  ;; CLOSEITER (propagate abnormal return() result)
+      (call $vm_patch (local.get $code) (local.get $rdnc))
+      (let $afterclose i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → rethrow
+      ;; throw-completion path: suppress
+      (call $vm_patch (local.get $code) (local.get $isretj))
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $dnm)) (call $vm_emit_op (local.get $code) (i32.const 23))  ;; LOADVAR done; NOT
       (let $dnc i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → skip close (done)
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $itnm))  ;; LOADVAR it
       (call $vm_emit_op (local.get $code) (i32.const 75))  ;; CLOSEITER-suppress
       (call $vm_patch (local.get $code) (local.get $dnc))
+      (call $vm_patch (local.get $code) (local.get $afterclose))
+      ;; re-raise the caught completion (sentinel → continues the return unwind; error → re-throws)
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@dexc"))  ;; LOADVAR @@dexc
       (call $vm_emit_op (local.get $code) (i32.const 47))  ;; THROW
       (call $vm_patch (local.get $code) (local.get $dskip))
@@ -9478,6 +9496,11 @@
                     (if (call $err) (then (br $disp)))  ;; return() threw → propagate
                     (if (i32.eqz (i32.or (call $is_object (local.get $cres)) (i32.or (call $is_array (local.get $cres)) (call $is_function (local.get $cres)))))
                       (then (call $throw_type (cstring "TypeError") (cstring "iterator return() returned a non-object")) (br $disp)))))))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 130))  ;; PUSHSENTINEL: push the return-completion sentinel (reg 832) — for a destructuring close handler to tell a RETURN completion (validating IteratorClose) from a THROW (suppress)
+      (then
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (i64.load (i32.const 832)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 35))  ;; SETIDX — [obj, key, val]
       (then
