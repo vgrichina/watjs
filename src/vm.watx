@@ -4232,6 +4232,104 @@
     (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected reserved word in binding")) (return (i32.const 1))))
   (call $vm_strict_lhs_check (local.get $name)))
 
+;; Split of vm_c_dstr_member_tail for iterator-order-correct array destructuring member targets: the target
+;; reference is evaluated BEFORE IteratorStep, then the value stepped, then assigned.
+;; _ref: base object on the stack, cursor at the first '.'/'['. Navigates → [finalObj] (static) or
+;; [finalObj, key] (computed); records tail kind in reg 1244 (0=static,1=computed) + static key in reg 1248.
+(func $vm_c_dstr_member_tail_ref (param $code i32) (effects)
+  (let $tkind i32 (i32.const 0))
+  (let $tkey i32 (i32.const 0))
+  (block $te (loop $tl
+    (if (i32.eq (call $tok_kind) (i32.const 23))  ;; '.'
+      (then
+        (call $next_token)
+        (let $k i32 (call $priv_key (call $ident_name))) (call $next_token)
+        (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))
+          (then (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (local.get $k)))  ;; GETPROP navigate
+          (else (set! $tkind (i32.const 0)) (set! $tkey (local.get $k)) (br $te))))
+      (else
+        (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token)  ;; '[' expr ']'
+        (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))
+          (then (call $vm_emit_op (local.get $code) (i32.const 31)))  ;; GETIDX navigate
+          (else (set! $tkind (i32.const 1)) (br $te)))))
+    (br $tl)))
+  (i32.store (i32.const 1244) (local.get $tkind))
+  (i32.store (i32.const 1248) (local.get $tkey)))
+;; _assign: value already in @@dval, ref ([finalObj] or [finalObj,key]) on the stack. Trailing `= default`
+;; (on @@dval), then load the value and SETPROP/SETIDX per reg 1244.
+(func $vm_c_dstr_member_tail_assign (param $code i32) (effects)
+  (if (i32.eq (call $tok_kind) (i32.const 24))  ;; `= default`
+    (then
+      (call $next_token)
+      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@dval"))
+      (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (call $vm_emit_op (local.get $code) (i32.const 18))  ;; STRICTEQ undefined
+      (let $dsk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → present
+      (call $vm_c_expr (local.get $code))
+      (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval"))
+      (call $vm_patch (local.get $code) (local.get $dsk))))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (cstring "@@dval"))  ;; value on top
+  (if (i32.eq (i32.load (i32.const 1244)) (i32.const 0))
+    (then (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (i32.load (i32.const 1248))))  ;; SETPROP
+    (else (call $vm_emit_op (local.get $code) (i32.const 35))))  ;; SETIDX
+  (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP
+
+;; the NON-member array-element compilation (extracted verbatim from vm_c_destructure_param so the member
+;; reorder above can wrap it cleanly): IteratorStep the value then compile the element target (nested pattern /
+;; literal-base member / identifier leaf / default / store). Syntax errors set the err flag and return.
+(func $vm_c_dstr_elem_nonmember (param $code i32) (param $isrest i32) (param $itnm i32) (param $dnm i32) (param $rnm i32) (effects)
+        ;; fetch the element value onto the stack (iterator protocol)
+        (if (local.get $isrest)
+          (then (call $vm_emit_iter_rest (local.get $code) (local.get $itnm) (local.get $dnm) (local.get $rnm)))  ;; ...rest → array of remaining
+          (else (call $vm_emit_iter_step (local.get $code) (local.get $itnm) (local.get $dnm) (local.get $rnm))))  ;; next element
+        ;; nested pattern target → store to a fresh temp, recurse
+        (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))
+          (then
+            (let $litmember i32 (i32.const 0))
+            (if (i32.ne (i32.load (i32.const 676)) (i32.const 0))
+              (then
+                (let $lms i32 (call $cursor_save))
+                (call $vm_skip_balanced)
+                (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))) (then (set! $litmember (i32.const 1))))
+                (call $cursor_restore (local.get $lms))))
+            (if (local.get $litmember)
+              (then
+                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval"))  ;; element value → @@dval
+                (call $vm_c_primary (local.get $code))  ;; evaluate the ObjectLiteral/ArrayLiteral base → [obj]
+                (call $vm_c_dstr_member_tail (local.get $code)))
+              (else
+                (let $nt i32 (call $vm_tmpname))
+                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nt))  ;; STOREVAR nt
+                (if (local.get $isrest)
+                  (then
+                    (let $rps i32 (call $cursor_save))
+                    (call $vm_skip_balanced)
+                    (if (i32.eq (call $tok_kind) (i32.const 24)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element may not have a default initializer")) (return)))
+                    (call $cursor_restore (local.get $rps))
+                    (call $vm_c_destructure_param (local.get $code) (local.get $nt)))
+                  (else (call $vm_c_nested_with_default (local.get $code) (local.get $nt)))))))
+          (else
+            (let $nm i32 (call $ident_name)) (call $next_token)
+            (if (i32.eq (call $tok_kind) (i32.const 55))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Optional chain is not a valid assignment target")) (return)))
+            (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))) (then (if (call $dstr_leaf_reserved (local.get $nm)) (then (return)))))
+            (if (i32.and (local.get $isrest) (i32.eq (call $tok_kind) (i32.const 24)))
+              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element may not have a default initializer")) (return)))
+            (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; member target a.b / a[i] (assignment form)
+              (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval")) (call $vm_c_dstr_assign_member (local.get $code) (local.get $nm)))
+              (else
+            (if (i32.and (i32.eqz (local.get $isrest)) (i32.eq (call $tok_kind) (i32.const 24)))
+              (then
+                (call $next_token)
+                (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (call $vm_emit_op (local.get $code) (i32.const 18))
+                (let $sk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → value present
+                (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP undefined
+                (let $afs i32 (call $vm_emit_cursor))
+                (call $vm_c_expr (local.get $code))  ;; default (assignment-level: stops at ',')
+                (if (call $vm_is_anon_fn_def (local.get $afs))  ;; anon fn default → name = binding
+                  (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $nm))))
+                (call $vm_patch (local.get $code) (local.get $sk))))
+            (call $vm_emit_dstr_store (local.get $code) (local.get $nm)))))))
+
 (func $vm_c_destructure_param (param $code i32) (param $srcTmp i32) (effects)
   (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [ array pattern ] — via iterator protocol
     (then
@@ -4259,69 +4357,29 @@
             (set! $i (i32.add (local.get $i) (i32.const 1))) (call $next_token) (br $al)))
         (let $isrest i32 (i32.eq (call $tok_kind) (i32.const 54)))
         (if (local.get $isrest) (then (call $next_token)))
-        ;; fetch the element value onto the stack (iterator protocol)
-        (if (local.get $isrest)
-          (then (call $vm_emit_iter_rest (local.get $code) (local.get $itnm) (local.get $dnm) (local.get $rnm)))  ;; ...rest → array of remaining
-          (else (call $vm_emit_iter_step (local.get $code) (local.get $itnm) (local.get $dnm) (local.get $rnm))))  ;; next element
-        ;; nested pattern target → store to a fresh temp, recurse
-        (if (i32.or (i32.eq (call $tok_kind) (i32.const 19)) (i32.eq (call $tok_kind) (i32.const 17)))
+        ;; ASSIGNMENT-mode (reg 676==1) member target (`[a.b]=`,`[a[k]]=`,`[{}.y]=`): the target REFERENCE must
+        ;; be evaluated BEFORE IteratorStep (an abrupt ref eval, e.g. a throwing computed key, must IteratorClose
+        ;; without ever calling next()). Look ahead (non-rest only) for a member tail after the element base.
+        (let $ismbr i32 (i32.const 0))
+        (if (i32.and (i32.eqz (local.get $isrest)) (i32.eq (i32.load (i32.const 676)) (i32.const 1)))
           (then
-            ;; ASSIGNMENT form (reg 676) only: an ObjectLiteral/ArrayLiteral element FOLLOWED BY a member
-            ;; access (`[ {..}.y ] = ..`, `[ [..][0] ] = ..`) is a MemberExpression assignment target with
-            ;; a literal base, NOT a nested pattern. Detect by skipping the balanced literal and checking
-            ;; for a trailing '.'/'['; if so, evaluate the literal via vm_c_primary and assign into it.
-            ;; also applies to a REST target: `[...{}[k]] = v` / `[...[][0]] = v` is a MemberExpression
-            ;; assignment target with a literal base (skip_balanced + a trailing '.'/'[' distinguishes it
-            ;; from a nested binding pattern like `[...[x]]`, whose literal is followed by ']').
-            (let $litmember i32 (i32.const 0))
-            (if (i32.ne (i32.load (i32.const 676)) (i32.const 0))
-              (then
-                (let $lms i32 (call $cursor_save))
-                (call $vm_skip_balanced)
-                (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))) (then (set! $litmember (i32.const 1))))
-                (call $cursor_restore (local.get $lms))))
-            (if (local.get $litmember)
-              (then
-                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval"))  ;; element value → @@dval
-                (call $vm_c_primary (local.get $code))  ;; evaluate the ObjectLiteral/ArrayLiteral base → [obj]
-                (call $vm_c_dstr_member_tail (local.get $code)))
-              (else
-                (let $nt i32 (call $vm_tmpname))
-                (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nt))  ;; STOREVAR nt
-                (if (local.get $isrest)
-                  (then
-                    ;; a BindingRestElement may NOT carry a default initializer (`[...[x] = []]` is a SyntaxError)
-                    (let $rps i32 (call $cursor_save))
-                    (call $vm_skip_balanced)
-                    (if (i32.eq (call $tok_kind) (i32.const 24)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element may not have a default initializer")) (return)))
-                    (call $cursor_restore (local.get $rps))
-                    (call $vm_c_destructure_param (local.get $code) (local.get $nt)))
-                  (else (call $vm_c_nested_with_default (local.get $code) (local.get $nt)))))))
+            (if (i32.eq (call $tok_kind) (i32.const 3))  ;; identifier base
+              (then (let $las i32 (call $cursor_save)) (call $next_token) (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))) (then (set! $ismbr (i32.const 1)))) (call $cursor_restore (local.get $las)))
+              (else (if (i32.or (i32.eq (call $tok_kind) (i32.const 17)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; { / [ literal base
+                (then (let $lms2 i32 (call $cursor_save)) (call $vm_skip_balanced) (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19))) (then (set! $ismbr (i32.const 1)))) (call $cursor_restore (local.get $lms2))))))))
+        (if (local.get $ismbr)
+          (then
+            ;; eval the target reference (base + navigation + computed key) → [ref] on the stack, BEFORE the step
+            (if (i32.eq (call $tok_kind) (i32.const 3))
+              (then (let $mnm i32 (call $ident_name)) (call $next_token) (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $mnm)))  ;; LOADVAR base
+              (else (call $vm_c_primary (local.get $code))))  ;; ObjectLiteral/ArrayLiteral base
+            (call $vm_c_dstr_member_tail_ref (local.get $code))  ;; navigate → [finalObj] or [finalObj, key]
+            (call $vm_emit_iter_step (local.get $code) (local.get $itnm) (local.get $dnm) (local.get $rnm))  ;; value → stack (ref underneath)
+            (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval"))  ;; STOREVAR value (ref back on top)
+            (call $vm_c_dstr_member_tail_assign (local.get $code)))  ;; default + SETPROP/SETIDX
           (else
-            (let $nm i32 (call $ident_name)) (call $next_token)
-            ;; an optional chain is never a valid assignment target: `[a?.b] = …` is a SyntaxError.
-            (if (i32.eq (call $tok_kind) (i32.const 55))
-              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Optional chain is not a valid assignment target")) (return)))
-            (if (i32.eqz (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))) (then (if (call $dstr_leaf_reserved (local.get $nm)) (then (return)))))  ;; reserved/strict array-element leaf (skip a member-target base; nested ifs — i32.and is not short-circuit)
-            ;; a simple BindingRestElement (`...x`) also may not have a default (`[...x = 1]`)
-            (if (i32.and (local.get $isrest) (i32.eq (call $tok_kind) (i32.const 24)))
-              (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "rest element may not have a default initializer")) (return)))
-            (if (i32.or (i32.eq (call $tok_kind) (i32.const 23)) (i32.eq (call $tok_kind) (i32.const 19)))  ;; member target a.b / a[i] (assignment form)
-              (then (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (cstring "@@dval")) (call $vm_c_dstr_assign_member (local.get $code) (local.get $nm)))
-              (else
-            ;; element default (value === undefined ? default : value)
-            (if (i32.and (i32.eqz (local.get $isrest)) (i32.eq (call $tok_kind) (i32.const 24)))
-              (then
-                (call $next_token)
-                (call $vm_emit_op (local.get $code) (i32.const 32)) (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)) (call $vm_emit_op (local.get $code) (i32.const 18))
-                (let $sk i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → value present
-                (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP undefined
-                (let $afs i32 (call $vm_emit_cursor))
-                (call $vm_c_expr (local.get $code))  ;; default (assignment-level: stops at ',')
-                (if (call $vm_is_anon_fn_def (local.get $afs))  ;; anon fn default → name = binding
-                  (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $nm))))
-                (call $vm_patch (local.get $code) (local.get $sk))))
-            (call $vm_emit_dstr_store (local.get $code) (local.get $nm))))))  ;; store array-element target (binding/assignment)
+            (call $vm_c_dstr_elem_nonmember (local.get $code) (local.get $isrest) (local.get $itnm) (local.get $dnm) (local.get $rnm))
+            (if (call $err) (then (return)))))
         (set! $i (i32.add (local.get $i) (i32.const 1)))
         ;; a BindingRestElement must be the LAST element: `[...x, y]` / `[...x,]` are SyntaxErrors.
         (if (local.get $isrest)
