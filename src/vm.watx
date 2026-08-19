@@ -6415,17 +6415,16 @@
                       ;; unwind binds the thrown value to a temp, then the param binds LEXICALLY in a fresh scope.
                       ;; This keeps it separate from an outer `var e` of the same name (block-scoped); a body
                       ;; `var e` (AnnexB B.3.5) hoists to the function var scope but its references resolve to
-                      ;; THIS catch scope (shadowing), so `catch(e){ var e = … }` still targets the param. Only
-                      ;; the no-finally form (keeps the finally-stack simple; the finally form stays unscoped).
-                      (if (i32.eqz (local.get $prefin))
-                        (then
-                          (let $sctmp i32 (call $vm_tmpname))
-                          (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $sctmp))  ;; unwind binds the thrown value to the temp
-                          (set! $catchscope (i32.const 1))
-                          (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)  ;; ENTERSCOPE 0
-                          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sctmp))  ;; LOADVAR temp
-                          (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $cpn)))  ;; LEXDEFINIT cpn into the catch scope
-                        (else (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $cpn))))  ;; finally form: unscoped (unwind binds the param directly)
+                      ;; THIS catch scope (shadowing), so `catch(e){ var e = … }` still targets the param. Done in
+                      ;; BOTH the no-finally and finally forms so a nested same-name `catch(e)` shadows correctly
+                      ;; (the catch scope is a kind-2 finally-stack entry above the try-finally; abrupt exits pop
+                      ;; it first, then run the finally — and the normal/exception paths below pop it explicitly).
+                      (let $sctmp i32 (call $vm_tmpname))
+                      (i32.store (i32.add (local.get $code) (local.get $vloc)) (local.get $sctmp))  ;; unwind binds the thrown value to the temp
+                      (set! $catchscope (i32.const 1))
+                      (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)  ;; ENTERSCOPE 0
+                      (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $sctmp))  ;; LOADVAR temp
+                      (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $cpn))  ;; LEXDEFINIT cpn into the catch scope
                       (call $next_token) (call $next_token)  ;; var ')' → cursor at the catch body '{'
                       ;; Early Error (CatchClause): the catch Block's LexicallyDeclaredNames must not include
                       ;; the catch parameter name — `catch(x){ let x }`, `catch(e){ class e {} }`,
@@ -6454,7 +6453,8 @@
               (if (local.get $prefin)
                 (then
                   (call $vm_emit_op (local.get $code) (i32.const 49))  ;; POPHANDLER (catch completed normally)
-                  (call $vm_finally_pop)  ;; finally code is emitted with the entry popped
+                  (if (local.get $catchscope) (then (call $vm_emit_op (local.get $code) (i32.const 94)) (call $vm_finally_pop)))  ;; LEAVEWITH (pop the catch scope) before the finally + drop its finally-stack entry
+                  (call $vm_finally_pop)  ;; finally code is emitted with the try's entry popped
                   (set! $jcatch (call $vm_emit_jump (local.get $code) (i32.const 12)))  ;; JMP → Lnormal
                   ;; finIp: the catch body threw — bind the exception, run the finally, re-throw
                   (i32.store (i32.add (local.get $code) (local.get $cfhloc)) (call $vm_emit_cursor))
