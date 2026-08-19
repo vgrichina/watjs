@@ -8382,10 +8382,16 @@
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $pv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (i64.store (i32.add (call $val_payload (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))))) (i32.const 16)) (local.get $pv))
-        ;; proto.constructor = ctor  {W:true,E:false,C:true}
+        ;; proto.constructor = ctor {W:true,E:false,C:true} — back-fill the placeholder (undefined) that was
+        ;; reserved as proto's first own key. A COMPUTED method whose key is "constructor" already overwrote
+        ;; that slot (per spec MakeConstructor sets proto.constructor before the non-constructor elements run,
+        ;; so a later `['constructor'](){}` wins); leave such a method in place rather than clobbering it.
         (if (call $is_object (local.get $pv))
-          (then (call $scope_define_attr (call $val_payload (local.get $pv)) (cstring "constructor")
-                  (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))) (i32.const 12))))
+          (then
+            (let $ccslot i32 (call $scope_find_local (call $val_payload (local.get $pv)) (cstring "constructor")))
+            (if (i32.or (i32.eqz (local.get $ccslot)) (call $is_undefined (i64.load (local.get $ccslot))))
+              (then (call $scope_define_attr (call $val_payload (local.get $pv)) (cstring "constructor")
+                      (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))) (i32.const 12))))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 46))  ;; NEW argc — construct an instance
       (then
