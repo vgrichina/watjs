@@ -245,7 +245,7 @@
           (i32.and (local.get $waslabel)
             (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function")))))
       (then
-        (call $vm_hoist_clause_fn (local.get $code))
+        (if (i32.eqz (i32.load (i32.const 388))) (then (call $vm_hoist_clause_fn (local.get $code))) (else (call $hoist_skip_fn)))  ;; AnnexB switch-clause var-hoist is SLOPPY only; strict = block-lexical (CaseBlock scope)
         (call $next_token) (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0))
         (br $hl)))
     (if (i32.and (i32.eq (local.get $depth) (local.get $decldepth))
@@ -3779,7 +3779,7 @@
     (then
       (call $vm_hoist_fns (local.get $code) (i32.const 1))  ;; hoist `function NAME` decls (body is a '{...}' block)
       (call $vm_hoist_vars_p (local.get $code) (if i32 (local.get $nonsimple) (then (local.get $params)) (else (i32.const 0))) (if i32 (local.get $nonsimple) (then (local.get $np)) (else (i32.const 0))))  ;; hoist `var` decls; copy shadowed params when a separate body scope exists
-      (call $vm_hoist_block_fns (local.get $code))  ;; AnnexB B.3.3: block-nested fn decls → var binding = undefined (unless lexically shadowed)
+      (if (i32.eqz (i32.load (i32.const 388))) (then (call $vm_hoist_block_fns (local.get $code))))  ;; AnnexB B.3.3 (SLOPPY only): block-nested fn decls → var binding=undefined. Strict = purely lexical (block scope).
       (call $vm_hoist_lex (local.get $code) (i32.const 0) (i32.const 0))  ;; pre-declare body-top-level let/const/class as v_tdz (TDZ: a ref before its decl throws, no leaked global)
       (i32.store (i32.const 856) (i32.const 1))))  ;; the immediate function-body block must NOT get its own lexical scope — the function scope already serves as it (else hoisted inner fn decls, which capture the function scope, can't see the body's let/const)
   ;; reg 672 = "compiling inside a generator body" — so `yield` is the yield-expression
@@ -5916,7 +5916,10 @@
       ;; a Block is one of the containers in which a `using` declaration is allowed (reg 972).
       (let $blkuok i32 (i32.load (i32.const 972))) (i32.store (i32.const 972) (i32.const 1))
       (let $blkbits i32 (if i32 (local.get $isfnbody) (then (i32.const 0)) (else (call $vm_block_has_lexical))))
-      (let $blk i32 (i32.ne (i32.and (local.get $blkbits) (i32.const 5)) (i32.const 0)))  ;; bit0 (let/const/class) OR bit2 (lexical generator/async fn) → needs its own scope
+      ;; bit0 (let/const/class) OR bit2 (lexical generator/async fn) → needs its own scope. In STRICT mode
+      ;; an ordinary block-level FunctionDeclaration (bit1) is ALSO lexically block-scoped (no AnnexB B.3.3
+      ;; var-hoist), so it needs the block scope too; in sloppy it stays function-scoped (AnnexB).
+      (let $blk i32 (i32.ne (i32.and (local.get $blkbits) (if i32 (i32.load (i32.const 388)) (then (i32.const 7)) (else (i32.const 5)))) (i32.const 0)))
       (if (local.get $blk)
         (then (call $vm_emit_op (local.get $code) (i32.const 113)) (call $vm_emit_op (local.get $code) (i32.const 0)) (call $vm_finally_push_scope)  ;; ENTERSCOPE 0
               (call $vm_hoist_lex (local.get $code) (i32.const 1) (i32.const 0))))  ;; pre-declare the block's let/const/class as v_tdz (TDZ before decl)
@@ -6562,7 +6565,7 @@
           (call $next_token)  ;; ')'
           (if (i32.ne (call $tok_kind) (i32.const 17)) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Expected '{' after switch head")) (return)))
           (let $swbrace i32 (call $cursor_save))  ;; cursor AT the CaseBlock '{' (for the block-scoped-fn pre-declaration hoist below)
-          (let $scaselex i32 (i32.ne (i32.and (call $vm_block_has_lexical) (i32.const 5)) (i32.const 0)))  ;; CaseBlock has let/const/class OR a lexical generator/async fn decl → needs its own scope
+          (let $scaselex i32 (i32.ne (i32.and (call $vm_block_has_lexical) (if i32 (i32.load (i32.const 388)) (then (i32.const 7)) (else (i32.const 5)))) (i32.const 0)))  ;; CaseBlock needs its own scope for let/const/class or lexical gen/async fn; in STRICT also an ordinary fn decl (bit1: block-lexical, no AnnexB)
           ;; a switch CaseClause StatementList is NOT a `using`-container (unlike a Block) — a `using` directly
           ;; in a case/default clause is a SyntaxError; a nested `{ using }` re-enables it via the block handler.
           (let $swuok i32 (i32.load (i32.const 972))) (i32.store (i32.const 972) (i32.const 0))
@@ -7410,7 +7413,8 @@
     ;; AnnexB B.3.3: a `function` right after a case/default LABEL colon → var-hoist (DEFVAR undefined)
     (if (i32.and (i32.and (i32.ge_s (local.get $swdepth) (i32.const 0)) (i32.eq (local.get $bd) (local.get $swdepth)))
           (i32.and (local.get $waslabel) (i32.and (i32.eq (local.get $k) (i32.const 3)) (call $tok_is_kw (cstring "function")))))
-      (then (call $vm_hoist_clause_fn (local.get $code)) (call $next_token) (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0)) (br $scan)))
+      (then (if (i32.eqz (i32.load (i32.const 388))) (then (call $vm_hoist_clause_fn (local.get $code))) (else (call $hoist_skip_fn)))  ;; AnnexB switch-clause var-hoist is SLOPPY only; strict = block-lexical
+            (call $next_token) (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0)) (br $scan)))
     (if (i32.or (i32.eq (local.get $k) (i32.const 15)) (i32.eq (local.get $k) (i32.const 19)))
       (then (set! $pd (i32.add (local.get $pd) (i32.const 1)))))
     (if (i32.and (i32.or (i32.eq (local.get $k) (i32.const 16)) (i32.eq (local.get $k) (i32.const 20))) (i32.gt_s (local.get $pd) (i32.const 0)))
@@ -7455,9 +7459,9 @@
                           (if (call $str_eq (i32.load (i32.add (local.get $hlexnm) (i32.mul (local.get $hbi) (i32.const 4)))) (local.get $hbfname))
                             (then (set! $hbblocked (i32.const 1)) (br $hbe)))
                           (set! $hbi (i32.add (local.get $hbi) (i32.const 1))) (br $hbl)))))
-                    (if (i32.eqz (local.get $hbblocked))
-                      (then (call $vm_hoist_clause_fn (local.get $code)))  ;; DEFVAR name + skip
-                      (else (call $hoist_skip_fn)))                        ;; lexically shadowed → skip (no DEFVAR)
+                    (if (i32.and (i32.eqz (local.get $hbblocked)) (i32.eqz (i32.load (i32.const 388))))
+                      (then (call $vm_hoist_clause_fn (local.get $code)))  ;; SLOPPY + not lexically shadowed: DEFVAR name + skip
+                      (else (call $hoist_skip_fn)))                        ;; strict (AnnexB N/A → block-lexical) or lexically shadowed → skip (no DEFVAR)
                     (call $next_token)))
                 (set! $prevk (i32.const 18)) (set! $prevelse (i32.const 0)))
               (else
