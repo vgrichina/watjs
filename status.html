@@ -158,8 +158,8 @@
   <div class="meta">
     <span class="chip">status as of <b>2026-08-19</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>a83f166</b></span>
-    <span class="chip"><b>1921</b> commits</span>
+    <span class="chip">@ <b>441c4fb</b></span>
+    <span class="chip"><b>1924</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
     <a class="chip" href="https://watjs.berrry.app/" style="color:var(--accent);text-decoration:none">↗&nbsp;watjs.berrry.app</a>
   </div>
@@ -170,7 +170,7 @@
   <div class="card"><div class="n">465 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
-  <div class="card"><div class="n">105.1M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">105.6M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -294,13 +294,13 @@ engines get distinct source variants to defeat V8's compilation cache.</p>
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
+  <tr><td class="mono">441c4fb</td><td><code>try</code>: a simple catch param gets its own scope in the <code>finally</code> form too (+1)</td></tr>
+  <tr><td class="mono">d374d47</td><td><code>String.prototype</code>: own <code>"length"</code> is 0 (String exotic) (+1)</td></tr>
   <tr><td class="mono">a83f166</td><td>class: computed method key <code>ToPropertyKey</code>'d once, not twice (+1)</td></tr>
-  <tr><td class="mono">816e92d</td><td>async fn name: <code>await</code> allowed as a declaration name in <code>[~Await]</code> code (+1)</td></tr>
   <tr><td class="mono">e1338a6</td><td>async <code>yield*</code>: AsyncFromSync close-on-rejection + poisoned-getter reject (+2)</td></tr>
   <tr><td class="mono">7cf7cb9</td><td>async <code>yield*</code>: real <code>CreateAsyncFromSyncIterator</code> wrapper (+5)</td></tr>
   <tr><td class="mono">84913b4</td><td>async generator: full <code>yield*</code> delegation — throw / return / await (+22)</td></tr>
   <tr><td class="mono">49e58ac</td><td>async generator: <code>yield x</code> is <code>yield&nbsp;?&nbsp;Await(x)</code> (+15)</td></tr>
-  <tr><td class="mono">1ddbff5</td><td><code>Array.fromAsync</code>: spec-faithful rewrite + <code>Reflect.defineProperty</code> on arrays (+10)</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -423,7 +423,7 @@ const DAILY = [
   ["Aug 6", 26, 1.22], ["Aug 7", 11, 1.51], ["Aug 8", 10, 0.71],
   ["Aug 9", 2, 0.26], ["Aug 10", 17, 0.25], ["Aug 11", 48, 3.07], ["Aug 12", 40, 3.47],
   ["Aug 13", 0, 0.71], ["Aug 14", 34, 1.83], ["Aug 15", 54, 2.14],
-  ["Aug 16", 34, 2.32], ["Aug 17", 23, 2.54], ["Aug 18", 28, 3.39], ["Aug 19", 10, 1.77],
+  ["Aug 16", 34, 2.32], ["Aug 17", 23, 2.54], ["Aug 18", 28, 3.39], ["Aug 19", 12, 2.20],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -450,7 +450,7 @@ const GROWTH = [
   ["Aug 6", 29809, 337], ["Aug 7", 29943, 338], ["Aug 8", 30078, 339],
   ["Aug 9", 30110, 339], ["Aug 10", 30235, 341], ["Aug 11", 30937, 349], ["Aug 12", 31346, 382],
   ["Aug 13", 31346, 382], ["Aug 14", 31359, 425], ["Aug 15", 31543, 446],
-  ["Aug 16", 32220, 453], ["Aug 17", 32500, 457], ["Aug 18", 32892, 462], ["Aug 19", 33227, 465],
+  ["Aug 16", 32220, 453], ["Aug 17", 32500, 457], ["Aug 18", 32892, 462], ["Aug 19", 33228, 465],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
