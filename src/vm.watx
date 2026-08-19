@@ -3214,6 +3214,10 @@
   (call $vm_emit_op (local.get $code) (i32.const 96))  ;; GETAITER → [it]
   (let $it i32 (call $vm_tmpname))
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $it))
+  (let $nextm i32 (call $vm_tmpname))  ;; GetIterator caches the `next` method once (throw/return fetched fresh)
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $it))
+  (call $vm_emit_op (local.get $code) (i32.const 136))  ;; GETNEXTM → [nextm]
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $nextm))
   (let $recv i32 (call $vm_tmpname))
   (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $recv))  ;; recv = undefined
@@ -3226,6 +3230,7 @@
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $it))
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $recv))
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $rkind))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $nextm))
   (call $vm_emit_op (local.get $code) (i32.const 131))  ;; ASYNC_YSFWD → [cr]; reg1212=pre-action
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $yval))  ;; yval = cr
   ;; pre-action 2: no return method → outer generator returns yval (== recv)
@@ -8003,16 +8008,23 @@
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $yieldstar_step (local.get $ysit) (local.get $ysrecv) (local.get $ysk)))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
         (br $disp)))
-    (if (i32.eq (local.get $op) (i32.const 131))  ;; ASYNC_YSFWD — [it, recv, rkind] → call inner method, push raw result; reg1212=pre-action
+    (if (i32.eq (local.get $op) (i32.const 131))  ;; ASYNC_YSFWD — [it, recv, rkind, nextm] → call inner method, push raw result; reg1212=pre-action
       (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $afnm i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $afk i32 (i32.trunc_f64_s (call $to_num (i64.load (i32.add (local.get $stack) (local.get $sp))))))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $afrecv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $afit i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
-        (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $async_yieldstar_fwd (local.get $afit) (local.get $afrecv) (local.get $afk)))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $async_yieldstar_fwd (local.get $afit) (local.get $afrecv) (local.get $afk) (local.get $afnm)))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 136))  ;; GETNEXTM — [it] → cached, validated next method (GetIterator step)
+      (then
+        (let $gnm i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (call $async_yieldstar_getnext (local.get $gnm)))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 132))  ;; ASYNC_YSINTERP — [awaitedResult] → push value; reg840=action
       (then
@@ -10020,17 +10032,13 @@
 ;; generator returns `recv` (no return method); 3 = throw with no throw method → the caller closes
 ;; the iterator (awaiting return) then throws a TypeError. reg1216 = donekind for the interpret step
 ;; (0: done→continue past yield*; 1: done→outer generator returns the value). Errors surface via err.
-(func $async_yieldstar_fwd (param $it i64) (param $recv i64) (param $rkind i32) (result i64) (effects)
+(func $async_yieldstar_fwd (param $it i64) (param $recv i64) (param $rkind i32) (param $nextm i64) (result i64) (effects)
   (let $args i32 (call $heap_alloc (i32.const 8)))
   (i64.store (local.get $args) (local.get $recv))
-  (if (i32.eqz (local.get $rkind))  ;; --- next ---
+  (if (i32.eqz (local.get $rkind))  ;; --- next --- (uses the next method cached by GetIterator; not re-fetched)
     (then
-      (let $mn i64 (call $get_prop (local.get $it) (call $mk_str (cstring "next"))))
-      (if (call $err) (then (return (call $v_undef))))
-      (if (i32.eqz (call $is_function (local.get $mn)))
-        (then (call $throw_type (cstring "TypeError") (cstring "iterator.next is not a function")) (return (call $v_undef))))
       (i32.store (i32.const 1212) (i32.const 0)) (i32.store (i32.const 1216) (i32.const 0))
-      (return (call $call_val (local.get $mn) (i32.const 1) (local.get $args) (local.get $it)))))
+      (return (call $call_val (local.get $nextm) (i32.const 1) (local.get $args) (local.get $it)))))
   (if (i32.eq (local.get $rkind) (i32.const 1))  ;; --- throw ---
     (then
       (let $mt i64 (call $get_prop (local.get $it) (call $mk_str (cstring "throw"))))
@@ -10068,6 +10076,14 @@
     (then (i32.store (i32.const 840) (i32.const 0)) (return (local.get $val))))
   (i32.store (i32.const 840) (if i32 (i32.load (i32.const 1216)) (then (i32.const 2)) (else (i32.const 1))))
   (local.get $val))
+
+;; GetIterator's cached next method: get it.next once, validate it is callable (TypeError otherwise).
+(func $async_yieldstar_getnext (param $it i64) (result i64) (effects)
+  (let $mn i64 (call $get_prop (local.get $it) (call $mk_str (cstring "next"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_function (local.get $mn)))
+    (then (call $throw_type (cstring "TypeError") (cstring "iterator.next is not a function")) (return (call $v_undef))))
+  (local.get $mn))
 
 ;; async yield* throw-with-no-throw-method close: call it.return() if present, returning the promise
 ;; (undefined if absent) so the caller can Await it before throwing the TypeError (AsyncIteratorClose).
@@ -10706,6 +10722,7 @@
         (let $vt i64 (call $vm_step (local.get $ctx) (call $v_undef)))
         (if (i32.eqz (call $agen_after_step (local.get $O) (local.get $vt))) (then (br $stop)))
         (br $lp)))
+    (i32.store (i32.const 836) (i32.const 0))  ;; resume kind = next (for a yield* delegation point, read by LOADRKIND)
     (let $v i64 (call $vm_step (local.get $ctx) (local.get $val)))  ;; kind 0 (next): resume value = val
     (if (i32.eqz (call $agen_after_step (local.get $O) (local.get $v))) (then (br $stop)))  ;; awaited → stop, resume later
     (br $lp))))
