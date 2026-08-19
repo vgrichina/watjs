@@ -13431,6 +13431,14 @@
 ;; ── multiplicative: * / % ──
 
 (func $fmod (param $x f64) (param $y f64) (result f64) (effects)
+  ;; Number::remainder(x, y) special cases (x - trunc(x/y)*y mishandles the infinities: e.g. x/±Inf = ±0,
+  ;; and ±0 * ±Inf = NaN, so `1 % Infinity` would wrongly give NaN instead of 1).
+  (if (i32.or (f64.ne (local.get $x) (local.get $x)) (f64.ne (local.get $y) (local.get $y)))
+    (then (return (f64.div (f64.const 0) (f64.const 0)))))                                              ;; NaN operand → NaN
+  (if (f64.eq (f64.abs (local.get $x)) (f64.div (f64.const 1) (f64.const 0))) (then (return (f64.div (f64.const 0) (f64.const 0)))))  ;; ±Inf dividend → NaN
+  (if (f64.eq (f64.abs (local.get $y)) (f64.div (f64.const 1) (f64.const 0))) (then (return (local.get $x))))                          ;; ±Inf divisor → dividend
+  (if (f64.eq (local.get $y) (f64.const 0)) (then (return (f64.div (f64.const 0) (f64.const 0)))))  ;; ±0 divisor → NaN
+  (if (f64.eq (local.get $x) (f64.const 0)) (then (return (local.get $x))))                         ;; ±0 dividend (finite nonzero divisor) → dividend
   ;; x - trunc(x/y)*y
   (let $r f64 (f64.sub (local.get $x) (f64.mul (f64.trunc (f64.div (local.get $x) (local.get $y))) (local.get $y))))
   ;; Spec: when the result is zero its sign is the sign of the dividend
