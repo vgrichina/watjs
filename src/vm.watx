@@ -3205,6 +3205,76 @@
   (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $top))   ;; JMP top
   (call $vm_patch (local.get $code) (local.get $jend)))
 
+;; emit an ASYNC yield* delegation loop (inside an async generator). Stack on entry: [iterable]; on
+;; exit: [yieldStarResult]. Mirrors the sync loop but (a) gets the ASYNC iterator (GETAITER), (b) Awaits
+;; each inner next/throw/return result before interpreting it, and (c) suspends with YIELDSTAR so a
+;; .throw()/.return() into the outer async generator is delivered to the inner iterator as a resume
+;; kind (handled by the async-generator driver's ctx+40 branch) rather than thrown into the body.
+(func $vm_emit_yieldstar_async (param $code i32) (effects)
+  (call $vm_emit_op (local.get $code) (i32.const 96))  ;; GETAITER → [it]
+  (let $it i32 (call $vm_tmpname))
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $it))
+  (let $recv i32 (call $vm_tmpname))
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $recv))  ;; recv = undefined
+  (let $rkind i32 (call $vm_tmpname))
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 0)))
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $rkind))  ;; rkind = 0 (next)
+  (let $yval i32 (call $vm_tmpname))
+  (let $top i32 (call $vm_emit_cursor))
+  ;; forward the current resumption to the inner iterator → [cr] (a promise, or recv for a missing return)
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $it))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $recv))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $rkind))
+  (call $vm_emit_op (local.get $code) (i32.const 131))  ;; ASYNC_YSFWD → [cr]; reg1212=pre-action
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $yval))  ;; yval = cr
+  ;; pre-action 2: no return method → outer generator returns yval (== recv)
+  (call $vm_emit_op (local.get $code) (i32.const 133))  ;; [preact]
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 2)))
+  (call $vm_emit_op (local.get $code) (i32.const 18))   ;; [preact==2]
+  (let $jnot2 i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yval))
+  (call $vm_emit_op (local.get $code) (i32.const 50))   ;; AWAIT the return value (no return method → outer gen returns Await(recv))
+  (call $vm_finally_emit_all (local.get $code))
+  (call $vm_emit_op (local.get $code) (i32.const 20))   ;; RET
+  (call $vm_patch (local.get $code) (local.get $jnot2))
+  ;; pre-action 3: throw with no throw method → AsyncIteratorClose (Await return()) then TypeError
+  (call $vm_emit_op (local.get $code) (i32.const 133))  ;; [preact]
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 3)))
+  (call $vm_emit_op (local.get $code) (i32.const 18))
+  (let $jnot3 i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yval))  ;; [it]
+  (call $vm_emit_op (local.get $code) (i32.const 134))  ;; ASYNC_YSCLOSE → [returnPromiseOrUndef]
+  (call $vm_emit_op (local.get $code) (i32.const 50))   ;; AWAIT
+  (call $vm_emit_op (local.get $code) (i32.const 11))   ;; POP close result
+  (call $vm_emit_op (local.get $code) (i32.const 135))  ;; THROWNOTHROW — TypeError (iterator has no throw method)
+  (call $vm_patch (local.get $code) (local.get $jnot3))
+  ;; pre-action 0: Await the inner result, then interpret (done/value → action)
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yval))  ;; [cr]
+  (call $vm_emit_op (local.get $code) (i32.const 50))   ;; AWAIT → [resolved]
+  (call $vm_emit_op (local.get $code) (i32.const 132))  ;; ASYNC_YSINTERP → [value]; reg840=action
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $yval))  ;; yval = value
+  (call $vm_emit_op (local.get $code) (i32.const 107))  ;; LOADACTION → [action]
+  (let $jyield i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF (0) → yield path
+  (call $vm_emit_op (local.get $code) (i32.const 107))  ;; [action]
+  (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 2)))
+  (call $vm_emit_op (local.get $code) (i32.const 18))   ;; [action==2]
+  (let $jact1 i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yval))  ;; action 2: gen returns yval
+  (call $vm_finally_emit_all (local.get $code))
+  (call $vm_emit_op (local.get $code) (i32.const 20))   ;; RET
+  (call $vm_patch (local.get $code) (local.get $jact1))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yval))  ;; action 1: result = yval
+  (let $jend i32 (call $vm_emit_jump (local.get $code) (i32.const 12)))
+  (call $vm_patch (local.get $code) (local.get $jyield))
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yval))  ;; [yval]
+  (call $vm_emit_op (local.get $code) (i32.const 104))  ;; YIELDSTAR (suspend; resume pushes value; delivers .throw/.return as rkind)
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $recv))  ;; recv = resume value
+  (call $vm_emit_op (local.get $code) (i32.const 105))  ;; LOADRKIND → [rkind]
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $rkind))
+  (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $top))  ;; JMP top
+  (call $vm_patch (local.get $code) (local.get $jend)))
+
 ;; conditional  c ? t : e  (lowest precedence, right-assoc)
 (func $vm_c_expr (param $code i32) (effects)
   ;; assignment is allowed here: this is a fresh AssignmentExpression position, so the
@@ -3223,31 +3293,11 @@
           (if (call $nl_before) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "No line break allowed before '*' in a yield* expression")) (return)))
           (call $next_token)
           (call $vm_c_expr (local.get $code))
-          ;; async generator: delegate over the ASYNC iterator (GETAITER) and await each next() result
+          ;; yield* delegation: sync iterator (full next/throw/return) or, in an async generator, the
+          ;; async delegation loop (GETAITER + Await each inner result + resume-kind .throw/.return).
           (let $eyaw i32 (i32.load (i32.const 788)))
-          (if (i32.eqz (local.get $eyaw)) (then (call $vm_emit_yieldstar_sync (local.get $code)) (return)))  ;; sync yield*: full next/throw/return delegation
-          (call $vm_emit_op (local.get $code) (if i32 (local.get $eyaw) (then (i32.const 96)) (else (i32.const 45))))  ;; GETAITER / GETITER → [it]
-          (let $eyit i32 (call $vm_tmpname))
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $eyit))
-          (let $eyr i32 (call $vm_tmpname))
-          (let $eytop i32 (call $vm_emit_cursor))
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $eyit))
-          (call $vm_emit_op (local.get $code) (i32.const 32))
-          (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "next"))
-          (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 0))
-          (if (local.get $eyaw) (then (call $vm_emit_op (local.get $code) (i32.const 50))))  ;; AWAIT next() result (it returns a promise)
-          (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $eyr))
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $eyr))
-          (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "done"))
-          (call $vm_emit_op (local.get $code) (i32.const 23))
-          (let $eyend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))
-          (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $eyr))
-          (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "value"))
-          (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD
-          (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP resume
-          (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $eytop))
-          (call $vm_patch (local.get $code) (local.get $eyend))
-          (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef))  ;; result
+          (if (i32.eqz (local.get $eyaw)) (then (call $vm_emit_yieldstar_sync (local.get $code)) (return)))  ;; sync yield*
+          (call $vm_emit_yieldstar_async (local.get $code))  ;; async yield*
           (return)))
       ;; yield [expr] — newline after `yield` (restricted production) or a token that can't start an expr → yield undefined.
       ;; `:` (37) is included: a bare `yield` as a ternary branch (`c ? yield : yield`) must NOT swallow the
@@ -6168,30 +6218,11 @@
             (then
               (call $next_token)  ;; consume '*'
               (call $vm_c_expr (local.get $code))  ;; [iterable]
-              (let $yaw i32 (i32.load (i32.const 788)))  ;; in async generator → async-iter + await
+              (let $yaw i32 (i32.load (i32.const 788)))  ;; in async generator → async delegation loop
               (if (i32.eqz (local.get $yaw))  ;; sync yield* statement: full delegation, then discard the result
                 (then (call $vm_emit_yieldstar_sync (local.get $code)) (call $vm_emit_op (local.get $code) (i32.const 11)) (drop (call $eat (i32.const 21))) (return)))
-              (call $vm_emit_op (local.get $code) (if i32 (local.get $yaw) (then (i32.const 96)) (else (i32.const 45))))  ;; GETAITER / GETITER → [it]
-              (let $yit i32 (call $vm_tmpname))
-              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $yit))  ;; STOREVAR it
-              (let $yr i32 (call $vm_tmpname))
-              (let $ytop i32 (call $vm_emit_cursor))
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yit))  ;; LOADVAR it
-              (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP
-              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "next"))  ;; GETPROP next
-              (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; CALLM 0 → [r]
-              (if (local.get $yaw) (then (call $vm_emit_op (local.get $code) (i32.const 50))))  ;; AWAIT next() result
-              (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $yr))  ;; STOREVAR r
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yr))  ;; LOADVAR r
-              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "done"))  ;; GETPROP done
-              (call $vm_emit_op (local.get $code) (i32.const 23))  ;; NOT
-              (let $yend i32 (call $vm_emit_jump (local.get $code) (i32.const 13)))  ;; JMPF → end (done)
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $yr))  ;; LOADVAR r
-              (call $vm_emit_op (local.get $code) (i32.const 30)) (call $vm_emit_op (local.get $code) (cstring "value"))  ;; GETPROP value
-              (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD value (suspend); resume value pushed
-              (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP resume value (delegate resume args not forwarded)
-              (call $vm_emit_op (local.get $code) (i32.const 12)) (call $vm_emit_op (local.get $code) (local.get $ytop))  ;; JMP top
-              (call $vm_patch (local.get $code) (local.get $yend))
+              (call $vm_emit_yieldstar_async (local.get $code))  ;; async yield*: full delegation with Await
+              (call $vm_emit_op (local.get $code) (i32.const 11))  ;; discard the yield* result (statement form)
               (drop (call $eat (i32.const 21)))
               (return)))
           (call $vm_c_expr (local.get $code))
@@ -7971,6 +8002,36 @@
         (let $ysit i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $yieldstar_step (local.get $ysit) (local.get $ysrecv) (local.get $ysk)))
         (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 131))  ;; ASYNC_YSFWD — [it, recv, rkind] → call inner method, push raw result; reg1212=pre-action
+      (then
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $afk i32 (i32.trunc_f64_s (call $to_num (i64.load (i32.add (local.get $stack) (local.get $sp))))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $afrecv i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
+        (let $afit i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $async_yieldstar_fwd (local.get $afit) (local.get $afrecv) (local.get $afk)))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 132))  ;; ASYNC_YSINTERP — [awaitedResult] → push value; reg840=action
+      (then
+        (let $aip i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (call $async_yieldstar_interp (local.get $aip)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 133))  ;; LOADPREACT — push the async yield* pre-action (reg1212)
+      (then
+        (i64.store (i32.add (local.get $stack) (local.get $sp)) (call $num (f64.convert_i32_s (i32.load (i32.const 1212)))))
+        (set! $sp (i32.add (local.get $sp) (i32.const 8)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 134))  ;; ASYNC_YSCLOSE — [it] → call it.return() (or undefined); push the promise
+      (then
+        (let $acp i64 (i64.load (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8)))))
+        (i64.store (i32.add (local.get $stack) (i32.sub (local.get $sp) (i32.const 8))) (call $async_yieldstar_close (local.get $acp)))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 135))  ;; THROWNOTHROW — async yield*: inner iterator has no throw method → TypeError
+      (then
+        (call $throw_type (cstring "TypeError") (cstring "iterator has no throw method"))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 50))  ;; AWAIT — suspend, resume pushes the resolved value
       (then
@@ -9953,6 +10014,71 @@
     (then (call $throw_type (cstring "TypeError") (cstring "iterator.return is not a function")) (return (call $v_undef))))
   (call $yieldstar_finish (call $call_val (local.get $mr) (i32.const 1) (local.get $args) (local.get $it)) (i32.const 1)))
 
+;; one step of an ASYNC yield* delegation: select the inner method by rkind (0 next / 1 throw /
+;; 2 return) and CALL it, returning the raw result (a promise, to be Awaited by the caller before
+;; interpretation). Sets reg1212 = pre-action: 0 = await the result then interpret; 2 = the outer
+;; generator returns `recv` (no return method); 3 = throw with no throw method → the caller closes
+;; the iterator (awaiting return) then throws a TypeError. reg1216 = donekind for the interpret step
+;; (0: done→continue past yield*; 1: done→outer generator returns the value). Errors surface via err.
+(func $async_yieldstar_fwd (param $it i64) (param $recv i64) (param $rkind i32) (result i64) (effects)
+  (let $args i32 (call $heap_alloc (i32.const 8)))
+  (i64.store (local.get $args) (local.get $recv))
+  (if (i32.eqz (local.get $rkind))  ;; --- next ---
+    (then
+      (let $mn i64 (call $get_prop (local.get $it) (call $mk_str (cstring "next"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.eqz (call $is_function (local.get $mn)))
+        (then (call $throw_type (cstring "TypeError") (cstring "iterator.next is not a function")) (return (call $v_undef))))
+      (i32.store (i32.const 1212) (i32.const 0)) (i32.store (i32.const 1216) (i32.const 0))
+      (return (call $call_val (local.get $mn) (i32.const 1) (local.get $args) (local.get $it)))))
+  (if (i32.eq (local.get $rkind) (i32.const 1))  ;; --- throw ---
+    (then
+      (let $mt i64 (call $get_prop (local.get $it) (call $mk_str (cstring "throw"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (i32.or (call $is_undefined (local.get $mt)) (call $is_null (local.get $mt)))
+        (then (i32.store (i32.const 1212) (i32.const 3)) (return (local.get $it))))  ;; no throw → caller: close+TypeError
+      (if (i32.eqz (call $is_function (local.get $mt)))
+        (then (call $throw_type (cstring "TypeError") (cstring "iterator.throw is not a function")) (return (call $v_undef))))
+      (i32.store (i32.const 1212) (i32.const 0)) (i32.store (i32.const 1216) (i32.const 0))
+      (return (call $call_val (local.get $mt) (i32.const 1) (local.get $args) (local.get $it)))))
+  ;; --- return ---
+  (let $mr i64 (call $get_prop (local.get $it) (call $mk_str (cstring "return"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.or (call $is_undefined (local.get $mr)) (call $is_null (local.get $mr)))
+    (then (i32.store (i32.const 1212) (i32.const 2)) (return (local.get $recv))))  ;; no return → outer gen returns recv
+  (if (i32.eqz (call $is_function (local.get $mr)))
+    (then (call $throw_type (cstring "TypeError") (cstring "iterator.return is not a function")) (return (call $v_undef))))
+  (i32.store (i32.const 1212) (i32.const 0)) (i32.store (i32.const 1216) (i32.const 1))
+  (call $call_val (local.get $mr) (i32.const 1) (local.get $args) (local.get $it)))
+
+;; interpret an awaited async yield* result: validate it is an object, read done (IteratorComplete),
+;; then read value (IteratorValue) — the async delegation yields the VALUE (not the whole result object,
+;; unlike sync yield*), and the driver re-wraps it as { value, done:false }. Sets reg840 action:
+;; 0 = yield the value; 1 = delegation done, yield* completes; 2 = done and outer generator returns
+;; (per reg1216 donekind, set for a .return() forward).
+(func $async_yieldstar_interp (param $ir i64) (result i64) (effects)
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_object (local.get $ir)))
+    (then (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (return (call $v_undef))))
+  (let $done i32 (call $truthy (call $get_prop (local.get $ir) (call $mk_str (cstring "done")))))
+  (if (call $err) (then (return (call $v_undef))))
+  (let $val i64 (call $get_prop (local.get $ir) (call $mk_str (cstring "value"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (local.get $done))
+    (then (i32.store (i32.const 840) (i32.const 0)) (return (local.get $val))))
+  (i32.store (i32.const 840) (if i32 (i32.load (i32.const 1216)) (then (i32.const 2)) (else (i32.const 1))))
+  (local.get $val))
+
+;; async yield* throw-with-no-throw-method close: call it.return() if present, returning the promise
+;; (undefined if absent) so the caller can Await it before throwing the TypeError (AsyncIteratorClose).
+(func $async_yieldstar_close (param $it i64) (result i64) (effects)
+  (let $mr i64 (call $get_prop (local.get $it) (call $mk_str (cstring "return"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.or (call $is_undefined (local.get $mr)) (call $is_null (local.get $mr)))
+    (then (return (call $v_undef))))
+  (if (i32.eqz (call $is_function (local.get $mr))) (then (return (call $v_undef))))
+  (call $call_val (local.get $mr) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $it)))
+
 ;; gen.throw(e): resume the generator by THROWING e at the suspension point, so an in-body
 ;; try/catch (whose handler chain was saved in the ctx at YIELD) can catch it. If uncaught the
 ;; generator closes and the error propagates to the caller. A completed/suspendedStart gen has
@@ -10515,7 +10641,9 @@
       (return (i32.const 1))))
   (if (i32.eq (i32.load (i32.const 708)) (i32.const 1))  ;; await → suspend; front stays, resume via continuation
     (then (call $agen_register_cont (call $vm_promise_resolve (local.get $v)) (local.get $O)) (return (i32.const 0))))
-  ;; yield → resolve {value, done:false}, advance to the next queued request
+  ;; yield → resolve {value, done:false}, advance to the next queued request. (For a yield* delegation
+  ;; the async loop already reduced the inner result to its IteratorValue before YIELDSTAR, so v is the
+  ;; value to wrap, same as a plain yield.)
   (call $promise_resolve_with (local.get $np) (call $agen_result (local.get $v) (i32.const 0)))
   (call $agen_advance (local.get $O))
   (i32.const 1))
@@ -10537,6 +10665,16 @@
             (then (call $agen_settle_done (local.get $np) (local.get $val)))
             (else (call $promise_resolve_with (local.get $np) (call $agen_result (call $v_undef) (i32.const 1)))))))  ;; next on a done gen → {undefined, done:true}
         (call $agen_advance (local.get $O)) (br $lp)))
+    ;; suspended at a yield* delegation (ctx+40): a .throw()/.return() is delivered to the INNER
+    ;; iterator as a resume kind (reg836: throw→1, return→2), not thrown/closed here. The async yield*
+    ;; loop's ASYNC_YSFWD then forwards to inner.throw/inner.return and Awaits the result.
+    (if (i32.and (i32.load (i32.add (local.get $ctx) (i32.const 40)))
+                 (i32.or (i32.eq (local.get $kind) (i32.const 1)) (i32.eq (local.get $kind) (i32.const 2))))
+      (then
+        (i32.store (i32.const 836) (if i32 (i32.eq (local.get $kind) (i32.const 2)) (then (i32.const 1)) (else (i32.const 2))))
+        (let $vy i64 (call $vm_step (local.get $ctx) (local.get $val)))
+        (if (i32.eqz (call $agen_after_step (local.get $O) (local.get $vy))) (then (br $stop)))
+        (br $lp)))
     (if (i32.eq (local.get $kind) (i32.const 1))  ;; return on a suspended gen
       (then
         ;; suspended inside a try/finally (runOnReturn handler in the chain) → run the finally via
