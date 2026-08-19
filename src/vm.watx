@@ -9592,9 +9592,14 @@
         (let $mkk i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
         (set! $sp (i32.sub (local.get $sp) (i32.const 8)))
         (let $mkobj i64 (i64.load (i32.add (local.get $stack) (local.get $sp))))
-        (call $vm_infer_name (local.get $mkfn) (local.get $mkk) (i32.const 0))
+        ;; ToPropertyKey ONCE — a computed key's toString/@@toPrimitive must fire exactly once; derive both
+        ;; the method name and the property key from that single conversion (was: infer_name + to_prop_key,
+        ;; each re-coercing the raw key object → toString called twice).
+        (let $mkpk i64 (call $to_prop_key_val (local.get $mkk)))
+        (if (call $err) (then (br $disp)))  ;; a throwing toString/@@toPrimitive → unwind (sp already popped all 3)
+        (call $vm_infer_name (local.get $mkfn) (local.get $mkpk) (i32.const 0))  ;; name from the already-converted key
         (if (call $is_object (local.get $mkobj))
-          (then (call $scope_define_attr (call $val_payload (local.get $mkobj)) (call $to_prop_key (local.get $mkk)) (local.get $mkfn) (i32.const 12))))  ;; W|C, non-enumerable
+          (then (call $scope_define_attr (call $val_payload (local.get $mkobj)) (call $to_prop_key (local.get $mkpk)) (local.get $mkfn) (i32.const 12))))  ;; W|C, non-enum; to_prop_key on a string/symbol value doesn't re-coerce
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 88))  ;; APPLYSTATIC — [ctor, staticArray] → run static field inits on the ctor (this=ctor)
       (then
