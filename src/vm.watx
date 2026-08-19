@@ -727,6 +727,54 @@
         (then (call $throw_type (cstring "TypeError") (cstring "[Symbol.asyncIterator] is not a function")) (return (call $v_undef))))))
   (call $vm_get_iter (local.get $v)))
 
+;; CreateAsyncFromSyncIterator: wrap a sync iterator so next/return/throw call the sync method and then
+;; Await the result's value (AsyncFromSyncIteratorContinuation). Used by async yield* (via GETAITERWRAP)
+;; where the sync value must be assimilated (a rejected-promise value rejects next()); for-await keeps
+;; its own always-await-value path (does not need the wrapper).
+(func $make_async_from_sync (param $syncit i64) (result i64) (effects)
+  ;; GetIterator caches the sync iterator's `next` method once (recorded now, called on each step).
+  (let $sn i64 (call $get_prop (local.get $syncit) (call $mk_str (cstring "next"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (let $w i32 (call $obj_new (i32.const 2)))
+  (call $scope_define (local.get $w) (cstring "@@syncit") (local.get $syncit))
+  (call $scope_define (local.get $w) (cstring "@@syncnext") (local.get $sn))
+  (call $scope_define_attr (local.get $w) (cstring "next")   (call $mk_native (i32.const 539) (cstring "next"))   (i32.const 12))
+  (call $scope_define_attr (local.get $w) (cstring "return") (call $mk_native (i32.const 540) (cstring "return")) (i32.const 12))
+  (call $scope_define_attr (local.get $w) (cstring "throw")  (call $mk_native (i32.const 541) (cstring "throw"))  (i32.const 12))
+  (call $mk_obj (local.get $w)))
+
+;; AsyncFromSyncIteratorContinuation(result): done = IteratorComplete, value = IteratorValue, then
+;; return a promise for { value: Await(value), done }. A getter throwing surfaces via err (the caller
+;; unwinds); a thenable/rejected value is assimilated by vm_promise_resolve so the derived promise
+;; rejects, matching AsyncFromSync semantics.
+(func $asyncfromsync_cont (param $result i64) (result i64) (effects)
+  (if (i32.eqz (call $is_object (local.get $result)))
+    (then (call $throw_type (cstring "TypeError") (cstring "iterator result is not an object")) (return (call $v_undef))))
+  (let $done i32 (call $truthy (call $get_prop (local.get $result) (call $mk_str (cstring "done")))))
+  (if (call $err) (then (return (call $v_undef))))
+  (let $value i64 (call $get_prop (local.get $result) (call $mk_str (cstring "value"))))
+  (if (call $err) (then (return (call $v_undef))))
+  (let $co i32 (call $obj_new (i32.const 2)))
+  (call $scope_define (local.get $co) (cstring "@@done") (call $mk_bool (local.get $done)))
+  (call $promise_then (call $vm_promise_resolve (local.get $value))
+    (call $promise_bound_settler (i32.const 542) (call $mk_obj (local.get $co)))
+    (call $v_undef)))
+
+;; GetIterator(v, async) for async yield*: like vm_get_async_iter but wrap the SYNC fallback in an
+;; AsyncFromSyncIterator so its values are Awaited (spec CreateAsyncFromSyncIterator).
+(func $vm_get_async_iter_wrap (param $v i64) (result i64) (effects)
+  (if (i32.or (call $is_object (local.get $v)) (i32.or (call $is_array (local.get $v)) (call $is_function (local.get $v))))
+    (then
+      (let $aif i64 (call $get_prop (local.get $v) (call $mk_str (cstring "@@asyncIterator"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (if (call $is_function (local.get $aif))
+        (then (return (call $call_val (local.get $aif) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $v)))))
+      (if (i32.eqz (i32.or (call $is_undefined (local.get $aif)) (call $is_null (local.get $aif))))
+        (then (call $throw_type (cstring "TypeError") (cstring "[Symbol.asyncIterator] is not a function")) (return (call $v_undef))))))
+  (let $syncit i64 (call $vm_get_iter (local.get $v)))
+  (if (call $err) (then (return (call $v_undef))))
+  (call $make_async_from_sync (local.get $syncit)))
+
 ;; Template raw-value line-terminator normalization (TRV): <CR> and <CRLF> both
 ;; become a single <LF>. Returns a fresh Str of the normalized bytes.
 (func $tmpl_norm (param $src i32) (param $len i32) (result i32) (effects)
@@ -3211,7 +3259,7 @@
 ;; .throw()/.return() into the outer async generator is delivered to the inner iterator as a resume
 ;; kind (handled by the async-generator driver's ctx+40 branch) rather than thrown into the body.
 (func $vm_emit_yieldstar_async (param $code i32) (effects)
-  (call $vm_emit_op (local.get $code) (i32.const 96))  ;; GETAITER → [it]
+  (call $vm_emit_op (local.get $code) (i32.const 137))  ;; GETAITERWRAP → [it] (sync fallback wrapped as AsyncFromSync)
   (let $it i32 (call $vm_tmpname))
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $it))
   (let $nextm i32 (call $vm_tmpname))  ;; GetIterator caches the `next` method once (throw/return fetched fresh)
@@ -9733,6 +9781,11 @@
       (then
         (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
         (i64.store (i32.add (local.get $stack) (local.get $t)) (call $vm_get_async_iter (i64.load (i32.add (local.get $stack) (local.get $t)))))
+        (br $disp)))
+    (if (i32.eq (local.get $op) (i32.const 137))  ;; GETAITERWRAP — async iterator, wrapping the sync fallback (async yield*)
+      (then
+        (let $t i32 (i32.sub (local.get $sp) (i32.const 8)))
+        (i64.store (i32.add (local.get $stack) (local.get $t)) (call $vm_get_async_iter_wrap (i64.load (i32.add (local.get $stack) (local.get $t)))))
         (br $disp)))
     (if (i32.eq (local.get $op) (i32.const 56))  ;; GETKEYS — replace top with an array of for-in keys (own + inherited enumerable, chain-walked)
       (then

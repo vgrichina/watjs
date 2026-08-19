@@ -4107,6 +4107,68 @@
   (call $v_undef))
 
 (func $native_iterator (param $id i32) (param $thisv i64) (param $argv i32) (param $argc i32) (result i64) (effects)
+  ;; ── AsyncFromSyncIterator wrapper (created by $make_async_from_sync): next/return/throw call the
+  ;; sync method and Await the value via $asyncfromsync_cont; 542 is the continuation's onFulfilled. ──
+  (if (i32.eq (local.get $id) (i32.const 539))  ;; next(v)
+    (then
+      (let $sit i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@syncit"))))
+      (let $mn i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@syncnext"))))  ;; cached at creation
+      (if (call $err) (then (return (call $v_undef))))
+      (let $an i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $an) (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (let $r i64 (call $call_val (local.get $mn) (i32.const 1) (local.get $an) (local.get $sit)))
+      (if (call $err) (then (let $en i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $en)))))  ;; sync throw → rejected promise
+      (return (call $asyncfromsync_cont (local.get $r)))))
+  (if (i32.eq (local.get $id) (i32.const 540))  ;; return(v)
+    (then
+      (let $sit i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@syncit"))))
+      (let $mr i64 (call $get_prop (local.get $sit) (call $mk_str (cstring "return"))))
+      (if (call $err) (then (return (call $v_undef))))
+      (let $rv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_undefined (local.get $mr)) (call $is_null (local.get $mr)))
+        (then  ;; no sync return → resolved promise of { value: v, done:true }
+          (let $ro i32 (call $obj_new (i32.const 2)))
+          (call $scope_define (local.get $ro) (cstring "value") (local.get $rv))
+          (call $scope_define (local.get $ro) (cstring "done") (call $v_true))
+          (return (call $vm_promise_resolve (call $mk_obj (local.get $ro))))))
+      (let $ar i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $ar) (local.get $rv))
+      (let $rr i64 (call $call_val (local.get $mr) (i32.const 1) (local.get $ar) (local.get $sit)))
+      (if (call $err) (then (let $er i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $er)))))  ;; sync throw → rejected promise
+      (return (call $asyncfromsync_cont (local.get $rr)))))
+  (if (i32.eq (local.get $id) (i32.const 541))  ;; throw(v)
+    (then
+      (let $sit i64 (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@syncit"))))
+      (let $mt i64 (call $get_prop (local.get $sit) (call $mk_str (cstring "throw"))))
+      (if (call $err) (then (let $e1 i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $e1)))))
+      (let $tv i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (if (i32.or (call $is_undefined (local.get $mt)) (call $is_null (local.get $mt)))
+        (then
+          ;; no sync throw method → IteratorClose the sync iterator (sync, no Await), then reject a TypeError.
+          (let $mr i64 (call $get_prop (local.get $sit) (call $mk_str (cstring "return"))))
+          (if (call $err) (then (let $e2 i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $e2)))))
+          (if (i32.eqz (i32.or (call $is_undefined (local.get $mr)) (call $is_null (local.get $mr))))
+            (then
+              (if (i32.eqz (call $is_function (local.get $mr)))
+                (then (return (call $mk_promise (i32.const 2) (call $make_error (cstring "TypeError") (cstring "iterator.return is not a function"))))))
+              (let $cr i64 (call $call_val (local.get $mr) (i32.const 0) (call $heap_alloc (i32.const 8)) (local.get $sit)))
+              (if (call $err) (then (let $e3 i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $e3)))))
+              (if (i32.eqz (call $is_object (local.get $cr)))
+                (then (return (call $mk_promise (i32.const 2) (call $make_error (cstring "TypeError") (cstring "iterator return result is not an object"))))))))
+          (return (call $mk_promise (i32.const 2) (call $make_error (cstring "TypeError") (cstring "The iterator does not provide a 'throw' method"))))))
+      (if (i32.eqz (call $is_function (local.get $mt)))
+        (then (return (call $mk_promise (i32.const 2) (call $make_error (cstring "TypeError") (cstring "iterator.throw is not a function"))))))
+      (let $at i32 (call $heap_alloc (i32.const 8)))
+      (i64.store (local.get $at) (local.get $tv))
+      (let $rt i64 (call $call_val (local.get $mt) (i32.const 1) (local.get $at) (local.get $sit)))
+      (if (call $err) (then (let $e4 i64 (call $err_val)) (call $set_err (i32.const 0)) (return (call $mk_promise (i32.const 2) (local.get $e4)))))
+      (return (call $asyncfromsync_cont (local.get $rt)))))
+  (if (i32.eq (local.get $id) (i32.const 542))  ;; continuation onFulfilled: awaited value → { value, done:this.@@done }
+    (then
+      (let $ir i32 (call $obj_new (i32.const 2)))
+      (call $scope_define (local.get $ir) (cstring "value") (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
+      (call $scope_define (local.get $ir) (cstring "done") (call $get_prop (local.get $thisv) (call $mk_str (cstring "@@done"))))
+      (return (call $mk_obj (local.get $ir)))))
   ;; ── Iterator: abstract ctor (335) + %Iterator.prototype% eager methods ──
   (if (i32.eq (local.get $id) (i32.const 335))  ;; Iterator — abstract: throw only on DIRECT construction
     (then
@@ -6852,8 +6914,9 @@
         (then (call $throw_type (cstring "TypeError") (cstring "RegExp legacy static property accessor requires the RegExp constructor as receiver")) (return (call $v_undef))))
       (if (i32.eq (local.get $id) (i32.const 528)) (then (return (call $mk_str (cstring "")))))  ;; getter → "" (no tracked state)
       (return (call $v_undef))))  ;; setter (input/$_) → ignore the value
-  ;; Iterator Helpers (335-357, + 533 concat.return, 536 zip.return, 537/538 Iterator.prototype.constructor get/set) — in $native_iterator
-  (if (i32.or (i32.or (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357))) (i32.eq (local.get $id) (i32.const 533))) (i32.eq (local.get $id) (i32.const 536))) (i32.and (i32.ge_s (local.get $id) (i32.const 537)) (i32.le_s (local.get $id) (i32.const 538))))
+  ;; Iterator Helpers (335-357, + 533 concat.return, 536 zip.return, 537/538 Iterator.prototype.constructor
+  ;; get/set, 539-541 AsyncFromSyncIterator next/return/throw, 542 its continuation settler) — in $native_iterator
+  (if (i32.or (i32.or (i32.or (i32.or (i32.and (i32.ge_s (local.get $id) (i32.const 335)) (i32.le_s (local.get $id) (i32.const 357))) (i32.eq (local.get $id) (i32.const 533))) (i32.eq (local.get $id) (i32.const 536))) (i32.and (i32.ge_s (local.get $id) (i32.const 537)) (i32.le_s (local.get $id) (i32.const 538)))) (i32.and (i32.ge_s (local.get $id) (i32.const 539)) (i32.le_s (local.get $id) (i32.const 542))))
     (then (return (call $native_iterator (local.get $id) (local.get $thisv) (local.get $argv) (local.get $argc)))))
   ;; ── Object.groupBy(330) / Map.groupBy(331) ──
   (if (i32.or (i32.eq (local.get $id) (i32.const 330)) (i32.eq (local.get $id) (i32.const 331)))
