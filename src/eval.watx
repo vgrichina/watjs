@@ -329,6 +329,9 @@
         (then (call $throw_type (cstring "TypeError") (cstring "WeakRef: target cannot be held weakly")) (return (call $v_undef))))
       (let $wro i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 500)) (then (i32.store (local.get $wro) (i32.load (i32.const 500)))))
+      ;; OrdinaryCreateFromConstructor(NewTarget): a custom newTarget's `this` (proto from NewTarget.prototype)
+      ;; is prepared by Reflect.construct / the NEW op → use it so the instance gets the derived prototype.
+      (if (call $is_object (local.get $thisv)) (then (set! $wro (call $val_payload (local.get $thisv)))))
       (call $scope_define (local.get $wro) (cstring "@@wrt") (local.get $wrt))
       (return (call $mk_obj (local.get $wro)))))
   (if (i32.eq (local.get $id) (i32.const 359))  ;; WeakRef.prototype.deref()
@@ -346,6 +349,7 @@
         (then (call $throw_type (cstring "TypeError") (cstring "FinalizationRegistry: cleanup callback is not callable")) (return (call $v_undef))))
       (let $fro i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 504)) (then (i32.store (local.get $fro) (i32.load (i32.const 504)))))
+      (if (call $is_object (local.get $thisv)) (then (set! $fro (call $val_payload (local.get $thisv)))))  ;; OrdinaryCreateFromConstructor(NewTarget)
       (call $scope_define (local.get $fro) (cstring "@@frcb") (local.get $frcb))
       (call $scope_define (local.get $fro) (cstring "@@frtok") (call $mk_arr (call $arr_new (i32.const 4))))
       (return (call $mk_obj (local.get $fro)))))
@@ -8155,6 +8159,10 @@
       (return (call $v_undef))))
   (if (i32.eq (local.get $id) (i32.const 196))  ;; Symbol([desc]) → fresh unique symbol
     (then
+      ;; Symbol HAS [[Construct]] (isConstructor(Symbol) is true) but it throws: `new Symbol()` is a TypeError.
+      ;; reg 640 = the native-construct flag (set by the vm `new` path). Clear it and throw.
+      (if (i32.load (i32.const 640))
+        (then (i32.store (i32.const 640) (i32.const 0)) (call $throw_type (cstring "TypeError") (cstring "Symbol is not a constructor")) (return (call $v_undef))))
       (let $shasd i32 (i32.and (i32.ge_s (local.get $argc) (i32.const 1)) (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))))
       ;; the description is ToString'd (SymbolDescriptiveString) — ToString(Symbol) throws (to_str is lenient, so check here)
       (if (i32.and (local.get $shasd) (call $is_symbol (call $argn (local.get $argv) (local.get $argc) (i32.const 0))))
@@ -12981,6 +12989,7 @@
   (if (i32.or (i32.eq (local.get $id) (i32.const 320)) (i32.eq (local.get $id) (i32.const 325)))
     (then (return (i32.const 1))))  ;; WeakMap, WeakSet
   (if (i32.eq (local.get $id) (i32.const 335)) (then (return (i32.const 1))))  ;; Iterator (abstract, but a constructor)
+  (if (i32.eq (local.get $id) (i32.const 196)) (then (return (i32.const 1))))  ;; Symbol (has [[Construct]] but it throws on `new`)
   (if (i32.or (i32.eq (local.get $id) (i32.const 358)) (i32.eq (local.get $id) (i32.const 360))) (then (return (i32.const 1))))  ;; WeakRef, FinalizationRegistry
   (if (i32.or (i32.eq (local.get $id) (i32.const 363)) (i32.eq (local.get $id) (i32.const 383))) (then (return (i32.const 1))))  ;; DataView, SharedArrayBuffer
   (if (i32.eq (local.get $id) (i32.const 157)) (then (return (i32.const 1))))  ;; Function
@@ -13483,7 +13492,7 @@
   (if (i64.ne (i64.load (i32.const 336)) (i64.const 0))
     (then (call $scope_define (local.get $gen) (cstring "@@protoval") (i64.load (i32.const 336)))))
   (call $scope_define_attr (local.get $gen) (cstring "@@toStringTag") (call $mk_str (cstring "GeneratorFunction")) (i32.const 4))
-  (call $scope_define_attr (local.get $gen) (cstring "prototype") (call $mk_obj (local.get $gp)) (i32.const 0))
+  (call $scope_define_attr (local.get $gen) (cstring "prototype") (call $mk_obj (local.get $gp)) (i32.const 4))  ;; %GeneratorFunction.prototype%.prototype is {W:F,E:F,C:T}
   (call $scope_define_attr (local.get $gp) (cstring "constructor") (call $mk_obj (local.get $gen)) (i32.const 4))
   (let $gf i64 (call $mk_native (i32.const 513) (cstring "GeneratorFunction")))
   (i64.store (i32.const 816) (local.get $gf))
@@ -13505,7 +13514,7 @@
   (if (i64.ne (i64.load (i32.const 336)) (i64.const 0))
     (then (call $scope_define (local.get $agen) (cstring "@@protoval") (i64.load (i32.const 336)))))
   (call $scope_define_attr (local.get $agen) (cstring "@@toStringTag") (call $mk_str (cstring "AsyncGeneratorFunction")) (i32.const 4))
-  (call $scope_define_attr (local.get $agen) (cstring "prototype") (call $mk_obj (local.get $agp)) (i32.const 0))
+  (call $scope_define_attr (local.get $agen) (cstring "prototype") (call $mk_obj (local.get $agp)) (i32.const 4))  ;; {W:F,E:F,C:T}
   (call $scope_define_attr (local.get $agp) (cstring "constructor") (call $mk_obj (local.get $agen)) (i32.const 4))
   (let $agf i64 (call $mk_native (i32.const 514) (cstring "AsyncGeneratorFunction")))
   (i64.store (i32.const 824) (local.get $agf))
