@@ -13739,6 +13739,7 @@
   (let $sp i32 (call $obj_new (i32.const 48)))
   (i32.store (i32.const 156) (local.get $sp))
   (call $scope_define (local.get $sp) (cstring "__prim__") (call $mk_str (cstring "")))  ;; String.prototype is a String object ("")
+  (call $scope_define_attr (local.get $sp) (cstring "length") (call $num (f64.const 0)) (i32.const 0))  ;; String exotic own "length" 0 {W:F,E:F,C:F}
   (call $scope_define (local.get $sp) (cstring "charAt") (call $mk_native (i32.const 11) (cstring "charAt")))
   (call $scope_define (local.get $sp) (cstring "charCodeAt") (call $mk_native (i32.const 12) (cstring "charCodeAt")))
   (call $scope_define (local.get $sp) (cstring "codePointAt") (call $mk_native (i32.const 447) (cstring "codePointAt")))
