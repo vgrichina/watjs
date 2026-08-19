@@ -2769,21 +2769,29 @@
       (let $dvabsl i32 (call $scope_find_local (call $val_payload (local.get $dvb)) (cstring "@@abdata")))
       (if (i32.eqz (local.get $dvabsl))
         (then (call $throw_type (cstring "TypeError") (cstring "DataView: buffer is not an ArrayBuffer")) (return (call $v_undef))))
-      (let $dvbuflen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $dvb) (call $mk_str (cstring "byteLength"))))))
+      ;; spec order: ToIndex(byteOffset) FIRST (its valueOf may detach), THEN IsDetachedBuffer check, THEN
+      ;; read the (post-coercion) buffer byteLength for the range checks. A stale pre-coercion length would
+      ;; miss a detach that happened inside the byteOffset valueOf.
       (let $dvoff i32 (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
       (if (call $err) (then (return (call $v_undef))))
+      (if (call $is_detached_buf (local.get $dvb))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView: buffer is detached")) (return (call $v_undef))))
+      (let $dvbuflen i32 (call $to_int_idx (call $to_num (call $get_prop (local.get $dvb) (call $mk_str (cstring "byteLength"))))))
       (if (i32.gt_s (local.get $dvoff) (local.get $dvbuflen))
         (then (call $throw_type (cstring "RangeError") (cstring "DataView: byteOffset is out of bounds")) (return (call $v_undef))))
       (let $dvlen i32 (i32.sub (local.get $dvbuflen) (local.get $dvoff)))
       (if (i32.eqz (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))
         (then
-          (set! $dvlen (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))
+          (set! $dvlen (call $to_index (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))  ;; valueOf may detach
           (if (call $err) (then (return (call $v_undef))))
           (if (i32.gt_s (local.get $dvlen) (i32.sub (local.get $dvbuflen) (local.get $dvoff)))  ;; offset+byteLength > bufferLen, overflow-free (byteLength ToIndex-capped 2^31-1 overflows i32 on +)
             (then (call $throw_type (cstring "RangeError") (cstring "DataView: byteLength is out of bounds")) (return (call $v_undef))))))
       (let $dvo i32 (call $obj_new (i32.const 8)))
       (if (i32.load (i32.const 508)) (then (i32.store (local.get $dvo) (i32.load (i32.const 508)))))
       (if (call $is_object (local.get $thisv)) (then (set! $dvo (call $val_payload (local.get $thisv)))))  ;; super() from a subclass → init `this`
+      ;; OrdinaryCreateFromConstructor read newTarget.prototype (a getter may detach) → re-check (step 10)
+      (if (call $is_detached_buf (local.get $dvb))
+        (then (call $throw_type (cstring "TypeError") (cstring "DataView: buffer detached during construction")) (return (call $v_undef))))
       ;; length-tracking DataView: no explicit byteLength AND the buffer is resizable (@@abmax) —
       ;; its byteLength follows the buffer on resize (recomputed live in dv_cur_len)
       (let $dvtrack i32 (i32.and (call $is_undefined (call $argn (local.get $argv) (local.get $argc) (i32.const 2)))
