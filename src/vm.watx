@@ -4748,7 +4748,11 @@
       ;; a GENERATOR's name may be `yield` only as a DECLARATION in [~Yield], non-strict code: reject when this
       ;; is a FunctionExpression ([+Yield] name), inside an enclosing generator body (reg672), or strict (reg388).
       (if (i32.and (i32.load (i32.const 236)) (i32.and (call $str_eq (local.get $fname) (cstring "yield")) (i32.or (local.get $fnexpr) (i32.or (i32.load (i32.const 672)) (i32.load (i32.const 388)))))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'yield' may not be a generator function name")) (return (i32.const 0))))
-      (if (i32.and (i32.load (i32.const 232)) (call $str_eq (local.get $fname) (cstring "await"))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' may not be an async function name")) (return (i32.const 0))))
+      ;; an ASYNC function's name may be `await` only as a DECLARATION in [~Await] code (top-level of a
+      ;; non-module script, or nested in a non-async function): reject when this is a FunctionExpression
+      ;; ([+Await] name) or inside an enclosing async body (reg896). `async function await(){}` at global
+      ;; scope is valid.
+      (if (i32.and (i32.load (i32.const 232)) (i32.and (call $str_eq (local.get $fname) (cstring "await")) (i32.or (local.get $fnexpr) (i32.load (i32.const 896))))) (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "'await' may not be an async function name")) (return (i32.const 0))))
       ;; strict enclosing code: the BindingIdentifier may not be `eval`/`arguments` (`"use strict"; function eval(){}`)
       ;; nor a strict-reserved word (`function interface(){}` / `function static(){}`).
       (if (i32.and (i32.load (i32.const 388)) (i32.or (i32.or (call $str_eq (local.get $fname) (cstring "eval")) (call $str_eq (local.get $fname) (cstring "arguments"))) (call $is_strict_reserved (local.get $fname))))
