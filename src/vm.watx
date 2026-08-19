@@ -3257,6 +3257,9 @@
             (i32.or (i32.eq (call $tok_kind) (i32.const 22)) (i32.or (i32.eq (call $tok_kind) (i32.const 37)) (i32.eq (call $tok_kind) (i32.const 0)))))))))
         (then (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $v_undef)))  ;; yield undefined
         (else (call $vm_c_expr (local.get $code))))
+      ;; async generator: `yield x` is `yield ? Await(x)` — await the operand before yielding (reg 896 = in an
+      ;; async body; we're already in a generator here). So `yield Promise.reject(v)` rejects the next() promise.
+      (if (i32.load (i32.const 896)) (then (call $vm_emit_op (local.get $code) (i32.const 50))))  ;; AWAIT
       (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD → resume value = expression result
       (return)))
   (if (call $vm_c_dstr_assign_expr (local.get $code)) (then (return)))  ;; [pat]=RHS / ({pat}=RHS)
@@ -6192,6 +6195,8 @@
               (drop (call $eat (i32.const 21)))
               (return)))
           (call $vm_c_expr (local.get $code))
+          ;; async generator: `yield x` is `yield ? Await(x)` (reg 896 = async body; already in a generator here)
+          (if (i32.load (i32.const 896)) (then (call $vm_emit_op (local.get $code) (i32.const 50))))  ;; AWAIT
           (call $vm_emit_op (local.get $code) (i32.const 7))  ;; YIELD (suspend with value)
           (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP the resume value (statement form discards it)
           (drop (call $eat (i32.const 21)))
