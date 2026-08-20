@@ -156,10 +156,10 @@
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
   <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
   <div class="meta">
-    <span class="chip">status as of <b>2026-08-19</b></span>
+    <span class="chip">status as of <b>2026-08-20</b></span>
     <span class="chip">branch <b>main</b></span>
     <span class="chip">@ <b>8662ba2</b></span>
-    <span class="chip"><b>1927</b> commits</span>
+    <span class="chip"><b>1928</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
     <a class="chip" href="https://watjs.berrry.app/" style="color:var(--accent);text-decoration:none">↗&nbsp;watjs.berrry.app</a>
   </div>
@@ -391,7 +391,7 @@ engines get distinct source variants to defeat V8's compilation cache.</p>
 </ul>
 
 <footer>
-  <span>Last refreshed 2026-08-19 from repo state &amp; session memory · self-check <code>test/</code> + tc39 <code>test262/</code> · charts drawn inline, no external deps.</span>
+  <span>Last refreshed 2026-08-20 from repo state &amp; session memory · self-check <code>test/</code> + tc39 <code>test262/</code> · charts drawn inline, no external deps.</span>
   <span><a href="https://watjs.berrry.app/">watjs.berrry.app</a> &nbsp;·&nbsp; <a href="https://github.com/vgrichina/watjs" target="_blank" rel="noopener">github ↗</a></span>
 </footer>
 
@@ -424,6 +424,7 @@ const DAILY = [
   ["Aug 9", 2, 0.26], ["Aug 10", 17, 0.25], ["Aug 11", 48, 3.07], ["Aug 12", 40, 3.47],
   ["Aug 13", 0, 0.71], ["Aug 14", 34, 1.83], ["Aug 15", 54, 2.14],
   ["Aug 16", 34, 2.32], ["Aug 17", 23, 2.54], ["Aug 18", 28, 3.39], ["Aug 19", 13, 2.40],
+  ["Aug 20", 0, 0.03],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -451,6 +452,7 @@ const GROWTH = [
   ["Aug 9", 30110, 339], ["Aug 10", 30235, 341], ["Aug 11", 30937, 349], ["Aug 12", 31346, 382],
   ["Aug 13", 31346, 382], ["Aug 14", 31359, 425], ["Aug 15", 31543, 446],
   ["Aug 16", 32220, 453], ["Aug 17", 32500, 457], ["Aug 18", 32892, 462], ["Aug 19", 33232, 465],
+  ["Aug 20", 33232, 465],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
