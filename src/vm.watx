@@ -7979,6 +7979,12 @@
   (let $a i32 (call $val_payload (local.get $arr)))
   (let $n i32 (call $arr_len (local.get $a)))
   (let $sc i32 (call $val_payload (local.get $thisobj)))  ;; instance own-prop scope
+  ;; PrivateMethodOrAccessorAdd: installing a private method/accessor twice on the same object is a
+  ;; TypeError. Installation is all-or-nothing per class body, so if the first brand key is already
+  ;; present the object was already initialized by this class (e.g. a Base ctor that returns `o`).
+  (if (i32.ge_s (local.get $n) (i32.const 3))
+    (then (if (call $scope_find_local (local.get $sc) (call $to_prop_key (call $arr_get (local.get $a) (i32.const 1))))
+      (then (call $throw_type (cstring "TypeError") (cstring "private method already installed")) (return)))))
   (let $i i32 (i32.const 0))
   (block $e (loop $l
     (br_if $e (i32.gt_s (i32.add (local.get $i) (i32.const 3)) (local.get $n)))
@@ -7995,7 +8001,7 @@
   (if (i32.eqz (call $is_object (local.get $protoval))) (then (return)))
   ;; private methods/accessors install BEFORE field initializers (a field init may call a private method)
   (let $pmslot i32 (call $scope_find_local (call $val_payload (local.get $protoval)) (cstring "@@privmethods")))
-  (if (local.get $pmslot) (then (call $vm_apply_privmeths (local.get $thisobj) (i64.load (local.get $pmslot)))))
+  (if (local.get $pmslot) (then (call $vm_apply_privmeths (local.get $thisobj) (i64.load (local.get $pmslot))) (if (call $err) (then (return)))))
   (let $fislot i32 (call $scope_find_local (call $val_payload (local.get $protoval)) (cstring "@@fieldinits")))
   (if (local.get $fislot)
     (then
