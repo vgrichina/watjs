@@ -5514,6 +5514,14 @@
   (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0 (static methods)
   (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $smethT))
   (let $hassmeth i32 (i32.const 0))  ;; any static METHOD/accessor seen? (only then emit APPLYSMETHS)
+  ;; PRIVATE instance methods/accessors are deferred into this [kind,brandkey,fn,...] triples array and
+  ;; installed PER-INSTANCE (by vm_run_own_fields, when the instance's `this` is bound — base at ctor
+  ;; entry, derived right after super()), NOT on the shared prototype. This makes `this.#m` before super()
+  ;; returns throw (brand-check via js_in finds no own key yet), matching the spec InitializeInstanceElements
+  ;; timing. Public methods/accessors stay on the prototype. kind: 0=method,1=get,2=set.
+  (let $privmethsT i32 (call $vm_tmpname))
+  (call $vm_emit_op (local.get $code) (i32.const 29)) (call $vm_emit_op (local.get $code) (i32.const 0))  ;; NEWARRAY 0 (private instance methods/accessors)
+  (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $privmethsT))
   (if (local.get $superT)
     (then
       (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
@@ -5703,21 +5711,39 @@
               (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; fn.name = key (original #name)
               (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND fn
               (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP smethT
-            (else
-              (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
-              (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync))
-              (i32.store (i32.const 692) (i32.const 1))  ;; class method → no .prototype (gated on !generator in fnbody)
-              (i32.store (i32.const 700) (i32.add (local.get $memberstart) (i32.const 1)))  ;; class method source span
-              (call $vm_c_fnbody (local.get $code) (i32.const 0))
-              (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; method .name = original #name
-              (call $vm_emit_op (local.get $code) (i32.const 73)) (call $vm_emit_op (local.get $code) (call $priv_key (local.get $mn)))  ;; DEFMETH under the per-class brand key
-              (call $vm_emit_op (local.get $code) (i32.const 11))))))))
+            (else (if (call $is_private_key (local.get $mn))
+              (then  ;; PRIVATE instance method → defer [0,brandkey,fn] into privmethsT, install per-instance (not on proto)
+                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $privmethsT))  ;; LOADVAR privmethsT
+                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.const 0)))  ;; kind 0 = method
+                (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND kind
+                (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $priv_key (local.get $mn))))  ;; per-class brand key
+                (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND key
+                (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync))
+                (i32.store (i32.const 692) (i32.const 1)) (i32.store (i32.const 700) (i32.add (local.get $memberstart) (i32.const 1)))
+                (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; → [privmethsT, fn]
+                (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; fn.name = original #name
+                (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND fn
+                (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP privmethsT
+              (else  ;; PUBLIC instance method → DEFMETH on the prototype
+                (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))
+                (i32.store (i32.const 236) (local.get $isgen)) (i32.store (i32.const 232) (local.get $isasync))
+                (i32.store (i32.const 692) (i32.const 1))  ;; class method → no .prototype (gated on !generator in fnbody)
+                (i32.store (i32.const 700) (i32.add (local.get $memberstart) (i32.const 1)))  ;; class method source span
+                (call $vm_c_fnbody (local.get $code) (i32.const 0))
+                (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (local.get $mn))  ;; method .name = original #name
+                (call $vm_emit_op (local.get $code) (i32.const 73)) (call $vm_emit_op (local.get $code) (call $priv_key (local.get $mn)))  ;; DEFMETH under the per-class brand key
+                (call $vm_emit_op (local.get $code) (i32.const 11))))))))))
     (br $cml)))
   (call $next_token)  ;; '}'
   ;; stash the field-inits array on the prototype (internal, DontEnum) for NEW to replay
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
   (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $fieldsT))  ;; LOADVAR fieldsT
   (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (cstring "@@fieldinits"))  ;; SETPROP
+  (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
+  ;; stash the private instance methods/accessors triples on the prototype for per-instance install
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))  ;; LOADVAR proto
+  (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $privmethsT))  ;; LOADVAR privmethsT
+  (call $vm_emit_op (local.get $code) (i32.const 34)) (call $vm_emit_op (local.get $code) (cstring "@@privmethods"))  ;; SETPROP
   (call $vm_emit_op (local.get $code) (i32.const 11))  ;; POP
   (if (i32.eqz (local.get $hasctor))
     (then
@@ -7938,8 +7964,32 @@
 ;; this-TDZ model each class's fields run right after ITS `this` is set — base at ctor entry, derived
 ;; via the RUNFIELDS op right after super(). Clears reg 640/656 (super-construct / parked newTarget)
 ;; across the thunks so a field-initializer CALL isn't mis-read as a construct.
+;; install this class level's own PRIVATE instance methods/accessors on the instance (own, non-enumerable).
+;; The fn objects are created once at class-definition time (home/@@superproto baked in); here the SAME fn
+;; is added per instance under its per-class brand key, so `this.#m` before super() (no own key yet) throws.
+(func $vm_apply_privmeths (param $thisobj i64) (param $arr i64) (effects)
+  (if (i32.eqz (call $is_object (local.get $thisobj))) (then (return)))
+  (if (i32.eqz (call $is_array (local.get $arr))) (then (return)))
+  (let $a i32 (call $val_payload (local.get $arr)))
+  (let $n i32 (call $arr_len (local.get $a)))
+  (let $sc i32 (call $val_payload (local.get $thisobj)))  ;; instance own-prop scope
+  (let $i i32 (i32.const 0))
+  (block $e (loop $l
+    (br_if $e (i32.gt_s (i32.add (local.get $i) (i32.const 3)) (local.get $n)))
+    (let $kind i32 (i32.trunc_f64_s (call $to_num (call $arr_get (local.get $a) (local.get $i)))))
+    (let $key i64 (call $arr_get (local.get $a) (i32.add (local.get $i) (i32.const 1))))
+    (let $fn i64 (call $arr_get (local.get $a) (i32.add (local.get $i) (i32.const 2))))
+    (let $pk i32 (call $to_prop_key (local.get $key)))
+    (if (i32.eqz (local.get $kind))
+      (then (call $scope_define_attr (local.get $sc) (local.get $pk) (local.get $fn) (i32.const 0)))  ;; method: read-only {W:F,E:F,C:F}
+      (else (call $scope_set_accessor_attr (local.get $sc) (local.get $pk) (i32.eq (local.get $kind) (i32.const 1)) (local.get $fn) (i32.const 5))))  ;; accessor: non-enum, get/set merge on same brand
+    (set! $i (i32.add (local.get $i) (i32.const 3)))
+    (br $l))))
 (func $vm_run_own_fields (param $thisobj i64) (param $protoval i64) (effects)
   (if (i32.eqz (call $is_object (local.get $protoval))) (then (return)))
+  ;; private methods/accessors install BEFORE field initializers (a field init may call a private method)
+  (let $pmslot i32 (call $scope_find_local (call $val_payload (local.get $protoval)) (cstring "@@privmethods")))
+  (if (local.get $pmslot) (then (call $vm_apply_privmeths (local.get $thisobj) (i64.load (local.get $pmslot)))))
   (let $fislot i32 (call $scope_find_local (call $val_payload (local.get $protoval)) (cstring "@@fieldinits")))
   (if (local.get $fislot)
     (then
