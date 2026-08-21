@@ -5625,34 +5625,40 @@
       (then
         (let $gsi i32 (call $str_eq (local.get $gsk) (cstring "get")))
         (let $ganame i32 (i32.const 0))  ;; literal key string (0 = computed)
-        ;; base target: static accessor → smethT (deferred onto the ctor) with kind pushed first;
-        ;; instance accessor → proto via DEFGET/DEFSET.
-        (if (local.get $isstatic)
+        ;; target: static accessor → smethT (deferred onto the ctor); PUBLIC instance accessor → proto via
+        ;; DEFGET_NE/DEFSET_NE; PRIVATE instance accessor → privmethsT triples [kind,brandkey,fn], installed
+        ;; per-instance (so `this.#x` before super returns brand-checks to a TypeError). Read the literal key
+        ;; name FIRST (a private accessor is always a literal #name key) to pick the target.
+        (let $iscomputed i32 (i32.eq (call $tok_kind) (i32.const 19)))
+        (if (i32.eqz (local.get $iscomputed))  ;; literal key: string → decoded; number → canonical ToString; else identifier text
           (then
-            (set! $hassmeth (i32.const 1))
-            (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $smethT))  ;; LOADVAR smethT
-            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (if i32 (local.get $gsi) (then (i32.const 1)) (else (i32.const 2))))))  ;; kind 1=get/2=set
-            (call $vm_emit_op (local.get $code) (i32.const 52)))  ;; APPEND kind
-          (else (call $vm_emit_op (local.get $code) (i32.const 8)) (call $vm_emit_op (local.get $code) (local.get $protoT))))  ;; LOADVAR proto
-        (if (i32.eq (call $tok_kind) (i32.const 19))  ;; [computed] key
-          (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token))  ;; '[' expr ']' → key on stack
-          (else  ;; literal key: string → decoded; number → canonical ToString; else identifier text
             (set! $ganame (if i32 (i32.eq (call $tok_kind) (i32.const 2)) (then (call $decode_str (i32.add (call $src) (call $tok_start)) (call $tok_len)))
               (else (if i32 (i32.eq (call $tok_kind) (i32.const 1)) (then (call $num_to_str (call $tok_num))) (else (call $ident_name))))))
-            (call $next_token)
-            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $priv_key (local.get $ganame)))))) ;; literal key (private → brand key)
-        (if (local.get $isstatic) (then (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND key (static)
+            (call $next_token)))
+        (let $isprivinst i32 (i32.and (i32.eqz (local.get $isstatic)) (i32.and (i32.ne (local.get $ganame) (i32.const 0)) (call $is_private_key (local.get $ganame)))))
+        (let $islist i32 (i32.or (local.get $isstatic) (local.get $isprivinst)))  ;; target is a [kind,key,fn] triples array (append), not proto
+        (if (local.get $isstatic) (then (set! $hassmeth (i32.const 1))))
+        (call $vm_emit_op (local.get $code) (i32.const 8))
+        (call $vm_emit_op (local.get $code) (if i32 (local.get $isstatic) (then (local.get $smethT)) (else (if i32 (local.get $isprivinst) (then (local.get $privmethsT)) (else (local.get $protoT))))))  ;; LOADVAR target
+        (if (local.get $islist)  ;; list target: push kind first
+          (then
+            (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $num (f64.convert_i32_s (if i32 (local.get $gsi) (then (i32.const 1)) (else (i32.const 2))))))  ;; kind 1=get/2=set
+            (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND kind
+        (if (local.get $iscomputed)  ;; [computed] key → onto the stack (never private)
+          (then (call $next_token) (call $vm_c_expr (local.get $code)) (call $next_token))  ;; '[' expr ']'
+          (else (call $vm_emit_op (local.get $code) (i32.const 1)) (call $vm_emit_val (local.get $code) (call $mk_str (call $priv_key (local.get $ganame))))))  ;; literal key (private → brand key)
+        (if (local.get $islist) (then (call $vm_emit_op (local.get $code) (i32.const 52))))  ;; APPEND key (list targets)
         (i32.store (i32.const 692) (i32.const 1))  ;; class accessor → no .prototype
         (i32.store (i32.const 924) (if i32 (local.get $gsi) (then (i32.const 1)) (else (i32.const 2))))  ;; accessor arity: getter→0 params / setter→1
         (i32.store (i32.const 700) (i32.add (local.get $memberstart) (i32.const 1)))  ;; class method source span
-        (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; accessor fn → static: [smethT, fn]; instance: [proto, key, fn]
+        (call $vm_c_fnbody (local.get $code) (i32.const 0))  ;; list target: [target, fn]; public-instance: [proto, key, fn]
         (if (call $err) (then (return)))
         (if (local.get $ganame)  ;; accessor .name = "get "/"set " + key
           (then (call $vm_emit_op (local.get $code) (i32.const 72)) (call $vm_emit_op (local.get $code) (call $str_concat (if i32 (local.get $gsi) (then (cstring "get ")) (else (cstring "set "))) (local.get $ganame)))))
-        (if (local.get $isstatic)
+        (if (local.get $islist)
           (then
-            (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND fn → [smethT]
-            (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP smethT
+            (call $vm_emit_op (local.get $code) (i32.const 52))  ;; APPEND fn → [target]
+            (call $vm_emit_op (local.get $code) (i32.const 11)))  ;; POP target
           (else
             (call $vm_emit_op (local.get $code) (if i32 (local.get $gsi) (then (i32.const 110)) (else (i32.const 111))))  ;; DEFGET_NE/DEFSET_NE → [proto] (class accessors are non-enumerable)
             (call $vm_emit_op (local.get $code) (i32.const 11))))  ;; POP proto
