@@ -1648,13 +1648,17 @@
   (i32.store (local.get $tmp) (local.get $len))  ;; preserve the full length even if the tail is absent
   (local.get $tmp))
 
+;; finite (not NaN, not ±Infinity): finite−finite=0; Inf−Inf and NaN−NaN are NaN
+(func $f64_finite (param $v f64) (result i32) (effects)
+  (f64.eq (f64.sub (local.get $v) (local.get $v)) (f64.const 0)))
+
 ;; safe to i64.trunc_f64_s? (finite and within i64 range — trunc traps otherwise)
 (func $f64_safe_i64 (param $v f64) (result i32) (effects)
   (i32.and (f64.eq (local.get $v) (local.get $v))
     (i32.and (f64.lt (local.get $v) (f64.const 9.2e18)) (f64.gt (local.get $v) (f64.const -9.2e18)))))
 
 ;; epoch-ms from date components (UTC). month is 0-based per JS.
-(func $date_make (param $y i64) (param $mo i64) (param $d i64) (param $h i64) (param $mi i64) (param $s i64) (param $ms i64) (result f64) (effects)
+(func $date_make (param $y i64) (param $mo i64) (param $d i64) (param $h f64) (param $mi f64) (param $s f64) (param $ms f64) (result f64) (effects)
   ;; MakeDay: normalize month into [0,11], carrying into the year (Euclidean: floor div).
   (let $mq i64 (i64.div_s (local.get $mo) (i64.const 12)))
   (let $mr i64 (i64.rem_s (local.get $mo) (i64.const 12)))
@@ -1662,7 +1666,16 @@
   (set! $y (i64.add (local.get $y) (local.get $mq)))
   (set! $mo (local.get $mr))
   (let $days i64 (call $days_from_civil (local.get $y) (i64.add (local.get $mo) (i64.const 1)) (local.get $d)))
-  (let $dmr f64 (f64.convert_i64_s (i64.add (i64.add (i64.add (i64.add (i64.mul (local.get $days) (i64.const 86400000)) (i64.mul (local.get $h) (i64.const 3600000))) (i64.mul (local.get $mi) (i64.const 60000))) (i64.mul (local.get $s) (i64.const 1000))) (local.get $ms))))
+  ;; MakeTime/MakeDate in f64, spec left-assoc order (products like h*3.6e6 or
+  ;; days*8.64e7 overflow i64 for huge finite args — caller already bounds each
+  ;; component to ±9.2e18 via $f64_safe_i64). time = ((h·msPerHour + min·msPerMinute)
+  ;; + sec·msPerSecond) + ms, rounded; then MakeDate = day·msPerDay + time.
+  (let $tod f64 (f64.add (f64.add (f64.add
+    (f64.mul (local.get $h) (f64.const 3600000))
+    (f64.mul (local.get $mi) (f64.const 60000)))
+    (f64.mul (local.get $s) (f64.const 1000)))
+    (local.get $ms)))
+  (let $dmr f64 (f64.add (f64.mul (f64.convert_i64_s (local.get $days)) (f64.const 86400000)) (local.get $tod)))
   (if (i32.or (f64.ne (local.get $dmr) (local.get $dmr)) (f64.gt (f64.abs (local.get $dmr)) (f64.const 8640000000000000))) (then (return (f64.div (f64.const 0) (f64.const 0)))))
   (local.get $dmr))
 
@@ -3391,7 +3404,7 @@
               (set! $offmin (i32.mul (local.get $sign) (i32.add (i32.mul (local.get $hh) (i32.const 60)) (local.get $mm))))))))))
   ;; date_make treats fields as UTC; a local wall time with offset O has UTC = local - O
   (f64.sub
-    (call $date_make (i64.extend_i32_s (local.get $y)) (i64.extend_i32_s (local.get $mo)) (i64.extend_i32_s (local.get $d)) (i64.extend_i32_s (local.get $h)) (i64.extend_i32_s (local.get $mi)) (i64.extend_i32_s (local.get $sec)) (i64.const 0))
+    (call $date_make (i64.extend_i32_s (local.get $y)) (i64.extend_i32_s (local.get $mo)) (i64.extend_i32_s (local.get $d)) (f64.convert_i32_s (local.get $h)) (f64.convert_i32_s (local.get $mi)) (f64.convert_i32_s (local.get $sec)) (f64.const 0))
     (f64.mul (f64.convert_i32_s (local.get $offmin)) (f64.const 60000))))
 ;; parse an ISO-8601 date string → epoch ms, or NaN. Handles YYYY[-MM[-DD]]
 ;; [T HH:MM[:SS[.sss]]][Z]. (Timezone offsets other than Z are treated as UTC.)
@@ -3440,7 +3453,7 @@
                   (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
                   (set! $ms (call $pd_int (local.get $s) (local.get $len)))))))))))
   (if (i32.lt_s (local.get $mo) (i32.const 0)) (then (return (f64.div (f64.const 0) (f64.const 0)))))
-  (call $date_make (i64.extend_i32_s (local.get $y)) (i64.extend_i32_s (local.get $mo)) (i64.extend_i32_s (local.get $d)) (i64.extend_i32_s (local.get $h)) (i64.extend_i32_s (local.get $mi)) (i64.extend_i32_s (local.get $sec)) (i64.extend_i32_s (local.get $ms))))
+  (call $date_make (i64.extend_i32_s (local.get $y)) (i64.extend_i32_s (local.get $mo)) (i64.extend_i32_s (local.get $d)) (f64.convert_i32_s (local.get $h)) (f64.convert_i32_s (local.get $mi)) (f64.convert_i32_s (local.get $sec)) (f64.convert_i32_s (local.get $ms))))
 
 ;; weekday (0=Sun) and month (0=Jan) 3-letter names for Date toString-family
 (func $wday_name (param $w i32) (result i32) (effects)
@@ -8987,11 +9000,12 @@
           (let $dcs f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 6)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 5)))) (else (f64.const 0)))) (if (call $err) (then (return (call $v_undef))))
           (let $dcms f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 7)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 6)))) (else (f64.const 0)))) (if (call $err) (then (return (call $v_undef))))
           ;; any non-finite/out-of-range component → Invalid Date (NaN), never a trunc trap
-          (if (i32.and (call $f64_safe_i64 (local.get $dcy)) (i32.and (call $f64_safe_i64 (local.get $dcmo)) (i32.and (call $f64_safe_i64 (local.get $dcd)) (i32.and (call $f64_safe_i64 (local.get $dch)) (i32.and (call $f64_safe_i64 (local.get $dcmi)) (i32.and (call $f64_safe_i64 (local.get $dcs)) (call $f64_safe_i64 (local.get $dcms))))))))
+          ;; y/mo/d feed calendar (i64) → must fit i64; h/mi/s/ms feed f64 MakeTime → only finite
+          (if (i32.and (call $f64_safe_i64 (local.get $dcy)) (i32.and (call $f64_safe_i64 (local.get $dcmo)) (i32.and (call $f64_safe_i64 (local.get $dcd)) (i32.and (call $f64_finite (local.get $dch)) (i32.and (call $f64_finite (local.get $dcmi)) (i32.and (call $f64_finite (local.get $dcs)) (call $f64_finite (local.get $dcms))))))))
             (then
               (set! $dcy (f64.trunc (local.get $dcy)))  ;; year 0..99 → 1900+year
               (if (i32.and (f64.ge (local.get $dcy) (f64.const 0)) (f64.le (local.get $dcy) (f64.const 99))) (then (set! $dcy (f64.add (local.get $dcy) (f64.const 1900)))))
-              (set! $dt (call $date_make (i64.trunc_f64_s (local.get $dcy)) (i64.trunc_f64_s (local.get $dcmo)) (i64.trunc_f64_s (local.get $dcd)) (i64.trunc_f64_s (local.get $dch)) (i64.trunc_f64_s (local.get $dcmi)) (i64.trunc_f64_s (local.get $dcs)) (i64.trunc_f64_s (local.get $dcms)))))
+              (set! $dt (call $date_make (i64.trunc_f64_s (local.get $dcy)) (i64.trunc_f64_s (local.get $dcmo)) (i64.trunc_f64_s (local.get $dcd)) (f64.trunc (local.get $dch)) (f64.trunc (local.get $dcmi)) (f64.trunc (local.get $dcs)) (f64.trunc (local.get $dcms)))))
             (else (set! $dt (f64.div (f64.const 0) (f64.const 0)))))))
       ;; TimeClip the final time value (single-number ctor path; multi-arg already clipped in date_make, idempotent)
       (if (i32.or (f64.ne (local.get $dt) (local.get $dt)) (f64.gt (f64.abs (local.get $dt)) (f64.const 8640000000000000)))
@@ -9089,12 +9103,12 @@
       (let $umi f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 5)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 4)))) (else (f64.const 0))))
       (let $us f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 6)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 5)))) (else (f64.const 0))))
       (let $ums f64 (if f64 (i32.ge_s (local.get $argc) (i32.const 7)) (then (call $to_num (call $argn (local.get $argv) (local.get $argc) (i32.const 6)))) (else (f64.const 0))))
-      (if (i32.eqz (i32.and (call $f64_safe_i64 (local.get $uy)) (i32.and (call $f64_safe_i64 (local.get $umo)) (i32.and (call $f64_safe_i64 (local.get $ud)) (i32.and (call $f64_safe_i64 (local.get $uh)) (i32.and (call $f64_safe_i64 (local.get $umi)) (i32.and (call $f64_safe_i64 (local.get $us)) (call $f64_safe_i64 (local.get $ums)))))))))
+      (if (i32.eqz (i32.and (call $f64_safe_i64 (local.get $uy)) (i32.and (call $f64_safe_i64 (local.get $umo)) (i32.and (call $f64_safe_i64 (local.get $ud)) (i32.and (call $f64_finite (local.get $uh)) (i32.and (call $f64_finite (local.get $umi)) (i32.and (call $f64_finite (local.get $us)) (call $f64_finite (local.get $ums)))))))))
         (then (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
       ;; ToIntegerOrInfinity(y) FIRST, then year 0..99 maps to 1900+year (so -0.999999 → 0 → 1900)
       (set! $uy (f64.trunc (local.get $uy)))
       (if (i32.and (f64.ge (local.get $uy) (f64.const 0)) (f64.le (local.get $uy) (f64.const 99))) (then (set! $uy (f64.add (local.get $uy) (f64.const 1900)))))
-      (return (call $num (call $date_make (i64.trunc_f64_s (local.get $uy)) (i64.trunc_f64_s (local.get $umo)) (i64.trunc_f64_s (local.get $ud)) (i64.trunc_f64_s (local.get $uh)) (i64.trunc_f64_s (local.get $umi)) (i64.trunc_f64_s (local.get $us)) (i64.trunc_f64_s (local.get $ums)))))))
+      (return (call $num (call $date_make (i64.trunc_f64_s (local.get $uy)) (i64.trunc_f64_s (local.get $umo)) (i64.trunc_f64_s (local.get $ud)) (f64.trunc (local.get $uh)) (f64.trunc (local.get $umi)) (f64.trunc (local.get $us)) (f64.trunc (local.get $ums)))))))
   (if (i32.and (i32.ge_s (local.get $id) (i32.const 250)) (i32.le_s (local.get $id) (i32.const 256)))  ;; setFullYear/Month/Date/Hours/Minutes/Seconds/Milliseconds (single field)
     (then
       (let $std i32 (i32.const 0))  ;; this must be a Date
@@ -9154,7 +9168,7 @@
       (if (i32.and (i32.eq (local.get $id) (i32.const 254)) (local.get $act1)) (then (set! $dss (i64.trunc_f64_s (local.get $dav1)))))
       (if (i32.and (i32.eq (local.get $id) (i32.const 254)) (local.get $act2)) (then (set! $dsms (i64.trunc_f64_s (local.get $dav2)))))
       (if (i32.and (i32.eq (local.get $id) (i32.const 255)) (local.get $act1)) (then (set! $dsms (i64.trunc_f64_s (local.get $dav1)))))
-      (let $dnt f64 (call $date_make (local.get $dsy) (local.get $dsmo) (local.get $dsd) (local.get $dsh) (local.get $dsmi) (local.get $dss) (local.get $dsms)))
+      (let $dnt f64 (call $date_make (local.get $dsy) (local.get $dsmo) (local.get $dsd) (f64.convert_i64_s (local.get $dsh)) (f64.convert_i64_s (local.get $dsmi)) (f64.convert_i64_s (local.get $dss)) (f64.convert_i64_s (local.get $dsms))))
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $dnt)))
       (return (call $num (local.get $dnt)))))
   (if (i32.or (i32.eq (local.get $id) (i32.const 258)) (i32.or (i32.eq (local.get $id) (i32.const 262)) (i32.or (i32.eq (local.get $id) (i32.const 263)) (i32.or (i32.eq (local.get $id) (i32.const 264)) (i32.or (i32.eq (local.get $id) (i32.const 265)) (i32.or (i32.eq (local.get $id) (i32.const 266)) (i32.eq (local.get $id) (i32.const 267))))))))  ;; Date toString family
@@ -9190,7 +9204,7 @@
         (then (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (f64.div (f64.const 0) (f64.const 0)))) (return (call $num (f64.div (f64.const 0) (f64.const 0))))))
       (let $syv i64 (i64.trunc_f64_s (local.get $syvf)))
       (if (i32.and (i64.ge_s (local.get $syv) (i64.const 0)) (i64.le_s (local.get $syv) (i64.const 99))) (then (set! $syv (i64.add (local.get $syv) (i64.const 1900)))))
-      (let $synt f64 (call $date_make (local.get $syv) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 1))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 2))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 4))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 5))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 6))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 7)))))
+      (let $synt f64 (call $date_make (local.get $syv) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 1))) (i64.extend_i32_s (call $date_field (local.get $sytm) (i32.const 2))) (f64.convert_i32_s (call $date_field (local.get $sytm) (i32.const 4))) (f64.convert_i32_s (call $date_field (local.get $sytm) (i32.const 5))) (f64.convert_i32_s (call $date_field (local.get $sytm) (i32.const 6))) (f64.convert_i32_s (call $date_field (local.get $sytm) (i32.const 7)))))
       (call $set_prop (local.get $thisv) (call $mk_str (cstring "@@time")) (call $num (local.get $synt)))
       (return (call $num (local.get $synt)))))
   (if (i32.eq (local.get $id) (i32.const 143))  ;; arguments[@@iterator]() → iterator (this = arguments obj)
