@@ -7142,7 +7142,13 @@
                         (call $vm_emit_op (local.get $code) (i32.const 9)) (call $vm_emit_op (local.get $code) (local.get $fvtmp))
                         (let $fvpost i32 (call $cursor_save))
                         (call $cursor_restore (local.get $fpatcur))
+                        ;; leaf binding mode (reg 676): let → 2 LEXDEFINIT / const|using → 3 DEFCONST into the
+                        ;; loop's ENTERSCOPE (so pattern names are block-scoped, not leaked to the var scope);
+                        ;; var → 0 DEFINIT var scope. Mirrors the for-of destructuring path.
+                        (let $fdsm i32 (i32.load (i32.const 676)))
+                        (i32.store (i32.const 676) (if i32 (i32.or (local.get $forconst) (local.get $forusing)) (then (i32.const 3)) (else (if i32 (local.get $forlex) (then (i32.const 2)) (else (i32.const 0))))))
                         (call $vm_c_destructure_param (local.get $code) (local.get $fvtmp))
+                        (i32.store (i32.const 676) (local.get $fdsm))
                         (call $cursor_restore (local.get $fvpost))
                         (set! $forletname (i32.const 0)) (set! $fhaspat (i32.const 1)))  ;; destructuring → no per-iteration copy
                       (else
