@@ -4348,11 +4348,20 @@
 ;; 2 = let/catch lexical binding → LEXDEFINIT in the current scope; 1 = assignment destructuring
 ;; (`[x]=…`) → assign up the chain (strict: ReferenceError if undeclared; sloppy: implicit global);
 ;; 0 = var binding (`var [x]=…`) → define-in-nearest-var-scope (DEFINIT).
+;; name-collection sink for lexical destructuring leaves: reg 1300 = buffer base (0 = disabled),
+;; reg 1304 = count (capped at 128). Enabled by the plain-for head so a destructuring declarator's
+;; bound names land in $forlexb → CreatePerIterationEnvironment can copy them per iteration.
+(func $dstr_record_name (param $name i32) (effects)
+  (if (i32.and (i32.ne (i32.load (i32.const 1100)) (i32.const 0)) (i32.lt_s (i32.load (i32.const 1104)) (i32.const 128)))
+    (then
+      (i32.store (i32.add (i32.load (i32.const 1100)) (i32.mul (i32.load (i32.const 1104)) (i32.const 4))) (local.get $name))
+      (i32.store (i32.const 1104) (i32.add (i32.load (i32.const 1104)) (i32.const 1))))))
+
 (func $vm_emit_dstr_store (param $code i32) (param $name i32) (effects)
   (if (i32.eq (i32.load (i32.const 676)) (i32.const 3))
-    (then (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $name)))  ;; const lexical binding: DEFCONST (non-writable) in the current scope
+    (then (call $vm_emit_op (local.get $code) (i32.const 79)) (call $vm_emit_op (local.get $code) (local.get $name)) (call $dstr_record_name (local.get $name)))  ;; const lexical binding: DEFCONST (non-writable) in the current scope
   (else (if (i32.eq (i32.load (i32.const 676)) (i32.const 2))
-    (then (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $name)))  ;; lexical binding (catch param / let): LEXDEFINIT binds in the CURRENT (declarative) scope, not the var scope
+    (then (call $vm_emit_op (local.get $code) (i32.const 114)) (call $vm_emit_op (local.get $code) (local.get $name)) (call $dstr_record_name (local.get $name)))  ;; lexical binding (catch param / let): LEXDEFINIT binds in the CURRENT (declarative) scope, not the var scope
     (else (if (i32.load (i32.const 676))
       (then (call $vm_emit_op (local.get $code) (if i32 (i32.load (i32.const 388)) (then (i32.const 80)) (else (i32.const 85)))) (call $vm_emit_op (local.get $code) (local.get $name)))
       (else (call $vm_emit_op (local.get $code) (i32.const 89)) (call $vm_emit_op (local.get $code) (local.get $name)))))))))  ;; declarator mode: DEFINIT binds via the nearest var scope
@@ -7147,10 +7156,18 @@
                         ;; var → 0 DEFINIT var scope. Mirrors the for-of destructuring path.
                         (let $fdsm i32 (i32.load (i32.const 676)))
                         (i32.store (i32.const 676) (if i32 (i32.or (local.get $forconst) (local.get $forusing)) (then (i32.const 3)) (else (if i32 (local.get $forlex) (then (i32.const 2)) (else (i32.const 0))))))
+                        ;; collect the pattern's lexical leaf names into $forlexb (sink regs 1300/1304), so a
+                        ;; `for (let [x]=…;;)` head participates in CreatePerIterationEnvironment. Save/restore the
+                        ;; sink regs — a default initializer may recursively compile another for head.
+                        (let $fsink i32 (i32.load (i32.const 1100)))
+                        (let $fscnt i32 (i32.load (i32.const 1104)))
+                        (i32.store (i32.const 1100) (local.get $forlexb)) (i32.store (i32.const 1104) (local.get $forlexn))
                         (call $vm_c_destructure_param (local.get $code) (local.get $fvtmp))
+                        (set! $forlexn (i32.load (i32.const 1104)))
+                        (i32.store (i32.const 1100) (local.get $fsink)) (i32.store (i32.const 1104) (local.get $fscnt))
                         (i32.store (i32.const 676) (local.get $fdsm))
                         (call $cursor_restore (local.get $fvpost))
-                        (set! $forletname (i32.const 0)) (set! $fhaspat (i32.const 1)))  ;; destructuring → no per-iteration copy
+                        (set! $forletname (i32.const 0)) (set! $fhaspat (i32.const 1)))  ;; destructuring → isolation-only single-name copy off; per-iter copy via collected names
                       (else
                         (let $fin i32 (call $ident_name)) (call $next_token)  ;; NAME
                         ;; a ReservedWord may not be a for-head binding name (`for (var if in {})`).
@@ -7197,7 +7214,9 @@
           ;; heads only (a destructuring declarator's names aren't tracked → keep isolation-only behavior).
           ;; exclude `using` (its LEAVEWITH-driven disposal must fire ONCE at the end of the for statement,
           ;; not per-iteration — CreatePerIterationEnvironment's copy would dispose it prematurely).
-          (let $fdocopy i32 (i32.and (i32.eqz (local.get $forusing)) (i32.and (local.get $forlex) (i32.and (i32.eqz (local.get $fhaspat)) (i32.gt_s (local.get $forlexn) (i32.const 0))))))
+          ;; per-iteration copy applies to every let/const head binding name in $forlexb — simple declarators
+          ;; and destructuring leaves alike (the latter collected via the sink above). Excludes `using`.
+          (let $fdocopy i32 (i32.and (i32.eqz (local.get $forusing)) (i32.and (local.get $forlex) (i32.gt_s (local.get $forlexn) (i32.const 0)))))
           (if (local.get $fdocopy) (then (call $vm_emit_periter_copy (local.get $code) (local.get $forlexb) (local.get $forlexn) (local.get $forconst))))
           (let $ftop i32 (call $vm_emit_cursor))
           (if (i32.ne (call $tok_kind) (i32.const 21))
