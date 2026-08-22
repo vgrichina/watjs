@@ -1259,6 +1259,9 @@
 ;; super-property [[Get]]: read $key from $proto's chain, calling any accessor getter with this=$recv
 ;; (the instance) per SuperProperty semantics. $proto = GetPrototypeOf(homeObject).
 (func $get_super_prop (param $proto i64) (param $key i64) (param $recv i64) (result i64) (effects)
+  ;; a Proxy is `is_object` but its payload is the proxy record, not a scope — dispatch its [[Get]] with
+  ;; the receiver threaded through (a nested-proxy forward or `super.x` through a proxy [[Prototype]]).
+  (if (call $is_proxy (local.get $proto)) (then (return (call $proxy_get_recv (local.get $proto) (local.get $key) (local.get $recv)))))
   (if (i32.eqz (call $is_object (local.get $proto))) (then (return (call $get_prop (local.get $proto) (local.get $key)))))
   (let $sgslot i32 (call $scope_find (call $val_payload (local.get $proto)) (call $to_prop_key (local.get $key))))
   (if (i32.eqz (local.get $sgslot)) (then (return (call $get_prop (local.get $proto) (local.get $key)))))

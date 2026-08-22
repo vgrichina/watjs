@@ -1110,7 +1110,11 @@
 ;; species IS Array) → a plain Array; a custom constructor[@@species] is [[Construct]]
 ;; ed with [length]; a non-constructor species → TypeError.
 (func $array_species_create (param $o i64) (param $len i32) (result i64) (effects)
-  (if (i32.eqz (call $is_array (local.get $o))) (then (return (call $plain_array (local.get $len)))))
+  ;; spec step 3: isArray = ? IsArray(originalArray) — proxy-aware, so a Proxy whose target is an array
+  ;; still resolves its species from the (forwarded) constructor rather than defaulting to a plain Array.
+  (let $oisarr i32 (call $js_isarray_p (local.get $o)))
+  (if (call $err) (then (return (call $v_undef))))
+  (if (i32.eqz (local.get $oisarr)) (then (return (call $plain_array (local.get $len)))))
   (let $sctor i64 (call $get_prop (local.get $o) (call $mk_str (cstring "constructor"))))
   (if (call $err) (then (return (call $v_undef))))
   ;; a `constructor` that is neither undefined nor an Object (null/number/string/…) is not a
@@ -8524,6 +8528,13 @@
     (then
       (let $rgtgt i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 0)))
       (let $rgkey i64 (call $argn (local.get $argv) (local.get $argc) (i32.const 1)))
+      ;; a Proxy target is itself `is_object`, but its payload is the proxy record, not the property
+      ;; store — dispatch its [[Get]](key, receiver) so a trapless proxy forwards to the target with the
+      ;; supplied receiver threaded through (needed for a nested Proxy, where the outer forwards to the
+      ;; inner with receiver = the outer). Without this the receiver-path below scope_find's the proxy
+      ;; record and returns undefined.
+      (if (i32.and (i32.ge_s (local.get $argc) (i32.const 3)) (call $is_proxy (local.get $rgtgt)))
+        (then (return (call $proxy_get_recv (local.get $rgtgt) (local.get $rgkey) (call $argn (local.get $argv) (local.get $argc) (i32.const 2))))))
       ;; a separate receiver (arg2) only changes an ACCESSOR getter's `this`; for a plain-object
       ;; target with receiver≠target, walk the chain: accessor → call getter with the receiver,
       ;; data → the value. Otherwise fall back to ordinary [[Get]] (this=target).
