@@ -3282,11 +3282,122 @@
 ;; current cursor byte (or 0 at end)
 (func $pd_peek (param $s i32) (param $len i32) (result i32) (effects)
   (if i32 (i32.lt_s (i32.load (i32.const 312)) (local.get $len)) (then (call $str_byte (local.get $s) (i32.load (i32.const 312)))) (else (i32.const 0))))
+;; ASCII lowercase a byte
+(func $pd_lower (param $c i32) (result i32) (effects)
+  (if i32 (i32.and (i32.ge_s (local.get $c) (i32.const 65)) (i32.le_s (local.get $c) (i32.const 90)))
+    (then (i32.add (local.get $c) (i32.const 32))) (else (local.get $c))))
+(func $pd_is_alpha (param $c i32) (result i32) (effects)
+  (let $l i32 (call $pd_lower (local.get $c)))
+  (i32.and (i32.ge_s (local.get $l) (i32.const 97)) (i32.le_s (local.get $l) (i32.const 122))))
+(func $pd_is_digit (param $c i32) (result i32) (effects)
+  (i32.and (i32.ge_s (local.get $c) (i32.const 48)) (i32.le_s (local.get $c) (i32.const 57))))
+;; skip spaces and commas at cursor
+(func $pd_skip_sp (param $s i32) (param $len i32) (effects)
+  (block $e (loop $l
+    (let $c i32 (call $pd_peek (local.get $s) (local.get $len)))
+    (br_if $e (i32.eqz (i32.or (i32.eq (local.get $c) (i32.const 32)) (i32.eq (local.get $c) (i32.const 44)))))
+    (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+    (br $l))))
+;; match a 3-letter month name at cursor (case-insensitive) → 0..11 or -1; advances 3 on match
+(func $pd_month (param $s i32) (param $len i32) (result i32) (effects)
+  (let $p i32 (i32.load (i32.const 312)))
+  (if (i32.gt_s (i32.add (local.get $p) (i32.const 3)) (local.get $len)) (then (return (i32.const -1))))
+  (let $a i32 (call $pd_lower (call $str_byte (local.get $s) (local.get $p))))
+  (let $b i32 (call $pd_lower (call $str_byte (local.get $s) (i32.add (local.get $p) (i32.const 1)))))
+  (let $c i32 (call $pd_lower (call $str_byte (local.get $s) (i32.add (local.get $p) (i32.const 2)))))
+  (let $m i32 (i32.const -1))
+  (if (i32.and (i32.eq (local.get $a) (i32.const 106)) (i32.and (i32.eq (local.get $b) (i32.const 97)) (i32.eq (local.get $c) (i32.const 110)))) (then (set! $m (i32.const 0))))   ;; jan
+  (if (i32.and (i32.eq (local.get $a) (i32.const 102)) (i32.and (i32.eq (local.get $b) (i32.const 101)) (i32.eq (local.get $c) (i32.const 98)))) (then (set! $m (i32.const 1))))   ;; feb
+  (if (i32.and (i32.eq (local.get $a) (i32.const 109)) (i32.and (i32.eq (local.get $b) (i32.const 97)) (i32.eq (local.get $c) (i32.const 114)))) (then (set! $m (i32.const 2))))   ;; mar
+  (if (i32.and (i32.eq (local.get $a) (i32.const 97)) (i32.and (i32.eq (local.get $b) (i32.const 112)) (i32.eq (local.get $c) (i32.const 114)))) (then (set! $m (i32.const 3))))    ;; apr
+  (if (i32.and (i32.eq (local.get $a) (i32.const 109)) (i32.and (i32.eq (local.get $b) (i32.const 97)) (i32.eq (local.get $c) (i32.const 121)))) (then (set! $m (i32.const 4))))   ;; may
+  (if (i32.and (i32.eq (local.get $a) (i32.const 106)) (i32.and (i32.eq (local.get $b) (i32.const 117)) (i32.eq (local.get $c) (i32.const 110)))) (then (set! $m (i32.const 5))))  ;; jun
+  (if (i32.and (i32.eq (local.get $a) (i32.const 106)) (i32.and (i32.eq (local.get $b) (i32.const 117)) (i32.eq (local.get $c) (i32.const 108)))) (then (set! $m (i32.const 6))))  ;; jul
+  (if (i32.and (i32.eq (local.get $a) (i32.const 97)) (i32.and (i32.eq (local.get $b) (i32.const 117)) (i32.eq (local.get $c) (i32.const 103)))) (then (set! $m (i32.const 7))))    ;; aug
+  (if (i32.and (i32.eq (local.get $a) (i32.const 115)) (i32.and (i32.eq (local.get $b) (i32.const 101)) (i32.eq (local.get $c) (i32.const 112)))) (then (set! $m (i32.const 8))))  ;; sep
+  (if (i32.and (i32.eq (local.get $a) (i32.const 111)) (i32.and (i32.eq (local.get $b) (i32.const 99)) (i32.eq (local.get $c) (i32.const 116)))) (then (set! $m (i32.const 9))))   ;; oct
+  (if (i32.and (i32.eq (local.get $a) (i32.const 110)) (i32.and (i32.eq (local.get $b) (i32.const 111)) (i32.eq (local.get $c) (i32.const 118)))) (then (set! $m (i32.const 10))))  ;; nov
+  (if (i32.and (i32.eq (local.get $a) (i32.const 100)) (i32.and (i32.eq (local.get $b) (i32.const 101)) (i32.eq (local.get $c) (i32.const 99)))) (then (set! $m (i32.const 11))))  ;; dec
+  (if (i32.ge_s (local.get $m) (i32.const 0)) (then (i32.store (i32.const 312) (i32.add (local.get $p) (i32.const 3)))))
+  (local.get $m))
+;; parse the Date toString / toUTCString family (weekday + month names) → epoch ms, or NaN.
+;;   toString    : "Www Mon DD YYYY HH:MM:SS GMT+HHMM (...)"
+;;   toUTCString : "Www, DD Mon YYYY HH:MM:SS GMT"
+;; cursor (mem 312) must be 0; string begins with an alpha weekday.
+(func $parse_date_alpha (param $s i32) (param $len i32) (result f64) (effects)
+  ;; skip leading weekday word
+  (block $wke (loop $wkl
+    (br_if $wke (i32.eqz (call $pd_is_alpha (call $pd_peek (local.get $s) (local.get $len)))))
+    (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+    (br $wkl)))
+  (call $pd_skip_sp (local.get $s) (local.get $len))
+  (let $mo i32 (i32.const -1)) (let $d i32 (i32.const -1)) (let $y i32 (i32.const -1))
+  (if (call $pd_is_digit (call $pd_peek (local.get $s) (local.get $len)))
+    (then  ;; UTCString order: DD Mon YYYY
+      (set! $d (call $pd_int (local.get $s) (local.get $len)))
+      (call $pd_skip_sp (local.get $s) (local.get $len))
+      (set! $mo (call $pd_month (local.get $s) (local.get $len)))
+      (call $pd_skip_sp (local.get $s) (local.get $len))
+      (set! $y (call $pd_int (local.get $s) (local.get $len))))
+    (else  ;; toString order: Mon DD YYYY
+      (set! $mo (call $pd_month (local.get $s) (local.get $len)))
+      (call $pd_skip_sp (local.get $s) (local.get $len))
+      (set! $d (call $pd_int (local.get $s) (local.get $len)))
+      (call $pd_skip_sp (local.get $s) (local.get $len))
+      (set! $y (call $pd_int (local.get $s) (local.get $len)))))
+  (if (i32.or (i32.lt_s (local.get $mo) (i32.const 0)) (i32.or (i32.lt_s (local.get $d) (i32.const 0)) (i32.lt_s (local.get $y) (i32.const 0))))
+    (then (return (f64.div (f64.const 0) (f64.const 0)))))
+  ;; optional time HH:MM[:SS]
+  (let $h i32 (i32.const 0)) (let $mi i32 (i32.const 0)) (let $sec i32 (i32.const 0))
+  (call $pd_skip_sp (local.get $s) (local.get $len))
+  (if (call $pd_is_digit (call $pd_peek (local.get $s) (local.get $len)))
+    (then
+      (set! $h (call $pd_int (local.get $s) (local.get $len)))
+      (if (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 58))
+        (then
+          (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+          (set! $mi (call $pd_int (local.get $s) (local.get $len)))
+          (if (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 58))
+            (then
+              (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+              (set! $sec (call $pd_int (local.get $s) (local.get $len)))))))))
+  ;; timezone: skip spaces, optional "GMT"/"UTC" word, optional signed HHMM offset
+  (let $offmin i32 (i32.const 0))
+  (call $pd_skip_sp (local.get $s) (local.get $len))
+  (block $tze (loop $tzl
+    (br_if $tze (i32.eqz (call $pd_is_alpha (call $pd_peek (local.get $s) (local.get $len)))))
+    (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+    (br $tzl)))
+  (let $tzc i32 (call $pd_peek (local.get $s) (local.get $len)))
+  (if (i32.or (i32.eq (local.get $tzc) (i32.const 43)) (i32.eq (local.get $tzc) (i32.const 45)))
+    (then
+      (let $sign i32 (if i32 (i32.eq (local.get $tzc) (i32.const 45)) (then (i32.const -1)) (else (i32.const 1))))
+      (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))
+      (let $p i32 (i32.load (i32.const 312)))
+      (if (i32.le_s (i32.add (local.get $p) (i32.const 4)) (local.get $len))
+        (then
+          (let $b0 i32 (call $str_byte (local.get $s) (local.get $p)))
+          (let $b1 i32 (call $str_byte (local.get $s) (i32.add (local.get $p) (i32.const 1))))
+          (let $b2 i32 (call $str_byte (local.get $s) (i32.add (local.get $p) (i32.const 2))))
+          (let $b3 i32 (call $str_byte (local.get $s) (i32.add (local.get $p) (i32.const 3))))
+          (if (i32.and (call $pd_is_digit (local.get $b0)) (i32.and (call $pd_is_digit (local.get $b1)) (i32.and (call $pd_is_digit (local.get $b2)) (call $pd_is_digit (local.get $b3)))))
+            (then
+              (let $hh i32 (i32.add (i32.mul (i32.sub (local.get $b0) (i32.const 48)) (i32.const 10)) (i32.sub (local.get $b1) (i32.const 48))))
+              (let $mm i32 (i32.add (i32.mul (i32.sub (local.get $b2) (i32.const 48)) (i32.const 10)) (i32.sub (local.get $b3) (i32.const 48))))
+              (set! $offmin (i32.mul (local.get $sign) (i32.add (i32.mul (local.get $hh) (i32.const 60)) (local.get $mm))))))))))
+  ;; date_make treats fields as UTC; a local wall time with offset O has UTC = local - O
+  (f64.sub
+    (call $date_make (i64.extend_i32_s (local.get $y)) (i64.extend_i32_s (local.get $mo)) (i64.extend_i32_s (local.get $d)) (i64.extend_i32_s (local.get $h)) (i64.extend_i32_s (local.get $mi)) (i64.extend_i32_s (local.get $sec)) (i64.const 0))
+    (f64.mul (f64.convert_i32_s (local.get $offmin)) (f64.const 60000))))
 ;; parse an ISO-8601 date string → epoch ms, or NaN. Handles YYYY[-MM[-DD]]
 ;; [T HH:MM[:SS[.sss]]][Z]. (Timezone offsets other than Z are treated as UTC.)
 (func $parse_date_str (param $s i32) (result f64) (effects)
   (let $len i32 (call $str_len (local.get $s)))
   (i32.store (i32.const 312) (i32.const 0))
+  ;; a leading alpha byte means the Date toString/toUTCString family (weekday + month names),
+  ;; not ISO-8601 — Date.parse must round-trip its own toString/toUTCString output.
+  (if (call $pd_is_alpha (call $pd_peek (local.get $s) (local.get $len)))
+    (then (return (call $parse_date_alpha (local.get $s) (local.get $len)))))
   (let $ysign i32 (i32.const 1))  ;; ISO extended year: leading '-'/'+' followed by 6 digits
   (if (i32.eq (call $pd_peek (local.get $s) (local.get $len)) (i32.const 45))  ;; '-'
     (then (set! $ysign (i32.const -1)) (i32.store (i32.const 312) (i32.add (i32.load (i32.const 312)) (i32.const 1)))))
