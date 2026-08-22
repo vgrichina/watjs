@@ -303,9 +303,18 @@
   (if (i32.le_s (local.get $pdig) (i32.const 19))
     (then  ;; fits u64
       (let $m i64 (call $bi_scale_round (local.get $ax) (local.get $scale) (local.get $rmode)))
+      (let $carried i32 (i32.const 0))
       (if (i64.ge_u (local.get $m) (call $pow10u (local.get $pdig)))
-        (then (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $e (i32.add (local.get $e) (i32.const 1)))))
-      (if (i32.and (i64.ne (local.get $m) (i64.const 0)) (i64.lt_u (local.get $m) (call $pow10u (i32.sub (local.get $pdig) (i32.const 1)))))
+        (then (set! $m (i64.div_u (local.get $m) (i64.const 10))) (set! $e (i32.add (local.get $e) (i32.const 1))) (set! $carried (i32.const 1))))
+      ;; borrow: m has too few digits (m < 10^(pdig-1)) OR m is exactly 10^(pdig-1) ("1000…0") WITHOUT a carry.
+      ;; The equal-and-no-carry case is ambiguous — the log10-derived $e may be one too high for a value just
+      ;; below a power of ten (the double for 1e-21 is 9.999…e-22, whose f64 normalization rounds up to $e=-21).
+      ;; Re-scale one place finer and re-round: a genuine power of ten carries back to 10^(pdig-1) with $e
+      ;; restored (idempotent), while a just-below value yields 9999…9 at the corrected exponent. The `!carried`
+      ;; guard is essential: when m reached 10^(pdig-1) by rounding a leading-9 value UP (971→"1e+3"), that is
+      ;; already correct and must not borrow. (A real carry always lands m ≥ 10^(pdig-1), so `<` already implies
+      ;; no carry; only the `==` boundary needs the explicit check.)
+      (if (i32.and (i32.eqz (local.get $carried)) (i32.and (i64.ne (local.get $m) (i64.const 0)) (i64.le_u (local.get $m) (call $pow10u (i32.sub (local.get $pdig) (i32.const 1))))))
         (then
           (set! $e (i32.sub (local.get $e) (i32.const 1)))
           (set! $m (call $bi_scale_round (local.get $ax) (i32.add (local.get $scale) (i32.const 1)) (local.get $rmode)))
