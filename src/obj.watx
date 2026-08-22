@@ -1153,7 +1153,7 @@
   (if (call $is_string (local.get $prim))
     (then
       (let $wsp i32 (call $val_payload (local.get $prim)))
-      (let $wsln i32 (call $str_len (local.get $wsp)))
+      (let $wsln i32 (call $str_cu_len (local.get $wsp)))  ;; UTF-16 code-unit length (not byte length)
       (call $scope_define_attr (local.get $wo) (cstring "length") (call $num (f64.convert_i32_s (local.get $wsln))) (i32.const 0))
       (let $wsi i32 (i32.const 0))
       (block $wse (loop $wsl
