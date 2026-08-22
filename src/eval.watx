@@ -6112,6 +6112,57 @@
   (let $c i32 (i32.load (i32.const 952)))
   (if (i32.gt_s (local.get $c) (i32.const 0)) (then (i32.store (i32.const 952) (i32.sub (local.get $c) (i32.const 1))))))
 
+;; Build a padStart/padEnd filler: exactly $padn UTF-16 code units drawn cyclically
+;; from fill string $pads. An adjacent high+low surrogate pair that both survive
+;; within $padn is joined into one astral code point (4-byte UTF-8); a high surrogate
+;; whose low half is truncated off is emitted as a lone surrogate half (3-byte WTF-8).
+;; Two passes (measure bytes, then emit) so the result string is exactly sized.
+(func $str_pad_fill (param $pads i32) (param $padn i32) (result i32) (effects)
+  (let $fcl i32 (call $str_cu_len (local.get $pads)))
+  (let $nb i32 (i32.const 0))
+  (let $k i32 (i32.const 0))
+  (block $e1 (loop $l1
+    (br_if $e1 (i32.ge_s (local.get $k) (local.get $padn)))
+    (let $cu i32 (call $str_cu_at (local.get $pads) (i32.rem_s (local.get $k) (local.get $fcl))))
+    (if (i32.and
+          (i32.and (i32.ge_s (local.get $cu) (i32.const 0xD800)) (i32.le_s (local.get $cu) (i32.const 0xDBFF)))
+          (i32.lt_s (i32.add (local.get $k) (i32.const 1)) (local.get $padn)))
+      (then
+        (let $c2 i32 (call $str_cu_at (local.get $pads) (i32.rem_s (i32.add (local.get $k) (i32.const 1)) (local.get $fcl))))
+        (if (i32.and (i32.ge_s (local.get $c2) (i32.const 0xDC00)) (i32.le_s (local.get $c2) (i32.const 0xDFFF)))
+          (then
+            (set! $nb (i32.add (local.get $nb) (i32.const 4)))
+            (set! $k (i32.add (local.get $k) (i32.const 2)))
+            (br $l1)))))
+    (set! $nb (i32.add (local.get $nb)
+      (if i32 (i32.lt_s (local.get $cu) (i32.const 128)) (then (i32.const 1))
+        (else (if i32 (i32.lt_s (local.get $cu) (i32.const 2048)) (then (i32.const 2)) (else (i32.const 3)))))))
+    (set! $k (i32.add (local.get $k) (i32.const 1)))
+    (br $l1)))
+  (let $p i32 (call $str_alloc (local.get $nb)))
+  (let $o i32 (i32.const 0))
+  (set! $k (i32.const 0))
+  (block $e2 (loop $l2
+    (br_if $e2 (i32.ge_s (local.get $k) (local.get $padn)))
+    (let $cu i32 (call $str_cu_at (local.get $pads) (i32.rem_s (local.get $k) (local.get $fcl))))
+    (if (i32.and
+          (i32.and (i32.ge_s (local.get $cu) (i32.const 0xD800)) (i32.le_s (local.get $cu) (i32.const 0xDBFF)))
+          (i32.lt_s (i32.add (local.get $k) (i32.const 1)) (local.get $padn)))
+      (then
+        (let $c2 i32 (call $str_cu_at (local.get $pads) (i32.rem_s (i32.add (local.get $k) (i32.const 1)) (local.get $fcl))))
+        (if (i32.and (i32.ge_s (local.get $c2) (i32.const 0xDC00)) (i32.le_s (local.get $c2) (i32.const 0xDFFF)))
+          (then
+            (let $cp i32 (i32.add (i32.const 0x10000)
+              (i32.add (i32.shl (i32.sub (local.get $cu) (i32.const 0xD800)) (i32.const 10))
+                       (i32.sub (local.get $c2) (i32.const 0xDC00)))))
+            (set! $o (call $utf8_emit (local.get $p) (local.get $o) (local.get $cp)))
+            (set! $k (i32.add (local.get $k) (i32.const 2)))
+            (br $l2)))))
+    (set! $o (call $utf8_emit (local.get $p) (local.get $o) (local.get $cu)))
+    (set! $k (i32.add (local.get $k) (i32.const 1)))
+    (br $l2)))
+  (local.get $p))
+
 (func $call_native (param $id i32) (param $argc i32) (param $argv i32) (param $thisv i64) (result i64) (effects)
   ;; "not generic" %TypedArray%.prototype methods (485-504): ValidateTypedArray(this) — these
   ;; share a native id with the generic Array.prototype version, so the TA prototype binds the
@@ -9473,17 +9524,9 @@
               (set! $pads (call $to_str (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
               (if (call $err) (then (return (call $v_undef))))))
           (if (i32.eqz (call $str_len (local.get $pads))) (then (return (call $mk_str (local.get $s)))))  ;; empty filler
-          ;; build the padding in ONE allocation of `padn` bytes, cycling through the fill string
-          ;; (O(n); the old repeated str_concat + substr was O(n^2) in the no-free bump allocator).
-          (let $padn i32 (i32.sub (local.get $padt) (local.get $padsl)))
-          (let $padfl i32 (call $str_len (local.get $pads)))
-          (let $padb i32 (call $str_alloc (local.get $padn)))
-          (let $pi i32 (i32.const 0))
-          (block $pe2 (loop $pl2
-            (br_if $pe2 (i32.ge_s (local.get $pi) (local.get $padn)))
-            (call $str_set_byte (local.get $padb) (local.get $pi) (call $str_byte (local.get $pads) (i32.rem_s (local.get $pi) (local.get $padfl))))
-            (set! $pi (i32.add (local.get $pi) (i32.const 1)))
-            (br $pl2)))
+          ;; build the padding: (padt - padsl) code units drawn cyclically from the fill
+          ;; string, code-unit accurate — a truncated astral char yields a lone surrogate half.
+          (let $padb i32 (call $str_pad_fill (local.get $pads) (i32.sub (local.get $padt) (local.get $padsl))))
           (if (i32.eq (local.get $id) (i32.const 66))
             (then (return (call $mk_str (call $str_concat (local.get $padb) (local.get $s)))))
             (else (return (call $mk_str (call $str_concat (local.get $s) (local.get $padb))))))))
