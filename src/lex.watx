@@ -536,8 +536,10 @@
         (if (i32.eq (local.get $n) (i32.const 117))  ;; \uHHHH  or  \u{H+}
           (then
             (let $cp i32 (i32.const 0))
+            (let $u4d i32 (i32.const 1))  ;; 4-digit \uHHHH form (eligible for surrogate-pair join)
             (if (i32.eq (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1)))) (i32.const 123))  ;; \u{ … }
               (then
+                (set! $u4d (i32.const 0))
                 (set! $i (i32.add (local.get $i) (i32.const 1)))  ;; advance onto '{'
                 (block $ce (loop $cl
                   (let $hc i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1))))))
@@ -556,6 +558,29 @@
                   (set! $i (i32.add (local.get $i) (i32.const 1)))
                   (set! $j (i32.add (local.get $j) (i32.const 1)))
                   (br $hl)))))
+            ;; a \uHHHH high surrogate immediately followed by a \uLLLL low surrogate
+            ;; joins into one astral code point (UTF-16 surrogate-pair semantics in
+            ;; string literals; \u{…} forms never join)
+            (if (i32.and (local.get $u4d) (i32.and (i32.ge_s (local.get $cp) (i32.const 55296)) (i32.le_s (local.get $cp) (i32.const 56319))))
+              (then
+                (if (i32.and (i32.eq (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 1)))) (i32.const 92))
+                      (i32.and (i32.eq (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 2)))) (i32.const 117))
+                               (i32.ne (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.const 3)))) (i32.const 123))))
+                  (then
+                    (let $slo i32 (i32.const 0))
+                    (let $slk i32 (i32.const 0))
+                    (let $sok i32 (i32.const 1))
+                    (block $sle (loop $sll
+                      (br_if $sle (i32.ge_s (local.get $slk) (i32.const 4)))
+                      (let $slh i32 (call $hexval (i32.load8_u (i32.add (local.get $src) (i32.add (local.get $i) (i32.add (i32.const 3) (local.get $slk)))))))
+                      (if (i32.lt_s (local.get $slh) (i32.const 0)) (then (set! $sok (i32.const 0)) (br $sle)))
+                      (set! $slo (i32.add (i32.mul (local.get $slo) (i32.const 16)) (local.get $slh)))
+                      (set! $slk (i32.add (local.get $slk) (i32.const 1)))
+                      (br $sll)))
+                    (if (i32.and (local.get $sok) (i32.and (i32.ge_s (local.get $slo) (i32.const 56320)) (i32.le_s (local.get $slo) (i32.const 57343))))
+                      (then
+                        (set! $cp (i32.add (i32.const 65536) (i32.add (i32.shl (i32.sub (local.get $cp) (i32.const 55296)) (i32.const 10)) (i32.sub (local.get $slo) (i32.const 56320)))))
+                        (set! $i (i32.add (local.get $i) (i32.const 6)))))))))
             (set! $o (call $utf8_emit (local.get $p) (local.get $o) (local.get $cp))))
           (else (if (i32.eq (local.get $n) (i32.const 120))  ;; \xHH
             (then
