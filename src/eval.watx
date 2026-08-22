@@ -8724,6 +8724,44 @@
                 (then (if (i32.or (call $scope_find_local (local.get $rdap12) (cstring "@@frozen")) (call $scope_find_local (local.get $rdap12) (cstring "@@sealed"))) (then (return (call $v_false))))))
               (i64.store (call $arr_slot (local.get $rdap) (local.get $rdidx)) (call $v_hole))))
           (return (call $v_true))))
+      ;; function target (also not $is_object): mirror the VM delete opcode's fn logic —
+      ;; own `prototype` non-configurable (false); native fn `length` parks @@dellen; VM fn
+      ;; name/length are struct-field flag bits; other own props honor configurability.
+      (if (call $is_function (local.get $rdt))
+        (then
+          (let $rdfn i32 (call $val_payload (local.get $rdt)))
+          (let $rdfk i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (let $rres i64 (call $v_true))
+          (if (i32.and (call $str_eq (local.get $rdfk) (cstring "prototype")) (call $fn_own (local.get $rdfn) (cstring "prototype")))
+            (then (set! $rres (call $v_false))))
+          (if (i32.and (call $str_eq (local.get $rdfk) (cstring "length"))
+                (i32.eqz (i32.and (i32.ge_s (i32.load (local.get $rdfn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $rdfn)) (i32.const 1448232528)))))
+            (then (call $scope_define (call $fn_props (local.get $rdfn)) (cstring "@@dellen") (call $v_true))))
+          (if (i32.and (i32.ge_s (i32.load (local.get $rdfn)) (i32.const 1448232526)) (i32.le_s (i32.load (local.get $rdfn)) (i32.const 1448232528)))
+            (then
+              (let $rdflo i32 (i32.add (local.get $rdfn) (i32.add (i32.const 32) (i32.mul (i32.load (i32.add (local.get $rdfn) (i32.const 8))) (i32.const 4)))))
+              (if (call $str_eq (local.get $rdfk) (cstring "name"))
+                (then (i32.store (local.get $rdflo) (i32.or (i32.load (local.get $rdflo)) (i32.const 16)))))
+              (if (call $str_eq (local.get $rdfk) (cstring "length"))
+                (then (i32.store (local.get $rdflo) (i32.or (i32.load (local.get $rdflo)) (i32.const 32)))))
+              (let $rdvp i32 (call $fn_ownsc_peek (local.get $rdfn)))
+              (if (local.get $rdvp)
+                (then
+                  (let $rdvs i32 (call $scope_find_local (local.get $rdvp) (local.get $rdfk)))
+                  (if (local.get $rdvs)
+                    (then (if (call $entry_configurable (local.get $rdvs))
+                      (then (drop (call $scope_delete (local.get $rdvp) (local.get $rdfk))))
+                      (else (set! $rres (call $v_false)))))))))
+            (else
+              (let $rdfp i32 (i32.load (i32.add (local.get $rdfn) (i32.const 12))))
+              (if (local.get $rdfp)
+                (then
+                  (let $rdfs i32 (call $scope_find_local (local.get $rdfp) (local.get $rdfk)))
+                  (if (local.get $rdfs)
+                    (then (if (call $entry_configurable (local.get $rdfs))
+                      (then (drop (call $scope_delete (local.get $rdfp) (local.get $rdfk))))
+                      (else (set! $rres (call $v_false))))))))))
+          (return (local.get $rres))))
       (if (call $is_object (local.get $rdt))
         (then
           (let $rdo i32 (call $val_payload (local.get $rdt)))
