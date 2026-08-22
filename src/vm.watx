@@ -2302,7 +2302,7 @@
                 (call $vm_emit_op (local.get $code) (i32.const 33)) (call $vm_emit_op (local.get $code) (local.get $ocia)))  ;; CALLM
               (else (call $next_token) (call $vm_c_commaexpr (local.get $code)) (call $next_token) (call $vm_emit_op (local.get $code) (i32.const 31)))))  ;; GETIDX ([ Expression ], comma allowed)
           (else
-            (let $ock i32 (call $ident_name)) (call $next_token)
+            (let $ock i32 (call $priv_key (call $ident_name))) (call $next_token)  ;; qualify a `?.#name` PrivateName to its per-class brand key
             (if (i32.eq (call $tok_kind) (i32.const 15))  ;; ?.m(args) optional method call
               (then
                 (call $vm_emit_op (local.get $code) (i32.const 32))  ;; DUP receiver
