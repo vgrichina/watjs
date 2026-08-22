@@ -158,19 +158,19 @@
   <div class="meta">
     <span class="chip">status as of <b>2026-08-22</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>38bca48</b></span>
-    <span class="chip"><b>1945</b> commits</span>
+    <span class="chip">@ <b>7eb29c6</b></span>
+    <span class="chip"><b>1951</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
     <a class="chip" href="https://watjs.berrry.app/" style="color:var(--accent);text-decoration:none">↗&nbsp;watjs.berrry.app</a>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">33.5k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">468 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">33.6k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">469 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
-  <div class="card"><div class="n">106.8M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">107.2M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -294,13 +294,13 @@ engines get distinct source variants to defeat V8's compilation cache.</p>
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
+  <tr><td class="mono">7eb29c6</td><td><code>String</code> <code>padStart</code>/<code>padEnd</code>: build fill by UTF-16 code unit (+2)</td></tr>
+  <tr><td class="mono">2eac208</td><td><code>String</code> wrapper <code>.length</code>: UTF-16 code-unit length, not byte length (+1)</td></tr>
+  <tr><td class="mono">4d28bf7</td><td>lexer: join <code>\uHHHH\uLLLL</code> surrogate pairs in string literals (+3)</td></tr>
+  <tr><td class="mono">e070433</td><td><code>Date</code> <code>MakeTime</code>/<code>MakeDate</code>: compute epoch-ms in f64, spec order (+1)</td></tr>
+  <tr><td class="mono">dfcf163</td><td><code>Reflect.deleteProperty</code>: handle function targets (+1)</td></tr>
   <tr><td class="mono">38bca48</td><td><code>Reflect.deleteProperty</code>: handle array targets (+2)</td></tr>
   <tr><td class="mono">d106e30</td><td><code>Proxy</code> <code>[[Get]]</code> with receiver + <code>ArraySpeciesCreate</code> <code>IsArray</code> see-through (+4)</td></tr>
-  <tr><td class="mono">d48d9c2</td><td>dtoa: fix <code>toPrecision</code>/<code>toExponential</code> 16-sig-digit power-of-ten boundary (+1)</td></tr>
-  <tr><td class="mono">9e8a49a</td><td>for-loop: per-iteration environment for <code>let</code>/<code>const</code> destructuring heads</td></tr>
-  <tr><td class="mono">e6e9af4</td><td>for-loop: <code>let</code>/<code>const</code> destructuring head binds block-scoped, not var (+9)</td></tr>
-  <tr><td class="mono">760b2e7</td><td>parse: reject non-identifier tokens in a plain parameter position (+1)</td></tr>
-  <tr><td class="mono">3d4a3de</td><td><code>Date.parse</code>: accept <code>toString</code>/<code>toUTCString</code> formats (weekday + month names) (+1)</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -424,7 +424,7 @@ const DAILY = [
   ["Aug 9", 2, 0.26], ["Aug 10", 17, 0.25], ["Aug 11", 48, 3.07], ["Aug 12", 40, 3.47],
   ["Aug 13", 0, 0.71], ["Aug 14", 34, 1.83], ["Aug 15", 54, 2.14],
   ["Aug 16", 34, 2.32], ["Aug 17", 23, 2.54], ["Aug 18", 28, 3.39], ["Aug 19", 13, 2.40],
-  ["Aug 20", 0, 0.05], ["Aug 21", 13, 0.24], ["Aug 22", 1, 0.88],
+  ["Aug 20", 0, 0.05], ["Aug 21", 13, 0.24], ["Aug 22", 7, 1.29],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -452,7 +452,7 @@ const GROWTH = [
   ["Aug 9", 30110, 339], ["Aug 10", 30235, 341], ["Aug 11", 30937, 349], ["Aug 12", 31346, 382],
   ["Aug 13", 31346, 382], ["Aug 14", 31359, 425], ["Aug 15", 31543, 446],
   ["Aug 16", 32220, 453], ["Aug 17", 32500, 457], ["Aug 18", 32892, 462], ["Aug 19", 33232, 465],
-  ["Aug 20", 33232, 465], ["Aug 21", 33472, 468], ["Aug 22", 33494, 468],
+  ["Aug 20", 33232, 465], ["Aug 21", 33472, 468], ["Aug 22", 33614, 469],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
@@ -491,7 +491,7 @@ const HUMAN = {
   "Aug 18": { i:["manually pushed the dev session's outstanding engine commits"], n:5 },
   "Aug 19": { n:3 },
   "Aug 21": { i:["steered the private-method install-timing arc, then a for-loop scoping / Date.parse / BigInt / fromAsync / Proxy-receiver / dtoa sweep"], n:6 },
-  "Aug 22": { n:1 },
+  "Aug 22": { i:["steered a UTF-16 string cluster (surrogate lexing, code-unit length/pad) plus Date epoch-ms and Reflect.deleteProperty fixes"], n:3 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
