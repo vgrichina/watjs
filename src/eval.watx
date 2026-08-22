@@ -8702,6 +8702,28 @@
                     (then (call $throw_type (cstring "TypeError") (cstring "proxy deleteProperty: cannot delete a property of a non-extensible target")) (return (call $v_undef))))))
               (return (call $v_true)))
             (else (return (call $call_native (i32.const 203) (i32.const 2) (local.get $dpb) (call $v_undef)))))))  ;; no trap → Reflect.deleteProperty(target, key)
+      ;; array target: length non-configurable (false); index → hole (unless frozen/sealed);
+      ;; @12 named/deopted prop honors configurability (arrays don't satisfy $is_object)
+      (if (call $is_array (local.get $rdt))
+        (then
+          (let $rdap i32 (call $val_payload (local.get $rdt)))
+          (let $rdks i32 (call $to_prop_key (call $argn (local.get $argv) (local.get $argc) (i32.const 1))))
+          (if (call $str_eq (local.get $rdks) (cstring "length")) (then (return (call $v_false))))
+          (let $rdidx i32 (call $str_array_index (local.get $rdks)))
+          (let $rdap12 i32 (i32.load (i32.add (local.get $rdap) (i32.const 12))))
+          (if (local.get $rdap12)
+            (then (let $rddsl i32 (call $scope_find_local (local.get $rdap12) (local.get $rdks)))
+              (if (local.get $rddsl)
+                (then
+                  (if (i32.eqz (call $entry_configurable (local.get $rddsl))) (then (return (call $v_false))))
+                  (drop (call $scope_delete (local.get $rdap12) (local.get $rdks)))
+                  (return (call $v_true))))))
+          (if (i32.and (i32.ge_s (local.get $rdidx) (i32.const 0)) (i32.lt_s (local.get $rdidx) (call $arr_len (local.get $rdap))))
+            (then
+              (if (local.get $rdap12)
+                (then (if (i32.or (call $scope_find_local (local.get $rdap12) (cstring "@@frozen")) (call $scope_find_local (local.get $rdap12) (cstring "@@sealed"))) (then (return (call $v_false))))))
+              (i64.store (call $arr_slot (local.get $rdap) (local.get $rdidx)) (call $v_hole))))
+          (return (call $v_true))))
       (if (call $is_object (local.get $rdt))
         (then
           (let $rdo i32 (call $val_payload (local.get $rdt)))
