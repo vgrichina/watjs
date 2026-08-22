@@ -156,21 +156,21 @@
   <h1>watjs <span class="v">— fully WAT-native JavaScript interpreter</span></h1>
   <div class="tag">JS lexed, parsed &amp; executed entirely inside a single hand-written WASM module. The host provides only a thin I/O surface.</div>
   <div class="meta">
-    <span class="chip">status as of <b>2026-08-20</b></span>
+    <span class="chip">status as of <b>2026-08-21</b></span>
     <span class="chip">branch <b>main</b></span>
-    <span class="chip">@ <b>8662ba2</b></span>
-    <span class="chip"><b>1928</b> commits</span>
+    <span class="chip">@ <b>a9c4ec3</b></span>
+    <span class="chip"><b>1934</b> commits</span>
     <span class="chip"><span class="dot">●</span> 0 traps / 0 hangs</span>
     <a class="chip" href="https://watjs.berrry.app/" style="color:var(--accent);text-decoration:none">↗&nbsp;watjs.berrry.app</a>
   </div>
 </header>
 
 <div class="grid">
-  <div class="card"><div class="n">33.2k</div><div class="l">lines of WATX · 11 modules</div></div>
-  <div class="card"><div class="n">465 KB</div><div class="l">watjs.wasm artifact</div></div>
+  <div class="card"><div class="n">33.3k</div><div class="l">lines of WATX · 11 modules</div></div>
+  <div class="card"><div class="n">466 KB</div><div class="l">watjs.wasm artifact</div></div>
   <div class="card"><div class="n">486</div><div class="l">self-check JS tests</div></div>
   <div class="card"><div class="n">34.0k</div><div class="l">test262 tests passing / 53k</div></div>
-  <div class="card"><div class="n">105.7M</div><div class="l">output tokens spent building</div></div>
+  <div class="card"><div class="n">106.0M</div><div class="l">output tokens spent building</div></div>
 </div>
 
 <h2>Daily activity <span class="em">per day · not cumulative</span></h2>
@@ -294,13 +294,13 @@ engines get distinct source variants to defeat V8's compilation cache.</p>
 <h2>Recently landed <span class="em">newest first</span></h2>
 <table>
   <tr><th>commit</th><th>change</th></tr>
+  <tr><td class="mono">a9c4ec3</td><td>enumeration: a public computed field named <code>"#constructor"</code> stays visible (+1)</td></tr>
+  <tr><td class="mono">d495640</td><td>optional-chaining private member <code>obj?.#m</code> qualifies to the brand key (+2)</td></tr>
+  <tr><td class="mono">aae72a7</td><td>private methods / accessors: throw <code>TypeError</code> on double installation (+4)</td></tr>
+  <tr><td class="mono">43f4958</td><td>private instance getters/setters installed per-instance (when <code>super</code> returns), not on the prototype (+8)</td></tr>
+  <tr><td class="mono">8f6ecd7</td><td>private instance methods installed per-instance (when <code>super</code> returns), not on the prototype (+4)</td></tr>
   <tr><td class="mono">8662ba2</td><td>strict mode: block/switch function declaration is block-scoped, not AnnexB (+5)</td></tr>
   <tr><td class="mono">441c4fb</td><td><code>try</code>: a simple catch param gets its own scope in the <code>finally</code> form too (+1)</td></tr>
-  <tr><td class="mono">d374d47</td><td><code>String.prototype</code>: own <code>"length"</code> is 0 (String exotic) (+1)</td></tr>
-  <tr><td class="mono">a83f166</td><td>class: computed method key <code>ToPropertyKey</code>'d once, not twice (+1)</td></tr>
-  <tr><td class="mono">e1338a6</td><td>async <code>yield*</code>: AsyncFromSync close-on-rejection + poisoned-getter reject (+2)</td></tr>
-  <tr><td class="mono">7cf7cb9</td><td>async <code>yield*</code>: real <code>CreateAsyncFromSyncIterator</code> wrapper (+5)</td></tr>
-  <tr><td class="mono">84913b4</td><td>async generator: full <code>yield*</code> delegation — throw / return / await (+22)</td></tr>
 </table>
 
 <h2>Coverage by area <span class="em">test262, approximate</span></h2>
@@ -391,7 +391,7 @@ engines get distinct source variants to defeat V8's compilation cache.</p>
 </ul>
 
 <footer>
-  <span>Last refreshed 2026-08-20 from repo state &amp; session memory · self-check <code>test/</code> + tc39 <code>test262/</code> · charts drawn inline, no external deps.</span>
+  <span>Last refreshed 2026-08-21 from repo state &amp; session memory · self-check <code>test/</code> + tc39 <code>test262/</code> · charts drawn inline, no external deps.</span>
   <span><a href="https://watjs.berrry.app/">watjs.berrry.app</a> &nbsp;·&nbsp; <a href="https://github.com/vgrichina/watjs" target="_blank" rel="noopener">github ↗</a></span>
 </footer>
 
@@ -424,7 +424,7 @@ const DAILY = [
   ["Aug 9", 2, 0.26], ["Aug 10", 17, 0.25], ["Aug 11", 48, 3.07], ["Aug 12", 40, 3.47],
   ["Aug 13", 0, 0.71], ["Aug 14", 34, 1.83], ["Aug 15", 54, 2.14],
   ["Aug 16", 34, 2.32], ["Aug 17", 23, 2.54], ["Aug 18", 28, 3.39], ["Aug 19", 13, 2.40],
-  ["Aug 20", 0, 0.03],
+  ["Aug 20", 0, 0.05], ["Aug 21", 5, 0.31],
 ];
 
 // cumulative end-of-day codebase size: [label, lines-of-WATX, wasm-KB]
@@ -452,7 +452,7 @@ const GROWTH = [
   ["Aug 9", 30110, 339], ["Aug 10", 30235, 341], ["Aug 11", 30937, 349], ["Aug 12", 31346, 382],
   ["Aug 13", 31346, 382], ["Aug 14", 31359, 425], ["Aug 15", 31543, 446],
   ["Aug 16", 32220, 453], ["Aug 17", 32500, 457], ["Aug 18", 32892, 462], ["Aug 19", 33232, 465],
-  ["Aug 20", 33232, 465],
+  ["Aug 20", 33232, 465], ["Aug 21", 33295, 466],
 ];
 
 // human touch-points to the MAIN engine session (status-dashboard work excluded):
@@ -490,6 +490,7 @@ const HUMAN = {
   "Aug 17": { n:3 },
   "Aug 18": { i:["manually pushed the dev session's outstanding engine commits"], n:5 },
   "Aug 19": { n:3 },
+  "Aug 21": { i:["steered the private-method install-timing arc (per-instance, super-return)"], n:3 },
 };
 
 const NS = "http://www.w3.org/2000/svg";
