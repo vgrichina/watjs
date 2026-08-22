@@ -1874,6 +1874,14 @@
     (set! $si (i32.add (local.get $si) (i32.const 1))) (br $sloop)))
   (if (local.get $bad)
     (then (call $throw_type (cstring "SyntaxError") (cstring "Cannot convert string to a BigInt")) (return (call $v_undef))))
+  ;; value: for a magnitude that fits in signed i64 (< 2^63), exact digit accumulation
+  ;; (str_bigint_i64) — so a >2^53 integer string ("9007199254740993") keeps every digit instead of
+  ;; going str_to_num→f64→sat (lossy). For an OUT-OF-i64-range string (2^64, 2^128, long hex) keep the
+  ;; old saturating path so it agrees with the equally-saturating BigInt LITERAL (this engine's BigInt
+  ;; is i64-backed; both over-range forms saturate to the same value). Validation above already
+  ;; rejected non-integer / Infinity / signed-hex — str_bigint_i64 assumes the format is valid.
+  (if (f64.lt (f64.abs (local.get $sn)) (f64.const 9223372036854775808))
+    (then (return (call $mk_bigint (call $str_bigint_i64 (local.get $ks))))))
   (call $mk_bigint (call $f64_sat_i64 (local.get $sn))))
 
 (func $to_bigint (param $v i64) (result i64) (effects)
