@@ -3591,6 +3591,11 @@
               (then (set! $psd (i32.sub (local.get $psd) (i32.const 1))) (if (i32.eqz (local.get $psd)) (then (call $next_token) (br $pske)))))
             (call $next_token) (br $pskl))))
         (else
+          ;; a plain (non-destructuring, non-rest) parameter must be a BindingIdentifier (token kind
+          ;; 3 — identifiers and keywords). A numeric/string literal (`function f(1,1){}`) is a
+          ;; SyntaxError, not a silently-accepted garbage name.
+          (if (i32.ne (call $tok_kind) (i32.const 3))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token in parameter list")) (return)))
           (i32.store (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4))) (call $ident_name))
           ;; a ReservedWord may not be a parameter name (`function f(if){}`).
           (if (call $is_reserved_word (i32.load (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4)))))
@@ -4895,6 +4900,11 @@
               (then (set! $psd (i32.sub (local.get $psd) (i32.const 1))) (if (i32.eqz (local.get $psd)) (then (call $next_token) (br $pske)))))
             (call $next_token) (br $pskl))))
         (else
+          ;; a plain (non-destructuring, non-rest) parameter must be a BindingIdentifier (token
+          ;; kind 3 — identifiers and keywords). A numeric/string literal or stray punctuation
+          ;; (`function f(1,1){}`) is a SyntaxError, not a silently-accepted garbage name.
+          (if (i32.ne (call $tok_kind) (i32.const 3))
+            (then (i32.store (i32.const 400) (i32.const 1)) (call $throw_type (cstring "SyntaxError") (cstring "Unexpected token in parameter list")) (return (local.get $np))))
           (i32.store (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4))) (call $ident_name))
           ;; a ReservedWord may not be a parameter name (`function f(if){}` / arrow / method params).
           (if (call $is_reserved_word (i32.load (i32.add (local.get $params) (i32.mul (local.get $np) (i32.const 4)))))
